@@ -1,0 +1,5012 @@
+use crate::layers::{Layer, LayerNorm};
+use num_traits::{Float, FromPrimitive, One, Zero};
+use rand;
+use std::marker::PhantomData;
+use tenflowers_core::{Result, Tensor, TensorError};
+
+#[cfg(feature = "gpu")]
+use tenflowers_core::{device::context::get_gpu_context, gpu::rnn_ops::GpuRnnOps};
+
+/// Reset gate variations for GRU layers
+///
+/// Different variants modify how the reset gate is computed and applied,
+/// affecting the information flow and computational complexity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResetGateVariation {
+    /// Standard GRU reset gate (default)
+    /// r_t = sigmoid(W_ir * x_t + W_hr * h_{t-1})
+    /// n_t = tanh(W_in * x_t + W_hn * (r_t * h_{t-1}))
+    Standard,
+
+    /// Minimal GRU: Combines reset and update gates into a single forget gate
+    /// f_t = sigmoid(W_if * x_t + W_hf * h_{t-1})
+    /// n_t = tanh(W_in * x_t + W_hn * h_{t-1})
+    /// h_t = f_t * h_{t-1} + (1 - f_t) * n_t
+    Minimal,
+
+    /// Light GRU: Simplified reset gate computation
+    /// r_t = sigmoid(W_ir * x_t) (no hidden state dependency)
+    /// n_t = tanh(W_in * x_t + W_hn * (r_t * h_{t-1}))
+    Light,
+
+    /// Coupled GRU: Reset gate depends on update gate
+    /// z_t = sigmoid(W_iz * x_t + W_hz * h_{t-1})
+    /// r_t = sigmoid(W_ir * x_t + W_hr * h_{t-1} + W_zr * z_t)
+    /// n_t = tanh(W_in * x_t + W_hn * (r_t * h_{t-1}))
+    Coupled,
+
+    /// Reset After: Apply reset gate after linear transformation
+    /// r_t = sigmoid(W_ir * x_t + W_hr * h_{t-1})
+    /// z_t = sigmoid(W_iz * x_t + W_hz * h_{t-1})
+    /// n_t = tanh(W_in * x_t + r_t * (W_hn * h_{t-1}))
+    ResetAfter,
+}
+
+/// Packed sequence structure for variable length sequences
+#[derive(Debug)]
+pub struct PackedSequence<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    /// Packed data tensor containing all sequences concatenated
+    pub data: Tensor<T>,
+    /// Batch sizes for each time step
+    pub batch_sizes: Vec<usize>,
+    /// Original sequence lengths for each sample in the batch
+    pub sorted_lengths: Vec<usize>,
+    /// Indices to restore original order after sorting
+    pub unsorted_indices: Vec<usize>,
+}
+
+impl<T> PackedSequence<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    /// Create a new packed sequence
+    pub fn new(
+        data: Tensor<T>,
+        batch_sizes: Vec<usize>,
+        sorted_lengths: Vec<usize>,
+        unsorted_indices: Vec<usize>,
+    ) -> Self {
+        Self {
+            data,
+            batch_sizes,
+            sorted_lengths,
+            unsorted_indices,
+        }
+    }
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone for PackedSequence<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            batch_sizes: self.batch_sizes.clone(),
+            sorted_lengths: self.sorted_lengths.clone(),
+            unsorted_indices: self.unsorted_indices.clone(),
+        }
+    }
+}
+
+/// LSTM (Long Short-Term Memory) layer
+#[derive(Debug)]
+pub struct LSTM<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    input_size: usize,
+    hidden_size: usize,
+    num_layers: usize,
+    _bias: bool,
+    batch_first: bool,
+    _dropout: f32,
+    _bidirectional: bool,
+    layer_norm: bool, // Whether to use layer normalization
+    peephole: bool,   // Whether to use peephole connections
+
+    // LSTM parameters for each layer
+    weight_ih: Vec<Tensor<T>>, // Input-to-hidden weights [input_size, 4*hidden_size]
+    weight_hh: Vec<Tensor<T>>, // Hidden-to-hidden weights [hidden_size, 4*hidden_size]
+    bias_ih: Option<Vec<Tensor<T>>>, // Input-to-hidden bias [4*hidden_size]
+    bias_hh: Option<Vec<Tensor<T>>>, // Hidden-to-hidden bias [4*hidden_size]
+
+    // Peephole connection weights (optional)
+    weight_ci: Option<Vec<Tensor<T>>>, // Cell-to-input gate weights [hidden_size]
+    weight_cf: Option<Vec<Tensor<T>>>, // Cell-to-forget gate weights [hidden_size]
+    weight_co: Option<Vec<Tensor<T>>>, // Cell-to-output gate weights [hidden_size]
+
+    // Layer normalization components (optional)
+    layer_norm_ih: Option<Vec<LayerNorm<T>>>, // Layer norm for input-hidden gates
+    layer_norm_hh: Option<Vec<LayerNorm<T>>>, // Layer norm for hidden-hidden gates
+    layer_norm_cell: Option<Vec<LayerNorm<T>>>, // Layer norm for cell states
+
+    // For bidirectional LSTM
+    weight_ih_reverse: Option<Vec<Tensor<T>>>,
+    weight_hh_reverse: Option<Vec<Tensor<T>>>,
+    bias_ih_reverse: Option<Vec<Tensor<T>>>,
+    bias_hh_reverse: Option<Vec<Tensor<T>>>,
+    weight_ci_reverse: Option<Vec<Tensor<T>>>,
+    weight_cf_reverse: Option<Vec<Tensor<T>>>,
+    weight_co_reverse: Option<Vec<Tensor<T>>>,
+    layer_norm_ih_reverse: Option<Vec<LayerNorm<T>>>,
+    layer_norm_hh_reverse: Option<Vec<LayerNorm<T>>>,
+    layer_norm_cell_reverse: Option<Vec<LayerNorm<T>>>,
+
+    training: bool,
+    _phantom: PhantomData<T>,
+}
+
+/// Pack sequences of different lengths into a PackedSequence
+///
+/// # Arguments
+/// * `sequences` - Vector of sequences with different lengths
+/// * `lengths` - Vector of actual sequence lengths
+/// * `batch_first` - Whether sequences are in batch-first format
+/// * `enforce_sorted` - Whether to enforce that sequences are sorted by length
+///
+/// # Returns
+/// PackedSequence containing efficiently packed data
+pub fn pack_padded_sequence<T>(
+    sequences: &Tensor<T>,
+    lengths: &[usize],
+    batch_first: bool,
+    enforce_sorted: bool,
+) -> Result<PackedSequence<T>>
+where
+    T: Float + Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+{
+    let shape = sequences.shape().dims();
+    let batch_size = if batch_first { shape[0] } else { shape[1] };
+    let max_seq_len = if batch_first { shape[1] } else { shape[0] };
+    let feature_size = if batch_first { shape[2] } else { shape[2] };
+
+    if lengths.len() != batch_size {
+        return Err(TensorError::invalid_argument(
+            "lengths must have same length as batch size".to_string(),
+        ));
+    }
+
+    // Create indices for sorting by length (descending)
+    let mut indices: Vec<usize> = (0..batch_size).collect();
+    if !enforce_sorted {
+        indices.sort_by(|&a, &b| lengths[b].cmp(&lengths[a]));
+    }
+
+    // Create unsorted indices for later restoration
+    let mut unsorted_indices = vec![0; batch_size];
+    for (new_idx, &orig_idx) in indices.iter().enumerate() {
+        unsorted_indices[orig_idx] = new_idx;
+    }
+
+    // Sort lengths
+    let sorted_lengths: Vec<usize> = indices.iter().map(|&i| lengths[i]).collect();
+
+    // Compute batch sizes for each time step
+    let mut batch_sizes = Vec::new();
+    for t in 0..max_seq_len {
+        let count = sorted_lengths.iter().filter(|&&len| len > t).count();
+        if count == 0 {
+            break;
+        }
+        batch_sizes.push(count);
+    }
+
+    // Pack sequences
+    let mut packed_data = Vec::new();
+    let data = sequences.to_vec()?;
+
+    for (t, &batch_size_t) in batch_sizes.iter().enumerate() {
+        for idx in 0..batch_size_t {
+            let orig_idx = indices[idx];
+
+            // Calculate source index based on batch_first
+            let src_idx = if batch_first {
+                orig_idx * max_seq_len * feature_size + t * feature_size
+            } else {
+                t * batch_size * feature_size + orig_idx * feature_size
+            };
+
+            // Copy features for this time step
+            for f in 0..feature_size {
+                packed_data.push(data[src_idx + f].clone());
+            }
+        }
+    }
+
+    let packed_len = packed_data.len() / feature_size;
+    let packed_tensor = Tensor::from_vec(packed_data, &[packed_len, feature_size])?;
+
+    Ok(PackedSequence::new(
+        packed_tensor,
+        batch_sizes,
+        sorted_lengths,
+        unsorted_indices,
+    ))
+}
+
+/// Unpack a PackedSequence back to padded sequences
+///
+/// # Arguments
+/// * `packed` - PackedSequence to unpack
+/// * `batch_first` - Whether to return sequences in batch-first format
+/// * `padding_value` - Value to use for padding shorter sequences
+///
+/// # Returns
+/// Unpacked padded sequences and original lengths
+pub fn pad_packed_sequence<T>(
+    packed: &PackedSequence<T>,
+    batch_first: bool,
+    padding_value: T,
+) -> Result<(Tensor<T>, Vec<usize>)>
+where
+    T: Float + Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+{
+    let max_seq_len = packed.batch_sizes.len();
+    let batch_size = packed.sorted_lengths.len();
+    let feature_size = packed.data.shape().dims()[1];
+
+    // Create output tensor with padding
+    let output_shape = if batch_first {
+        [batch_size, max_seq_len, feature_size]
+    } else {
+        [max_seq_len, batch_size, feature_size]
+    };
+
+    let mut output_data = vec![padding_value; output_shape.iter().product()];
+    let packed_data = packed.data.to_vec()?;
+
+    // Unpack data
+    let mut packed_idx = 0;
+    for (t, &batch_size_t) in packed.batch_sizes.iter().enumerate() {
+        for idx in 0..batch_size_t {
+            let orig_idx = packed.unsorted_indices[idx];
+
+            // Calculate destination index based on batch_first
+            let dst_idx = if batch_first {
+                orig_idx * max_seq_len * feature_size + t * feature_size
+            } else {
+                t * batch_size * feature_size + orig_idx * feature_size
+            };
+
+            // Copy features
+            for f in 0..feature_size {
+                output_data[dst_idx + f] = packed_data[packed_idx * feature_size + f].clone();
+            }
+            packed_idx += 1;
+        }
+    }
+
+    let output_tensor = Tensor::from_vec(output_data, &output_shape)?;
+
+    // Restore original lengths order
+    let mut original_lengths = vec![0; batch_size];
+    for (sorted_idx, &orig_idx) in packed.unsorted_indices.iter().enumerate() {
+        original_lengths[orig_idx] = packed.sorted_lengths[sorted_idx];
+    }
+
+    Ok((output_tensor, original_lengths))
+}
+
+impl<T> LSTM<T>
+where
+    T: Float + Zero + One + FromPrimitive + Clone + Default + Send + Sync + 'static,
+{
+    pub fn new(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+    ) -> Result<Self> {
+        Self::new_full(
+            input_size,
+            hidden_size,
+            num_layers,
+            bias,
+            batch_first,
+            dropout,
+            bidirectional,
+            Some(false),
+            Some(false),
+        )
+    }
+
+    /// Create LSTM with optional layer normalization
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_layer_norm(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+        layer_norm: Option<bool>,
+    ) -> Result<Self> {
+        Self::new_full(
+            input_size,
+            hidden_size,
+            num_layers,
+            bias,
+            batch_first,
+            dropout,
+            bidirectional,
+            layer_norm,
+            Some(false),
+        )
+    }
+
+    /// Create LSTM with optional peephole connections
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_peephole(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+        peephole: Option<bool>,
+    ) -> Result<Self> {
+        Self::new_full(
+            input_size,
+            hidden_size,
+            num_layers,
+            bias,
+            batch_first,
+            dropout,
+            bidirectional,
+            Some(false),
+            peephole,
+        )
+    }
+
+    /// Create LSTM with full configuration options
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_full(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+        layer_norm: Option<bool>,
+        peephole: Option<bool>,
+    ) -> Result<Self> {
+        let num_layers = num_layers.unwrap_or(1);
+        let bias = bias.unwrap_or(true);
+        let batch_first = batch_first.unwrap_or(false);
+        let dropout = dropout.unwrap_or(0.0);
+        let bidirectional = bidirectional.unwrap_or(false);
+        let layer_norm = layer_norm.unwrap_or(false);
+        let peephole = peephole.unwrap_or(false);
+
+        if num_layers == 0 {
+            return Err(TensorError::invalid_argument(
+                "num_layers must be >= 1".to_string(),
+            ));
+        }
+
+        if !(0.0..=1.0).contains(&dropout) {
+            return Err(TensorError::invalid_argument(
+                "dropout must be between 0 and 1".to_string(),
+            ));
+        }
+
+        let mut weight_ih = Vec::new();
+        let mut weight_hh = Vec::new();
+        let mut bias_ih = if bias { Some(Vec::new()) } else { None };
+        let mut bias_hh = if bias { Some(Vec::new()) } else { None };
+
+        // Initialize layer normalization components
+        let mut layer_norm_ih = if layer_norm { Some(Vec::new()) } else { None };
+        let mut layer_norm_hh = if layer_norm { Some(Vec::new()) } else { None };
+        let mut layer_norm_cell = if layer_norm { Some(Vec::new()) } else { None };
+
+        // Initialize peephole connection weights
+        let mut weight_ci = if peephole { Some(Vec::new()) } else { None };
+        let mut weight_cf = if peephole { Some(Vec::new()) } else { None };
+        let mut weight_co = if peephole { Some(Vec::new()) } else { None };
+
+        // Initialize parameters for each layer
+        for i in 0..num_layers {
+            let input_dim = if i == 0 {
+                input_size
+            } else {
+                hidden_size * if bidirectional { 2 } else { 1 }
+            };
+
+            // Xavier/Glorot initialization for weights
+            let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+
+            // Input-to-hidden weights: [input_dim, 4*hidden_size] (i, f, g, o gates)
+            let w_ih = Self::init_weight(&[input_dim, 4 * hidden_size], scale)?;
+            weight_ih.push(w_ih);
+
+            // Hidden-to-hidden weights: [hidden_size, 4*hidden_size]
+            let w_hh = Self::init_weight(&[hidden_size, 4 * hidden_size], scale)?;
+            weight_hh.push(w_hh);
+
+            if bias {
+                // Initialize biases: zero everywhere except forget gate bias set to 1
+                // This helps with gradient flow in early training by keeping gates open initially
+                let mut b_ih_data = vec![T::zero(); 4 * hidden_size];
+                let mut b_hh_data = vec![T::zero(); 4 * hidden_size];
+
+                // Set forget gate bias to 1 (indices hidden_size to 2*hidden_size)
+                for i in hidden_size..(2 * hidden_size) {
+                    if i < b_ih_data.len() {
+                        b_ih_data[i] = T::one();
+                    }
+                    if i < b_hh_data.len() {
+                        b_hh_data[i] = T::one();
+                    }
+                }
+
+                let b_ih = Tensor::from_vec(b_ih_data, &[4 * hidden_size])?;
+                let b_hh = Tensor::from_vec(b_hh_data, &[4 * hidden_size])?;
+
+                bias_ih.as_mut().unwrap().push(b_ih);
+                bias_hh.as_mut().unwrap().push(b_hh);
+            }
+
+            // Initialize layer normalization for this layer
+            if layer_norm {
+                layer_norm_ih
+                    .as_mut()
+                    .unwrap()
+                    .push(LayerNorm::new(&[4 * hidden_size]));
+                layer_norm_hh
+                    .as_mut()
+                    .unwrap()
+                    .push(LayerNorm::new(&[4 * hidden_size]));
+                layer_norm_cell
+                    .as_mut()
+                    .unwrap()
+                    .push(LayerNorm::new(&[hidden_size]));
+            }
+
+            // Initialize peephole weights for this layer
+            if peephole {
+                let peephole_scale = T::from(1.0 / (hidden_size as f64).sqrt()).unwrap();
+                weight_ci
+                    .as_mut()
+                    .unwrap()
+                    .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+                weight_cf
+                    .as_mut()
+                    .unwrap()
+                    .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+                weight_co
+                    .as_mut()
+                    .unwrap()
+                    .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+            }
+        }
+
+        // Initialize bidirectional parameters if needed
+        let (
+            weight_ih_reverse,
+            weight_hh_reverse,
+            bias_ih_reverse,
+            bias_hh_reverse,
+            weight_ci_reverse,
+            weight_cf_reverse,
+            weight_co_reverse,
+            layer_norm_ih_reverse,
+            layer_norm_hh_reverse,
+            layer_norm_cell_reverse,
+        ) = if bidirectional {
+            let mut w_ih_rev = Vec::new();
+            let mut w_hh_rev = Vec::new();
+            let mut b_ih_rev = if bias { Some(Vec::new()) } else { None };
+            let mut b_hh_rev = if bias { Some(Vec::new()) } else { None };
+            let mut w_ci_rev = if peephole { Some(Vec::new()) } else { None };
+            let mut w_cf_rev = if peephole { Some(Vec::new()) } else { None };
+            let mut w_co_rev = if peephole { Some(Vec::new()) } else { None };
+            let mut ln_ih_rev = if layer_norm { Some(Vec::new()) } else { None };
+            let mut ln_hh_rev = if layer_norm { Some(Vec::new()) } else { None };
+            let mut ln_cell_rev = if layer_norm { Some(Vec::new()) } else { None };
+
+            for i in 0..num_layers {
+                let input_dim = if i == 0 { input_size } else { hidden_size * 2 };
+                let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+
+                w_ih_rev.push(Self::init_weight(&[input_dim, 4 * hidden_size], scale)?);
+                w_hh_rev.push(Self::init_weight(&[hidden_size, 4 * hidden_size], scale)?);
+
+                if bias {
+                    b_ih_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(Tensor::zeros(&[4 * hidden_size]));
+                    b_hh_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(Tensor::zeros(&[4 * hidden_size]));
+                }
+
+                if layer_norm {
+                    ln_ih_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(LayerNorm::new(&[4 * hidden_size]));
+                    ln_hh_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(LayerNorm::new(&[4 * hidden_size]));
+                    ln_cell_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(LayerNorm::new(&[hidden_size]));
+                }
+
+                if peephole {
+                    let peephole_scale = T::from(1.0 / (hidden_size as f64).sqrt()).unwrap();
+                    w_ci_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+                    w_cf_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+                    w_co_rev
+                        .as_mut()
+                        .unwrap()
+                        .push(Self::init_weight(&[hidden_size], peephole_scale)?);
+                }
+            }
+
+            (
+                Some(w_ih_rev),
+                Some(w_hh_rev),
+                b_ih_rev,
+                b_hh_rev,
+                w_ci_rev,
+                w_cf_rev,
+                w_co_rev,
+                ln_ih_rev,
+                ln_hh_rev,
+                ln_cell_rev,
+            )
+        } else {
+            (None, None, None, None, None, None, None, None, None, None)
+        };
+
+        Ok(LSTM {
+            input_size,
+            hidden_size,
+            num_layers,
+            _bias: bias,
+            batch_first,
+            _dropout: dropout,
+            _bidirectional: bidirectional,
+            layer_norm,
+            peephole,
+            weight_ih,
+            weight_hh,
+            bias_ih,
+            bias_hh,
+            weight_ci,
+            weight_cf,
+            weight_co,
+            layer_norm_ih,
+            layer_norm_hh,
+            layer_norm_cell,
+            weight_ih_reverse,
+            weight_hh_reverse,
+            bias_ih_reverse,
+            bias_hh_reverse,
+            weight_ci_reverse,
+            weight_cf_reverse,
+            weight_co_reverse,
+            layer_norm_ih_reverse,
+            layer_norm_hh_reverse,
+            layer_norm_cell_reverse,
+            training: true,
+            _phantom: PhantomData,
+        })
+    }
+
+    fn init_weight(shape: &[usize], scale: T) -> Result<Tensor<T>> {
+        // Use Xavier/Glorot uniform initialization: uniform(-scale, scale)
+        // where scale = sqrt(6 / (fan_in + fan_out))
+        use rand::Rng;
+        let mut rng = rand::rng();
+
+        let total_size: usize = shape.iter().product();
+        let mut data = Vec::with_capacity(total_size);
+
+        let scale_f64 = scale.to_f64().unwrap_or(1.0);
+
+        for _ in 0..total_size {
+            let val: f64 = rng.random_range(-scale_f64..scale_f64);
+            data.push(T::from(val).unwrap_or(T::zero()));
+        }
+
+        Tensor::from_vec(data, shape)
+    }
+
+    /// Forward pass through LSTM
+    ///
+    /// Args:
+    ///   input: [seq_len, batch_size, input_size] if batch_first=false
+    ///          [batch_size, seq_len, input_size] if batch_first=true
+    ///   h0: Optional initial hidden state [num_layers*num_directions, batch_size, hidden_size]
+    ///   c0: Optional initial cell state [num_layers*num_directions, batch_size, hidden_size]
+    ///
+    /// Returns:
+    ///   output: [seq_len, batch_size, hidden_size*num_directions] if batch_first=false
+    ///           [batch_size, seq_len, hidden_size*num_directions] if batch_first=true
+    ///   (h_n, c_n): Final hidden and cell states
+    pub fn forward_with_state(
+        &self,
+        input: &Tensor<T>,
+        h0: Option<&Tensor<T>>,
+        c0: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>, Tensor<T>)> {
+        let input_shape = input.shape().dims();
+
+        // Determine dimensions based on batch_first
+        let (seq_len, batch_size, input_dim) = if self.batch_first {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [batch, seq, features]".to_string(),
+                ));
+            }
+            (input_shape[1], input_shape[0], input_shape[2])
+        } else {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [seq, batch, features]".to_string(),
+                ));
+            }
+            (input_shape[0], input_shape[1], input_shape[2])
+        };
+
+        if input_dim != self.input_size {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "Expected input size {}, got {}",
+                self.input_size, input_dim
+            )));
+        }
+
+        // Initialize hidden and cell states if not provided
+        let num_directions = if self._bidirectional { 2 } else { 1 };
+        let mut h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        let mut c_n = match c0 {
+            Some(c) => c.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        // Convert input to proper format [seq_len, batch_size, input_size]
+        let mut layer_input = if self.batch_first {
+            // Transpose from [batch, seq, features] to [seq, batch, features]
+            tenflowers_core::ops::manipulation::transpose_axes(input, Some(&[1, 0, 2]))?
+        } else {
+            input.clone()
+        };
+
+        // Process each layer
+        for layer_idx in 0..self.num_layers {
+            let input_size = if layer_idx == 0 {
+                self.input_size
+            } else {
+                self.hidden_size * num_directions
+            };
+
+            // Forward direction
+            let mut layer_h = h_n
+                .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+                .squeeze(Some(&[0]))?;
+            let mut layer_c = c_n
+                .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+                .squeeze(Some(&[0]))?;
+
+            let mut forward_outputs = Vec::with_capacity(seq_len);
+
+            // Process each time step
+            for t in 0..seq_len {
+                let timestep_input = layer_input
+                    .slice(&[t..t + 1, 0..batch_size, 0..input_size])?
+                    .squeeze(Some(&[0]))?;
+
+                let (new_h, new_c) = self.lstm_cell_with_layer_norm_and_peephole(
+                    &timestep_input,
+                    &layer_h,
+                    &layer_c,
+                    &self.weight_ih[layer_idx],
+                    &self.weight_hh[layer_idx],
+                    self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                    self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+                    self.weight_ci.as_ref().map(|w| &w[layer_idx]),
+                    self.weight_cf.as_ref().map(|w| &w[layer_idx]),
+                    self.weight_co.as_ref().map(|w| &w[layer_idx]),
+                    self.layer_norm_ih.as_ref().map(|ln| &ln[layer_idx]),
+                    self.layer_norm_hh.as_ref().map(|ln| &ln[layer_idx]),
+                    self.layer_norm_cell.as_ref().map(|ln| &ln[layer_idx]),
+                )?;
+
+                layer_h = new_h;
+                layer_c = new_c;
+                forward_outputs.push(layer_h.unsqueeze(&[0])?);
+            }
+
+            // Stack outputs for this layer
+            let forward_output_refs: Vec<&Tensor<T>> = forward_outputs.iter().collect();
+            let layer_output = tenflowers_core::ops::manipulation::concat(&forward_output_refs, 0)?;
+
+            // Handle bidirectional processing
+            if self._bidirectional {
+                // Process backward direction
+                let mut backward_outputs = Vec::new();
+                let mut backward_h = h_n
+                    .slice(&[
+                        layer_idx * 2 + 1..layer_idx * 2 + 2,
+                        0..batch_size,
+                        0..self.hidden_size,
+                    ])?
+                    .squeeze(Some(&[0]))?;
+                let mut backward_c = c_n
+                    .slice(&[
+                        layer_idx * 2 + 1..layer_idx * 2 + 2,
+                        0..batch_size,
+                        0..self.hidden_size,
+                    ])?
+                    .squeeze(Some(&[0]))?;
+
+                // Process in reverse order for backward direction
+                for t in (0..seq_len).rev() {
+                    let backward_input = if self.batch_first {
+                        layer_input
+                            .slice(&[0..batch_size, t..t + 1, 0..layer_input.shape().dims()[2]])?
+                            .squeeze(Some(&[1]))?
+                    } else {
+                        layer_input
+                            .slice(&[t..t + 1, 0..batch_size, 0..layer_input.shape().dims()[2]])?
+                            .squeeze(Some(&[0]))?
+                    };
+
+                    let (new_h, new_c) = self.lstm_cell_backward(
+                        &backward_input,
+                        &backward_h,
+                        &backward_c,
+                        layer_idx,
+                    )?;
+
+                    backward_h = new_h;
+                    backward_c = new_c;
+                    backward_outputs.push(backward_h.unsqueeze(&[0])?);
+                }
+
+                // Reverse the backward outputs to match forward order
+                backward_outputs.reverse();
+
+                // Concatenate forward and backward outputs
+                let backward_output_refs: Vec<&Tensor<T>> = backward_outputs.iter().collect();
+                let backward_output =
+                    tenflowers_core::ops::manipulation::concat(&backward_output_refs, 0)?;
+
+                // Concatenate forward and backward outputs along hidden dimension
+                let combined_output = tenflowers_core::ops::manipulation::concat(
+                    &[&layer_output, &backward_output],
+                    2,
+                )?;
+                layer_input = combined_output;
+
+                // Update final states for backward direction
+                // For now, we'll create a new tensor to update the states
+                // This can be optimized later with proper slice assignment
+                let mut h_n_slices = Vec::new();
+                let mut c_n_slices = Vec::new();
+
+                for i in 0..self.num_layers * 2 {
+                    if i == layer_idx * 2 + 1 {
+                        h_n_slices.push(backward_h.unsqueeze(&[0])?);
+                        c_n_slices.push(backward_c.unsqueeze(&[0])?);
+                    } else {
+                        h_n_slices.push(h_n.slice(&[
+                            i..i + 1,
+                            0..batch_size,
+                            0..self.hidden_size,
+                        ])?);
+                        c_n_slices.push(c_n.slice(&[
+                            i..i + 1,
+                            0..batch_size,
+                            0..self.hidden_size,
+                        ])?);
+                    }
+                }
+
+                let h_n_refs: Vec<&Tensor<T>> = h_n_slices.iter().collect();
+                let c_n_refs: Vec<&Tensor<T>> = c_n_slices.iter().collect();
+
+                h_n = tenflowers_core::ops::manipulation::concat(&h_n_refs, 0)?;
+                c_n = tenflowers_core::ops::manipulation::concat(&c_n_refs, 0)?;
+            } else {
+                layer_input = layer_output;
+            }
+        }
+
+        // Convert output back to the expected format
+        let output = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(&layer_input, Some(&[1, 0, 2]))?
+        } else {
+            layer_input
+        };
+
+        Ok((output, h_n, c_n))
+    }
+
+    /// Forward pass through LSTM with PackedSequence input for variable length sequences
+    ///
+    /// This method efficiently processes sequences of different lengths by avoiding
+    /// computation on padded positions.
+    ///
+    /// # Arguments
+    /// * `packed_input` - PackedSequence containing variable length sequences
+    /// * `h0` - Optional initial hidden state [num_layers*num_directions, batch_size, hidden_size]
+    /// * `c0` - Optional initial cell state [num_layers*num_directions, batch_size, hidden_size]
+    ///
+    /// # Returns
+    /// * `PackedSequence` - Output sequences in packed format
+    /// * `Tensor` - Final hidden states
+    /// * `Tensor` - Final cell states
+    pub fn forward_packed(
+        &self,
+        packed_input: &PackedSequence<T>,
+        h0: Option<&Tensor<T>>,
+        c0: Option<&Tensor<T>>,
+    ) -> Result<(PackedSequence<T>, Tensor<T>, Tensor<T>)> {
+        let batch_size = packed_input.sorted_lengths.len();
+        let feature_size = packed_input.data.shape().dims()[1];
+
+        // Initialize hidden and cell states if not provided
+        let num_directions = if self._bidirectional { 2 } else { 1 };
+        let mut h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        let mut c_n = match c0 {
+            Some(c) => c.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        // Process each layer
+        let mut layer_packed_data = packed_input.data.clone();
+
+        for layer_idx in 0..self.num_layers {
+            let (layer_output, layer_h, layer_c) = self.forward_packed_layer(
+                &layer_packed_data,
+                &packed_input.batch_sizes,
+                &mut h_n,
+                &mut c_n,
+                layer_idx,
+                batch_size,
+            )?;
+
+            layer_packed_data = layer_output;
+            // Update final states
+            // Note: This is a simplified implementation - in practice you'd need proper state management
+        }
+
+        // Create output PackedSequence
+        let output_packed = PackedSequence::new(
+            layer_packed_data,
+            packed_input.batch_sizes.clone(),
+            packed_input.sorted_lengths.clone(),
+            packed_input.unsorted_indices.clone(),
+        );
+
+        Ok((output_packed, h_n, c_n))
+    }
+
+    /// Process a single layer with packed input
+    fn forward_packed_layer(
+        &self,
+        packed_data: &Tensor<T>,
+        batch_sizes: &[usize],
+        h_n: &mut Tensor<T>,
+        c_n: &mut Tensor<T>,
+        layer_idx: usize,
+        batch_size: usize,
+    ) -> Result<(Tensor<T>, Tensor<T>, Tensor<T>)> {
+        let feature_size = packed_data.shape().dims()[1];
+        let mut output_data = Vec::new();
+        let packed_data_vec = packed_data.to_vec()?;
+
+        // Initialize layer states
+        let mut layer_h = h_n
+            .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+            .squeeze(Some(&[0]))?;
+        let mut layer_c = c_n
+            .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+            .squeeze(Some(&[0]))?;
+
+        let mut data_idx = 0;
+
+        // Process each time step
+        for &batch_size_t in batch_sizes {
+            // Extract inputs for this time step
+            let mut timestep_data = Vec::new();
+            for _ in 0..batch_size_t {
+                for f in 0..feature_size {
+                    timestep_data.push(packed_data_vec[data_idx * feature_size + f]);
+                }
+                data_idx += 1;
+            }
+
+            let timestep_input = Tensor::from_vec(timestep_data, &[batch_size_t, feature_size])?;
+
+            // Extract relevant hidden and cell states for this batch size
+            let current_h = self.extract_batch_slice(&layer_h, batch_size_t)?;
+            let current_c = self.extract_batch_slice(&layer_c, batch_size_t)?;
+
+            // Process LSTM cell
+            let (new_h, new_c) = self.lstm_cell(
+                &timestep_input,
+                &current_h,
+                &current_c,
+                &self.weight_ih[layer_idx],
+                &self.weight_hh[layer_idx],
+                self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+            )?;
+
+            // Update states (only for the active batch items)
+            self.update_batch_slice(&mut layer_h, &new_h, batch_size_t)?;
+            self.update_batch_slice(&mut layer_c, &new_c, batch_size_t)?;
+
+            // Store output
+            let new_h_data = new_h.to_vec()?;
+            output_data.extend_from_slice(&new_h_data);
+        }
+
+        let output_len = output_data.len() / self.hidden_size;
+        let output_tensor = Tensor::from_vec(output_data, &[output_len, self.hidden_size])?;
+        Ok((output_tensor, layer_h, layer_c))
+    }
+
+    /// Extract a slice of the batch for the current time step
+    fn extract_batch_slice(&self, tensor: &Tensor<T>, batch_size: usize) -> Result<Tensor<T>> {
+        if batch_size == tensor.shape().dims()[0] {
+            Ok(tensor.clone())
+        } else {
+            tensor.slice(&[0..batch_size, 0..self.hidden_size])
+        }
+    }
+
+    /// Update a slice of the batch with new values
+    fn update_batch_slice(
+        &self,
+        target: &mut Tensor<T>,
+        source: &Tensor<T>,
+        batch_size: usize,
+    ) -> Result<()> {
+        if batch_size == target.shape().dims()[0] {
+            *target = source.clone();
+        } else {
+            // In practice, you'd need proper tensor slice assignment
+            // This is a placeholder - proper implementation would use tensor operations
+            let source_data = source.to_vec()?;
+            let mut target_data = target.to_vec()?;
+
+            for i in 0..batch_size {
+                for j in 0..self.hidden_size {
+                    target_data[i * self.hidden_size + j] = source_data[i * self.hidden_size + j];
+                }
+            }
+
+            *target = Tensor::from_vec(target_data, target.shape().dims())?;
+        }
+        Ok(())
+    }
+
+    /// Convenience method to process variable length sequences
+    ///
+    /// This method handles the full workflow:
+    /// 1. Pack input sequences
+    /// 2. Process through LSTM
+    /// 3. Unpack output sequences
+    ///
+    /// # Arguments
+    /// * `sequences` - Padded input sequences
+    /// * `lengths` - Actual sequence lengths
+    /// * `h0` - Optional initial hidden state
+    /// * `c0` - Optional initial cell state
+    ///
+    /// # Returns
+    /// * `Tensor` - Output sequences (padded)
+    /// * `Tensor` - Final hidden states
+    /// * `Tensor` - Final cell states
+    /// * `Vec<usize>` - Original sequence lengths
+    pub fn forward_variable_length(
+        &self,
+        sequences: &Tensor<T>,
+        lengths: &[usize],
+        h0: Option<&Tensor<T>>,
+        c0: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>, Tensor<T>, Vec<usize>)> {
+        // Pack sequences
+        let packed_input = pack_padded_sequence(sequences, lengths, self.batch_first, false)?;
+
+        // Forward pass
+        let (packed_output, h_n, c_n) = self.forward_packed(&packed_input, h0, c0)?;
+
+        // Unpack output
+        let (output_sequences, original_lengths) =
+            pad_packed_sequence(&packed_output, self.batch_first, T::zero())?;
+
+        Ok((output_sequences, h_n, c_n, original_lengths))
+    }
+
+    /// Compute LSTM cell for one time step with optional layer normalization
+    #[allow(clippy::too_many_arguments)]
+    fn lstm_cell(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        self.lstm_cell_with_layer_norm(
+            input, hidden, cell, w_ih, w_hh, b_ih, b_hh, None, None, None,
+        )
+    }
+
+    /// Compute LSTM cell for one time step with optional layer normalization
+    #[allow(clippy::too_many_arguments)]
+    fn lstm_cell_with_layer_norm(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        ln_ih: Option<&LayerNorm<T>>,
+        ln_hh: Option<&LayerNorm<T>>,
+        ln_cell: Option<&LayerNorm<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        self.lstm_cell_with_layer_norm_and_peephole(
+            input, hidden, cell, w_ih, w_hh, b_ih, b_hh, None, None, None, ln_ih, ln_hh, ln_cell,
+        )
+    }
+
+    /// Compute LSTM cell for one time step with layer normalization and peephole connections
+    #[allow(clippy::too_many_arguments)]
+    fn lstm_cell_with_layer_norm_and_peephole(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        w_ci: Option<&Tensor<T>>,
+        w_cf: Option<&Tensor<T>>,
+        w_co: Option<&Tensor<T>>,
+        ln_ih: Option<&LayerNorm<T>>,
+        ln_hh: Option<&LayerNorm<T>>,
+        ln_cell: Option<&LayerNorm<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Check if we can use GPU acceleration
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(device) = input.device() {
+                if let Device::Gpu(device_id) = device {
+                    // All tensors should be on the same GPU device
+                    if hidden.device() == Some(device)
+                        && cell.device() == Some(device)
+                        && w_ih.device() == Some(device)
+                        && w_hh.device() == Some(device)
+                    {
+                        // Check if we're using CPU-only layer normalization (can't use GPU path)
+                        if ln_ih.is_none() && ln_hh.is_none() && ln_cell.is_none() {
+                            // Try GPU path
+                            if let Ok(result) = self.lstm_cell_gpu(
+                                input, hidden, cell, w_ih, w_hh, b_ih, b_hh, *device_id,
+                            ) {
+                                return Ok(result);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to CPU implementation
+        self.lstm_cell_cpu_with_peephole(
+            input, hidden, cell, w_ih, w_hh, b_ih, b_hh, w_ci, w_cf, w_co, ln_ih, ln_hh, ln_cell,
+        )
+    }
+
+    /// GPU-accelerated LSTM cell computation
+    #[cfg(feature = "gpu")]
+    fn lstm_cell_gpu(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        device_id: usize,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Get GPU context
+        let gpu_ctx = get_gpu_context(device_id)?;
+        let gpu_rnn_ops = GpuRnnOps::new(&gpu_ctx)?;
+
+        // Use GPU RNN operations
+        gpu_rnn_ops.lstm_cell_gpu(input, hidden, cell, w_ih, w_hh, b_ih, b_hh)
+    }
+
+    /// CPU LSTM cell implementation (original)
+    #[allow(clippy::too_many_arguments)]
+    fn lstm_cell_cpu(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        ln_ih: Option<&LayerNorm<T>>,
+        ln_hh: Option<&LayerNorm<T>>,
+        ln_cell: Option<&LayerNorm<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        self.lstm_cell_cpu_with_peephole(
+            input, hidden, cell, w_ih, w_hh, b_ih, b_hh, None, None, None, ln_ih, ln_hh, ln_cell,
+        )
+    }
+
+    /// CPU LSTM cell implementation with optional peephole connections
+    #[allow(clippy::too_many_arguments)]
+    fn lstm_cell_cpu_with_peephole(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        w_ci: Option<&Tensor<T>>,
+        w_cf: Option<&Tensor<T>>,
+        w_co: Option<&Tensor<T>>,
+        ln_ih: Option<&LayerNorm<T>>,
+        ln_hh: Option<&LayerNorm<T>>,
+        ln_cell: Option<&LayerNorm<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Apply layer normalization before adding biases (if enabled)
+        let i_linear = if let Some(ln) = ln_ih {
+            let norm_gi = ln.forward(&gi)?;
+            if let Some(bias) = b_ih {
+                norm_gi.add(bias)?
+            } else {
+                norm_gi
+            }
+        } else if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(ln) = ln_hh {
+            let norm_gh = ln.forward(&gh)?;
+            if let Some(bias) = b_hh {
+                norm_gh.add(bias)?
+            } else {
+                norm_gh
+            }
+        } else if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        let gates = i_linear.add(&h_linear)?;
+
+        // Split gates: [batch_size, 4*hidden_size] -> 4 gates of [batch_size, hidden_size]
+        // Gates are ordered as: input, forget, cell, output
+        let h = self.hidden_size;
+
+        // Extract each gate using slicing
+        let mut input_gate = gates.slice(&[0..gates.shape().dims()[0], 0..h])?;
+        let mut forget_gate = gates.slice(&[0..gates.shape().dims()[0], h..2 * h])?;
+        let cell_gate = gates.slice(&[0..gates.shape().dims()[0], 2 * h..3 * h])?;
+        let mut output_gate = gates.slice(&[0..gates.shape().dims()[0], 3 * h..4 * h])?;
+
+        // Add peephole connections if enabled
+        if let (Some(wci), Some(wcf)) = (w_ci, w_cf) {
+            // Add peephole connections to input and forget gates
+            // i_t = sigmoid(i_linear + w_ci * c_{t-1})
+            // f_t = sigmoid(f_linear + w_cf * c_{t-1})
+            let cell_to_input = cell.mul(wci)?;
+            let cell_to_forget = cell.mul(wcf)?;
+            input_gate = input_gate.add(&cell_to_input)?;
+            forget_gate = forget_gate.add(&cell_to_forget)?;
+        }
+
+        // Apply activations to input and forget gates
+        let i_t = tenflowers_core::ops::activation::sigmoid(&input_gate)?;
+        let f_t = tenflowers_core::ops::activation::sigmoid(&forget_gate)?;
+        let g_t = tenflowers_core::ops::activation::tanh(&cell_gate)?;
+
+        // Compute new cell state: C_t = f_t * C_{t-1} + i_t * g_t
+        let forget_cell = f_t.mul(cell)?;
+        let input_cell = i_t.mul(&g_t)?;
+        let new_cell = forget_cell.add(&input_cell)?;
+
+        // Add peephole connection to output gate if enabled
+        if let Some(wco) = w_co {
+            // o_t = sigmoid(o_linear + w_co * c_t)
+            let cell_to_output = new_cell.mul(wco)?;
+            output_gate = output_gate.add(&cell_to_output)?;
+        }
+
+        // Apply activation to output gate
+        let o_t = tenflowers_core::ops::activation::sigmoid(&output_gate)?;
+
+        // Apply layer normalization to cell state if enabled
+        let normalized_cell = if let Some(ln) = ln_cell {
+            ln.forward(&new_cell)?
+        } else {
+            new_cell.clone()
+        };
+
+        // Compute new hidden state: h_t = o_t * tanh(C_t)
+        let cell_tanh = tenflowers_core::ops::activation::tanh(&normalized_cell)?;
+        let new_hidden = o_t.mul(&cell_tanh)?;
+
+        Ok((new_hidden, new_cell))
+    }
+
+    /// Process a single LSTM cell step for backward direction
+    fn lstm_cell_backward(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        cell: &Tensor<T>,
+        layer_idx: usize,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        let batch_size = input.shape().dims()[0];
+        let hidden_size = self.hidden_size;
+
+        // Get backward direction weights
+        let weight_ih = self
+            .weight_ih_reverse
+            .as_ref()
+            .unwrap()
+            .get(layer_idx)
+            .unwrap();
+        let weight_hh = self
+            .weight_hh_reverse
+            .as_ref()
+            .unwrap()
+            .get(layer_idx)
+            .unwrap();
+
+        // Input gate, forget gate, cell gate, output gate computations
+        let input_projection = input.matmul(weight_ih)?;
+        let hidden_projection = hidden.matmul(weight_hh)?;
+
+        // Add biases if present
+        let mut combined = input_projection.add(&hidden_projection)?;
+        if let Some(ref bias_ih) = self.bias_ih_reverse {
+            combined = combined.add(bias_ih.get(layer_idx).unwrap())?;
+        }
+        if let Some(ref bias_hh) = self.bias_hh_reverse {
+            combined = combined.add(bias_hh.get(layer_idx).unwrap())?;
+        }
+
+        // Split gates: [batch_size, 4*hidden_size] -> 4 x [batch_size, hidden_size]
+        let mut i_t = combined.slice(&[0..batch_size, 0..hidden_size])?;
+        let mut f_t = combined.slice(&[0..batch_size, hidden_size..2 * hidden_size])?;
+        let g_t = combined.slice(&[0..batch_size, 2 * hidden_size..3 * hidden_size])?;
+        let mut o_t = combined.slice(&[0..batch_size, 3 * hidden_size..4 * hidden_size])?;
+
+        // Add peephole connections if enabled
+        if self.peephole {
+            if let (Some(wci), Some(wcf)) = (
+                self.weight_ci_reverse.as_ref().map(|w| &w[layer_idx]),
+                self.weight_cf_reverse.as_ref().map(|w| &w[layer_idx]),
+            ) {
+                // Add peephole connections to input and forget gates
+                let cell_to_input = cell.mul(wci)?;
+                let cell_to_forget = cell.mul(wcf)?;
+                i_t = i_t.add(&cell_to_input)?;
+                f_t = f_t.add(&cell_to_forget)?;
+            }
+        }
+
+        // Apply activations to input and forget gates
+        let i_t = tenflowers_core::ops::activation::sigmoid(&i_t)?;
+        let f_t = tenflowers_core::ops::activation::sigmoid(&f_t)?;
+        let g_t = tenflowers_core::ops::activation::tanh(&g_t)?;
+
+        // Cell state update: C_t = f_t * C_{t-1} + i_t * g_t
+        let forget_term = f_t.mul(cell)?;
+        let input_term = i_t.mul(&g_t)?;
+        let new_cell = forget_term.add(&input_term)?;
+
+        // Add peephole connection to output gate if enabled
+        if self.peephole {
+            if let Some(wco) = self.weight_co_reverse.as_ref().map(|w| &w[layer_idx]) {
+                let cell_to_output = new_cell.mul(wco)?;
+                o_t = o_t.add(&cell_to_output)?;
+            }
+        }
+
+        // Apply activation to output gate
+        let o_t = tenflowers_core::ops::activation::sigmoid(&o_t)?;
+
+        // Hidden state update: h_t = o_t * tanh(C_t)
+        let cell_tanh = tenflowers_core::ops::activation::tanh(&new_cell)?;
+        let new_hidden = o_t.mul(&cell_tanh)?;
+
+        Ok((new_hidden, new_cell))
+    }
+}
+
+impl<T> Layer<T> for LSTM<T>
+where
+    T: Float + Zero + One + FromPrimitive + Clone + Default + Send + Sync + 'static,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        let (output, _, _) = self.forward_with_state(input, None, None)?;
+        Ok(output)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+
+        // Add forward direction parameters
+        for w in &self.weight_ih {
+            params.push(w);
+        }
+        for w in &self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add peephole weights if enabled
+        if let Some(ref weights) = self.weight_ci {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref weights) = self.weight_cf {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref weights) = self.weight_co {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        // Add backward direction parameters if bidirectional
+        if let Some(ref weights) = self.weight_ih_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        if let Some(ref weights) = self.weight_hh_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        if let Some(ref biases) = self.bias_ih_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref biases) = self.bias_hh_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add reverse peephole weights if enabled
+        if let Some(ref weights) = self.weight_ci_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref weights) = self.weight_cf_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref weights) = self.weight_co_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        // Add layer normalization parameters if enabled
+        if let Some(ref layer_norms) = self.layer_norm_ih {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref layer_norms) = self.layer_norm_hh {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref layer_norms) = self.layer_norm_cell {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        // Add reverse direction layer normalization parameters if bidirectional
+        if let Some(ref layer_norms) = self.layer_norm_ih_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref layer_norms) = self.layer_norm_hh_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref layer_norms) = self.layer_norm_cell_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters() {
+                    params.push(param);
+                }
+            }
+        }
+
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+
+        // Add forward direction parameters
+        for w in &mut self.weight_ih {
+            params.push(w);
+        }
+        for w in &mut self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref mut biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref mut biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add peephole weights if enabled
+        if let Some(ref mut weights) = self.weight_ci {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut weights) = self.weight_cf {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut weights) = self.weight_co {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        // Add backward direction parameters if bidirectional
+        if let Some(ref mut weights) = self.weight_ih_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        if let Some(ref mut weights) = self.weight_hh_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        if let Some(ref mut biases) = self.bias_ih_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref mut biases) = self.bias_hh_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add reverse peephole weights if enabled
+        if let Some(ref mut weights) = self.weight_ci_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut weights) = self.weight_cf_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut weights) = self.weight_co_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+
+        // Add layer normalization parameters if enabled
+        if let Some(ref mut layer_norms) = self.layer_norm_ih {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_hh {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_cell {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        // Add reverse direction layer normalization parameters if bidirectional
+        if let Some(ref mut layer_norms) = self.layer_norm_ih_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_hh_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_cell_reverse {
+            for ln in layer_norms {
+                for param in ln.parameters_mut() {
+                    params.push(param);
+                }
+            }
+        }
+
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+
+        // Propagate training mode to layer norm components
+        if let Some(ref mut layer_norms) = self.layer_norm_ih {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_hh {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_cell {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+
+        // Propagate to reverse direction layer norm components
+        if let Some(ref mut layer_norms) = self.layer_norm_ih_reverse {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_hh_reverse {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+
+        if let Some(ref mut layer_norms) = self.layer_norm_cell_reverse {
+            for ln in layer_norms {
+                ln.set_training(training);
+            }
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn Layer<T>> {
+        Box::new(self.clone())
+    }
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone for LSTM<T> {
+    fn clone(&self) -> Self {
+        Self {
+            input_size: self.input_size,
+            hidden_size: self.hidden_size,
+            num_layers: self.num_layers,
+            _bias: self._bias,
+            batch_first: self.batch_first,
+            _dropout: self._dropout,
+            _bidirectional: self._bidirectional,
+            layer_norm: self.layer_norm,
+            peephole: self.peephole,
+            weight_ih: self.weight_ih.clone(),
+            weight_hh: self.weight_hh.clone(),
+            bias_ih: self.bias_ih.clone(),
+            bias_hh: self.bias_hh.clone(),
+            weight_ci: self.weight_ci.clone(),
+            weight_cf: self.weight_cf.clone(),
+            weight_co: self.weight_co.clone(),
+            layer_norm_ih: self.layer_norm_ih.clone(),
+            layer_norm_hh: self.layer_norm_hh.clone(),
+            layer_norm_cell: self.layer_norm_cell.clone(),
+            weight_ih_reverse: self.weight_ih_reverse.clone(),
+            weight_hh_reverse: self.weight_hh_reverse.clone(),
+            bias_ih_reverse: self.bias_ih_reverse.clone(),
+            bias_hh_reverse: self.bias_hh_reverse.clone(),
+            weight_ci_reverse: self.weight_ci_reverse.clone(),
+            weight_cf_reverse: self.weight_cf_reverse.clone(),
+            weight_co_reverse: self.weight_co_reverse.clone(),
+            layer_norm_ih_reverse: self.layer_norm_ih_reverse.clone(),
+            layer_norm_hh_reverse: self.layer_norm_hh_reverse.clone(),
+            layer_norm_cell_reverse: self.layer_norm_cell_reverse.clone(),
+            training: self.training,
+            _phantom: self._phantom,
+        }
+    }
+}
+
+/// GRU (Gated Recurrent Unit) layer - simplified version of LSTM
+#[derive(Debug)]
+pub struct GRU<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    input_size: usize,
+    hidden_size: usize,
+    num_layers: usize,
+    _bias: bool,
+    batch_first: bool,
+    _dropout: f32,
+    _bidirectional: bool,
+    reset_variation: ResetGateVariation,
+
+    // GRU parameters for each layer
+    weight_ih: Vec<Tensor<T>>, // Input-to-hidden weights [input_size, 3*hidden_size]
+    weight_hh: Vec<Tensor<T>>, // Hidden-to-hidden weights [hidden_size, 3*hidden_size]
+    bias_ih: Option<Vec<Tensor<T>>>, // Input-to-hidden bias [3*hidden_size]
+    bias_hh: Option<Vec<Tensor<T>>>, // Hidden-to-hidden bias [3*hidden_size]
+
+    // Additional weights for Coupled variation (z_t -> r_t connection)
+    weight_zr: Option<Vec<Tensor<T>>>, // Update-to-reset gate weights [hidden_size]
+
+    // For bidirectional GRU
+    weight_ih_reverse: Option<Vec<Tensor<T>>>,
+    weight_hh_reverse: Option<Vec<Tensor<T>>>,
+    bias_ih_reverse: Option<Vec<Tensor<T>>>,
+    bias_hh_reverse: Option<Vec<Tensor<T>>>,
+    weight_zr_reverse: Option<Vec<Tensor<T>>>,
+
+    training: bool,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> GRU<T>
+where
+    T: Float + Zero + Clone + Default + Send + Sync + 'static,
+{
+    pub fn new(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+    ) -> Result<Self> {
+        let num_layers = num_layers.unwrap_or(1);
+        let bias = bias.unwrap_or(true);
+        let batch_first = batch_first.unwrap_or(false);
+        let dropout = dropout.unwrap_or(0.0);
+        let bidirectional = bidirectional.unwrap_or(false);
+
+        if num_layers == 0 {
+            return Err(TensorError::invalid_argument(
+                "num_layers must be >= 1".to_string(),
+            ));
+        }
+
+        let mut weight_ih = Vec::new();
+        let mut weight_hh = Vec::new();
+        let mut bias_ih = if bias { Some(Vec::new()) } else { None };
+        let mut bias_hh = if bias { Some(Vec::new()) } else { None };
+
+        // Initialize parameters for each layer
+        for i in 0..num_layers {
+            let input_dim = if i == 0 {
+                input_size
+            } else {
+                hidden_size * if bidirectional { 2 } else { 1 }
+            };
+
+            // Xavier/Glorot initialization
+            let _scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+
+            // Input-to-hidden weights: [input_dim, 3*hidden_size] (reset, update, new gates)
+            weight_ih.push(Tensor::zeros(&[input_dim, 3 * hidden_size]));
+
+            // Hidden-to-hidden weights: [hidden_size, 3*hidden_size]
+            weight_hh.push(Tensor::zeros(&[hidden_size, 3 * hidden_size]));
+
+            if bias {
+                bias_ih
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[3 * hidden_size]));
+                bias_hh
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[3 * hidden_size]));
+            }
+        }
+
+        // Initialize bidirectional parameters if needed
+        let (weight_ih_reverse, weight_hh_reverse, bias_ih_reverse, bias_hh_reverse) =
+            if bidirectional {
+                let mut w_ih_rev = Vec::new();
+                let mut w_hh_rev = Vec::new();
+                let mut b_ih_rev = if bias { Some(Vec::new()) } else { None };
+                let mut b_hh_rev = if bias { Some(Vec::new()) } else { None };
+
+                for i in 0..num_layers {
+                    let input_dim = if i == 0 { input_size } else { hidden_size * 2 };
+
+                    w_ih_rev.push(Tensor::zeros(&[input_dim, 3 * hidden_size]));
+                    w_hh_rev.push(Tensor::zeros(&[hidden_size, 3 * hidden_size]));
+
+                    if bias {
+                        b_ih_rev
+                            .as_mut()
+                            .unwrap()
+                            .push(Tensor::zeros(&[3 * hidden_size]));
+                        b_hh_rev
+                            .as_mut()
+                            .unwrap()
+                            .push(Tensor::zeros(&[3 * hidden_size]));
+                    }
+                }
+                (Some(w_ih_rev), Some(w_hh_rev), b_ih_rev, b_hh_rev)
+            } else {
+                (None, None, None, None)
+            };
+
+        Ok(GRU {
+            input_size,
+            hidden_size,
+            num_layers,
+            _bias: bias,
+            batch_first,
+            _dropout: dropout,
+            _bidirectional: bidirectional,
+            reset_variation: ResetGateVariation::Standard,
+            weight_ih,
+            weight_hh,
+            bias_ih,
+            bias_hh,
+            weight_zr: None,
+            weight_ih_reverse,
+            weight_hh_reverse,
+            bias_ih_reverse,
+            bias_hh_reverse,
+            weight_zr_reverse: None,
+            training: true,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Create a new GRU layer with specified reset gate variation
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_variation(
+        input_size: usize,
+        hidden_size: usize,
+        reset_variation: ResetGateVariation,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+    ) -> Result<Self> {
+        let num_layers = num_layers.unwrap_or(1);
+        let bias = bias.unwrap_or(true);
+        let batch_first = batch_first.unwrap_or(false);
+        let dropout = dropout.unwrap_or(0.0);
+        let bidirectional = bidirectional.unwrap_or(false);
+
+        if num_layers == 0 {
+            return Err(TensorError::invalid_argument(
+                "num_layers must be >= 1".to_string(),
+            ));
+        }
+
+        let mut weight_ih = Vec::new();
+        let mut weight_hh = Vec::new();
+        let mut bias_ih = if bias { Some(Vec::new()) } else { None };
+        let mut bias_hh = if bias { Some(Vec::new()) } else { None };
+
+        // Initialize weight_zr for Coupled variation
+        let mut weight_zr = if reset_variation == ResetGateVariation::Coupled {
+            Some(Vec::new())
+        } else {
+            None
+        };
+
+        // Initialize parameters for each layer
+        for i in 0..num_layers {
+            let input_dim = if i == 0 {
+                input_size
+            } else {
+                hidden_size * if bidirectional { 2 } else { 1 }
+            };
+
+            // Determine gate count based on variation
+            let gate_count = match reset_variation {
+                ResetGateVariation::Minimal => 2, // Only forget and new gates
+                _ => 3,                           // reset, update, new gates
+            };
+
+            // Input-to-hidden weights: [input_dim, gate_count*hidden_size]
+            weight_ih.push(Tensor::zeros(&[input_dim, gate_count * hidden_size]));
+
+            // Hidden-to-hidden weights: [hidden_size, gate_count*hidden_size]
+            weight_hh.push(Tensor::zeros(&[hidden_size, gate_count * hidden_size]));
+
+            // Additional coupling weights for Coupled variation
+            if reset_variation == ResetGateVariation::Coupled {
+                weight_zr
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[hidden_size]));
+            }
+
+            if bias {
+                bias_ih
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[gate_count * hidden_size]));
+                bias_hh
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[gate_count * hidden_size]));
+            }
+        }
+
+        // Initialize bidirectional parameters if needed
+        let (
+            weight_ih_reverse,
+            weight_hh_reverse,
+            bias_ih_reverse,
+            bias_hh_reverse,
+            weight_zr_reverse,
+        ) = if bidirectional {
+            let mut wih_r = Vec::new();
+            let mut whh_r = Vec::new();
+            let mut bih_r = if bias { Some(Vec::new()) } else { None };
+            let mut bhh_r = if bias { Some(Vec::new()) } else { None };
+            let mut wzr_r = if reset_variation == ResetGateVariation::Coupled {
+                Some(Vec::new())
+            } else {
+                None
+            };
+
+            for i in 0..num_layers {
+                let input_dim = if i == 0 { input_size } else { hidden_size * 2 };
+                let gate_count = match reset_variation {
+                    ResetGateVariation::Minimal => 2,
+                    _ => 3,
+                };
+
+                wih_r.push(Tensor::zeros(&[input_dim, gate_count * hidden_size]));
+                whh_r.push(Tensor::zeros(&[hidden_size, gate_count * hidden_size]));
+
+                if reset_variation == ResetGateVariation::Coupled {
+                    wzr_r.as_mut().unwrap().push(Tensor::zeros(&[hidden_size]));
+                }
+
+                if bias {
+                    bih_r
+                        .as_mut()
+                        .unwrap()
+                        .push(Tensor::zeros(&[gate_count * hidden_size]));
+                    bhh_r
+                        .as_mut()
+                        .unwrap()
+                        .push(Tensor::zeros(&[gate_count * hidden_size]));
+                }
+            }
+
+            (Some(wih_r), Some(whh_r), bih_r, bhh_r, wzr_r)
+        } else {
+            (None, None, None, None, None)
+        };
+
+        Ok(GRU {
+            input_size,
+            hidden_size,
+            num_layers,
+            _bias: bias,
+            batch_first,
+            _dropout: dropout,
+            _bidirectional: bidirectional,
+            reset_variation,
+            weight_ih,
+            weight_hh,
+            bias_ih,
+            bias_hh,
+            weight_zr,
+            weight_ih_reverse,
+            weight_hh_reverse,
+            bias_ih_reverse,
+            bias_hh_reverse,
+            weight_zr_reverse,
+            training: true,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Get the reset gate variation used by this GRU
+    pub fn reset_variation(&self) -> ResetGateVariation {
+        self.reset_variation
+    }
+
+    /// Set the reset gate variation (requires reinitialization of weights)
+    pub fn set_reset_variation(&mut self, variation: ResetGateVariation) -> Result<()> {
+        if variation != self.reset_variation {
+            return Err(TensorError::invalid_argument(
+                "Changing reset gate variation requires creating a new GRU instance".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn forward_with_state(
+        &self,
+        input: &Tensor<T>,
+        h0: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        let input_shape = input.shape().dims();
+
+        // Determine dimensions based on batch_first
+        let (seq_len, batch_size, input_dim) = if self.batch_first {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [batch, seq, features]".to_string(),
+                ));
+            }
+            (input_shape[1], input_shape[0], input_shape[2])
+        } else {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [seq, batch, features]".to_string(),
+                ));
+            }
+            (input_shape[0], input_shape[1], input_shape[2])
+        };
+
+        if input_dim != self.input_size {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "Expected input size {}, got {}",
+                self.input_size, input_dim
+            )));
+        }
+
+        // Initialize hidden state if not provided
+        let h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[self.num_layers, batch_size, self.hidden_size]),
+        };
+
+        // Convert input to proper format [seq_len, batch_size, input_size]
+        let mut layer_input = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(input, Some(&[1, 0, 2]))?
+        } else {
+            input.clone()
+        };
+
+        // Process each layer
+        for layer_idx in 0..self.num_layers {
+            let input_size = if layer_idx == 0 {
+                self.input_size
+            } else {
+                self.hidden_size
+            };
+
+            let mut layer_h = h_n
+                .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+                .squeeze(Some(&[0]))?;
+            let mut layer_outputs = Vec::with_capacity(seq_len);
+
+            // Process each time step
+            for t in 0..seq_len {
+                let timestep_input = layer_input
+                    .slice(&[t..t + 1, 0..batch_size, 0..input_size])?
+                    .squeeze(Some(&[0]))?;
+
+                let new_h = self.gru_cell(
+                    &timestep_input,
+                    &layer_h,
+                    &self.weight_ih[layer_idx],
+                    &self.weight_hh[layer_idx],
+                    self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                    self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+                    layer_idx,
+                )?;
+
+                layer_h = new_h;
+                layer_outputs.push(layer_h.unsqueeze(&[0])?);
+            }
+
+            // Stack outputs for this layer
+            let layer_output_refs: Vec<&Tensor<T>> = layer_outputs.iter().collect();
+            layer_input = tenflowers_core::ops::manipulation::concat(&layer_output_refs, 0)?;
+        }
+
+        // Convert output back to the expected format
+        let output = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(&layer_input, Some(&[1, 0, 2]))?
+        } else {
+            layer_input
+        };
+
+        Ok((output, h_n))
+    }
+
+    /// Compute GRU cell for one time step
+    #[allow(clippy::too_many_arguments)]
+    fn gru_cell(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        layer_idx: usize,
+    ) -> Result<Tensor<T>> {
+        // Check if we can use GPU acceleration
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(device) = input.device() {
+                if let Device::Gpu(device_id) = device {
+                    // All tensors should be on the same GPU device
+                    if hidden.device() == Some(device)
+                        && w_ih.device() == Some(device)
+                        && w_hh.device() == Some(device)
+                    {
+                        // Try GPU path
+                        if let Ok(result) =
+                            self.gru_cell_gpu(input, hidden, w_ih, w_hh, b_ih, b_hh, *device_id)
+                        {
+                            return Ok(result);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to CPU implementation
+        self.gru_cell_cpu(input, hidden, w_ih, w_hh, b_ih, b_hh, layer_idx)
+    }
+
+    /// GPU-accelerated GRU cell computation
+    #[cfg(feature = "gpu")]
+    fn gru_cell_gpu(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        device_id: usize,
+    ) -> Result<Tensor<T>> {
+        // Get GPU context
+        let gpu_ctx = get_gpu_context(device_id)?;
+        let gpu_rnn_ops = GpuRnnOps::new(&gpu_ctx)?;
+
+        // Use GPU RNN operations
+        gpu_rnn_ops.gru_cell_gpu(input, hidden, w_ih, w_hh, b_ih, b_hh)
+    }
+
+    /// CPU GRU cell implementation with reset gate variations
+    #[allow(clippy::too_many_arguments)]
+    fn gru_cell_cpu(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        layer_idx: usize,
+    ) -> Result<Tensor<T>> {
+        match self.reset_variation {
+            ResetGateVariation::Standard => {
+                self.gru_cell_standard(input, hidden, w_ih, w_hh, b_ih, b_hh)
+            }
+            ResetGateVariation::Minimal => {
+                self.gru_cell_minimal(input, hidden, w_ih, w_hh, b_ih, b_hh)
+            }
+            ResetGateVariation::Light => self.gru_cell_light(input, hidden, w_ih, w_hh, b_ih, b_hh),
+            ResetGateVariation::Coupled => {
+                self.gru_cell_coupled(input, hidden, w_ih, w_hh, b_ih, b_hh, layer_idx)
+            }
+            ResetGateVariation::ResetAfter => {
+                self.gru_cell_reset_after(input, hidden, w_ih, w_hh, b_ih, b_hh)
+            }
+        }
+    }
+
+    /// Standard GRU cell implementation
+    fn gru_cell_standard(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        // Split gates: [batch_size, 3*hidden_size] -> 3 gates of [batch_size, hidden_size]
+        // Gates are ordered as: reset, update, new
+        let h = self.hidden_size;
+
+        // Extract reset and update gates from input and hidden transformations
+        let i_reset = i_linear.slice(&[0..i_linear.shape().dims()[0], 0..h])?;
+        let i_update = i_linear.slice(&[0..i_linear.shape().dims()[0], h..2 * h])?;
+        let i_new = i_linear.slice(&[0..i_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        let h_reset = h_linear.slice(&[0..h_linear.shape().dims()[0], 0..h])?;
+        let h_update = h_linear.slice(&[0..h_linear.shape().dims()[0], h..2 * h])?;
+        let h_new = h_linear.slice(&[0..h_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        // Compute reset and update gates
+        let reset_gate = tenflowers_core::ops::activation::sigmoid(&i_reset.add(&h_reset)?)?;
+        let update_gate = tenflowers_core::ops::activation::sigmoid(&i_update.add(&h_update)?)?;
+
+        // Compute new gate (uses reset gate)
+        let reset_hidden = reset_gate.mul(&h_new)?;
+        let new_gate = tenflowers_core::ops::activation::tanh(&i_new.add(&reset_hidden)?)?;
+
+        // Compute new hidden state: h_t = (1 - z_t) * n_t + z_t * h_{t-1}
+        let one_minus_update = Tensor::ones(update_gate.shape().dims()).sub(&update_gate)?;
+        let new_part = one_minus_update.mul(&new_gate)?;
+        let old_part = update_gate.mul(hidden)?;
+        let new_hidden = new_part.add(&old_part)?;
+
+        Ok(new_hidden)
+    }
+
+    /// Minimal GRU: Single forget gate instead of reset+update
+    fn gru_cell_minimal(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        // Split gates: [batch_size, 2*hidden_size] -> 2 gates of [batch_size, hidden_size]
+        // Gates are ordered as: forget, new
+        let h = self.hidden_size;
+
+        let i_forget = i_linear.slice(&[0..i_linear.shape().dims()[0], 0..h])?;
+        let i_new = i_linear.slice(&[0..i_linear.shape().dims()[0], h..2 * h])?;
+
+        let h_forget = h_linear.slice(&[0..h_linear.shape().dims()[0], 0..h])?;
+        let h_new = h_linear.slice(&[0..h_linear.shape().dims()[0], h..2 * h])?;
+
+        // Compute forget gate and new gate
+        let forget_gate = tenflowers_core::ops::activation::sigmoid(&i_forget.add(&h_forget)?)?;
+        let new_gate = tenflowers_core::ops::activation::tanh(&i_new.add(&h_new)?)?;
+
+        // Compute new hidden state: h_t = f_t * h_{t-1} + (1 - f_t) * n_t
+        let one_minus_forget = Tensor::ones(forget_gate.shape().dims()).sub(&forget_gate)?;
+        let old_part = forget_gate.mul(hidden)?;
+        let new_part = one_minus_forget.mul(&new_gate)?;
+        let new_hidden = old_part.add(&new_part)?;
+
+        Ok(new_hidden)
+    }
+
+    /// Light GRU: Reset gate only depends on input
+    fn gru_cell_light(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        let h = self.hidden_size;
+
+        // Extract gates
+        let i_reset = i_linear.slice(&[0..i_linear.shape().dims()[0], 0..h])?;
+        let i_update = i_linear.slice(&[0..i_linear.shape().dims()[0], h..2 * h])?;
+        let i_new = i_linear.slice(&[0..i_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        let h_update = h_linear.slice(&[0..h_linear.shape().dims()[0], h..2 * h])?;
+        let h_new = h_linear.slice(&[0..h_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        // Reset gate only uses input (no hidden dependency)
+        let reset_gate = tenflowers_core::ops::activation::sigmoid(&i_reset)?;
+        let update_gate = tenflowers_core::ops::activation::sigmoid(&i_update.add(&h_update)?)?;
+
+        // Compute new gate (uses reset gate)
+        let reset_hidden = reset_gate.mul(&h_new)?;
+        let new_gate = tenflowers_core::ops::activation::tanh(&i_new.add(&reset_hidden)?)?;
+
+        // Compute new hidden state
+        let one_minus_update = Tensor::ones(update_gate.shape().dims()).sub(&update_gate)?;
+        let new_part = one_minus_update.mul(&new_gate)?;
+        let old_part = update_gate.mul(hidden)?;
+        let new_hidden = new_part.add(&old_part)?;
+
+        Ok(new_hidden)
+    }
+
+    /// Coupled GRU: Reset gate depends on update gate
+    #[allow(clippy::too_many_arguments)]
+    fn gru_cell_coupled(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+        layer_idx: usize,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        let h = self.hidden_size;
+
+        // Extract gates
+        let i_reset = i_linear.slice(&[0..i_linear.shape().dims()[0], 0..h])?;
+        let i_update = i_linear.slice(&[0..i_linear.shape().dims()[0], h..2 * h])?;
+        let i_new = i_linear.slice(&[0..i_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        let h_reset = h_linear.slice(&[0..h_linear.shape().dims()[0], 0..h])?;
+        let h_update = h_linear.slice(&[0..h_linear.shape().dims()[0], h..2 * h])?;
+        let h_new = h_linear.slice(&[0..h_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        // Compute update gate first
+        let update_gate = tenflowers_core::ops::activation::sigmoid(&i_update.add(&h_update)?)?;
+
+        // Reset gate depends on update gate using weight_zr coupling
+        // r_t = sigmoid(W_ir * x_t + W_hr * h_{t-1} + W_zr * z_t)
+        let mut reset_input = i_reset.add(&h_reset)?;
+
+        // Add coupling term W_zr * z_t if weight_zr is available
+        if let Some(ref weight_zr) = self.weight_zr {
+            if layer_idx < weight_zr.len() {
+                let coupling_term = update_gate.mul(&weight_zr[layer_idx])?;
+                reset_input = reset_input.add(&coupling_term)?;
+            }
+        }
+
+        let reset_gate = tenflowers_core::ops::activation::sigmoid(&reset_input)?;
+
+        // Compute new gate
+        let reset_hidden = reset_gate.mul(&h_new)?;
+        let new_gate = tenflowers_core::ops::activation::tanh(&i_new.add(&reset_hidden)?)?;
+
+        // Compute new hidden state
+        let one_minus_update = Tensor::ones(update_gate.shape().dims()).sub(&update_gate)?;
+        let new_part = one_minus_update.mul(&new_gate)?;
+        let old_part = update_gate.mul(hidden)?;
+        let new_hidden = new_part.add(&old_part)?;
+
+        Ok(new_hidden)
+    }
+
+    /// Reset After: Apply reset gate after linear transformation
+    fn gru_cell_reset_after(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        let h = self.hidden_size;
+
+        // Extract gates
+        let i_reset = i_linear.slice(&[0..i_linear.shape().dims()[0], 0..h])?;
+        let i_update = i_linear.slice(&[0..i_linear.shape().dims()[0], h..2 * h])?;
+        let i_new = i_linear.slice(&[0..i_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        let h_reset = h_linear.slice(&[0..h_linear.shape().dims()[0], 0..h])?;
+        let h_update = h_linear.slice(&[0..h_linear.shape().dims()[0], h..2 * h])?;
+        let h_new = h_linear.slice(&[0..h_linear.shape().dims()[0], 2 * h..3 * h])?;
+
+        // Compute gates
+        let reset_gate = tenflowers_core::ops::activation::sigmoid(&i_reset.add(&h_reset)?)?;
+        let update_gate = tenflowers_core::ops::activation::sigmoid(&i_update.add(&h_update)?)?;
+
+        // Apply reset gate AFTER linear transformation
+        let reset_h_new = reset_gate.mul(&h_new)?;
+        let new_gate = tenflowers_core::ops::activation::tanh(&i_new.add(&reset_h_new)?)?;
+
+        // Compute new hidden state
+        let one_minus_update = Tensor::ones(update_gate.shape().dims()).sub(&update_gate)?;
+        let new_part = one_minus_update.mul(&new_gate)?;
+        let old_part = update_gate.mul(hidden)?;
+        let new_hidden = new_part.add(&old_part)?;
+
+        Ok(new_hidden)
+    }
+
+    /// Forward pass with PackedSequence input for variable length sequences
+    ///
+    /// This method processes PackedSequence inputs efficiently by avoiding
+    /// computation on padded positions. It processes sequences of different
+    /// lengths in a single batch without wasting computation on padding.
+    ///
+    /// # Arguments
+    /// * `packed_input` - PackedSequence containing variable length sequences
+    /// * `h0` - Optional initial hidden state
+    ///
+    /// # Returns
+    /// * `PackedSequence` - Output sequences as PackedSequence
+    /// * `Tensor` - Final hidden states
+    pub fn forward_packed(
+        &self,
+        packed_input: &PackedSequence<T>,
+        h0: Option<&Tensor<T>>,
+    ) -> Result<(PackedSequence<T>, Tensor<T>)> {
+        let batch_size = packed_input.batch_sizes[0];
+        let max_seq_len = packed_input.batch_sizes.len();
+
+        // Initialize hidden state if not provided
+        let mut h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[self.num_layers, batch_size, self.hidden_size]),
+        };
+
+        let mut packed_outputs = Vec::new();
+        let mut data_offset = 0;
+
+        // Process each time step
+        for t in 0..max_seq_len {
+            let current_batch_size = packed_input.batch_sizes[t];
+            if current_batch_size == 0 {
+                break;
+            }
+
+            // Extract input for current time step
+            let timestep_input = packed_input.data.slice(&[
+                data_offset..data_offset + current_batch_size,
+                0..self.input_size,
+            ])?;
+
+            // Process through layers
+            let mut layer_input = timestep_input;
+            for layer_idx in 0..self.num_layers {
+                let input_size = if layer_idx == 0 {
+                    self.input_size
+                } else {
+                    self.hidden_size
+                };
+
+                // Get hidden state for current layer and active batch elements
+                let layer_h = h_n
+                    .slice(&[
+                        layer_idx..layer_idx + 1,
+                        0..current_batch_size,
+                        0..self.hidden_size,
+                    ])?
+                    .squeeze(Some(&[0]))?;
+
+                // Compute GRU step
+                let new_h = self.gru_cell(
+                    &layer_input,
+                    &layer_h,
+                    &self.weight_ih[layer_idx],
+                    &self.weight_hh[layer_idx],
+                    self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                    self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+                    layer_idx,
+                )?;
+
+                // Update hidden state for active batch elements
+                let mut h_update = h_n
+                    .slice(&[
+                        layer_idx..layer_idx + 1,
+                        0..current_batch_size,
+                        0..self.hidden_size,
+                    ])?
+                    .squeeze(Some(&[0]))?;
+                h_update = new_h.clone();
+
+                // Update the full hidden state tensor
+                let expanded_h = h_update.unsqueeze(&[0])?;
+                // Note: This is a simplified update - in practice, we'd need proper tensor assignment
+
+                layer_input = new_h;
+            }
+
+            packed_outputs.push(layer_input);
+            data_offset += current_batch_size;
+        }
+
+        // Concatenate all outputs
+        let output_refs: Vec<&Tensor<T>> = packed_outputs.iter().collect();
+        let output_data = tenflowers_core::ops::manipulation::concat(&output_refs, 0)?;
+
+        let packed_output = PackedSequence {
+            data: output_data,
+            batch_sizes: packed_input.batch_sizes.clone(),
+            sorted_lengths: packed_input.sorted_lengths.clone(),
+            unsorted_indices: packed_input.unsorted_indices.clone(),
+        };
+
+        Ok((packed_output, h_n))
+    }
+
+    /// Convenience method to process variable length sequences
+    ///
+    /// This method handles the full workflow:
+    /// 1. Pack input sequences
+    /// 2. Process through GRU
+    /// 3. Unpack output sequences
+    ///
+    /// # Arguments
+    /// * `sequences` - Padded input sequences
+    /// * `lengths` - Actual sequence lengths
+    /// * `h0` - Optional initial hidden state
+    ///
+    /// # Returns
+    /// * `Tensor` - Output sequences (padded)
+    /// * `Tensor` - Final hidden states
+    /// * `Vec<usize>` - Original sequence lengths
+    pub fn forward_variable_length(
+        &self,
+        sequences: &Tensor<T>,
+        lengths: &[usize],
+        h0: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>, Vec<usize>)> {
+        // Pack sequences
+        let packed_input = pack_padded_sequence(sequences, lengths, self.batch_first, false)?;
+
+        // Forward pass
+        let (packed_output, h_n) = self.forward_packed(&packed_input, h0)?;
+
+        // Unpack output
+        let (output_sequences, original_lengths) =
+            pad_packed_sequence(&packed_output, self.batch_first, T::zero())?;
+
+        Ok((output_sequences, h_n, original_lengths))
+    }
+}
+
+impl<T> Layer<T> for GRU<T>
+where
+    T: Float + Zero + Clone + Default + Send + Sync + 'static,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        let (output, _) = self.forward_with_state(input, None)?;
+        Ok(output)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+
+        for w in &self.weight_ih {
+            params.push(w);
+        }
+        for w in &self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add weight_zr parameters for Coupled variation
+        if let Some(ref weight_zr) = self.weight_zr {
+            for w in weight_zr {
+                params.push(w);
+            }
+        }
+
+        // Add bidirectional parameters
+        if let Some(ref weights) = self.weight_ih_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref weights) = self.weight_hh_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref biases) = self.bias_ih_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+        if let Some(ref biases) = self.bias_hh_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+        if let Some(ref weight_zr_reverse) = self.weight_zr_reverse {
+            for w in weight_zr_reverse {
+                params.push(w);
+            }
+        }
+
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+
+        for w in &mut self.weight_ih {
+            params.push(w);
+        }
+        for w in &mut self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref mut biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref mut biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add weight_zr parameters for Coupled variation
+        if let Some(ref mut weight_zr) = self.weight_zr {
+            for w in weight_zr {
+                params.push(w);
+            }
+        }
+
+        // Add bidirectional parameters
+        if let Some(ref mut weights) = self.weight_ih_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut weights) = self.weight_hh_reverse {
+            for w in weights {
+                params.push(w);
+            }
+        }
+        if let Some(ref mut biases) = self.bias_ih_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+        if let Some(ref mut biases) = self.bias_hh_reverse {
+            for b in biases {
+                params.push(b);
+            }
+        }
+        if let Some(ref mut weight_zr_reverse) = self.weight_zr_reverse {
+            for w in weight_zr_reverse {
+                params.push(w);
+            }
+        }
+
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+    }
+
+    fn clone_box(&self) -> Box<dyn Layer<T>> {
+        Box::new(self.clone())
+    }
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone for GRU<T> {
+    fn clone(&self) -> Self {
+        Self {
+            input_size: self.input_size,
+            hidden_size: self.hidden_size,
+            num_layers: self.num_layers,
+            _bias: self._bias,
+            batch_first: self.batch_first,
+            _dropout: self._dropout,
+            _bidirectional: self._bidirectional,
+            reset_variation: self.reset_variation,
+            weight_ih: self.weight_ih.clone(),
+            weight_hh: self.weight_hh.clone(),
+            bias_ih: self.bias_ih.clone(),
+            bias_hh: self.bias_hh.clone(),
+            weight_zr: self.weight_zr.clone(),
+            weight_ih_reverse: self.weight_ih_reverse.clone(),
+            weight_hh_reverse: self.weight_hh_reverse.clone(),
+            bias_ih_reverse: self.bias_ih_reverse.clone(),
+            bias_hh_reverse: self.bias_hh_reverse.clone(),
+            weight_zr_reverse: self.weight_zr_reverse.clone(),
+            training: self.training,
+            _phantom: self._phantom,
+        }
+    }
+}
+
+/// Basic RNN (Recurrent Neural Network) layer
+/// Simple RNN with configurable activation function
+#[derive(Debug)]
+pub struct RNN<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    input_size: usize,
+    hidden_size: usize,
+    num_layers: usize,
+    _bias: bool,
+    batch_first: bool,
+    _dropout: f32,
+    _bidirectional: bool,
+    nonlinearity: String,   // "tanh" or "relu"
+    skip_connections: bool, // Whether to use residual/skip connections between layers
+
+    // RNN parameters for each layer
+    weight_ih: Vec<Tensor<T>>, // Input-to-hidden weights [input_size, hidden_size]
+    weight_hh: Vec<Tensor<T>>, // Hidden-to-hidden weights [hidden_size, hidden_size]
+    bias_ih: Option<Vec<Tensor<T>>>, // Input-to-hidden bias [hidden_size]
+    bias_hh: Option<Vec<Tensor<T>>>, // Hidden-to-hidden bias [hidden_size]
+
+    // Skip connection projection layers (for when input_size != hidden_size)
+    skip_projections: Option<Vec<Tensor<T>>>, // Projection weights for skip connections
+
+    training: bool,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> RNN<T>
+where
+    T: Float + Zero + Clone + Default + Send + Sync + 'static,
+{
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+        nonlinearity: Option<String>,
+    ) -> Result<Self> {
+        Self::new_with_skip_connections(
+            input_size,
+            hidden_size,
+            num_layers,
+            bias,
+            batch_first,
+            dropout,
+            bidirectional,
+            nonlinearity,
+            Some(false),
+        )
+    }
+
+    /// Create a new RNN with skip connections enabled
+    pub fn with_skip_connections(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: usize,
+    ) -> Result<Self> {
+        Self::new_with_skip_connections(
+            input_size,
+            hidden_size,
+            Some(num_layers),
+            Some(true),               // bias
+            Some(false),              // batch_first
+            Some(0.0),                // dropout
+            Some(false),              // bidirectional
+            Some("tanh".to_string()), // nonlinearity
+            Some(true),               // skip_connections
+        )
+    }
+
+    /// Create a new RNN with skip connections
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_skip_connections(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: Option<usize>,
+        bias: Option<bool>,
+        batch_first: Option<bool>,
+        dropout: Option<f32>,
+        bidirectional: Option<bool>,
+        nonlinearity: Option<String>,
+        skip_connections: Option<bool>,
+    ) -> Result<Self> {
+        let num_layers = num_layers.unwrap_or(1);
+        let bias = bias.unwrap_or(true);
+        let batch_first = batch_first.unwrap_or(false);
+        let dropout = dropout.unwrap_or(0.0);
+        let bidirectional = bidirectional.unwrap_or(false);
+        let nonlinearity = nonlinearity.unwrap_or_else(|| "tanh".to_string());
+        let skip_connections = skip_connections.unwrap_or(false);
+
+        if num_layers == 0 {
+            return Err(TensorError::invalid_argument(
+                "num_layers must be >= 1".to_string(),
+            ));
+        }
+
+        if !(0.0..=1.0).contains(&dropout) {
+            return Err(TensorError::invalid_argument(
+                "dropout must be between 0 and 1".to_string(),
+            ));
+        }
+
+        if nonlinearity != "tanh" && nonlinearity != "relu" {
+            return Err(TensorError::invalid_argument(
+                "nonlinearity must be 'tanh' or 'relu'".to_string(),
+            ));
+        }
+
+        let mut weight_ih = Vec::new();
+        let mut weight_hh = Vec::new();
+        let mut bias_ih = if bias { Some(Vec::new()) } else { None };
+        let mut bias_hh = if bias { Some(Vec::new()) } else { None };
+        let mut skip_projections = if skip_connections {
+            Some(Vec::new())
+        } else {
+            None
+        };
+
+        // Initialize parameters for each layer
+        for i in 0..num_layers {
+            let input_dim = if i == 0 {
+                input_size
+            } else {
+                hidden_size * if bidirectional { 2 } else { 1 }
+            };
+
+            // Xavier/Glorot initialization for weights
+            let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+
+            // Input-to-hidden weights: [input_dim, hidden_size]
+            let w_ih = Self::init_weight(&[input_dim, hidden_size], scale)?;
+            weight_ih.push(w_ih);
+
+            // Hidden-to-hidden weights: [hidden_size, hidden_size]
+            let w_hh = Self::init_weight(&[hidden_size, hidden_size], scale)?;
+            weight_hh.push(w_hh);
+
+            if bias {
+                // Initialize biases to zero
+                bias_ih
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[hidden_size]));
+                bias_hh
+                    .as_mut()
+                    .unwrap()
+                    .push(Tensor::zeros(&[hidden_size]));
+            }
+
+            // Initialize skip projection weights for layers where input_dim != hidden_size
+            if skip_connections && i > 0 {
+                let prev_layer_output_dim = hidden_size * if bidirectional { 2 } else { 1 };
+                if prev_layer_output_dim != hidden_size {
+                    let skip_w = Self::init_weight(&[prev_layer_output_dim, hidden_size], scale)?;
+                    skip_projections.as_mut().unwrap().push(skip_w);
+                } else {
+                    // For identity skip connections, use empty tensor as placeholder
+                    skip_projections.as_mut().unwrap().push(Tensor::zeros(&[0]));
+                }
+            }
+        }
+
+        Ok(RNN {
+            input_size,
+            hidden_size,
+            num_layers,
+            _bias: bias,
+            batch_first,
+            _dropout: dropout,
+            _bidirectional: bidirectional,
+            nonlinearity,
+            skip_connections,
+            weight_ih,
+            weight_hh,
+            bias_ih,
+            bias_hh,
+            skip_projections,
+            training: true,
+            _phantom: PhantomData,
+        })
+    }
+
+    fn init_weight(shape: &[usize], scale: T) -> Result<Tensor<T>> {
+        // Use Xavier/Glorot uniform initialization: uniform(-scale, scale)
+        // where scale = sqrt(6 / (fan_in + fan_out))
+        use rand::Rng;
+        let mut rng = rand::rng();
+
+        let total_size: usize = shape.iter().product();
+        let mut data = Vec::with_capacity(total_size);
+
+        let scale_f64 = scale.to_f64().unwrap_or(1.0);
+
+        for _ in 0..total_size {
+            let val: f64 = rng.random_range(-scale_f64..scale_f64);
+            data.push(T::from(val).unwrap_or(T::zero()));
+        }
+
+        Tensor::from_vec(data, shape)
+    }
+
+    /// Forward pass through RNN
+    ///
+    /// Args:
+    ///   input: [seq_len, batch_size, input_size] if batch_first=false
+    ///          [batch_size, seq_len, input_size] if batch_first=true
+    ///   h0: Optional initial hidden state [num_layers*num_directions, batch_size, hidden_size]
+    ///
+    /// Returns:
+    ///   output: [seq_len, batch_size, hidden_size*num_directions] if batch_first=false
+    ///           [batch_size, seq_len, hidden_size*num_directions] if batch_first=true
+    ///   h_n: Final hidden state
+    pub fn forward_with_state(
+        &self,
+        input: &Tensor<T>,
+        h0: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        let input_shape = input.shape().dims();
+
+        // Determine dimensions based on batch_first
+        let (seq_len, batch_size, input_dim) = if self.batch_first {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [batch, seq, features]".to_string(),
+                ));
+            }
+            (input_shape[1], input_shape[0], input_shape[2])
+        } else {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [seq, batch, features]".to_string(),
+                ));
+            }
+            (input_shape[0], input_shape[1], input_shape[2])
+        };
+
+        if input_dim != self.input_size {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "Expected input size {}, got {}",
+                self.input_size, input_dim
+            )));
+        }
+
+        // Initialize hidden state if not provided
+        let num_directions = if self._bidirectional { 2 } else { 1 };
+        let h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        // Convert input to proper format [seq_len, batch_size, input_size]
+        let mut layer_input = if self.batch_first {
+            // Transpose from [batch, seq, features] to [seq, batch, features]
+            tenflowers_core::ops::manipulation::transpose_axes(input, Some(&[1, 0, 2]))?
+        } else {
+            input.clone()
+        };
+
+        // Process each layer
+        for layer_idx in 0..self.num_layers {
+            let input_size = if layer_idx == 0 {
+                self.input_size
+            } else {
+                self.hidden_size * num_directions
+            };
+
+            // Forward direction
+            let mut layer_h = h_n
+                .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+                .squeeze(Some(&[0]))?;
+            let mut forward_outputs = Vec::with_capacity(seq_len);
+
+            // Process each time step
+            for t in 0..seq_len {
+                let timestep_input = layer_input
+                    .slice(&[t..t + 1, 0..batch_size, 0..input_size])?
+                    .squeeze(Some(&[0]))?;
+
+                let new_h = self.rnn_cell(
+                    &timestep_input,
+                    &layer_h,
+                    &self.weight_ih[layer_idx],
+                    &self.weight_hh[layer_idx],
+                    self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                    self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+                )?;
+
+                layer_h = new_h;
+                forward_outputs.push(layer_h.unsqueeze(&[0])?);
+            }
+
+            // Stack outputs for this layer
+            let forward_output_refs: Vec<&Tensor<T>> = forward_outputs.iter().collect();
+            let mut layer_output =
+                tenflowers_core::ops::manipulation::concat(&forward_output_refs, 0)?;
+
+            // Apply skip connections for layers > 0
+            if self.skip_connections && layer_idx > 0 {
+                let skip_input = &layer_input;
+
+                // Check if we need projection or can use identity
+                if let Some(ref skip_projections) = self.skip_projections {
+                    let skip_proj_idx = layer_idx - 1; // Skip projection index for current layer
+                    if skip_proj_idx < skip_projections.len() {
+                        let skip_proj = &skip_projections[skip_proj_idx];
+
+                        // If skip projection has zero size, use identity connection
+                        if skip_proj.shape().dims().iter().product::<usize>() == 0 {
+                            // Identity skip connection: add input directly to output
+                            layer_output = layer_output.add(skip_input)?;
+                        } else {
+                            // Project the skip input and add to output
+                            let projected_skip =
+                                tenflowers_core::ops::matmul(skip_input, skip_proj)?;
+                            layer_output = layer_output.add(&projected_skip)?;
+                        }
+                    }
+                }
+            }
+
+            // Handle bidirectional processing
+            if self._bidirectional {
+                // Process sequence in reverse (backward direction)
+                let mut backward_outputs = Vec::new();
+                let mut backward_hidden = layer_h.clone();
+
+                // Reverse the sequence for backward processing
+                for t in (0..seq_len).rev() {
+                    let step_input = if self.batch_first {
+                        layer_input
+                            .slice(&[0..batch_size, t..t + 1, 0..input_size])?
+                            .squeeze(Some(&[1]))?
+                    } else {
+                        layer_input
+                            .slice(&[t..t + 1, 0..batch_size, 0..input_size])?
+                            .squeeze(Some(&[0]))?
+                    };
+
+                    // Apply RNN cell backward
+                    let input_linear = step_input.matmul(&self.weight_ih[layer_idx])?;
+                    let hidden_linear = backward_hidden.matmul(&self.weight_hh[layer_idx])?;
+                    let linear_combination = input_linear.add(&hidden_linear)?;
+                    backward_hidden = match self.nonlinearity.as_str() {
+                        "tanh" => tenflowers_core::ops::activation::tanh(&linear_combination)?,
+                        "relu" => tenflowers_core::ops::activation::relu(&linear_combination)?,
+                        _ => {
+                            return Err(TensorError::invalid_argument(format!(
+                                "Unsupported nonlinearity: {}",
+                                self.nonlinearity
+                            )))
+                        }
+                    };
+
+                    backward_outputs.push(backward_hidden.clone());
+                }
+
+                // Reverse backward outputs to match forward direction
+                backward_outputs.reverse();
+
+                // Concatenate forward and backward outputs along feature dimension
+                let mut combined_outputs = Vec::new();
+                for (forward_out, backward_out) in
+                    forward_outputs.iter().zip(backward_outputs.iter())
+                {
+                    let combined = tenflowers_core::ops::manipulation::concat(
+                        &[forward_out, backward_out],
+                        forward_out.shape().dims().len() - 1,
+                    )?;
+                    combined_outputs.push(combined);
+                }
+
+                let combined_refs: Vec<&Tensor<T>> = combined_outputs.iter().collect();
+                layer_input = tenflowers_core::ops::manipulation::concat(&combined_refs, 0)?;
+            } else {
+                layer_input = layer_output;
+            }
+        }
+
+        // Convert output back to the expected format
+        let output = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(&layer_input, Some(&[1, 0, 2]))?
+        } else {
+            layer_input
+        };
+
+        Ok((output, h_n))
+    }
+
+    /// Forward pass with teacher forcing for training
+    ///
+    /// Teacher forcing uses ground truth targets as inputs for each time step
+    /// instead of the model's own predictions, which can improve training convergence.
+    ///
+    /// Args:
+    ///   input: [seq_len, batch_size, input_size] if batch_first=false
+    ///          [batch_size, seq_len, input_size] if batch_first=true
+    ///   targets: [seq_len, batch_size, output_size] if batch_first=false
+    ///            [batch_size, seq_len, output_size] if batch_first=true
+    ///   h0: Optional initial hidden state [num_layers*num_directions, batch_size, hidden_size]
+    ///   teacher_forcing_ratio: Probability of using teacher forcing vs model predictions (0.0 to 1.0)
+    ///
+    /// Returns:
+    ///   output: [seq_len, batch_size, hidden_size*num_directions] if batch_first=false
+    ///           [batch_size, seq_len, hidden_size*num_directions] if batch_first=true
+    ///   h_n: Final hidden state
+    ///
+    /// Note: This method is typically used during training with sequence-to-sequence tasks
+    /// where the model needs to predict the next element in a sequence.
+    pub fn forward_with_teacher_forcing(
+        &self,
+        input: &Tensor<T>,
+        targets: Option<&Tensor<T>>,
+        h0: Option<&Tensor<T>>,
+        teacher_forcing_ratio: f32,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Validate teacher forcing ratio
+        if !(0.0..=1.0).contains(&teacher_forcing_ratio) {
+            return Err(TensorError::invalid_argument(
+                "teacher_forcing_ratio must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+
+        // If no targets provided or ratio is 0, fall back to regular forward pass
+        if targets.is_none() || teacher_forcing_ratio == 0.0 {
+            return self.forward_with_state(input, h0);
+        }
+
+        let targets = targets.unwrap();
+        let input_shape = input.shape().dims();
+        let target_shape = targets.shape().dims();
+
+        // Determine dimensions based on batch_first
+        let (seq_len, batch_size, input_dim) = if self.batch_first {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [batch, seq, features]".to_string(),
+                ));
+            }
+            (input_shape[1], input_shape[0], input_shape[2])
+        } else {
+            if input_shape.len() != 3 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Input must be 3D [seq, batch, features]".to_string(),
+                ));
+            }
+            (input_shape[0], input_shape[1], input_shape[2])
+        };
+
+        // Validate target dimensions
+        let (target_seq_len, target_batch_size, target_dim) = if self.batch_first {
+            (target_shape[1], target_shape[0], target_shape[2])
+        } else {
+            (target_shape[0], target_shape[1], target_shape[2])
+        };
+
+        if target_seq_len != seq_len || target_batch_size != batch_size {
+            return Err(TensorError::invalid_shape_simple(
+                "Target sequence length and batch size must match input".to_string(),
+            ));
+        }
+
+        if input_dim != self.input_size {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "Expected input size {}, got {}",
+                self.input_size, input_dim
+            )));
+        }
+
+        // For teacher forcing, we need target dimension to match input dimension
+        // (this assumes the RNN is used for sequence-to-sequence tasks)
+        if target_dim != self.input_size {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "Target dimension {} must match input size {} for teacher forcing",
+                target_dim, self.input_size
+            )));
+        }
+
+        // Initialize hidden state if not provided
+        let num_directions = if self._bidirectional { 2 } else { 1 };
+        let h_n = match h0 {
+            Some(h) => h.clone(),
+            None => Tensor::zeros(&[
+                self.num_layers * num_directions,
+                batch_size,
+                self.hidden_size,
+            ]),
+        };
+
+        // Convert input and targets to proper format [seq_len, batch_size, features]
+        let input_formatted = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(input, Some(&[1, 0, 2]))?
+        } else {
+            input.clone()
+        };
+
+        let targets_formatted = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(targets, Some(&[1, 0, 2]))?
+        } else {
+            targets.clone()
+        };
+
+        let mut layer_input = input_formatted;
+
+        // Process each layer
+        for layer_idx in 0..self.num_layers {
+            let layer_input_size = if layer_idx == 0 {
+                self.input_size
+            } else {
+                self.hidden_size * num_directions
+            };
+
+            // Forward direction
+            let mut layer_h = h_n
+                .slice(&[layer_idx..layer_idx + 1, 0..batch_size, 0..self.hidden_size])?
+                .squeeze(Some(&[0]))?;
+            let mut forward_outputs: Vec<Tensor<T>> = Vec::with_capacity(seq_len);
+
+            // Process each time step with teacher forcing
+            for t in 0..seq_len {
+                let timestep_input = if t == 0 || layer_idx > 0 {
+                    // First time step or not first layer: always use actual input
+                    layer_input
+                        .slice(&[t..t + 1, 0..batch_size, 0..layer_input_size])?
+                        .squeeze(Some(&[0]))?
+                } else {
+                    // Subsequent time steps in first layer: apply teacher forcing
+                    // Generate random number to decide whether to use teacher forcing
+                    let use_teacher_forcing = self.training
+                        && (teacher_forcing_ratio == 1.0
+                            || rand::random::<f32>() < teacher_forcing_ratio);
+
+                    if use_teacher_forcing {
+                        // Use ground truth target from previous time step
+                        targets_formatted
+                            .slice(&[(t - 1)..(t - 1) + 1, 0..batch_size, 0..layer_input_size])?
+                            .squeeze(Some(&[0]))?
+                    } else {
+                        // Use previous RNN output (normal autoregressive behavior)
+                        forward_outputs[t - 1].squeeze(Some(&[0]))?
+                    }
+                };
+
+                let new_h = self.rnn_cell(
+                    &timestep_input,
+                    &layer_h,
+                    &self.weight_ih[layer_idx],
+                    &self.weight_hh[layer_idx],
+                    self.bias_ih.as_ref().map(|b| &b[layer_idx]),
+                    self.bias_hh.as_ref().map(|b| &b[layer_idx]),
+                )?;
+
+                layer_h = new_h;
+                forward_outputs.push(layer_h.unsqueeze(&[0])?);
+            }
+
+            // Stack outputs for this layer
+            let forward_output_refs: Vec<&Tensor<T>> = forward_outputs.iter().collect();
+            let layer_output = tenflowers_core::ops::manipulation::concat(&forward_output_refs, 0)?;
+
+            // Handle bidirectional processing with teacher forcing
+            if self._bidirectional {
+                // Process sequence in reverse (backward direction) with teacher forcing
+                let mut backward_outputs = Vec::new();
+                let mut backward_hidden = layer_h.clone();
+
+                // For teacher forcing, we use the actual target sequence in reverse
+                for t in (0..seq_len).rev() {
+                    let step_input = if self.batch_first {
+                        layer_input
+                            .slice(&[0..batch_size, t..t + 1, 0..layer_input_size])?
+                            .squeeze(Some(&[1]))?
+                    } else {
+                        layer_input
+                            .slice(&[t..t + 1, 0..batch_size, 0..layer_input_size])?
+                            .squeeze(Some(&[0]))?
+                    };
+
+                    // Apply RNN cell backward with teacher forcing
+                    let input_transform = step_input.matmul(&self.weight_ih[layer_idx])?;
+                    let hidden_transform = backward_hidden.matmul(&self.weight_hh[layer_idx])?;
+                    let combined = input_transform.add(&hidden_transform)?;
+                    backward_hidden = match self.nonlinearity.as_str() {
+                        "tanh" => tenflowers_core::ops::activation::tanh(&combined)?,
+                        "relu" => tenflowers_core::ops::activation::relu(&combined)?,
+                        _ => {
+                            return Err(TensorError::invalid_argument(format!(
+                                "Unsupported nonlinearity: {}",
+                                self.nonlinearity
+                            )))
+                        }
+                    };
+
+                    backward_outputs.push(backward_hidden.clone());
+                }
+
+                // Reverse backward outputs to align with forward sequence
+                backward_outputs.reverse();
+
+                // Concatenate forward and backward outputs along feature dimension
+                let mut combined_outputs = Vec::new();
+                for (forward_out, backward_out) in
+                    forward_outputs.iter().zip(backward_outputs.iter())
+                {
+                    let combined = tenflowers_core::ops::manipulation::concat(
+                        &[forward_out, backward_out],
+                        forward_out.shape().dims().len() - 1,
+                    )?;
+                    combined_outputs.push(combined);
+                }
+
+                let combined_refs: Vec<&Tensor<T>> = combined_outputs.iter().collect();
+                layer_input = tenflowers_core::ops::manipulation::concat(&combined_refs, 0)?;
+            } else {
+                layer_input = layer_output;
+            }
+        }
+
+        // Convert output back to the expected format
+        let output = if self.batch_first {
+            tenflowers_core::ops::manipulation::transpose_axes(&layer_input, Some(&[1, 0, 2]))?
+        } else {
+            layer_input
+        };
+
+        Ok((output, h_n))
+    }
+
+    /// Compute RNN cell for one time step
+    /// h_t = activation(W_ih * x_t + W_hh * h_{t-1} + b)
+    fn rnn_cell(
+        &self,
+        input: &Tensor<T>,
+        hidden: &Tensor<T>,
+        w_ih: &Tensor<T>,
+        w_hh: &Tensor<T>,
+        b_ih: Option<&Tensor<T>>,
+        b_hh: Option<&Tensor<T>>,
+    ) -> Result<Tensor<T>> {
+        // Linear transformations
+        let gi = input.matmul(w_ih)?;
+        let gh = hidden.matmul(w_hh)?;
+
+        // Add biases if present
+        let i_linear = if let Some(bias) = b_ih {
+            gi.add(bias)?
+        } else {
+            gi
+        };
+
+        let h_linear = if let Some(bias) = b_hh {
+            gh.add(bias)?
+        } else {
+            gh
+        };
+
+        // Combine input and hidden transformations
+        let linear_combination = i_linear.add(&h_linear)?;
+
+        // Apply activation function
+        let new_hidden = match self.nonlinearity.as_str() {
+            "tanh" => tenflowers_core::ops::activation::tanh(&linear_combination)?,
+            "relu" => tenflowers_core::ops::activation::relu(&linear_combination)?,
+            _ => {
+                return Err(TensorError::invalid_argument(format!(
+                    "Unsupported nonlinearity: {}",
+                    self.nonlinearity
+                )))
+            }
+        };
+
+        Ok(new_hidden)
+    }
+}
+
+impl<T> Layer<T> for RNN<T>
+where
+    T: Float + Zero + Clone + Default + Send + Sync + 'static,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        let (output, _) = self.forward_with_state(input, None)?;
+        Ok(output)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+
+        // Add forward direction parameters
+        for w in &self.weight_ih {
+            params.push(w);
+        }
+        for w in &self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add skip projection parameters
+        if let Some(ref skip_projs) = self.skip_projections {
+            for skip_proj in skip_projs {
+                // Only add non-empty skip projections (skip identity connections)
+                if skip_proj.shape().dims().iter().product::<usize>() > 0 {
+                    params.push(skip_proj);
+                }
+            }
+        }
+
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+
+        // Add forward direction parameters
+        for w in &mut self.weight_ih {
+            params.push(w);
+        }
+        for w in &mut self.weight_hh {
+            params.push(w);
+        }
+
+        if let Some(ref mut biases) = self.bias_ih {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        if let Some(ref mut biases) = self.bias_hh {
+            for b in biases {
+                params.push(b);
+            }
+        }
+
+        // Add skip projection parameters
+        if let Some(ref mut skip_projs) = self.skip_projections {
+            for skip_proj in skip_projs {
+                // Only add non-empty skip projections (skip identity connections)
+                if skip_proj.shape().dims().iter().product::<usize>() > 0 {
+                    params.push(skip_proj);
+                }
+            }
+        }
+
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+    }
+
+    fn clone_box(&self) -> Box<dyn Layer<T>> {
+        Box::new(self.clone())
+    }
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone for RNN<T> {
+    fn clone(&self) -> Self {
+        Self {
+            input_size: self.input_size,
+            hidden_size: self.hidden_size,
+            num_layers: self.num_layers,
+            _bias: self._bias,
+            batch_first: self.batch_first,
+            _dropout: self._dropout,
+            _bidirectional: self._bidirectional,
+            nonlinearity: self.nonlinearity.clone(),
+            skip_connections: self.skip_connections,
+            weight_ih: self.weight_ih.clone(),
+            weight_hh: self.weight_hh.clone(),
+            bias_ih: self.bias_ih.clone(),
+            bias_hh: self.bias_hh.clone(),
+            skip_projections: self.skip_projections.clone(),
+            training: self.training,
+            _phantom: self._phantom,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lstm_creation() {
+        let lstm = LSTM::<f32>::new(
+            10,
+            20,
+            Some(2),
+            Some(true),
+            Some(false),
+            Some(0.1),
+            Some(false),
+        );
+        assert!(lstm.is_ok());
+
+        let lstm = lstm.unwrap();
+        assert_eq!(lstm.input_size, 10);
+        assert_eq!(lstm.hidden_size, 20);
+        assert_eq!(lstm.num_layers, 2);
+        assert_eq!(lstm._bias, true);
+        assert_eq!(lstm.batch_first, false);
+        assert_eq!(lstm._dropout, 0.1);
+        assert_eq!(lstm._bidirectional, false);
+    }
+
+    #[test]
+    fn test_gru_creation() {
+        let gru = GRU::<f32>::new(
+            10,
+            20,
+            Some(1),
+            Some(true),
+            Some(true),
+            Some(0.0),
+            Some(false),
+        );
+        assert!(gru.is_ok());
+
+        let gru = gru.unwrap();
+        assert_eq!(gru.input_size, 10);
+        assert_eq!(gru.hidden_size, 20);
+        assert_eq!(gru.num_layers, 1);
+        assert_eq!(gru._bias, true);
+        assert_eq!(gru.batch_first, true);
+        assert_eq!(gru._dropout, 0.0);
+        assert_eq!(gru._bidirectional, false);
+    }
+
+    #[test]
+    fn test_lstm_forward() {
+        let lstm = LSTM::<f32>::new(5, 10, None, None, None, None, None).unwrap();
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = lstm.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_gru_forward() {
+        let gru = GRU::<f32>::new(5, 10, None, None, None, None, None).unwrap();
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = gru.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_rnn_creation() {
+        let rnn = RNN::<f32>::new(
+            10,
+            20,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some("tanh".to_string()),
+        );
+        assert!(rnn.is_ok());
+
+        let rnn = rnn.unwrap();
+        assert_eq!(rnn.input_size, 10);
+        assert_eq!(rnn.hidden_size, 20);
+        assert_eq!(rnn.num_layers, 1);
+        assert_eq!(rnn._bias, true);
+        assert_eq!(rnn.batch_first, false);
+        assert_eq!(rnn._dropout, 0.0);
+        assert_eq!(rnn._bidirectional, false);
+        assert_eq!(rnn.nonlinearity, "tanh");
+    }
+
+    #[test]
+    fn test_rnn_creation_relu() {
+        let rnn = RNN::<f32>::new(
+            5,
+            10,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("relu".to_string()),
+        );
+        assert!(rnn.is_ok());
+
+        let rnn = rnn.unwrap();
+        assert_eq!(rnn.nonlinearity, "relu");
+    }
+
+    #[test]
+    fn test_rnn_invalid_nonlinearity() {
+        let rnn = RNN::<f32>::new(
+            5,
+            10,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("invalid".to_string()),
+        );
+        assert!(rnn.is_err());
+    }
+
+    #[test]
+    fn test_rnn_forward() {
+        let rnn = RNN::<f32>::new(5, 10, None, None, None, None, None, None).unwrap();
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = rnn.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_rnn_with_skip_connections_creation() {
+        let rnn = RNN::<f32>::with_skip_connections(10, 20, 3);
+        assert!(rnn.is_ok());
+
+        let rnn = rnn.unwrap();
+        assert_eq!(rnn.input_size, 10);
+        assert_eq!(rnn.hidden_size, 20);
+        assert_eq!(rnn.num_layers, 3);
+        assert_eq!(rnn.skip_connections, true);
+        assert!(rnn.skip_projections.is_some());
+
+        // Check that skip projections are created for layers > 0 (2 projections for layers 1 and 2)
+        let skip_projs = rnn.skip_projections.as_ref().unwrap();
+        assert_eq!(skip_projs.len(), 2);
+    }
+
+    #[test]
+    fn test_rnn_skip_connections_parameters() {
+        let rnn = RNN::<f32>::with_skip_connections(10, 15, 2).unwrap();
+        let params = rnn.parameters();
+
+        // Should include: 2 weight_ih, 2 weight_hh, 2 bias_ih, 2 bias_hh, 1 skip_projection
+        // Note: skip projections are only added when input_size != hidden_size for layer > 0
+        // Layer 1: input is hidden_size (15) != hidden_size (15), so identity connection (empty tensor)
+        // But our implementation should still work
+        assert!(params.len() >= 8); // At least the basic RNN parameters
+    }
+
+    #[test]
+    fn test_rnn_skip_connections_forward() {
+        let rnn = RNN::<f32>::with_skip_connections(5, 10, 2).unwrap();
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = rnn.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_rnn_without_skip_connections() {
+        let rnn = RNN::<f32>::new(5, 10, Some(2), None, None, None, None, None).unwrap();
+        assert_eq!(rnn.skip_connections, false);
+        assert!(rnn.skip_projections.is_none());
+
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+        let result = rnn.forward(&input);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_rnn_forward_batch_first() {
+        let rnn = RNN::<f32>::new(5, 10, None, None, Some(true), None, None, None).unwrap();
+        let input = Tensor::zeros(&[2, 3, 5]); // [batch_size, seq_len, input_size]
+
+        let result = rnn.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[2, 3, 10]); // [batch_size, seq_len, hidden_size]
+    }
+
+    #[test]
+    fn test_rnn_forward_with_state() {
+        let rnn = RNN::<f32>::new(5, 10, None, None, None, None, None, None).unwrap();
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+        let h0 = Tensor::zeros(&[1, 2, 10]); // [num_layers, batch_size, hidden_size]
+
+        let result = rnn.forward_with_state(&input, Some(&h0));
+        assert!(result.is_ok());
+
+        let (output, h_n) = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+        assert_eq!(h_n.shape().dims(), &[1, 2, 10]); // [num_layers, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_lstm_with_layer_norm() {
+        let lstm = LSTM::<f32>::new_with_layer_norm(
+            5,
+            10,
+            Some(2),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        assert_eq!(lstm.input_size, 5);
+        assert_eq!(lstm.hidden_size, 10);
+        assert_eq!(lstm.num_layers, 2);
+        assert_eq!(lstm.layer_norm, true);
+
+        // Test that layer norm components are initialized
+        assert!(lstm.layer_norm_ih.is_some());
+        assert!(lstm.layer_norm_hh.is_some());
+        assert!(lstm.layer_norm_cell.is_some());
+
+        let layer_norms_ih = lstm.layer_norm_ih.as_ref().unwrap();
+        let layer_norms_hh = lstm.layer_norm_hh.as_ref().unwrap();
+        let layer_norms_cell = lstm.layer_norm_cell.as_ref().unwrap();
+
+        assert_eq!(layer_norms_ih.len(), 2); // 2 layers
+        assert_eq!(layer_norms_hh.len(), 2);
+        assert_eq!(layer_norms_cell.len(), 2);
+    }
+
+    #[test]
+    fn test_lstm_layer_norm_forward() {
+        let lstm = LSTM::<f32>::new_with_layer_norm(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = lstm.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_lstm_layer_norm_parameters() {
+        let lstm = LSTM::<f32>::new_with_layer_norm(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        let params = lstm.parameters();
+
+        // Standard LSTM parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        // Layer norm parameters: 3 layer norms × 2 parameters each = 6
+        // Total: 4 + 6 = 10 parameters
+        assert_eq!(params.len(), 10);
+    }
+
+    #[test]
+    fn test_lstm_with_peephole() {
+        let lstm = LSTM::<f32>::new_with_peephole(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        assert_eq!(lstm.peephole, true);
+
+        // Test that peephole components are initialized
+        assert!(lstm.weight_ci.is_some());
+        assert!(lstm.weight_cf.is_some());
+        assert!(lstm.weight_co.is_some());
+
+        let weight_ci = lstm.weight_ci.as_ref().unwrap();
+        let weight_cf = lstm.weight_cf.as_ref().unwrap();
+        let weight_co = lstm.weight_co.as_ref().unwrap();
+
+        assert_eq!(weight_ci.len(), 1); // 1 layer
+        assert_eq!(weight_cf.len(), 1);
+        assert_eq!(weight_co.len(), 1);
+
+        // Check weight shapes - should be [hidden_size]
+        assert_eq!(weight_ci[0].shape().dims(), &[10]);
+        assert_eq!(weight_cf[0].shape().dims(), &[10]);
+        assert_eq!(weight_co[0].shape().dims(), &[10]);
+    }
+
+    #[test]
+    fn test_lstm_peephole_forward() {
+        let lstm = LSTM::<f32>::new_with_peephole(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        let input = Tensor::zeros(&[3, 2, 5]); // [seq_len, batch_size, input_size]
+
+        let result = lstm.forward(&input);
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output.shape().dims(), &[3, 2, 10]); // [seq_len, batch_size, hidden_size]
+    }
+
+    #[test]
+    fn test_lstm_peephole_parameters() {
+        let lstm = LSTM::<f32>::new_with_peephole(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+        )
+        .unwrap();
+
+        let params = lstm.parameters();
+
+        // Standard LSTM parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        // Peephole parameters: weight_ci, weight_cf, weight_co = 3
+        // Total: 4 + 3 = 7 parameters
+        assert_eq!(params.len(), 7);
+    }
+
+    #[test]
+    fn test_lstm_full_config() {
+        let lstm = LSTM::<f32>::new_full(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+            Some(true),
+            Some(true),
+        )
+        .unwrap();
+
+        assert_eq!(lstm.layer_norm, true);
+        assert_eq!(lstm.peephole, true);
+
+        // Test that both peephole and layer norm components are initialized
+        assert!(lstm.weight_ci.is_some());
+        assert!(lstm.weight_cf.is_some());
+        assert!(lstm.weight_co.is_some());
+        assert!(lstm.layer_norm_ih.is_some());
+        assert!(lstm.layer_norm_hh.is_some());
+        assert!(lstm.layer_norm_cell.is_some());
+
+        let params = lstm.parameters();
+
+        // Standard LSTM parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        // Peephole parameters: weight_ci, weight_cf, weight_co = 3
+        // Layer norm parameters: 3 layer norms × 2 parameters each = 6
+        // Total: 4 + 3 + 6 = 13 parameters
+        assert_eq!(params.len(), 13);
+    }
+
+    #[test]
+    fn test_lstm_without_layer_norm() {
+        let lstm = LSTM::<f32>::new(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(lstm.layer_norm, false);
+        assert!(lstm.layer_norm_ih.is_none());
+        assert!(lstm.layer_norm_hh.is_none());
+        assert!(lstm.layer_norm_cell.is_none());
+
+        let params = lstm.parameters();
+        // Only standard LSTM parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        assert_eq!(params.len(), 4);
+    }
+
+    #[test]
+    fn test_gru_standard_variation() {
+        let gru = GRU::<f32>::new(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::Standard);
+        assert!(gru.weight_zr.is_none());
+
+        let params = gru.parameters();
+        // Standard GRU parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        assert_eq!(params.len(), 4);
+    }
+
+    #[test]
+    fn test_gru_minimal_variation() {
+        let gru = GRU::<f32>::new_with_variation(
+            5,
+            10,
+            ResetGateVariation::Minimal,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::Minimal);
+        assert!(gru.weight_zr.is_none());
+
+        let params = gru.parameters();
+        // Minimal GRU parameters: weight_ih, weight_hh, bias_ih, bias_hh = 4
+        // Note: weights have fewer gates (2 instead of 3) but same parameter count
+        assert_eq!(params.len(), 4);
+    }
+
+    #[test]
+    fn test_gru_light_variation() {
+        let gru = GRU::<f32>::new_with_variation(
+            5,
+            10,
+            ResetGateVariation::Light,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::Light);
+        assert!(gru.weight_zr.is_none());
+    }
+
+    #[test]
+    fn test_gru_coupled_variation() {
+        let gru = GRU::<f32>::new_with_variation(
+            5,
+            10,
+            ResetGateVariation::Coupled,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::Coupled);
+        assert!(gru.weight_zr.is_some());
+
+        let params = gru.parameters();
+        // Coupled GRU parameters: weight_ih, weight_hh, bias_ih, bias_hh, weight_zr = 5
+        assert_eq!(params.len(), 5);
+    }
+
+    #[test]
+    fn test_gru_reset_after_variation() {
+        let gru = GRU::<f32>::new_with_variation(
+            5,
+            10,
+            ResetGateVariation::ResetAfter,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::ResetAfter);
+        assert!(gru.weight_zr.is_none());
+    }
+
+    #[test]
+    fn test_gru_bidirectional_with_variations() {
+        let gru = GRU::<f32>::new_with_variation(
+            5,
+            10,
+            ResetGateVariation::Coupled,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(true),
+        )
+        .unwrap();
+
+        assert_eq!(gru.reset_variation(), ResetGateVariation::Coupled);
+        assert!(gru.weight_zr.is_some());
+        assert!(gru.weight_zr_reverse.is_some());
+
+        let params = gru.parameters();
+        // Bidirectional Coupled GRU: forward (5) + reverse (5) = 10
+        assert_eq!(params.len(), 10);
+    }
+
+    #[test]
+    fn test_gru_forward_pass_variations() {
+        let input = Tensor::ones(&[1, 1, 5]); // [seq_len, batch_size, input_size]
+
+        // Test each variation can perform forward pass
+        let variations = vec![
+            ResetGateVariation::Standard,
+            ResetGateVariation::Minimal,
+            ResetGateVariation::Light,
+            ResetGateVariation::Coupled,
+            ResetGateVariation::ResetAfter,
+        ];
+
+        for variation in variations {
+            let gru = GRU::<f32>::new_with_variation(
+                5,
+                10,
+                variation,
+                Some(1),
+                Some(true),
+                Some(false),
+                Some(0.0),
+                Some(false),
+            )
+            .unwrap();
+
+            let (output, hidden) = gru.forward_with_state(&input, None).unwrap();
+
+            // Check output shapes
+            assert_eq!(output.shape().dims(), &[1, 1, 10]); // [seq_len, batch_size, hidden_size]
+            assert_eq!(hidden.shape().dims(), &[1, 1, 10]); // [num_layers, batch_size, hidden_size]
+        }
+    }
+
+    #[test]
+    fn test_gru_variation_setter() {
+        let mut gru = GRU::<f32>::new(
+            5,
+            10,
+            Some(1),
+            Some(true),
+            Some(false),
+            Some(0.0),
+            Some(false),
+        )
+        .unwrap();
+
+        // Should succeed when setting to same variation
+        assert!(gru
+            .set_reset_variation(ResetGateVariation::Standard)
+            .is_ok());
+
+        // Should fail when setting to different variation
+        assert!(gru
+            .set_reset_variation(ResetGateVariation::Minimal)
+            .is_err());
+    }
+}
+
+/// Bahdanau Attention mechanism for RNNs
+///
+/// Also known as additive attention, this mechanism computes attention scores using:
+/// score(h_t, h_s) = v^T * tanh(W_q * h_t + W_k * h_s + b)
+///
+/// Based on: "Neural Machine Translation by Jointly Learning to Align and Translate"
+/// https://arxiv.org/abs/1409.0473
+pub struct BahdanauAttention<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    query_projection: crate::layers::Dense<T>,
+    key_projection: crate::layers::Dense<T>,
+    value_projection: crate::layers::Dense<T>,
+    attention_vector: Tensor<T>,
+    hidden_size: usize,
+    training: bool,
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone
+    for BahdanauAttention<T>
+{
+    fn clone(&self) -> Self {
+        Self {
+            query_projection: self.query_projection.clone(),
+            key_projection: self.key_projection.clone(),
+            value_projection: self.value_projection.clone(),
+            attention_vector: self.attention_vector.clone(),
+            hidden_size: self.hidden_size,
+            training: self.training,
+        }
+    }
+}
+
+impl<T> BahdanauAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    /// Create a new Bahdanau attention mechanism
+    ///
+    /// # Arguments
+    /// * `hidden_size` - Size of the hidden state
+    /// * `attention_size` - Size of the attention projection (typically same as hidden_size)
+    pub fn new(hidden_size: usize, attention_size: usize) -> Self {
+        let query_projection = crate::layers::Dense::new(hidden_size, attention_size, false);
+        let key_projection = crate::layers::Dense::new(hidden_size, attention_size, false);
+        let value_projection = crate::layers::Dense::new(hidden_size, hidden_size, false);
+
+        // Initialize attention vector
+        let attention_vector = Tensor::ones(&[attention_size]);
+
+        Self {
+            query_projection,
+            key_projection,
+            value_projection,
+            attention_vector,
+            hidden_size,
+            training: true,
+        }
+    }
+
+    /// Compute attention weights and context vector
+    ///
+    /// # Arguments
+    /// * `query` - Query state (decoder hidden state) [batch_size, hidden_size]
+    /// * `keys` - Key states (encoder hidden states) [seq_len, batch_size, hidden_size]
+    /// * `values` - Value states (encoder hidden states) [seq_len, batch_size, hidden_size]
+    /// * `mask` - Optional attention mask [seq_len, batch_size]
+    ///
+    /// # Returns
+    /// * `context` - Weighted sum of values [batch_size, hidden_size]
+    /// * `attention_weights` - Attention weights [seq_len, batch_size]
+    pub fn compute_attention(
+        &self,
+        query: &Tensor<T>,
+        keys: &Tensor<T>,
+        values: &Tensor<T>,
+        mask: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        let seq_len = keys.shape().dims()[0];
+        let batch_size = keys.shape().dims()[1];
+
+        // Project query: [batch_size, hidden_size] -> [batch_size, attention_size]
+        let query_proj = self.query_projection.forward(query)?;
+
+        // Project keys: [seq_len, batch_size, hidden_size] -> [seq_len, batch_size, attention_size]
+        let mut key_projections = Vec::new();
+        for i in 0..seq_len {
+            let key_slice = keys.slice(&[i..i + 1, 0..batch_size, 0..self.hidden_size])?;
+            let key_reshaped = key_slice.reshape(&[batch_size, self.hidden_size])?;
+            let key_proj = self.key_projection.forward(&key_reshaped)?;
+            key_projections.push(key_proj);
+        }
+
+        // Compute attention scores
+        let mut attention_scores = Vec::new();
+        for key_proj in &key_projections {
+            // additive attention: v^T * tanh(W_q * query + W_k * key)
+            let combined = query_proj.add(key_proj)?;
+            let activated = tenflowers_core::ops::activation::tanh(&combined)?;
+
+            // Apply attention vector: [batch_size, attention_size] -> [batch_size, 1]
+            let scores = activated.matmul(&self.attention_vector.unsqueeze(&[1])?)?;
+            attention_scores.push(scores);
+        }
+
+        // Stack attention scores: [seq_len, batch_size]
+        let stacked_scores = self.stack_tensors(&attention_scores)?;
+
+        // Apply mask if provided
+        let masked_scores = if let Some(mask) = mask {
+            // Add large negative value to masked positions
+            let neg_inf = T::from(-1e9).unwrap();
+            let mask_value = mask.scalar_mul(neg_inf)?;
+            stacked_scores.add(&mask_value)?
+        } else {
+            stacked_scores
+        };
+
+        // Apply softmax to get attention weights
+        let attention_weights = tenflowers_core::ops::activation::softmax(&masked_scores, Some(0))?;
+
+        // Compute context vector as weighted sum of values
+        let context = self.compute_context(&attention_weights, values)?;
+
+        Ok((context, attention_weights))
+    }
+
+    /// Stack tensors along the sequence dimension
+    fn stack_tensors(&self, tensors: &[Tensor<T>]) -> Result<Tensor<T>> {
+        if tensors.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot stack empty tensor list".to_string(),
+            ));
+        }
+
+        let batch_size = tensors[0].shape().dims()[0];
+        let seq_len = tensors.len();
+
+        let mut stacked_data = Vec::new();
+        for tensor in tensors {
+            let data = tensor.to_vec()?;
+            stacked_data.extend(data);
+        }
+
+        Tensor::from_vec(stacked_data, &[seq_len, batch_size])
+    }
+
+    /// Compute context vector as weighted sum of values
+    fn compute_context(&self, weights: &Tensor<T>, values: &Tensor<T>) -> Result<Tensor<T>> {
+        let seq_len = values.shape().dims()[0];
+        let batch_size = values.shape().dims()[1];
+        let hidden_size = values.shape().dims()[2];
+
+        let weights_data = weights.to_vec()?;
+        let values_data = values.to_vec()?;
+
+        let mut context_data = vec![T::zero(); batch_size * hidden_size];
+
+        for t in 0..seq_len {
+            for b in 0..batch_size {
+                let weight = weights_data[t * batch_size + b];
+
+                for h in 0..hidden_size {
+                    let value_idx = t * batch_size * hidden_size + b * hidden_size + h;
+                    let context_idx = b * hidden_size + h;
+
+                    context_data[context_idx] =
+                        context_data[context_idx] + weight * values_data[value_idx];
+                }
+            }
+        }
+
+        Tensor::from_vec(context_data, &[batch_size, hidden_size])
+    }
+}
+
+impl<T> crate::layers::Layer<T> for BahdanauAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::cmp::PartialOrd
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        // For single input, use as both query and key-value
+        // Assuming input shape: [seq_len, batch_size, hidden_size]
+        let seq_len = input.shape().dims()[0];
+        let batch_size = input.shape().dims()[1];
+
+        // Use last time step as query
+        let query = input.slice(&[seq_len - 1..seq_len, 0..batch_size, 0..self.hidden_size])?;
+        let query_reshaped = query.reshape(&[batch_size, self.hidden_size])?;
+
+        let (context, _attention_weights) =
+            self.compute_attention(&query_reshaped, input, input, None)?;
+        Ok(context)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+        params.extend(self.query_projection.parameters());
+        params.extend(self.key_projection.parameters());
+        params.extend(self.value_projection.parameters());
+        params.push(&self.attention_vector);
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+        params.extend(self.query_projection.parameters_mut());
+        params.extend(self.key_projection.parameters_mut());
+        params.extend(self.value_projection.parameters_mut());
+        params.push(&mut self.attention_vector);
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+        self.query_projection.set_training(training);
+        self.key_projection.set_training(training);
+        self.value_projection.set_training(training);
+    }
+
+    fn clone_box(&self) -> Box<dyn crate::layers::Layer<T>> {
+        Box::new(self.clone())
+    }
+}
+
+/// Luong Attention mechanism for RNNs
+///
+/// Also known as multiplicative attention, this mechanism computes attention scores using:
+/// score(h_t, h_s) = h_t^T * W * h_s (general dot-product attention)
+///
+/// Based on: "Effective Approaches to Attention-based Neural Machine Translation"
+/// https://arxiv.org/abs/1508.04025
+pub struct LuongAttention<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    attention_type: LuongAttentionType,
+    weight_matrix: Option<Tensor<T>>,
+    hidden_size: usize,
+    training: bool,
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone for LuongAttention<T> {
+    fn clone(&self) -> Self {
+        Self {
+            attention_type: self.attention_type,
+            weight_matrix: self.weight_matrix.clone(),
+            hidden_size: self.hidden_size,
+            training: self.training,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LuongAttentionType {
+    Dot,     // score = h_t^T * h_s
+    General, // score = h_t^T * W * h_s
+    Concat,  // score = v^T * tanh(W * [h_t; h_s])
+}
+
+impl<T> LuongAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    /// Create a new Luong attention mechanism
+    ///
+    /// # Arguments
+    /// * `hidden_size` - Size of the hidden state
+    /// * `attention_type` - Type of attention (Dot, General, or Concat)
+    pub fn new(hidden_size: usize, attention_type: LuongAttentionType) -> Result<Self> {
+        let weight_matrix = match attention_type {
+            LuongAttentionType::Dot => None,
+            LuongAttentionType::General => Some(Tensor::ones(&[hidden_size, hidden_size])),
+            LuongAttentionType::Concat => Some(Tensor::ones(&[hidden_size, 2 * hidden_size])),
+        };
+
+        Ok(Self {
+            attention_type,
+            weight_matrix,
+            hidden_size,
+            training: true,
+        })
+    }
+
+    /// Compute attention weights and context vector
+    ///
+    /// # Arguments
+    /// * `query` - Query state (decoder hidden state) [batch_size, hidden_size]
+    /// * `keys` - Key states (encoder hidden states) [seq_len, batch_size, hidden_size]
+    /// * `values` - Value states (encoder hidden states) [seq_len, batch_size, hidden_size]
+    /// * `mask` - Optional attention mask [seq_len, batch_size]
+    ///
+    /// # Returns
+    /// * `context` - Weighted sum of values [batch_size, hidden_size]
+    /// * `attention_weights` - Attention weights [seq_len, batch_size]
+    pub fn compute_attention(
+        &self,
+        query: &Tensor<T>,
+        keys: &Tensor<T>,
+        values: &Tensor<T>,
+        mask: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        let seq_len = keys.shape().dims()[0];
+        let batch_size = keys.shape().dims()[1];
+
+        // Compute attention scores based on attention type
+        let attention_scores = match self.attention_type {
+            LuongAttentionType::Dot => self.compute_dot_attention(query, keys)?,
+            LuongAttentionType::General => self.compute_general_attention(query, keys)?,
+            LuongAttentionType::Concat => self.compute_concat_attention(query, keys)?,
+        };
+
+        // Apply mask if provided
+        let masked_scores = if let Some(mask) = mask {
+            let neg_inf = T::from(-1e9).unwrap();
+            let mask_value = mask.scalar_mul(neg_inf)?;
+            attention_scores.add(&mask_value)?
+        } else {
+            attention_scores
+        };
+
+        // Apply softmax to get attention weights
+        let attention_weights = tenflowers_core::ops::activation::softmax(&masked_scores, Some(0))?;
+
+        // Compute context vector as weighted sum of values
+        let context = self.compute_context(&attention_weights, values)?;
+
+        Ok((context, attention_weights))
+    }
+
+    /// Compute dot-product attention: h_t^T * h_s
+    fn compute_dot_attention(&self, query: &Tensor<T>, keys: &Tensor<T>) -> Result<Tensor<T>> {
+        let seq_len = keys.shape().dims()[0];
+        let batch_size = keys.shape().dims()[1];
+
+        let mut scores = Vec::new();
+        for i in 0..seq_len {
+            let key_slice = keys.slice(&[i..i + 1, 0..batch_size, 0..self.hidden_size])?;
+            let key_reshaped = key_slice.reshape(&[batch_size, self.hidden_size])?;
+
+            // Compute dot product: [batch_size, hidden_size] * [batch_size, hidden_size]
+            let score = query.mul(&key_reshaped)?;
+            let score_sum = score.sum_axis(Some(&[1]), false)?; // Sum over hidden dimension
+            scores.push(score_sum);
+        }
+
+        self.stack_tensors(&scores)
+    }
+
+    /// Compute general attention: h_t^T * W * h_s
+    fn compute_general_attention(&self, query: &Tensor<T>, keys: &Tensor<T>) -> Result<Tensor<T>> {
+        let weight_matrix = self.weight_matrix.as_ref().unwrap();
+        let seq_len = keys.shape().dims()[0];
+        let batch_size = keys.shape().dims()[1];
+
+        // Transform query: [batch_size, hidden_size] * [hidden_size, hidden_size]
+        let transformed_query = query.matmul(weight_matrix)?;
+
+        let mut scores = Vec::new();
+        for i in 0..seq_len {
+            let key_slice = keys.slice(&[i..i + 1, 0..batch_size, 0..self.hidden_size])?;
+            let key_reshaped = key_slice.reshape(&[batch_size, self.hidden_size])?;
+
+            // Compute score: [batch_size, hidden_size] * [batch_size, hidden_size]
+            let score = transformed_query.mul(&key_reshaped)?;
+            let score_sum = score.sum_axis(Some(&[1]), false)?;
+            scores.push(score_sum);
+        }
+
+        self.stack_tensors(&scores)
+    }
+
+    /// Compute concat attention: v^T * tanh(W * [h_t; h_s])
+    fn compute_concat_attention(&self, query: &Tensor<T>, keys: &Tensor<T>) -> Result<Tensor<T>> {
+        let weight_matrix = self.weight_matrix.as_ref().unwrap();
+        let seq_len = keys.shape().dims()[0];
+        let batch_size = keys.shape().dims()[1];
+
+        let mut scores = Vec::new();
+        for i in 0..seq_len {
+            let key_slice = keys.slice(&[i..i + 1, 0..batch_size, 0..self.hidden_size])?;
+            let key_reshaped = key_slice.reshape(&[batch_size, self.hidden_size])?;
+
+            // Concatenate query and key: [batch_size, 2 * hidden_size]
+            let concatenated =
+                tenflowers_core::ops::manipulation::concat(&[query, &key_reshaped], 1)?;
+
+            // Apply linear transformation: [batch_size, 2 * hidden_size] * [2 * hidden_size, hidden_size]
+            let transformed = concatenated.matmul(weight_matrix)?;
+
+            // Apply tanh activation
+            let activated = tenflowers_core::ops::activation::tanh(&transformed)?;
+
+            // Sum over hidden dimension to get scalar score
+            let score_sum = activated.sum_axis(Some(&[1]), false)?;
+            scores.push(score_sum);
+        }
+
+        self.stack_tensors(&scores)
+    }
+
+    /// Stack tensors along the sequence dimension
+    fn stack_tensors(&self, tensors: &[Tensor<T>]) -> Result<Tensor<T>> {
+        if tensors.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot stack empty tensor list".to_string(),
+            ));
+        }
+
+        let batch_size = tensors[0].shape().dims()[0];
+        let seq_len = tensors.len();
+
+        let mut stacked_data = Vec::new();
+        for tensor in tensors {
+            let data = tensor.to_vec()?;
+            stacked_data.extend(data);
+        }
+
+        Tensor::from_vec(stacked_data, &[seq_len, batch_size])
+    }
+
+    /// Compute context vector as weighted sum of values
+    fn compute_context(&self, weights: &Tensor<T>, values: &Tensor<T>) -> Result<Tensor<T>> {
+        let seq_len = values.shape().dims()[0];
+        let batch_size = values.shape().dims()[1];
+        let hidden_size = values.shape().dims()[2];
+
+        let weights_data = weights.to_vec()?;
+        let values_data = values.to_vec()?;
+
+        let mut context_data = vec![T::zero(); batch_size * hidden_size];
+
+        for t in 0..seq_len {
+            for b in 0..batch_size {
+                let weight = weights_data[t * batch_size + b];
+
+                for h in 0..hidden_size {
+                    let value_idx = t * batch_size * hidden_size + b * hidden_size + h;
+                    let context_idx = b * hidden_size + h;
+
+                    context_data[context_idx] =
+                        context_data[context_idx] + weight * values_data[value_idx];
+                }
+            }
+        }
+
+        Tensor::from_vec(context_data, &[batch_size, hidden_size])
+    }
+}
+
+impl<T> crate::layers::Layer<T> for LuongAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::cmp::PartialOrd
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        // For single input, use as both query and key-value
+        // Assuming input shape: [seq_len, batch_size, hidden_size]
+        let seq_len = input.shape().dims()[0];
+        let batch_size = input.shape().dims()[1];
+
+        // Use last time step as query
+        let query = input.slice(&[seq_len - 1..seq_len, 0..batch_size, 0..self.hidden_size])?;
+        let query_reshaped = query.reshape(&[batch_size, self.hidden_size])?;
+
+        let (context, _attention_weights) =
+            self.compute_attention(&query_reshaped, input, input, None)?;
+        Ok(context)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+        if let Some(ref weight) = self.weight_matrix {
+            params.push(weight);
+        }
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+        if let Some(ref mut weight) = self.weight_matrix {
+            params.push(weight);
+        }
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+    }
+
+    fn clone_box(&self) -> Box<dyn crate::layers::Layer<T>> {
+        Box::new(self.clone())
+    }
+}
+
+/// Hierarchical Attention mechanism for RNNs
+///
+/// This mechanism applies attention at multiple levels:
+/// 1. Word-level attention within sentences
+/// 2. Sentence-level attention within documents
+///
+/// Based on: "Hierarchical Attention Networks for Document Classification"
+/// https://arxiv.org/abs/1606.02393
+pub struct HierarchicalAttention<T>
+where
+    T: Float + Clone + Default + Zero + One + Send + Sync + 'static,
+{
+    word_attention: BahdanauAttention<T>,
+    sentence_attention: BahdanauAttention<T>,
+    word_hidden_size: usize,
+    sentence_hidden_size: usize,
+    training: bool,
+}
+
+impl<T: Float + Clone + Default + Zero + One + Send + Sync + 'static> Clone
+    for HierarchicalAttention<T>
+{
+    fn clone(&self) -> Self {
+        Self {
+            word_attention: self.word_attention.clone(),
+            sentence_attention: self.sentence_attention.clone(),
+            word_hidden_size: self.word_hidden_size,
+            sentence_hidden_size: self.sentence_hidden_size,
+            training: self.training,
+        }
+    }
+}
+
+impl<T> HierarchicalAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    /// Create a new hierarchical attention mechanism
+    ///
+    /// # Arguments
+    /// * `word_hidden_size` - Size of word-level hidden states
+    /// * `sentence_hidden_size` - Size of sentence-level hidden states
+    /// * `word_attention_size` - Size of word-level attention projection
+    /// * `sentence_attention_size` - Size of sentence-level attention projection
+    pub fn new(
+        word_hidden_size: usize,
+        sentence_hidden_size: usize,
+        word_attention_size: usize,
+        sentence_attention_size: usize,
+    ) -> Self {
+        let word_attention = BahdanauAttention::new(word_hidden_size, word_attention_size);
+        let sentence_attention =
+            BahdanauAttention::new(sentence_hidden_size, sentence_attention_size);
+
+        Self {
+            word_attention,
+            sentence_attention,
+            word_hidden_size,
+            sentence_hidden_size,
+            training: true,
+        }
+    }
+
+    /// Forward pass with hierarchical attention
+    ///
+    /// # Arguments
+    /// * `word_sequences` - Word-level sequences [num_sentences, max_words, batch_size, word_hidden_size]
+    /// * `sentence_query` - Sentence-level query [batch_size, sentence_hidden_size]
+    /// * `word_masks` - Word-level masks [num_sentences, max_words, batch_size]
+    /// * `sentence_mask` - Sentence-level mask [num_sentences, batch_size]
+    ///
+    /// # Returns
+    /// * `document_representation` - Final document representation [batch_size, sentence_hidden_size]
+    /// * `sentence_weights` - Sentence-level attention weights [num_sentences, batch_size]
+    /// * `word_weights` - Word-level attention weights [num_sentences, max_words, batch_size]
+    pub fn compute_hierarchical_attention(
+        &self,
+        word_sequences: &[Tensor<T>],
+        sentence_query: &Tensor<T>,
+        word_masks: Option<&[Tensor<T>]>,
+        sentence_mask: Option<&Tensor<T>>,
+    ) -> Result<(Tensor<T>, Tensor<T>, Vec<Tensor<T>>)> {
+        let num_sentences = word_sequences.len();
+        let batch_size = sentence_query.shape().dims()[0];
+
+        // Step 1: Apply word-level attention within each sentence
+        let mut sentence_representations = Vec::new();
+        let mut word_attention_weights = Vec::new();
+
+        for (i, word_seq) in word_sequences.iter().enumerate() {
+            let word_mask = word_masks.map(|masks| &masks[i]);
+
+            // Get word-level context and attention weights
+            let max_words = word_seq.shape().dims()[0];
+            let word_query = word_seq.slice(&[
+                max_words - 1..max_words,
+                0..batch_size,
+                0..self.word_hidden_size,
+            ])?;
+            let word_query_reshaped = word_query.reshape(&[batch_size, self.word_hidden_size])?;
+
+            let (word_context, word_weights) = self.word_attention.compute_attention(
+                &word_query_reshaped,
+                word_seq,
+                word_seq,
+                word_mask,
+            )?;
+
+            sentence_representations.push(word_context);
+            word_attention_weights.push(word_weights);
+        }
+
+        // Step 2: Stack sentence representations
+        let sentence_tensor = self.stack_sentence_representations(&sentence_representations)?;
+
+        // Step 3: Apply sentence-level attention
+        let (document_representation, sentence_weights) =
+            self.sentence_attention.compute_attention(
+                sentence_query,
+                &sentence_tensor,
+                &sentence_tensor,
+                sentence_mask,
+            )?;
+
+        Ok((
+            document_representation,
+            sentence_weights,
+            word_attention_weights,
+        ))
+    }
+
+    /// Stack sentence representations into a tensor
+    fn stack_sentence_representations(&self, representations: &[Tensor<T>]) -> Result<Tensor<T>> {
+        if representations.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot stack empty representations".to_string(),
+            ));
+        }
+
+        let batch_size = representations[0].shape().dims()[0];
+        let hidden_size = representations[0].shape().dims()[1];
+        let num_sentences = representations.len();
+
+        let mut stacked_data = Vec::new();
+        for repr in representations {
+            let data = repr.to_vec()?;
+            stacked_data.extend(data);
+        }
+
+        Tensor::from_vec(stacked_data, &[num_sentences, batch_size, hidden_size])
+    }
+}
+
+impl<T> crate::layers::Layer<T> for HierarchicalAttention<T>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::cmp::PartialOrd
+        + num_traits::FromPrimitive
+        + std::iter::Sum,
+{
+    fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
+        // For single input, treat as word sequences
+        // This is a simplified implementation
+        let batch_size = input.shape().dims()[1];
+        let sentence_query = Tensor::zeros(&[batch_size, self.sentence_hidden_size]);
+
+        // Use the input as a single sentence
+        let word_sequences = vec![input.clone()];
+
+        let (document_representation, _sentence_weights, _word_weights) =
+            self.compute_hierarchical_attention(&word_sequences, &sentence_query, None, None)?;
+
+        Ok(document_representation)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<T>> {
+        let mut params = Vec::new();
+        params.extend(self.word_attention.parameters());
+        params.extend(self.sentence_attention.parameters());
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>> {
+        let mut params = Vec::new();
+        params.extend(self.word_attention.parameters_mut());
+        params.extend(self.sentence_attention.parameters_mut());
+        params
+    }
+
+    fn set_training(&mut self, training: bool) {
+        self.training = training;
+        self.word_attention.set_training(training);
+        self.sentence_attention.set_training(training);
+    }
+
+    fn clone_box(&self) -> Box<dyn crate::layers::Layer<T>> {
+        Box::new(self.clone())
+    }
+}

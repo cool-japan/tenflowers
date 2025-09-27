@@ -1,0 +1,262 @@
+use tenflowers_autograd::{
+    GradientTape, AutogradLayer, AutogradOptimizer, AutogradTrainer,
+    GradientFlowVisualizer, VisualizationSettings, ColorScheme, LayoutAlgorithm, OutputFormat,
+    viz_utils, neural_utils
+};
+use tenflowers_neural::layers::Dense;
+use tenflowers_core::Tensor;
+use ndarray::Array1;
+use std::sync::{Arc, Mutex};
+use std::fs;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Gradient Flow Visualization Example");
+    println!("==============================================");
+    
+    // Create a simple neural network
+    let tape = Arc::new(Mutex::new(GradientTape::new()));
+    let optimizer = AutogradOptimizer::sgd(tape.clone(), 0.01f32);
+    let mut trainer = AutogradTrainer::new(tape.clone(), optimizer);
+    
+    // Create a multi-layer network
+    let layer_factory = |input_size: usize, output_size: usize| Dense::new(input_size, output_size);
+    let layers = neural_utils::create_feedforward_network::<f32, Dense<f32>, _>(&[3, 5, 2, 1], tape.clone(), layer_factory)?;
+    let mut network = layers;
+    
+    // Create some training data
+    let inputs = vec![
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn()))
+        },
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![2.0f32, 3.0, 4.0]).into_dyn()))
+        },
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![3.0f32, 4.0, 5.0]).into_dyn()))
+        },
+    ];
+    
+    let targets = vec![
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![6.0f32]).into_dyn()))
+        },
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![9.0f32]).into_dyn()))
+        },
+        {
+            let tape_ref = tape.lock().unwrap();
+            tape_ref.watch(Tensor::from_array(Array1::from_vec(vec![12.0f32]).into_dyn()))
+        },
+    ];
+    
+    println!("Training neural network...");
+    
+    // Train for a few epochs and visualize gradient flow
+    for epoch in 0..5 {
+        println!("\nEpoch {}", epoch + 1);
+        
+        let mut total_loss = 0.0f32;
+        for (input, target) in inputs.iter().zip(targets.iter()) {
+            // Forward pass through all layers
+            let mut output = input.clone();
+            for layer in &network {
+                output = layer.forward(&output)?;
+            }
+            
+            // Compute loss
+            let diff = output.sub(target)?;
+            let loss = diff.mul(&diff)?;
+            total_loss += loss.tensor.as_slice().ok_or("Cannot access tensor data")?[0];
+            
+            // Collect all parameters
+            let all_params: Vec<_> = network.iter()
+                .flat_map(|layer| layer.parameters().iter())
+                .collect();
+            
+            // Analyze gradient flow
+            let mut visualizer = GradientFlowVisualizer::new();
+            let tape_ref = tape.lock().unwrap();
+            
+            println!("  Analyzing gradient flow...");
+            visualizer.analyze_flow(&tape_ref, &loss, &all_params)?;
+            
+            // Quick health check
+            let health_score = viz_utils::quick_health_check(&tape_ref, &loss, &all_params)?;
+            println!("  Gradient flow health score: {:.1}", health_score);
+            
+            // Get detailed analysis
+            if let Some(analysis) = visualizer.get_analysis() {
+                println!("  Flow efficiency: {:.1}%", analysis.flow_stats.flow_efficiency * 100.0);
+                println!("  Issues detected: {}", analysis.issues.len());
+                
+                for issue in &analysis.issues {
+                    println!("    - {:?}: {}", issue.issue_type, issue.description);
+                }
+                
+                if !analysis.recommendations.is_empty() {
+                    println!("  Recommendations:");
+                    for rec in &analysis.recommendations {
+                        println!("    - {}", rec);
+                    }
+                }
+            }
+            
+            // Generate visualization files (only for first epoch to avoid clutter)
+            if epoch == 0 {
+                // Generate SVG visualization
+                let svg_content = visualizer.generate_svg()?;
+                fs::write("gradient_flow.svg", svg_content)?;
+                println!("  Generated gradient_flow.svg");
+                
+                // Generate HTML report
+                let html_content = visualizer.generate_html_report()?;
+                fs::write("gradient_flow_report.html", html_content)?;
+                println!("  Generated gradient_flow_report.html");
+                
+                // Export JSON data
+                let json_content = visualizer.export_json()?;
+                fs::write("gradient_flow_data.json", json_content)?;
+                println!("  Generated gradient_flow_data.json");
+            }
+        }
+        
+        let avg_loss = total_loss / inputs.len() as f32;
+        println!("  Average loss: {:.6}", avg_loss);
+        
+        // Show training metrics
+        println!("  Training steps: {}", trainer.metrics().current_step);
+        println!("  Training losses: {:?}", trainer.metrics().training_loss);
+    }
+    
+    println!("\nDemonstrating different visualization settings...");
+    
+    // Create visualizer with different settings
+    let custom_settings = VisualizationSettings {
+        show_gradients: true,
+        show_values: true,
+        gradient_threshold: 1e-5,
+        color_scheme: ColorScheme::Plasma,
+        layout: LayoutAlgorithm::ForceDirected,
+        output_format: OutputFormat::HTML,
+    };
+    
+    let mut custom_visualizer = GradientFlowVisualizer::with_settings(custom_settings);
+    
+    // Analyze with custom settings
+    let input = &inputs[0];
+    let target = &targets[0];
+    
+    let mut output = input.clone();
+    for layer in &network {
+        output = layer.forward(&output)?;
+    }
+    
+    let diff = output.sub(target)?;
+    let loss = diff.mul(&diff)?;
+    
+    let all_params: Vec<_> = network.iter()
+        .flat_map(|layer| layer.parameters().iter())
+        .collect();
+    
+    let tape_ref = tape.lock().unwrap();
+    custom_visualizer.analyze_flow(&tape_ref, &loss, &all_params)?;
+    
+    // Generate custom visualization
+    let custom_html = custom_visualizer.generate_html_report()?;
+    fs::write("custom_gradient_flow_report.html", custom_html)?;
+    println!("Generated custom_gradient_flow_report.html with Plasma color scheme");
+    
+    println!("\nDemonstrating gradient flow analysis for different network architectures...");
+    
+    // Create a deeper network to show potential gradient issues
+    let deep_layer_factory = |input_size: usize, output_size: usize| Dense::new(input_size, output_size);
+    let deep_layers = neural_utils::create_feedforward_network::<f32, Dense<f32>, _>(&[3, 10, 10, 10, 10, 10, 1], tape.clone(), deep_layer_factory)?;
+    
+    // Forward pass through deep network
+    let mut deep_output = inputs[0].clone();
+    for layer in &deep_layers {
+        deep_output = layer.forward(&deep_output)?;
+    }
+    
+    let deep_diff = deep_output.sub(&targets[0])?;
+    let deep_loss = deep_diff.mul(&deep_diff)?;
+    
+    let deep_params: Vec<_> = deep_layers.iter()
+        .flat_map(|layer| layer.parameters().iter())
+        .collect();
+    
+    let mut deep_visualizer = GradientFlowVisualizer::new();
+    deep_visualizer.analyze_flow(&tape_ref, &deep_loss, &deep_params)?;
+    
+    let deep_health_score = viz_utils::quick_health_check(&tape_ref, &deep_loss, &deep_params)?;
+    println!("Deep network gradient flow health score: {:.1}", deep_health_score);
+    
+    if let Some(deep_analysis) = deep_visualizer.get_analysis() {
+        println!("Deep network issues detected: {}", deep_analysis.issues.len());
+        for issue in &deep_analysis.issues {
+            println!("  - {:?}: {}", issue.issue_type, issue.description);
+        }
+    }
+    
+    // Generate deep network visualization
+    let deep_html = deep_visualizer.generate_html_report()?;
+    fs::write("deep_network_gradient_flow.html", deep_html)?;
+    println!("Generated deep_network_gradient_flow.html");
+    
+    println!("\nVisualization files generated:");
+    println!("- gradient_flow.svg");
+    println!("- gradient_flow_report.html");
+    println!("- gradient_flow_data.json");
+    println!("- custom_gradient_flow_report.html");
+    println!("- deep_network_gradient_flow.html");
+    
+    println!("\nOpen the HTML files in your browser to view the interactive reports!");
+    
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn demonstrate_gradient_issues() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Demonstrating gradient flow issues...");
+    
+    let tape = Arc::new(Mutex::new(GradientTape::new()));
+    
+    // Create a pathological case that might cause gradient issues
+    let x_data = Array1::from_vec(vec![1e-8f32, 2e-8, 3e-8]).into_dyn();
+    let x = {
+        let tape_ref = tape.lock().unwrap();
+        tape_ref.watch(Tensor::from_array(x_data))
+    };
+    
+    // Create a computation that might lead to vanishing gradients
+    let y = x.sigmoid()?;
+    let z = y.sigmoid()?;
+    let w = z.sigmoid()?;
+    let loss = w.sum(None, false)?;
+    
+    // Analyze the gradient flow
+    let mut visualizer = GradientFlowVisualizer::new();
+    let tape_ref = tape.lock().unwrap();
+    visualizer.analyze_flow(&tape_ref, &loss, &[&x])?;
+    
+    if let Some(analysis) = visualizer.get_analysis() {
+        println!("Pathological case health score: {:.1}", analysis.health_score);
+        println!("Issues detected: {}", analysis.issues.len());
+        
+        for issue in &analysis.issues {
+            println!("  - {:?}: {}", issue.issue_type, issue.description);
+            println!("    Evidence: {:?}", issue.evidence);
+            println!("    Suggested fixes:");
+            for fix in &issue.suggested_fixes {
+                println!("      - {}", fix);
+            }
+        }
+    }
+    
+    Ok(())
+}

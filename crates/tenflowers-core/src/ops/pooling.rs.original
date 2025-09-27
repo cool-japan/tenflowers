@@ -1,0 +1,3289 @@
+use crate::tensor::TensorStorage;
+use crate::{Result, Tensor, TensorError};
+#[cfg(feature = "gpu")]
+use crate::Shape;
+use num_traits::{Float, FromPrimitive, Zero};
+use std::cmp::min;
+
+/// Max pooling 2D operation
+/// Input shape: [batch, channels, height, width] (NCHW format) for GPU or [batch, height, width, channels] (NHWC format) for CPU
+pub fn max_pool2d<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => max_pool2d_cpu(input, kernel_size, stride, padding),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => max_pool2d_gpu(input, kernel_size, stride, padding),
+    }
+}
+
+/// Average pooling 2D operation
+/// Input shape: [batch, channels, height, width] (NCHW format) for GPU or [batch, height, width, channels] (NHWC format) for CPU
+pub fn avg_pool2d<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => avg_pool2d_cpu(input, kernel_size, stride, padding),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => avg_pool2d_gpu(input, kernel_size, stride, padding),
+    }
+}
+
+/// Global max pooling 2D - pools over the entire spatial dimensions
+/// Input shape: [batch, channels, height, width] (NCHW format)
+/// Output shape: [batch, channels, 1, 1]
+pub fn global_max_pool2d<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => global_max_pool2d_cpu(input),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => global_max_pool2d_gpu(input),
+    }
+}
+
+/// Global average pooling 2D - pools over the entire spatial dimensions
+/// Input shape: [batch, channels, height, width] (NCHW format)
+/// Output shape: [batch, channels, 1, 1]
+pub fn global_avg_pool2d<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => global_avg_pool2d_cpu(input),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => global_avg_pool2d_gpu(input),
+    }
+}
+
+/// Adaptive average pooling 2D - pools to a specific output size
+/// Input shape: [batch, channels, height, width] (NCHW format)
+/// Output shape: [batch, channels, output_height, output_width]
+pub fn adaptive_avg_pool2d<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => adaptive_avg_pool2d_cpu(input, output_size),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => adaptive_avg_pool2d_gpu(input, output_size),
+    }
+}
+
+/// Adaptive max pooling 2D - pools to a specific output size
+/// Input shape: [batch, channels, height, width] (NCHW format)
+/// Output shape: [batch, channels, output_height, output_width]
+pub fn adaptive_max_pool2d<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => adaptive_max_pool2d_cpu(input, output_size),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => adaptive_max_pool2d_gpu(input, output_size),
+    }
+}
+
+fn max_pool2d_cpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "MaxPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // CPU assumes NHWC format
+    let batch_size = shape.dims()[0];
+    let input_height = shape.dims()[1];
+    let input_width = shape.dims()[2];
+    let channels = shape.dims()[3];
+
+    // Calculate output dimensions
+    let (output_height, output_width) = if padding == "valid" {
+        (
+            (input_height - kernel_size.0) / stride.0 + 1,
+            (input_width - kernel_size.1) / stride.1 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_height + stride.0 - 1) / stride.0,
+            (input_width + stride.1 - 1) / stride.1,
+        )
+    };
+
+    let mut output_data = vec![T::zero(); batch_size * output_height * output_width * channels];
+
+    for b in 0..batch_size {
+        for oh in 0..output_height {
+            for ow in 0..output_width {
+                for c in 0..channels {
+                    let h_start = oh * stride.0;
+                    let w_start = ow * stride.1;
+                    let h_end = min(h_start + kernel_size.0, input_height);
+                    let w_end = min(w_start + kernel_size.1, input_width);
+
+                    let mut max_val: Option<T> = None;
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            if let Some(val) = input.get(&[b, h, w, c]) {
+                                max_val = match max_val {
+                                    None => Some(val),
+                                    Some(current_max) => {
+                                        if val > current_max {
+                                            Some(val)
+                                        } else {
+                                            Some(current_max)
+                                        }
+                                    }
+                                };
+                            }
+                        }
+                    }
+
+                    let out_idx = ((b * output_height + oh) * output_width + ow) * channels + c;
+                    output_data[out_idx] = max_val.unwrap_or_else(T::zero);
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[batch_size, output_height, output_width, channels],
+    )
+}
+
+fn avg_pool2d_cpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "AvgPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // CPU assumes NHWC format
+    let batch_size = shape.dims()[0];
+    let input_height = shape.dims()[1];
+    let input_width = shape.dims()[2];
+    let channels = shape.dims()[3];
+
+    // Calculate output dimensions
+    let (output_height, output_width) = if padding == "valid" {
+        (
+            (input_height - kernel_size.0) / stride.0 + 1,
+            (input_width - kernel_size.1) / stride.1 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_height + stride.0 - 1) / stride.0,
+            (input_width + stride.1 - 1) / stride.1,
+        )
+    };
+
+    let mut output_data = vec![T::zero(); batch_size * output_height * output_width * channels];
+
+    for b in 0..batch_size {
+        for oh in 0..output_height {
+            for ow in 0..output_width {
+                for c in 0..channels {
+                    let h_start = oh * stride.0;
+                    let w_start = ow * stride.1;
+                    let h_end = min(h_start + kernel_size.0, input_height);
+                    let w_end = min(w_start + kernel_size.1, input_width);
+
+                    let mut sum = T::zero();
+                    let mut count = 0;
+
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            if let Some(val) = input.get(&[b, h, w, c]) {
+                                sum = sum + val;
+                                count += 1;
+                            }
+                        }
+                    }
+
+                    let out_idx = ((b * output_height + oh) * output_width + ow) * channels + c;
+                    if count > 0 {
+                        output_data[out_idx] = sum / T::from(count).unwrap();
+                    } else {
+                        output_data[out_idx] = T::zero();
+                    }
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[batch_size, output_height, output_width, channels],
+    )
+}
+
+#[cfg(feature = "gpu")]
+fn max_pool2d_gpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "MaxPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // GPU assumes NCHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_height = shape.dims()[2];
+    let input_width = shape.dims()[3];
+
+    // Calculate output dimensions
+    let (output_height, output_width) = if padding == "valid" {
+        (
+            (input_height - kernel_size.0) / stride.0 + 1,
+            (input_width - kernel_size.1) / stride.1 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_height + stride.0 - 1) / stride.0,
+            (input_width + stride.1 - 1) / stride.1,
+        )
+    };
+
+    let input_shape = &[batch_size, channels, input_height, input_width];
+    let output_shape = &[batch_size, channels, output_height, output_width];
+    let padding_tuple = if padding == "same" {
+        let pad_h = std::cmp::max(
+            0,
+            (output_height - 1) * stride.0 + kernel_size.0 - input_height,
+        ) / 2;
+        let pad_w = std::cmp::max(
+            0,
+            (output_width - 1) * stride.1 + kernel_size.1 - input_width,
+        ) / 2;
+        (pad_h, pad_w)
+    } else {
+        (0, 0)
+    };
+
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: max_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::MaxPool2D,
+        input_shape,
+        output_shape,
+        kernel_size,
+        stride,
+        padding_tuple,
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape.to_vec()),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn avg_pool2d_gpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize),
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "AvgPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // GPU assumes NCHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_height = shape.dims()[2];
+    let input_width = shape.dims()[3];
+
+    // Calculate output dimensions
+    let (output_height, output_width) = if padding == "valid" {
+        (
+            (input_height - kernel_size.0) / stride.0 + 1,
+            (input_width - kernel_size.1) / stride.1 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_height + stride.0 - 1) / stride.0,
+            (input_width + stride.1 - 1) / stride.1,
+        )
+    };
+
+    let input_shape = &[batch_size, channels, input_height, input_width];
+    let output_shape = &[batch_size, channels, output_height, output_width];
+    let padding_tuple = if padding == "same" {
+        let pad_h = std::cmp::max(
+            0,
+            (output_height - 1) * stride.0 + kernel_size.0 - input_height,
+        ) / 2;
+        let pad_w = std::cmp::max(
+            0,
+            (output_width - 1) * stride.1 + kernel_size.1 - input_width,
+        ) / 2;
+        (pad_h, pad_w)
+    } else {
+        (0, 0)
+    };
+
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: avg_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::AvgPool2D,
+        input_shape,
+        output_shape,
+        kernel_size,
+        stride,
+        padding_tuple,
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape.to_vec()),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+// Global pooling implementations
+
+#[allow(clippy::infallible_destructuring_match)]
+fn global_max_pool2d_cpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("global_max_pool2d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global max pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let height = input_shape[2];
+    let width = input_shape[3];
+
+    let output_shape = vec![batch_size, channels, 1, 1];
+    let mut output_data = vec![T::default(); batch_size * channels];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            let mut max_val = T::default();
+            let mut has_val = false;
+
+            for h in 0..height {
+                for w in 0..width {
+                    let val = input_arr[[b, c, h, w]].clone();
+                    if !has_val || val > max_val {
+                        max_val = val;
+                        has_val = true;
+                    }
+                }
+            }
+
+            output_data[b * channels + c] = max_val;
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+#[allow(clippy::infallible_destructuring_match)]
+fn global_avg_pool2d_cpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("adaptive_avg_pool2d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global avg pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let height = input_shape[2];
+    let width = input_shape[3];
+
+    let output_shape = vec![batch_size, channels, 1, 1];
+    let mut output_data = vec![T::default(); batch_size * channels];
+    let spatial_size = T::from_usize(height * width).unwrap_or(T::one());
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            let mut sum = T::zero();
+
+            for h in 0..height {
+                for w in 0..width {
+                    sum = sum + input_arr[[b, c, h, w]];
+                }
+            }
+
+            output_data[b * channels + c] = sum / spatial_size;
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+#[allow(clippy::infallible_destructuring_match)]
+fn adaptive_avg_pool2d_cpu<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("adaptive_avg_pool2d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Adaptive avg pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let in_height = input_shape[2];
+    let in_width = input_shape[3];
+
+    let (out_height, out_width) = output_size;
+    let output_shape = vec![batch_size, channels, out_height, out_width];
+    let mut output_data = vec![T::default(); batch_size * channels * out_height * out_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for out_h in 0..out_height {
+                for out_w in 0..out_width {
+                    // Calculate adaptive pooling window
+                    let h_start = (out_h * in_height) / out_height;
+                    let h_end = ((out_h + 1) * in_height + out_height - 1) / out_height;
+                    let w_start = (out_w * in_width) / out_width;
+                    let w_end = ((out_w + 1) * in_width + out_width - 1) / out_width;
+
+                    let h_end = min(h_end, in_height);
+                    let w_end = min(w_end, in_width);
+
+                    let mut sum = T::zero();
+                    let mut count = 0;
+
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            sum = sum + input_arr[[b, c, h, w]];
+                            count += 1;
+                        }
+                    }
+
+                    let avg = if count > 0 {
+                        sum / T::from_usize(count).unwrap_or(T::one())
+                    } else {
+                        T::zero()
+                    };
+
+                    let output_idx = b * channels * out_height * out_width
+                        + c * out_height * out_width
+                        + out_h * out_width
+                        + out_w;
+                    output_data[output_idx] = avg;
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+#[allow(clippy::infallible_destructuring_match)]
+fn adaptive_max_pool2d_cpu<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Send + Sync + 'static,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("adaptive_max_pool2d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Adaptive max pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let in_height = input_shape[2];
+    let in_width = input_shape[3];
+
+    let (out_height, out_width) = output_size;
+    let output_shape = vec![batch_size, channels, out_height, out_width];
+    let mut output_data = vec![T::default(); batch_size * channels * out_height * out_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for out_h in 0..out_height {
+                for out_w in 0..out_width {
+                    // Calculate adaptive pooling window
+                    let h_start = (out_h * in_height) / out_height;
+                    let h_end = ((out_h + 1) * in_height + out_height - 1) / out_height;
+                    let w_start = (out_w * in_width) / out_width;
+                    let w_end = ((out_w + 1) * in_width + out_width - 1) / out_width;
+
+                    let h_end = min(h_end, in_height);
+                    let w_end = min(w_end, in_width);
+
+                    let mut max_val: Option<T> = None;
+
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            let val = input_arr[[b, c, h, w]].clone();
+                            max_val = match max_val {
+                                None => Some(val),
+                                Some(current_max) => {
+                                    if val > current_max {
+                                        Some(val)
+                                    } else {
+                                        Some(current_max)
+                                    }
+                                }
+                            };
+                        }
+                    }
+
+                    let output_idx = b * channels * out_height * out_width
+                        + c * out_height * out_width
+                        + out_h * out_width
+                        + out_w;
+                    output_data[output_idx] = max_val.unwrap_or_else(T::zero);
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+// GPU implementations (stubs for now, would use GPU kernels)
+
+#[cfg(feature = "gpu")]
+fn global_max_pool2d_gpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: global_max_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global max pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let output_shape = vec![batch_size, channels, 1, 1];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::GlobalMaxPool2D,
+        input_shape,
+        &output_shape,
+        (input_shape[2], input_shape[3]), // kernel_size = spatial dims
+        (1, 1),                           // stride
+        (0, 0),                           // padding
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn global_avg_pool2d_gpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: global_avg_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global avg pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let output_shape = vec![batch_size, channels, 1, 1];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::GlobalAvgPool2D,
+        input_shape,
+        &output_shape,
+        (input_shape[2], input_shape[3]), // kernel_size = spatial dims
+        (1, 1),                           // stride
+        (0, 0),                           // padding
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn adaptive_avg_pool2d_gpu<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: adaptive_avg_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Adaptive avg pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let (out_height, out_width) = output_size;
+    let output_shape = vec![batch_size, channels, out_height, out_width];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::AdaptiveAvgPool2D,
+        input_shape,
+        &output_shape,
+        output_size, // kernel_size = output_size for adaptive
+        (1, 1),      // stride
+        (0, 0),      // padding
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn adaptive_max_pool2d_gpu<T>(input: &Tensor<T>, output_size: (usize, usize)) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: adaptive_max_pool2d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "Adaptive max pool input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let (out_height, out_width) = output_size;
+    let output_shape = vec![batch_size, channels, out_height, out_width];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::AdaptiveMaxPool2D,
+        input_shape,
+        &output_shape,
+        output_size, // kernel_size = output_size for adaptive
+        (1, 1),      // stride
+        (0, 0),      // padding
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+/// Max pooling 3D operation
+/// Input shape: [batch, channels, depth, height, width] (NCDHW format)
+pub fn max_pool3d<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => max_pool3d_cpu(input, kernel_size, stride, padding),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => max_pool3d_gpu(input, kernel_size, stride, padding),
+    }
+}
+
+/// Average pooling 3D operation
+/// Input shape: [batch, channels, depth, height, width] (NCDHW format)
+pub fn avg_pool3d<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => avg_pool3d_cpu(input, kernel_size, stride, padding),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => avg_pool3d_gpu(input, kernel_size, stride, padding),
+    }
+}
+
+/// Global max pooling 3D - pools over the entire spatial dimensions
+/// Input shape: [batch, channels, depth, height, width] (NCDHW format)
+/// Output shape: [batch, channels, 1, 1, 1]
+pub fn global_max_pool3d<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => global_max_pool3d_cpu(input),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => global_max_pool3d_gpu(input),
+    }
+}
+
+/// Global average pooling 3D - pools over the entire spatial dimensions
+/// Input shape: [batch, channels, depth, height, width] (NCDHW format)
+/// Output shape: [batch, channels, 1, 1, 1]
+pub fn global_avg_pool3d<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => global_avg_pool3d_cpu(input),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => global_avg_pool3d_gpu(input),
+    }
+}
+
+fn max_pool3d_cpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 5 {
+        return Err(TensorError::InvalidShape {
+            operation: "max_pool3d".to_string(),
+            reason: format!("MaxPool3D expects 5D input, got {}D", shape.rank()),
+            shape: Some(shape.dims().to_vec()),
+            context: None,
+        });
+    }
+
+    // CPU assumes NCDHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_depth = shape.dims()[2];
+    let input_height = shape.dims()[3];
+    let input_width = shape.dims()[4];
+
+    // Calculate output dimensions
+    let (output_depth, output_height, output_width) = if padding == "valid" {
+        (
+            (input_depth - kernel_size.0) / stride.0 + 1,
+            (input_height - kernel_size.1) / stride.1 + 1,
+            (input_width - kernel_size.2) / stride.2 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_depth + stride.0 - 1) / stride.0,
+            (input_height + stride.1 - 1) / stride.1,
+            (input_width + stride.2 - 1) / stride.2,
+        )
+    };
+
+    let mut output_data =
+        vec![T::zero(); batch_size * channels * output_depth * output_height * output_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for od in 0..output_depth {
+                for oh in 0..output_height {
+                    for ow in 0..output_width {
+                        let d_start = od * stride.0;
+                        let h_start = oh * stride.1;
+                        let w_start = ow * stride.2;
+                        let d_end = min(d_start + kernel_size.0, input_depth);
+                        let h_end = min(h_start + kernel_size.1, input_height);
+                        let w_end = min(w_start + kernel_size.2, input_width);
+
+                        let mut max_val: Option<T> = None;
+                        for d in d_start..d_end {
+                            for h in h_start..h_end {
+                                for w in w_start..w_end {
+                                    if let Some(val) = input.get(&[b, c, d, h, w]) {
+                                        max_val = match max_val {
+                                            None => Some(val),
+                                            Some(current_max) => {
+                                                if val > current_max {
+                                                    Some(val)
+                                                } else {
+                                                    Some(current_max)
+                                                }
+                                            }
+                                        };
+                                    }
+                                }
+                            }
+                        }
+
+                        let out_idx = b * channels * output_depth * output_height * output_width
+                            + c * output_depth * output_height * output_width
+                            + od * output_height * output_width
+                            + oh * output_width
+                            + ow;
+                        output_data[out_idx] = max_val.unwrap_or_else(T::zero);
+                    }
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[
+            batch_size,
+            channels,
+            output_depth,
+            output_height,
+            output_width,
+        ],
+    )
+}
+
+fn avg_pool3d_cpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 5 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "AvgPool3D expects 5D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // CPU assumes NCDHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_depth = shape.dims()[2];
+    let input_height = shape.dims()[3];
+    let input_width = shape.dims()[4];
+
+    // Calculate output dimensions
+    let (output_depth, output_height, output_width) = if padding == "valid" {
+        (
+            (input_depth - kernel_size.0) / stride.0 + 1,
+            (input_height - kernel_size.1) / stride.1 + 1,
+            (input_width - kernel_size.2) / stride.2 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_depth + stride.0 - 1) / stride.0,
+            (input_height + stride.1 - 1) / stride.1,
+            (input_width + stride.2 - 1) / stride.2,
+        )
+    };
+
+    let mut output_data =
+        vec![T::zero(); batch_size * channels * output_depth * output_height * output_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for od in 0..output_depth {
+                for oh in 0..output_height {
+                    for ow in 0..output_width {
+                        let d_start = od * stride.0;
+                        let h_start = oh * stride.1;
+                        let w_start = ow * stride.2;
+                        let d_end = min(d_start + kernel_size.0, input_depth);
+                        let h_end = min(h_start + kernel_size.1, input_height);
+                        let w_end = min(w_start + kernel_size.2, input_width);
+
+                        let mut sum = T::zero();
+                        let mut count = 0;
+
+                        for d in d_start..d_end {
+                            for h in h_start..h_end {
+                                for w in w_start..w_end {
+                                    if let Some(val) = input.get(&[b, c, d, h, w]) {
+                                        sum = sum + val;
+                                        count += 1;
+                                    }
+                                }
+                            }
+                        }
+
+                        let out_idx = b * channels * output_depth * output_height * output_width
+                            + c * output_depth * output_height * output_width
+                            + od * output_height * output_width
+                            + oh * output_width
+                            + ow;
+                        if count > 0 {
+                            output_data[out_idx] = sum / T::from(count).unwrap();
+                        } else {
+                            output_data[out_idx] = T::zero();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[
+            batch_size,
+            channels,
+            output_depth,
+            output_height,
+            output_width,
+        ],
+    )
+}
+
+#[allow(clippy::infallible_destructuring_match)]
+fn global_max_pool3d_cpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("global_max_pool3d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global max pool 3D input must be 5D (NCDHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let depth = input_shape[2];
+    let height = input_shape[3];
+    let width = input_shape[4];
+
+    let output_shape = vec![batch_size, channels, 1, 1, 1];
+    let mut output_data = vec![T::default(); batch_size * channels];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            let mut max_val = T::default();
+            let mut has_val = false;
+
+            for d in 0..depth {
+                for h in 0..height {
+                    for w in 0..width {
+                        let val = input_arr[[b, c, d, h, w]].clone();
+                        if !has_val || val > max_val {
+                            max_val = val;
+                            has_val = true;
+                        }
+                    }
+                }
+            }
+
+            output_data[b * channels + c] = max_val;
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+#[allow(clippy::infallible_destructuring_match)]
+fn global_avg_pool3d_cpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive,
+{
+    let input_arr = match &input.storage {
+        TensorStorage::Cpu(arr) => arr,
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => {
+            panic!("global_avg_pool3d_cpu should only be called with CPU tensors")
+        }
+    };
+
+    if input_arr.ndim() != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global avg pool 3D input must be 5D (NCDHW format)".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let depth = input_shape[2];
+    let height = input_shape[3];
+    let width = input_shape[4];
+
+    let output_shape = vec![batch_size, channels, 1, 1, 1];
+    let mut output_data = vec![T::default(); batch_size * channels];
+    let spatial_size = T::from_usize(depth * height * width).unwrap_or(T::one());
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            let mut sum = T::zero();
+
+            for d in 0..depth {
+                for h in 0..height {
+                    for w in 0..width {
+                        sum = sum + input_arr[[b, c, d, h, w]];
+                    }
+                }
+            }
+
+            output_data[b * channels + c] = sum / spatial_size;
+        }
+    }
+
+    Tensor::from_vec(output_data, &output_shape)
+}
+
+#[cfg(feature = "gpu")]
+fn max_pool3d_gpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let shape = input.shape();
+    if shape.rank() != 5 {
+        return Err(TensorError::InvalidShape {
+            operation: "max_pool3d".to_string(),
+            reason: format!("MaxPool3D expects 5D input, got {}D", shape.rank()),
+            shape: Some(shape.dims().to_vec()),
+            context: None,
+        });
+    }
+
+    // GPU assumes NCDHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_depth = shape.dims()[2];
+    let input_height = shape.dims()[3];
+    let input_width = shape.dims()[4];
+
+    // Calculate output dimensions
+    let (output_depth, output_height, output_width) = if padding == "valid" {
+        (
+            (input_depth - kernel_size.0) / stride.0 + 1,
+            (input_height - kernel_size.1) / stride.1 + 1,
+            (input_width - kernel_size.2) / stride.2 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_depth + stride.0 - 1) / stride.0,
+            (input_height + stride.1 - 1) / stride.1,
+            (input_width + stride.2 - 1) / stride.2,
+        )
+    };
+
+    let input_shape = &[batch_size, channels, input_depth, input_height, input_width];
+    let output_shape = &[
+        batch_size,
+        channels,
+        output_depth,
+        output_height,
+        output_width,
+    ];
+
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: max_pool3d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::MaxPool3D,
+        input_shape,
+        output_shape,
+        (kernel_size.0, kernel_size.1), // Convert 3D kernel to 2D format for now
+        (stride.0, stride.1),           // Convert 3D stride to 2D format for now
+        (0, 0),                         // padding tuple - simplified for now
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape.to_vec()),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn avg_pool3d_gpu<T>(
+    input: &Tensor<T>,
+    kernel_size: (usize, usize, usize),
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let shape = input.shape();
+    if shape.rank() != 5 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "AvgPool3D expects 5D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    // GPU assumes NCDHW format
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_depth = shape.dims()[2];
+    let input_height = shape.dims()[3];
+    let input_width = shape.dims()[4];
+
+    // Calculate output dimensions
+    let (output_depth, output_height, output_width) = if padding == "valid" {
+        (
+            (input_depth - kernel_size.0) / stride.0 + 1,
+            (input_height - kernel_size.1) / stride.1 + 1,
+            (input_width - kernel_size.2) / stride.2 + 1,
+        )
+    } else {
+        // "same" padding
+        (
+            (input_depth + stride.0 - 1) / stride.0,
+            (input_height + stride.1 - 1) / stride.1,
+            (input_width + stride.2 - 1) / stride.2,
+        )
+    };
+
+    let input_shape = &[batch_size, channels, input_depth, input_height, input_width];
+    let output_shape = &[
+        batch_size,
+        channels,
+        output_depth,
+        output_height,
+        output_width,
+    ];
+
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: avg_pool3d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::AvgPool3D,
+        input_shape,
+        output_shape,
+        (kernel_size.0, kernel_size.1), // Convert 3D to 2D
+        (stride.0, stride.1),           // Convert 3D to 2D
+        (0, 0),                         // padding tuple for 2D
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape.to_vec()),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn global_max_pool3d_gpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: global_max_pool3d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global max pool 3D input must be 5D (NCDHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let output_shape = vec![batch_size, channels, 1, 1, 1];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::GlobalMaxPool3D,
+        input_shape,
+        &output_shape,
+        (input_shape[2], input_shape[3]), // kernel_size = spatial dims (2D)
+        (1, 1),                           // stride (2D)
+        (0, 0),                           // padding (2D)
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+#[cfg(feature = "gpu")]
+fn global_avg_pool3d_gpu<T>(input: &Tensor<T>) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
+        return Err(TensorError::UnsupportedOperation(
+            "Internal error: global_avg_pool3d_gpu called with non-GPU tensor".to_string(),
+        ));
+    };
+
+    let input_shape = input.shape().dims();
+    if input_shape.len() != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Global avg pool 3D input must be 5D (NCDHW format)".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let channels = input_shape[1];
+    let output_shape = vec![batch_size, channels, 1, 1, 1];
+
+    let result_gpu = crate::gpu::ops::execute_pooling_op(
+        gpu_buffer,
+        crate::gpu::ops::PoolingOp::GlobalAvgPool3D,
+        input_shape,
+        &output_shape,
+        (input_shape[2], input_shape[3]), // kernel_size = spatial dims (2D)
+        (1, 1),                           // stride (2D)
+        (0, 0),                           // padding (2D)
+    )?;
+
+    Ok(Tensor {
+        storage: TensorStorage::Gpu(result_gpu),
+        shape: crate::Shape::new(output_shape),
+        device: input.device().clone(),
+        requires_grad: input.requires_grad(),
+        grad: None,
+    })
+}
+
+/// Fractional max pooling 2D operation
+/// Uses stochastic or deterministic fractional scaling
+pub fn fractional_max_pool2d<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => {
+            fractional_max_pool2d_cpu(input, pooling_ratio, random_samples)
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => {
+            fractional_max_pool2d_gpu(input, pooling_ratio, random_samples)
+        }
+    }
+}
+
+/// Fractional average pooling 2D operation
+/// Uses stochastic or deterministic fractional scaling
+pub fn fractional_avg_pool2d<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &input.storage {
+        TensorStorage::Cpu(_input_arr) => {
+            fractional_avg_pool2d_cpu(input, pooling_ratio, random_samples)
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => {
+            fractional_avg_pool2d_gpu(input, pooling_ratio, random_samples)
+        }
+    }
+}
+
+fn fractional_max_pool2d_cpu<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "FractionalMaxPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_height = shape.dims()[2];
+    let input_width = shape.dims()[3];
+
+    let output_height = (input_height as f32 * pooling_ratio.0) as usize;
+    let output_width = (input_width as f32 * pooling_ratio.1) as usize;
+
+    // Generate pooling regions
+    let (row_splits, col_splits) = if let Some(samples) = random_samples {
+        // Use provided random samples for deterministic behavior
+        generate_pooling_regions_deterministic(
+            input_height,
+            input_width,
+            output_height,
+            output_width,
+            samples,
+        )?
+    } else {
+        // Generate random pooling regions
+        generate_pooling_regions_random(input_height, input_width, output_height, output_width)?
+    };
+
+    let mut output_data = vec![T::zero(); batch_size * channels * output_height * output_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for oh in 0..output_height {
+                for ow in 0..output_width {
+                    let h_start = row_splits[oh];
+                    let h_end = row_splits[oh + 1];
+                    let w_start = col_splits[ow];
+                    let w_end = col_splits[ow + 1];
+
+                    let mut max_val: Option<T> = None;
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            if let Some(val) = input.get(&[b, c, h, w]) {
+                                max_val = match max_val {
+                                    None => Some(val),
+                                    Some(current_max) => {
+                                        if val > current_max {
+                                            Some(val)
+                                        } else {
+                                            Some(current_max)
+                                        }
+                                    }
+                                };
+                            }
+                        }
+                    }
+
+                    let out_idx = b * channels * output_height * output_width
+                        + c * output_height * output_width
+                        + oh * output_width
+                        + ow;
+                    output_data[out_idx] = max_val.unwrap_or_else(T::zero);
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[batch_size, channels, output_height, output_width],
+    )
+}
+
+fn fractional_avg_pool2d_cpu<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let shape = input.shape();
+    if shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "FractionalAvgPool2D expects 4D input, got {}D",
+            shape.rank()
+        )));
+    }
+
+    let batch_size = shape.dims()[0];
+    let channels = shape.dims()[1];
+    let input_height = shape.dims()[2];
+    let input_width = shape.dims()[3];
+
+    let output_height = (input_height as f32 * pooling_ratio.0) as usize;
+    let output_width = (input_width as f32 * pooling_ratio.1) as usize;
+
+    // Generate pooling regions
+    let (row_splits, col_splits) = if let Some(samples) = random_samples {
+        // Use provided random samples for deterministic behavior
+        generate_pooling_regions_deterministic(
+            input_height,
+            input_width,
+            output_height,
+            output_width,
+            samples,
+        )?
+    } else {
+        // Generate random pooling regions
+        generate_pooling_regions_random(input_height, input_width, output_height, output_width)?
+    };
+
+    let mut output_data = vec![T::zero(); batch_size * channels * output_height * output_width];
+
+    for b in 0..batch_size {
+        for c in 0..channels {
+            for oh in 0..output_height {
+                for ow in 0..output_width {
+                    let h_start = row_splits[oh];
+                    let h_end = row_splits[oh + 1];
+                    let w_start = col_splits[ow];
+                    let w_end = col_splits[ow + 1];
+
+                    let mut sum = T::zero();
+                    let mut count = 0;
+
+                    for h in h_start..h_end {
+                        for w in w_start..w_end {
+                            if let Some(val) = input.get(&[b, c, h, w]) {
+                                sum = sum + val;
+                                count += 1;
+                            }
+                        }
+                    }
+
+                    let out_idx = b * channels * output_height * output_width
+                        + c * output_height * output_width
+                        + oh * output_width
+                        + ow;
+                    if count > 0 {
+                        output_data[out_idx] = sum / T::from(count).unwrap();
+                    } else {
+                        output_data[out_idx] = T::zero();
+                    }
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[batch_size, channels, output_height, output_width],
+    )
+}
+
+/// Generate random pooling regions for fractional pooling
+fn generate_pooling_regions_random(
+    input_height: usize,
+    input_width: usize,
+    output_height: usize,
+    output_width: usize,
+) -> Result<(Vec<usize>, Vec<usize>)> {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    // Generate random split points for rows
+    let mut row_splits = vec![0];
+    for _ in 0..output_height {
+        let last_split = *row_splits.last().unwrap();
+        let remaining_height = input_height - last_split;
+        let remaining_outputs = output_height - (row_splits.len() - 1);
+
+        if remaining_outputs == 0 {
+            break;
+        }
+
+        let min_step = remaining_height / remaining_outputs;
+        let max_step = if remaining_outputs == 1 {
+            remaining_height
+        } else {
+            std::cmp::min(remaining_height, min_step * 2)
+        };
+
+        let step = if min_step == max_step {
+            min_step
+        } else {
+            rng.gen_range(min_step..=max_step)
+        };
+
+        row_splits.push(last_split + step);
+    }
+    row_splits.push(input_height);
+
+    // Generate random split points for columns
+    let mut col_splits = vec![0];
+    for _ in 0..output_width {
+        let last_split = *col_splits.last().unwrap();
+        let remaining_width = input_width - last_split;
+        let remaining_outputs = output_width - (col_splits.len() - 1);
+
+        if remaining_outputs == 0 {
+            break;
+        }
+
+        let min_step = remaining_width / remaining_outputs;
+        let max_step = if remaining_outputs == 1 {
+            remaining_width
+        } else {
+            std::cmp::min(remaining_width, min_step * 2)
+        };
+
+        let step = if min_step == max_step {
+            min_step
+        } else {
+            rng.gen_range(min_step..=max_step)
+        };
+
+        col_splits.push(last_split + step);
+    }
+    col_splits.push(input_width);
+
+    Ok((row_splits, col_splits))
+}
+
+/// Generate deterministic pooling regions for fractional pooling
+fn generate_pooling_regions_deterministic<T>(
+    input_height: usize,
+    input_width: usize,
+    output_height: usize,
+    output_width: usize,
+    random_samples: &Tensor<T>,
+) -> Result<(Vec<usize>, Vec<usize>)>
+where
+    T: Clone + Float + FromPrimitive,
+{
+    // For deterministic fractional pooling, we use the provided random samples
+    // to generate consistent pooling regions
+    let samples = random_samples.as_slice().ok_or_else(|| {
+        TensorError::device_error_simple("Cannot access random samples tensor data".to_string())
+    })?;
+
+    let expected_samples = output_height + output_width;
+    if samples.len() < expected_samples {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "Need at least {} random samples, got {}",
+            expected_samples,
+            samples.len()
+        )));
+    }
+
+    // Generate deterministic split points for rows
+    let mut row_splits = vec![0];
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..output_height {
+        let last_split = *row_splits.last().unwrap();
+        let remaining_height = input_height - last_split;
+        let remaining_outputs = output_height - (row_splits.len() - 1);
+
+        if remaining_outputs == 0 {
+            break;
+        }
+
+        let min_step = remaining_height / remaining_outputs;
+        let max_step = if remaining_outputs == 1 {
+            remaining_height
+        } else {
+            std::cmp::min(remaining_height, min_step * 2)
+        };
+
+        let random_val = samples[i].to_f32().unwrap_or(0.5);
+        let step = min_step + ((max_step - min_step) as f32 * random_val) as usize;
+        row_splits.push(last_split + step);
+    }
+    row_splits.push(input_height);
+
+    // Generate deterministic split points for columns
+    let mut col_splits = vec![0];
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..output_width {
+        let last_split = *col_splits.last().unwrap();
+        let remaining_width = input_width - last_split;
+        let remaining_outputs = output_width - (col_splits.len() - 1);
+
+        if remaining_outputs == 0 {
+            break;
+        }
+
+        let min_step = remaining_width / remaining_outputs;
+        let max_step = if remaining_outputs == 1 {
+            remaining_width
+        } else {
+            std::cmp::min(remaining_width, min_step * 2)
+        };
+
+        let random_val = samples[output_height + i].to_f32().unwrap_or(0.5);
+        let step = min_step + ((max_step - min_step) as f32 * random_val) as usize;
+        col_splits.push(last_split + step);
+    }
+    col_splits.push(input_width);
+
+    Ok((row_splits, col_splits))
+}
+
+#[cfg(feature = "gpu")]
+fn fractional_max_pool2d_gpu<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    if let TensorStorage::Gpu(gpu_buffer) = &input.storage {
+        let input_shape = input.shape().dims();
+        if input_shape.len() != 4 {
+            return Err(TensorError::invalid_shape_simple(
+                "Fractional max pool input must be 4D (NCHW format)".to_string(),
+            ));
+        }
+
+        let batch_size = input_shape[0];
+        let channels = input_shape[1];
+        let input_height = input_shape[2];
+        let input_width = input_shape[3];
+
+        // Calculate output dimensions based on pooling ratio
+        let output_height = (input_height as f32 * pooling_ratio.0).round() as usize;
+        let output_width = (input_width as f32 * pooling_ratio.1).round() as usize;
+        let output_shape = vec![batch_size, channels, output_height, output_width];
+
+        let result_gpu = crate::gpu::ops::execute_fractional_pooling_op(
+            gpu_buffer,
+            crate::gpu::ops::PoolingOp::FractionalMaxPool2D,
+            input_shape,
+            &output_shape,
+        )?;
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(output_shape),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        // Fallback to CPU implementation for non-GPU tensors
+        fractional_max_pool2d_cpu(input, pooling_ratio, random_samples)
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn fractional_avg_pool2d_gpu<T>(
+    input: &Tensor<T>,
+    pooling_ratio: (f32, f32),
+    random_samples: Option<&Tensor<T>>,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    if let TensorStorage::Gpu(gpu_buffer) = &input.storage {
+        let input_shape = input.shape().dims();
+        if input_shape.len() != 4 {
+            return Err(TensorError::invalid_shape_simple(
+                "Fractional avg pool input must be 4D (NCHW format)".to_string(),
+            ));
+        }
+
+        let batch_size = input_shape[0];
+        let channels = input_shape[1];
+        let input_height = input_shape[2];
+        let input_width = input_shape[3];
+
+        // Calculate output dimensions based on pooling ratio
+        let output_height = (input_height as f32 * pooling_ratio.0).round() as usize;
+        let output_width = (input_width as f32 * pooling_ratio.1).round() as usize;
+        let output_shape = vec![batch_size, channels, output_height, output_width];
+
+        let result_gpu = crate::gpu::ops::execute_fractional_pooling_op(
+            gpu_buffer,
+            crate::gpu::ops::PoolingOp::FractionalAvgPool2D,
+            input_shape,
+            &output_shape,
+        )?;
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(output_shape),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        // Fallback to CPU implementation for non-GPU tensors
+        fractional_avg_pool2d_cpu(input, pooling_ratio, random_samples)
+    }
+}
+
+/// ROI (Region of Interest) pooling operation
+/// Used in object detection models like R-CNN
+/// Input: feature_maps [batch, channels, height, width], rois [num_rois, 5]
+/// ROI format: [batch_idx, x1, y1, x2, y2] where coordinates are normalized to [0, 1]
+/// Output: [num_rois, channels, pooled_height, pooled_width]
+pub fn roi_pool2d<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &feature_maps.storage {
+        TensorStorage::Cpu(_input_arr) => {
+            roi_pool2d_cpu(feature_maps, rois, pooled_size, spatial_scale)
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => {
+            roi_pool2d_gpu(feature_maps, rois, pooled_size, spatial_scale)
+        }
+    }
+}
+
+/// ROI Align pooling operation (improved version of ROI pooling)
+/// Uses bilinear interpolation for better gradient flow
+pub fn roi_align2d<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+    sampling_ratio: i32,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    match &feature_maps.storage {
+        TensorStorage::Cpu(_input_arr) => roi_align2d_cpu(
+            feature_maps,
+            rois,
+            pooled_size,
+            spatial_scale,
+            sampling_ratio,
+        ),
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_gpu_buffer) => roi_align2d_gpu(
+            feature_maps,
+            rois,
+            pooled_size,
+            spatial_scale,
+            sampling_ratio,
+        ),
+    }
+}
+
+fn roi_pool2d_cpu<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let feature_shape = feature_maps.shape();
+    let roi_shape = rois.shape();
+
+    if feature_shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "Feature maps must be 4D, got {}D",
+            feature_shape.rank()
+        )));
+    }
+
+    if roi_shape.rank() != 2 || roi_shape.dims()[1] != 5 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "ROIs must be [num_rois, 5], got {:?}",
+            roi_shape.dims()
+        )));
+    }
+
+    let batch_size = feature_shape.dims()[0];
+    let channels = feature_shape.dims()[1];
+    let feature_height = feature_shape.dims()[2];
+    let feature_width = feature_shape.dims()[3];
+    let num_rois = roi_shape.dims()[0];
+    let (pooled_height, pooled_width) = pooled_size;
+
+    let rois_data = rois.as_slice().ok_or_else(|| {
+        TensorError::device_error_simple("Cannot access ROIs tensor data".to_string())
+    })?;
+
+    let mut output_data = vec![T::zero(); num_rois * channels * pooled_height * pooled_width];
+
+    for roi_idx in 0..num_rois {
+        let roi_start_idx = roi_idx * 5;
+        let batch_idx = rois_data[roi_start_idx].to_usize().unwrap_or(0);
+        let roi_x1 = rois_data[roi_start_idx + 1].to_f32().unwrap_or(0.0);
+        let roi_y1 = rois_data[roi_start_idx + 2].to_f32().unwrap_or(0.0);
+        let roi_x2 = rois_data[roi_start_idx + 3].to_f32().unwrap_or(1.0);
+        let roi_y2 = rois_data[roi_start_idx + 4].to_f32().unwrap_or(1.0);
+
+        if batch_idx >= batch_size {
+            continue;
+        }
+
+        // Convert normalized coordinates to feature map coordinates
+        let x1 = (roi_x1 * spatial_scale * feature_width as f32) as i32;
+        let y1 = (roi_y1 * spatial_scale * feature_height as f32) as i32;
+        let x2 = (roi_x2 * spatial_scale * feature_width as f32) as i32;
+        let y2 = (roi_y2 * spatial_scale * feature_height as f32) as i32;
+
+        let roi_width = std::cmp::max(x2 - x1, 1);
+        let roi_height = std::cmp::max(y2 - y1, 1);
+
+        let bin_size_w = roi_width as f32 / pooled_width as f32;
+        let bin_size_h = roi_height as f32 / pooled_height as f32;
+
+        for c in 0..channels {
+            for ph in 0..pooled_height {
+                for pw in 0..pooled_width {
+                    let hstart = y1 + ((ph as f32 * bin_size_h) as i32);
+                    let wstart = x1 + ((pw as f32 * bin_size_w) as i32);
+                    let hend = y1 + (((ph + 1) as f32 * bin_size_h) as i32);
+                    let wend = x1 + (((pw + 1) as f32 * bin_size_w) as i32);
+
+                    let hstart = std::cmp::max(hstart, 0) as usize;
+                    let wstart = std::cmp::max(wstart, 0) as usize;
+                    let hend = std::cmp::min(hend, feature_height as i32) as usize;
+                    let wend = std::cmp::min(wend, feature_width as i32) as usize;
+
+                    let mut max_val: Option<T> = None;
+                    for h in hstart..hend {
+                        for w in wstart..wend {
+                            if let Some(val) = feature_maps.get(&[batch_idx, c, h, w]) {
+                                max_val = match max_val {
+                                    None => Some(val),
+                                    Some(current_max) => {
+                                        if val > current_max {
+                                            Some(val)
+                                        } else {
+                                            Some(current_max)
+                                        }
+                                    }
+                                };
+                            }
+                        }
+                    }
+
+                    let out_idx = roi_idx * channels * pooled_height * pooled_width
+                        + c * pooled_height * pooled_width
+                        + ph * pooled_width
+                        + pw;
+                    output_data[out_idx] = max_val.unwrap_or_else(T::zero);
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[num_rois, channels, pooled_height, pooled_width],
+    )
+}
+
+fn roi_align2d_cpu<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+    sampling_ratio: i32,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + PartialOrd + Float + FromPrimitive + Send + Sync + 'static,
+{
+    let feature_shape = feature_maps.shape();
+    let roi_shape = rois.shape();
+
+    if feature_shape.rank() != 4 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "Feature maps must be 4D, got {}D",
+            feature_shape.rank()
+        )));
+    }
+
+    if roi_shape.rank() != 2 || roi_shape.dims()[1] != 5 {
+        return Err(TensorError::invalid_shape_simple(format!(
+            "ROIs must be [num_rois, 5], got {:?}",
+            roi_shape.dims()
+        )));
+    }
+
+    let batch_size = feature_shape.dims()[0];
+    let channels = feature_shape.dims()[1];
+    let feature_height = feature_shape.dims()[2];
+    let feature_width = feature_shape.dims()[3];
+    let num_rois = roi_shape.dims()[0];
+    let (pooled_height, pooled_width) = pooled_size;
+
+    let rois_data = rois.as_slice().ok_or_else(|| {
+        TensorError::device_error_simple("Cannot access ROIs tensor data".to_string())
+    })?;
+
+    let mut output_data = vec![T::zero(); num_rois * channels * pooled_height * pooled_width];
+
+    for roi_idx in 0..num_rois {
+        let roi_start_idx = roi_idx * 5;
+        let batch_idx = rois_data[roi_start_idx].to_usize().unwrap_or(0);
+        let roi_x1 = rois_data[roi_start_idx + 1].to_f32().unwrap_or(0.0);
+        let roi_y1 = rois_data[roi_start_idx + 2].to_f32().unwrap_or(0.0);
+        let roi_x2 = rois_data[roi_start_idx + 3].to_f32().unwrap_or(1.0);
+        let roi_y2 = rois_data[roi_start_idx + 4].to_f32().unwrap_or(1.0);
+
+        if batch_idx >= batch_size {
+            continue;
+        }
+
+        // Convert normalized coordinates to feature map coordinates
+        let x1 = roi_x1 * spatial_scale * feature_width as f32;
+        let y1 = roi_y1 * spatial_scale * feature_height as f32;
+        let x2 = roi_x2 * spatial_scale * feature_width as f32;
+        let y2 = roi_y2 * spatial_scale * feature_height as f32;
+
+        let roi_width = x2 - x1;
+        let roi_height = y2 - y1;
+
+        let bin_size_w = roi_width / pooled_width as f32;
+        let bin_size_h = roi_height / pooled_height as f32;
+
+        // Determine sampling ratio
+        let roi_bin_grid_h = if sampling_ratio > 0 {
+            sampling_ratio
+        } else {
+            (roi_height / pooled_height as f32).ceil() as i32
+        };
+        let roi_bin_grid_w = if sampling_ratio > 0 {
+            sampling_ratio
+        } else {
+            (roi_width / pooled_width as f32).ceil() as i32
+        };
+
+        for c in 0..channels {
+            for ph in 0..pooled_height {
+                for pw in 0..pooled_width {
+                    let mut output_val = T::zero();
+                    let count = roi_bin_grid_h * roi_bin_grid_w;
+
+                    for iy in 0..roi_bin_grid_h {
+                        let y = y1
+                            + (ph as f32 + (iy as f32 + 0.5) / roi_bin_grid_h as f32) * bin_size_h;
+                        for ix in 0..roi_bin_grid_w {
+                            let x = x1
+                                + (pw as f32 + (ix as f32 + 0.5) / roi_bin_grid_w as f32)
+                                    * bin_size_w;
+
+                            // Bilinear interpolation
+                            let val = bilinear_interpolate(
+                                feature_maps,
+                                batch_idx,
+                                c,
+                                y,
+                                x,
+                                feature_height,
+                                feature_width,
+                            )?;
+                            output_val = output_val + val;
+                        }
+                    }
+
+                    output_val = output_val / T::from_i32(count).unwrap_or(T::one());
+
+                    let out_idx = roi_idx * channels * pooled_height * pooled_width
+                        + c * pooled_height * pooled_width
+                        + ph * pooled_width
+                        + pw;
+                    output_data[out_idx] = output_val;
+                }
+            }
+        }
+    }
+
+    Tensor::from_vec(
+        output_data,
+        &[num_rois, channels, pooled_height, pooled_width],
+    )
+}
+
+/// Bilinear interpolation for ROI Align
+fn bilinear_interpolate<T>(
+    feature_maps: &Tensor<T>,
+    batch_idx: usize,
+    channel: usize,
+    y: f32,
+    x: f32,
+    height: usize,
+    width: usize,
+) -> Result<T>
+where
+    T: Clone + Default + Zero + Float + FromPrimitive,
+{
+    if y < -1.0 || y > height as f32 || x < -1.0 || x > width as f32 {
+        return Ok(T::zero());
+    }
+
+    let y = y.max(0.0);
+    let x = x.max(0.0);
+
+    let y_low = y.floor() as i32;
+    let x_low = x.floor() as i32;
+    let y_high = y_low + 1;
+    let x_high = x_low + 1;
+
+    let ly = y - y_low as f32;
+    let lx = x - x_low as f32;
+    let hy = 1.0 - ly;
+    let hx = 1.0 - lx;
+
+    let mut v1 = T::zero();
+    let mut v2 = T::zero();
+    let mut v3 = T::zero();
+    let mut v4 = T::zero();
+
+    if y_low >= 0 && y_low < height as i32 && x_low >= 0 && x_low < width as i32 {
+        v1 = feature_maps
+            .get(&[batch_idx, channel, y_low as usize, x_low as usize])
+            .unwrap_or(T::zero());
+    }
+    if y_low >= 0 && y_low < height as i32 && x_high >= 0 && x_high < width as i32 {
+        v2 = feature_maps
+            .get(&[batch_idx, channel, y_low as usize, x_high as usize])
+            .unwrap_or(T::zero());
+    }
+    if y_high >= 0 && y_high < height as i32 && x_low >= 0 && x_low < width as i32 {
+        v3 = feature_maps
+            .get(&[batch_idx, channel, y_high as usize, x_low as usize])
+            .unwrap_or(T::zero());
+    }
+    if y_high >= 0 && y_high < height as i32 && x_high >= 0 && x_high < width as i32 {
+        v4 = feature_maps
+            .get(&[batch_idx, channel, y_high as usize, x_high as usize])
+            .unwrap_or(T::zero());
+    }
+
+    let w1 = T::from_f32(hy * hx).unwrap_or(T::zero());
+    let w2 = T::from_f32(hy * lx).unwrap_or(T::zero());
+    let w3 = T::from_f32(ly * hx).unwrap_or(T::zero());
+    let w4 = T::from_f32(ly * lx).unwrap_or(T::zero());
+
+    Ok(w1 * v1 + w2 * v2 + w3 * v3 + w4 * v4)
+}
+
+#[cfg(feature = "gpu")]
+fn roi_pool2d_gpu<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::device::context::DeviceManager;
+    use crate::tensor::TensorStorage;
+    use bytemuck::{Pod, Zeroable};
+
+    // Get GPU context
+    let device_manager = DeviceManager::global();
+    let gpu_ctx = device_manager
+        .get_gpu_context(0)
+        .ok_or_else(|| TensorError::device_error_simple("GPU context not available"))?;
+
+    // Only support f32 for now
+    if std::any::TypeId::of::<T>() != std::any::TypeId::of::<f32>() {
+        return roi_pool2d_cpu(feature_maps, rois, pooled_size, spatial_scale);
+    }
+
+    let feature_shape = feature_maps.shape();
+    let roi_shape = rois.shape();
+
+    if feature_shape.rank() != 4 || roi_shape.rank() != 2 || roi_shape.dims()[1] != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Invalid input shapes for ROI pooling",
+        ));
+    }
+
+    let batch_size = feature_shape.dims()[0] as u32;
+    let channels = feature_shape.dims()[1] as u32;
+    let input_height = feature_shape.dims()[2] as u32;
+    let input_width = feature_shape.dims()[3] as u32;
+    let num_rois = roi_shape.dims()[0] as u32;
+    let (pooled_height, pooled_width) = (pooled_size.0 as u32, pooled_size.1 as u32);
+
+    // Get input buffers
+    let feature_buffer = match feature_maps.storage() {
+        TensorStorage::Gpu(buffer) => buffer,
+        _ => return roi_pool2d_cpu(feature_maps, rois, pooled_size, spatial_scale),
+    };
+
+    let roi_buffer = match rois.storage() {
+        TensorStorage::Gpu(buffer) => buffer,
+        _ => return roi_pool2d_cpu(feature_maps, rois, pooled_size, spatial_scale),
+    };
+
+    // Create output buffer
+    let output_size = (num_rois * channels * pooled_height * pooled_width) as usize;
+    let output_buffer = gpu_ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("roi_pool_output"),
+        size: (output_size * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create parameters struct
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct ROIParams {
+        batch_size: u32,
+        channels: u32,
+        input_height: u32,
+        input_width: u32,
+        pooled_height: u32,
+        pooled_width: u32,
+        num_rois: u32,
+        spatial_scale: f32,
+        sampling_ratio: i32,
+        _padding: [u32; 3],
+    }
+
+    let params = ROIParams {
+        batch_size,
+        channels,
+        input_height,
+        input_width,
+        pooled_height,
+        pooled_width,
+        num_rois,
+        spatial_scale,
+        sampling_ratio: 0, // Not used for ROI pooling
+        _padding: [0; 3],
+    };
+
+    let params_buffer = gpu_ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("roi_pool_params"),
+        size: std::mem::size_of::<ROIParams>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    gpu_ctx
+        .queue
+        .write_buffer(&params_buffer, 0, bytemuck::bytes_of(&params));
+
+    // Create compute shader
+    let shader = gpu_ctx
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("roi_pooling_ops"),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../gpu/shaders/pooling_ops.wgsl").into(),
+            ),
+        });
+
+    let compute_pipeline =
+        gpu_ctx
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("roi_pool2d_pipeline"),
+                layout: None,
+                module: &shader,
+                entry_point: Some("roi_pool2d_kernel"),
+            });
+
+    // Create bind group
+    let bind_group = gpu_ctx
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("roi_pool_bind_group"),
+            layout: &compute_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: feature_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: roi_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute shader
+    let mut encoder = gpu_ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("roi_pool_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("roi_pool_pass"),
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Dispatch with workgroups covering all ROIs and pooled output positions
+        let workgroup_size_x = 8u32;
+        let workgroup_size_y = 8u32;
+        let workgroup_size_z = 1u32;
+
+        let num_workgroups_x = (pooled_width + workgroup_size_x - 1) / workgroup_size_x;
+        let num_workgroups_y = (pooled_height + workgroup_size_y - 1) / workgroup_size_y;
+        let num_workgroups_z = num_rois;
+
+        compute_pass.dispatch_workgroups(num_workgroups_x, num_workgroups_y, num_workgroups_z);
+    }
+
+    gpu_ctx.queue.submit(Some(encoder.finish()));
+    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+
+    // Create output tensor with GPU buffer
+    let output_shape = Shape::from_dims(&[
+        num_rois as usize,
+        channels as usize,
+        pooled_height as usize,
+        pooled_width as usize,
+    ]);
+    let gpu_buffer = crate::gpu::buffer::GpuBuffer::from_wgpu_buffer(output_buffer, output_size);
+
+    Ok(Tensor::from_storage(
+        TensorStorage::Gpu(gpu_buffer),
+        output_shape,
+    ))
+}
+
+#[cfg(feature = "gpu")]
+fn roi_align2d_gpu<T>(
+    feature_maps: &Tensor<T>,
+    rois: &Tensor<T>,
+    pooled_size: (usize, usize),
+    spatial_scale: f32,
+    sampling_ratio: i32,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + PartialOrd
+        + Float
+        + FromPrimitive
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::device::context::DeviceManager;
+    use crate::tensor::TensorStorage;
+    use bytemuck::{Pod, Zeroable};
+
+    // Get GPU context
+    let device_manager = DeviceManager::global();
+    let gpu_ctx = device_manager
+        .get_gpu_context(0)
+        .ok_or_else(|| TensorError::device_error_simple("GPU context not available"))?;
+
+    // Only support f32 for now
+    if std::any::TypeId::of::<T>() != std::any::TypeId::of::<f32>() {
+        return roi_align2d_cpu(
+            feature_maps,
+            rois,
+            pooled_size,
+            spatial_scale,
+            sampling_ratio,
+        );
+    }
+
+    let feature_shape = feature_maps.shape();
+    let roi_shape = rois.shape();
+
+    if feature_shape.rank() != 4 || roi_shape.rank() != 2 || roi_shape.dims()[1] != 5 {
+        return Err(TensorError::invalid_shape_simple(
+            "Invalid input shapes for ROI align",
+        ));
+    }
+
+    let batch_size = feature_shape.dims()[0] as u32;
+    let channels = feature_shape.dims()[1] as u32;
+    let input_height = feature_shape.dims()[2] as u32;
+    let input_width = feature_shape.dims()[3] as u32;
+    let num_rois = roi_shape.dims()[0] as u32;
+    let (pooled_height, pooled_width) = (pooled_size.0 as u32, pooled_size.1 as u32);
+
+    // Get input buffers
+    let feature_buffer = match feature_maps.storage() {
+        TensorStorage::Gpu(buffer) => buffer,
+        _ => {
+            return roi_align2d_cpu(
+                feature_maps,
+                rois,
+                pooled_size,
+                spatial_scale,
+                sampling_ratio,
+            )
+        }
+    };
+
+    let roi_buffer = match rois.storage() {
+        TensorStorage::Gpu(buffer) => buffer,
+        _ => {
+            return roi_align2d_cpu(
+                feature_maps,
+                rois,
+                pooled_size,
+                spatial_scale,
+                sampling_ratio,
+            )
+        }
+    };
+
+    // Create output buffer
+    let output_size = (num_rois * channels * pooled_height * pooled_width) as usize;
+    let output_buffer = gpu_ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("roi_align_output"),
+        size: (output_size * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create parameters struct (reuse ROIParams from roi_pool2d_gpu)
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct ROIParams {
+        batch_size: u32,
+        channels: u32,
+        input_height: u32,
+        input_width: u32,
+        pooled_height: u32,
+        pooled_width: u32,
+        num_rois: u32,
+        spatial_scale: f32,
+        sampling_ratio: i32,
+        _padding: [u32; 3],
+    }
+
+    let params = ROIParams {
+        batch_size,
+        channels,
+        input_height,
+        input_width,
+        pooled_height,
+        pooled_width,
+        num_rois,
+        spatial_scale,
+        sampling_ratio,
+        _padding: [0; 3],
+    };
+
+    let params_buffer = gpu_ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("roi_align_params"),
+        size: std::mem::size_of::<ROIParams>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    gpu_ctx
+        .queue
+        .write_buffer(&params_buffer, 0, bytemuck::bytes_of(&params));
+
+    // Create compute shader
+    let shader = gpu_ctx
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("roi_align_ops"),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../gpu/shaders/pooling_ops.wgsl").into(),
+            ),
+        });
+
+    let compute_pipeline =
+        gpu_ctx
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("roi_align2d_pipeline"),
+                layout: None,
+                module: &shader,
+                entry_point: Some("roi_align2d_kernel"),
+            });
+
+    // Create bind group
+    let bind_group = gpu_ctx
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("roi_align_bind_group"),
+            layout: &compute_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: feature_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: roi_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute shader
+    let mut encoder = gpu_ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("roi_align_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("roi_align_pass"),
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Dispatch with workgroups covering all ROIs and pooled output positions
+        let workgroup_size_x = 8u32;
+        let workgroup_size_y = 8u32;
+        let workgroup_size_z = 1u32;
+
+        let num_workgroups_x = (pooled_width + workgroup_size_x - 1) / workgroup_size_x;
+        let num_workgroups_y = (pooled_height + workgroup_size_y - 1) / workgroup_size_y;
+        let num_workgroups_z = num_rois;
+
+        compute_pass.dispatch_workgroups(num_workgroups_x, num_workgroups_y, num_workgroups_z);
+    }
+
+    gpu_ctx.queue.submit(Some(encoder.finish()));
+    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+
+    // Create output tensor with GPU buffer
+    let output_shape = Shape::from_dims(&[
+        num_rois as usize,
+        channels as usize,
+        pooled_height as usize,
+        pooled_width as usize,
+    ]);
+    let gpu_buffer = crate::gpu::buffer::GpuBuffer::from_wgpu_buffer(output_buffer, output_size);
+
+    Ok(Tensor::from_storage(
+        TensorStorage::Gpu(gpu_buffer),
+        output_shape,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_max_pool2d_cpu() {
+        // Create a simple 1x2x2x1 input (NHWC format)
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]).unwrap();
+
+        let output = max_pool2d(&input, (2, 2), (1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1]);
+
+        // Should contain the max value
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 4.0);
+        }
+    }
+
+    #[test]
+    fn test_avg_pool2d_cpu() {
+        // Create a simple 1x2x2x1 input (NHWC format)
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]).unwrap();
+
+        let output = avg_pool2d(&input, (2, 2), (1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1]);
+
+        // Should contain the average value (1+2+3+4)/4 = 2.5
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 2.5);
+        }
+    }
+
+    #[test]
+    fn test_global_max_pool2d() {
+        // Create a 1x1x3x3 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+            &[1, 1, 3, 3],
+        )
+        .unwrap();
+
+        let output = global_max_pool2d(&input).unwrap();
+
+        // Expected output shape: [1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1]);
+
+        // Should contain the max value (9.0)
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 9.0);
+        }
+    }
+
+    #[test]
+    fn test_global_avg_pool2d() {
+        // Create a 1x1x2x2 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]).unwrap();
+
+        let output = global_avg_pool2d(&input).unwrap();
+
+        // Expected output shape: [1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1]);
+
+        // Should contain the average value (1+2+3+4)/4 = 2.5
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 2.5);
+        }
+    }
+
+    #[test]
+    fn test_adaptive_avg_pool2d() {
+        // Create a 1x1x4x4 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+            &[1, 1, 4, 4],
+        )
+        .unwrap();
+
+        let output = adaptive_avg_pool2d(&input, (2, 2)).unwrap();
+
+        // Expected output shape: [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Should contain averaged values for each 2x2 region
+        if let Some(data) = output.as_slice() {
+            // Top-left: (1+2+5+6)/4 = 3.5
+            // Top-right: (3+4+7+8)/4 = 5.5
+            // Bottom-left: (9+10+13+14)/4 = 11.5
+            // Bottom-right: (11+12+15+16)/4 = 13.5
+            assert_eq!(data, &[3.5, 5.5, 11.5, 13.5]);
+        }
+    }
+
+    #[test]
+    fn test_adaptive_max_pool2d() {
+        // Create a 1x1x4x4 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+            &[1, 1, 4, 4],
+        )
+        .unwrap();
+
+        let output = adaptive_max_pool2d(&input, (2, 2)).unwrap();
+
+        // Expected output shape: [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Should contain max values for each 2x2 region
+        if let Some(data) = output.as_slice() {
+            // Top-left: max(1,2,5,6) = 6
+            // Top-right: max(3,4,7,8) = 8
+            // Bottom-left: max(9,10,13,14) = 14
+            // Bottom-right: max(11,12,15,16) = 16
+            assert_eq!(data, &[6.0, 8.0, 14.0, 16.0]);
+        }
+    }
+
+    #[test]
+    fn test_max_pool3d_cpu() {
+        // Create a simple 1x1x2x2x2 input (NCDHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = max_pool3d(&input, (2, 2, 2), (1, 1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1, 1]);
+
+        // Should contain the max value
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 8.0);
+        }
+    }
+
+    #[test]
+    fn test_avg_pool3d_cpu() {
+        // Create a simple 1x1x2x2x2 input (NCDHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = avg_pool3d(&input, (2, 2, 2), (1, 1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1, 1]);
+
+        // Should contain the average value (1+2+3+4+5+6+7+8)/8 = 4.5
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 4.5);
+        }
+    }
+
+    #[test]
+    fn test_global_max_pool3d() {
+        // Create a 1x1x2x2x2 input (NCDHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = global_max_pool3d(&input).unwrap();
+
+        // Expected output shape: [1, 1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1, 1]);
+
+        // Should contain the max value (8.0)
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 8.0);
+        }
+    }
+
+    #[test]
+    fn test_global_avg_pool3d() {
+        // Create a 1x1x2x2x2 input (NCDHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = global_avg_pool3d(&input).unwrap();
+
+        // Expected output shape: [1, 1, 1, 1, 1]
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1, 1]);
+
+        // Should contain the average value (1+2+3+4+5+6+7+8)/8 = 4.5
+        if let Some(data) = output.as_slice() {
+            assert_eq!(data[0], 4.5);
+        }
+    }
+
+    #[test]
+    fn test_fractional_max_pool2d_stochastic() {
+        // Create a 1x1x4x4 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+            &[1, 1, 4, 4],
+        )
+        .unwrap();
+
+        // Create fixed random samples for deterministic behavior
+        let random_samples = Tensor::<f32>::from_vec(
+            vec![0.3, 0.7, 0.2, 0.8], // Fixed values for deterministic testing
+            &[4],
+        )
+        .unwrap();
+
+        // Pool with ratio 0.5 (reduce to 2x2)
+        let output = fractional_max_pool2d(&input, (0.5, 0.5), Some(&random_samples)).unwrap();
+
+        // Should have shape [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Values should be maximums from fractional regions
+        if let Some(data) = output.as_slice() {
+            // All values should be from the original input
+            for &val in data {
+                assert!(val >= 1.0 && val <= 16.0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fractional_avg_pool2d_stochastic() {
+        // Create a 1x1x4x4 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+            &[1, 1, 4, 4],
+        )
+        .unwrap();
+
+        // Pool with ratio 0.5 (reduce to 2x2)
+        let output = fractional_avg_pool2d(&input, (0.5, 0.5), None).unwrap();
+
+        // Should have shape [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Values should be averages from fractional regions
+        if let Some(data) = output.as_slice() {
+            // Check that values are reasonable (can be 0.0 for empty regions, or averages within input range)
+            for &val in data {
+                assert!(
+                    val >= 0.0 && val <= 16.0,
+                    "Value {} is out of expected range [0.0, 16.0]",
+                    val
+                );
+            }
+
+            // At least some values should be non-zero (we have a valid input)
+            let non_zero_count = data.iter().filter(|&&x| x > 0.0).count();
+            assert!(
+                non_zero_count > 0,
+                "All output values are zero, which is unexpected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fractional_max_pool2d_deterministic() {
+        // Create a 1x1x4x4 input (NCHW format)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+            &[1, 1, 4, 4],
+        )
+        .unwrap();
+
+        // Create deterministic random samples (need 4 samples for 2x2 output)
+        let samples = Tensor::<f32>::from_vec(
+            vec![0.5, 0.5, 0.5, 0.5], // Uniform samples
+            &[4],
+        )
+        .unwrap();
+
+        // Pool with ratio 0.5 (reduce to 2x2)
+        let output1 = fractional_max_pool2d(&input, (0.5, 0.5), Some(&samples)).unwrap();
+        let output2 = fractional_max_pool2d(&input, (0.5, 0.5), Some(&samples)).unwrap();
+
+        // Should have shape [1, 1, 2, 2]
+        assert_eq!(output1.shape().dims(), &[1, 1, 2, 2]);
+        assert_eq!(output2.shape().dims(), &[1, 1, 2, 2]);
+
+        // Results should be identical (deterministic)
+        if let (Some(data1), Some(data2)) = (output1.as_slice(), output2.as_slice()) {
+            for (val1, val2) in data1.iter().zip(data2.iter()) {
+                assert!((val1 - val2).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_roi_pool2d() {
+        // Create a 1x1x8x8 feature map (NCHW format)
+        let feature_maps =
+            Tensor::<f32>::from_vec((0..64).map(|i| i as f32).collect(), &[1, 1, 8, 8]).unwrap();
+
+        // Create ROI: [batch_idx, x1, y1, x2, y2] normalized to [0, 1]
+        let rois = Tensor::<f32>::from_vec(
+            vec![
+                0.0, 0.0, 0.0, 0.5, 0.5, // First ROI covers top-left quadrant
+                0.0, 0.5, 0.5, 1.0, 1.0, // Second ROI covers bottom-right quadrant
+            ],
+            &[2, 5],
+        )
+        .unwrap();
+
+        let output = roi_pool2d(&feature_maps, &rois, (2, 2), 1.0).unwrap();
+
+        // Should have shape [2, 1, 2, 2] (2 ROIs, 1 channel, 2x2 pooled size)
+        assert_eq!(output.shape().dims(), &[2, 1, 2, 2]);
+
+        // Values should be the max values from each pooled region
+        if let Some(data) = output.as_slice() {
+            // All values should be within the valid range
+            for &val in data {
+                assert!(val >= 0.0 && val <= 63.0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_roi_align2d() {
+        // Create a 1x1x4x4 feature map (NCHW format)
+        let feature_maps =
+            Tensor::<f32>::from_vec((0..16).map(|i| i as f32).collect(), &[1, 1, 4, 4]).unwrap();
+
+        // Create ROI: [batch_idx, x1, y1, x2, y2] normalized to [0, 1]
+        let rois = Tensor::<f32>::from_vec(
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, // Full image ROI
+            ],
+            &[1, 5],
+        )
+        .unwrap();
+
+        let output = roi_align2d(&feature_maps, &rois, (2, 2), 1.0, 2).unwrap();
+
+        // Should have shape [1, 1, 2, 2] (1 ROI, 1 channel, 2x2 pooled size)
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Values should be interpolated averages
+        if let Some(data) = output.as_slice() {
+            // All values should be within the valid range
+            for &val in data {
+                assert!(val >= 0.0 && val <= 15.0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_roi_pool2d_empty_roi() {
+        // Create a 1x1x4x4 feature map (NCHW format)
+        let feature_maps =
+            Tensor::<f32>::from_vec((0..16).map(|i| i as f32).collect(), &[1, 1, 4, 4]).unwrap();
+
+        // Create empty ROI tensor
+        let rois = Tensor::<f32>::from_vec(vec![], &[0, 5]).unwrap();
+
+        let output = roi_pool2d(&feature_maps, &rois, (2, 2), 1.0).unwrap();
+
+        // Should have shape [0, 1, 2, 2] (0 ROIs, 1 channel, 2x2 pooled size)
+        assert_eq!(output.shape().dims(), &[0, 1, 2, 2]);
+    }
+
+    #[test]
+    fn test_roi_align2d_bilinear_interpolation() {
+        // Create a simple 1x1x2x2 feature map
+        let feature_maps =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]).unwrap();
+
+        // Create ROI that covers the entire feature map
+        let rois = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0], &[1, 5]).unwrap();
+
+        let output = roi_align2d(&feature_maps, &rois, (2, 2), 1.0, 1).unwrap();
+
+        // Should have shape [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // With bilinear interpolation, values should be reasonable
+        if let Some(data) = output.as_slice() {
+            for &val in data {
+                assert!(val >= 1.0 && val <= 4.0);
+            }
+        }
+    }
+}

@@ -1,0 +1,4388 @@
+use crate::half_precision::{bf16, f16};
+use crate::tensor::TensorStorage;
+use crate::{Result, Tensor, TensorError};
+use num_traits::{Float, FromPrimitive, Signed, Zero};
+use rustfft::{num_complex::Complex, FftPlanner};
+use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use std::fmt::Debug;
+#[cfg(feature = "gpu")]
+use wgpu::util::DeviceExt;
+
+/// Compute 1D FFT along the last axis
+pub fn fft<T>(input: &Tensor<T>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft".to_string(),
+                    reason: "FFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[ndim - 1];
+            let mut planner = FftPlanner::new();
+            let fft = planner.plan_fft_forward(n);
+
+            // Calculate the number of FFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_ffts = total_elements / n;
+
+            // Prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            // Convert input data
+            if let Some(input_slice) = arr.as_slice() {
+                // Process each 1D slice along the last axis
+                for i in 0..num_ffts {
+                    let start_idx = i * n;
+                    let end_idx = (i + 1) * n;
+
+                    // Convert real input to complex
+                    let mut buffer: Vec<Complex<T>> = input_slice[start_idx..end_idx]
+                        .iter()
+                        .map(|&x| Complex::new(x, T::zero()))
+                        .collect();
+
+                    // Perform FFT
+                    fft.process(&mut buffer);
+
+                    // Copy result to output
+                    output_data[start_idx..end_idx].copy_from_slice(&buffer);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_fft_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// Compute 1D inverse FFT along the last axis
+pub fn ifft<T>(input: &Tensor<Complex<T>>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "ifft".to_string(),
+                    reason: "IFFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[ndim - 1];
+            let mut planner = FftPlanner::new();
+            let ifft = planner.plan_fft_inverse(n);
+
+            // Calculate the number of IFFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_iffts = total_elements / n;
+
+            // Prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            // Convert input data
+            if let Some(input_slice) = arr.as_slice() {
+                // Process each 1D slice along the last axis
+                for i in 0..num_iffts {
+                    let start_idx = i * n;
+                    let end_idx = (i + 1) * n;
+
+                    // Copy input to buffer
+                    let mut buffer: Vec<Complex<T>> = input_slice[start_idx..end_idx].to_vec();
+
+                    // Perform IFFT
+                    ifft.process(&mut buffer);
+
+                    // Normalize by 1/N
+                    let n_t = T::from(n).unwrap();
+                    for val in &mut buffer {
+                        *val = *val / n_t;
+                    }
+
+                    // Copy result to output
+                    output_data[start_idx..end_idx].copy_from_slice(&buffer);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_ifft_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// Compute real FFT (only positive frequencies) along the last axis
+pub fn rfft<T>(input: &Tensor<T>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "rfft".to_string(),
+                    reason: "RFFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[ndim - 1];
+            let output_len = n / 2 + 1; // Only positive frequencies for real input
+
+            let mut planner = FftPlanner::new();
+            let fft = planner.plan_fft_forward(n);
+
+            // Calculate output shape
+            let mut output_shape = shape.to_vec();
+            output_shape[ndim - 1] = output_len;
+
+            // Calculate the number of FFTs to perform
+            let input_total: usize = shape.iter().product();
+            let output_total: usize = output_shape.iter().product();
+            let num_ffts = input_total / n;
+
+            // Prepare output
+            let mut output_data = vec![Complex::zero(); output_total];
+
+            // Convert input data
+            if let Some(input_slice) = arr.as_slice() {
+                // Process each 1D slice along the last axis
+                for i in 0..num_ffts {
+                    let input_start = i * n;
+                    let input_end = (i + 1) * n;
+                    let output_start = i * output_len;
+
+                    // Convert real input to complex
+                    let mut buffer: Vec<Complex<T>> = input_slice[input_start..input_end]
+                        .iter()
+                        .map(|&x| Complex::new(x, T::zero()))
+                        .collect();
+
+                    // Perform FFT
+                    fft.process(&mut buffer);
+
+                    // Copy only positive frequencies to output
+                    output_data[output_start..output_start + output_len]
+                        .copy_from_slice(&buffer[..output_len]);
+                }
+
+                // Create output tensor
+                let output_array = ArrayD::from_shape_vec(IxDyn(&output_shape), output_data)
+                    .map_err(|e| TensorError::InvalidShape {
+                        operation: "fft".to_string(),
+                        reason: e.to_string(),
+                        shape: None,
+                        context: None,
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_rfft_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// 2D FFT along the last two axes
+pub fn fft2<T>(input: &Tensor<T>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim < 2 {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft2".to_string(),
+                    reason: "FFT2 requires at least 2D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let height = shape[ndim - 2];
+            let width = shape[ndim - 1];
+
+            // First, apply FFT along the last axis (width)
+            let _fft_last = fft(input)?;
+
+            // Now we need to apply FFT along the second-to-last axis (height)
+            // This requires transposing the last two dimensions, applying FFT, and transposing back
+
+            // For now, implement a simpler version that processes each row and column
+            let mut planners = (FftPlanner::new(), FftPlanner::new());
+            let fft_width = planners.0.plan_fft_forward(width);
+            let fft_height = planners.1.plan_fft_forward(height);
+
+            // Calculate the number of 2D slices to process
+            let total_elements: usize = shape.iter().product();
+            let elements_per_slice = height * width;
+            let num_slices = total_elements / elements_per_slice;
+
+            // Convert input to complex and prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            if let Some(input_slice) = arr.as_slice() {
+                for slice_idx in 0..num_slices {
+                    let slice_start = slice_idx * elements_per_slice;
+
+                    // Create a temporary buffer for this 2D slice
+                    let mut slice_data: Vec<Complex<T>> = input_slice
+                        [slice_start..slice_start + elements_per_slice]
+                        .iter()
+                        .map(|&x| Complex::new(x, T::zero()))
+                        .collect();
+
+                    // Apply FFT along rows (width dimension)
+                    for row in 0..height {
+                        let row_start = row * width;
+                        let row_end = row_start + width;
+                        let mut row_buffer = slice_data[row_start..row_end].to_vec();
+                        fft_width.process(&mut row_buffer);
+                        slice_data[row_start..row_end].copy_from_slice(&row_buffer);
+                    }
+
+                    // Apply FFT along columns (height dimension)
+                    for col in 0..width {
+                        let mut col_buffer = Vec::with_capacity(height);
+                        for row in 0..height {
+                            col_buffer.push(slice_data[row * width + col]);
+                        }
+                        fft_height.process(&mut col_buffer);
+                        for (row, &val) in col_buffer.iter().enumerate() {
+                            slice_data[row * width + col] = val;
+                        }
+                    }
+
+                    // Copy result back to output
+                    output_data[slice_start..slice_start + elements_per_slice]
+                        .copy_from_slice(&slice_data);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_fft2_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// 2D inverse FFT along the last two axes
+pub fn ifft2<T>(input: &Tensor<Complex<T>>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim < 2 {
+                return Err(TensorError::InvalidShape {
+                    operation: "ifft2".to_string(),
+                    reason: "IFFT2 requires at least 2D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let height = shape[ndim - 2];
+            let width = shape[ndim - 1];
+
+            let mut planners = (FftPlanner::new(), FftPlanner::new());
+            let ifft_width = planners.0.plan_fft_inverse(width);
+            let ifft_height = planners.1.plan_fft_inverse(height);
+
+            // Calculate the number of 2D slices to process
+            let total_elements: usize = shape.iter().product();
+            let elements_per_slice = height * width;
+            let num_slices = total_elements / elements_per_slice;
+
+            // Prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            if let Some(input_slice) = arr.as_slice() {
+                for slice_idx in 0..num_slices {
+                    let slice_start = slice_idx * elements_per_slice;
+
+                    // Create a temporary buffer for this 2D slice
+                    let mut slice_data =
+                        input_slice[slice_start..slice_start + elements_per_slice].to_vec();
+
+                    // Apply IFFT along rows (width dimension)
+                    for row in 0..height {
+                        let row_start = row * width;
+                        let row_end = row_start + width;
+                        let mut row_buffer = slice_data[row_start..row_end].to_vec();
+                        ifft_width.process(&mut row_buffer);
+
+                        // Normalize by width
+                        let width_t = T::from(width).unwrap();
+                        for val in &mut row_buffer {
+                            *val = *val / width_t;
+                        }
+
+                        slice_data[row_start..row_end].copy_from_slice(&row_buffer);
+                    }
+
+                    // Apply IFFT along columns (height dimension)
+                    for col in 0..width {
+                        let mut col_buffer = Vec::with_capacity(height);
+                        for row in 0..height {
+                            col_buffer.push(slice_data[row * width + col]);
+                        }
+                        ifft_height.process(&mut col_buffer);
+
+                        // Normalize by height
+                        let height_t = T::from(height).unwrap();
+                        for val in &mut col_buffer {
+                            *val = *val / height_t;
+                        }
+
+                        for (row, &val) in col_buffer.iter().enumerate() {
+                            slice_data[row * width + col] = val;
+                        }
+                    }
+
+                    // Copy result back to output
+                    output_data[slice_start..slice_start + elements_per_slice]
+                        .copy_from_slice(&slice_data);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_ifft2_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// 3D FFT along the last three axes
+pub fn fft3<T>(input: &Tensor<T>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim < 3 {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft3".to_string(),
+                    reason: "FFT3 requires at least 3D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let depth = shape[ndim - 3];
+            let height = shape[ndim - 2];
+            let width = shape[ndim - 1];
+
+            let mut planners = (FftPlanner::new(), FftPlanner::new(), FftPlanner::new());
+            let fft_width = planners.0.plan_fft_forward(width);
+            let fft_height = planners.1.plan_fft_forward(height);
+            let fft_depth = planners.2.plan_fft_forward(depth);
+
+            // Calculate the number of 3D volumes to process
+            let total_elements: usize = shape.iter().product();
+            let elements_per_volume = depth * height * width;
+            let num_volumes = total_elements / elements_per_volume;
+
+            // Convert input to complex and prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            if let Some(input_slice) = arr.as_slice() {
+                for volume_idx in 0..num_volumes {
+                    let volume_start = volume_idx * elements_per_volume;
+
+                    // Create a temporary buffer for this 3D volume
+                    let mut volume_data: Vec<Complex<T>> = input_slice
+                        [volume_start..volume_start + elements_per_volume]
+                        .iter()
+                        .map(|&x| Complex::new(x, T::zero()))
+                        .collect();
+
+                    // Apply FFT along width (last dimension)
+                    for d in 0..depth {
+                        for h in 0..height {
+                            let row_start = (d * height + h) * width;
+                            let row_end = row_start + width;
+                            let mut row_buffer = volume_data[row_start..row_end].to_vec();
+                            fft_width.process(&mut row_buffer);
+                            volume_data[row_start..row_end].copy_from_slice(&row_buffer);
+                        }
+                    }
+
+                    // Apply FFT along height (second-to-last dimension)
+                    for d in 0..depth {
+                        for w in 0..width {
+                            let mut col_buffer = Vec::with_capacity(height);
+                            for h in 0..height {
+                                col_buffer.push(volume_data[(d * height + h) * width + w]);
+                            }
+                            fft_height.process(&mut col_buffer);
+                            for (h, &val) in col_buffer.iter().enumerate() {
+                                volume_data[(d * height + h) * width + w] = val;
+                            }
+                        }
+                    }
+
+                    // Apply FFT along depth (third-to-last dimension)
+                    for h in 0..height {
+                        for w in 0..width {
+                            let mut depth_buffer = Vec::with_capacity(depth);
+                            for d in 0..depth {
+                                depth_buffer.push(volume_data[(d * height + h) * width + w]);
+                            }
+                            fft_depth.process(&mut depth_buffer);
+                            for (d, &val) in depth_buffer.iter().enumerate() {
+                                volume_data[(d * height + h) * width + w] = val;
+                            }
+                        }
+                    }
+
+                    // Copy result back to output
+                    output_data[volume_start..volume_start + elements_per_volume]
+                        .copy_from_slice(&volume_data);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_fft3_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+/// 3D inverse FFT along the last three axes
+pub fn ifft3<T>(input: &Tensor<Complex<T>>) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim < 3 {
+                return Err(TensorError::InvalidShape {
+                    operation: "ifft3".to_string(),
+                    reason: "IFFT3 requires at least 3D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let depth = shape[ndim - 3];
+            let height = shape[ndim - 2];
+            let width = shape[ndim - 1];
+
+            let mut planners = (FftPlanner::new(), FftPlanner::new(), FftPlanner::new());
+            let ifft_width = planners.0.plan_fft_inverse(width);
+            let ifft_height = planners.1.plan_fft_inverse(height);
+            let ifft_depth = planners.2.plan_fft_inverse(depth);
+
+            // Calculate the number of 3D volumes to process
+            let total_elements: usize = shape.iter().product();
+            let elements_per_volume = depth * height * width;
+            let num_volumes = total_elements / elements_per_volume;
+
+            // Prepare output
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            if let Some(input_slice) = arr.as_slice() {
+                for volume_idx in 0..num_volumes {
+                    let volume_start = volume_idx * elements_per_volume;
+
+                    // Create a temporary buffer for this 3D volume
+                    let mut volume_data =
+                        input_slice[volume_start..volume_start + elements_per_volume].to_vec();
+
+                    // Apply IFFT along width (last dimension)
+                    for d in 0..depth {
+                        for h in 0..height {
+                            let row_start = (d * height + h) * width;
+                            let row_end = row_start + width;
+                            let mut row_buffer = volume_data[row_start..row_end].to_vec();
+                            ifft_width.process(&mut row_buffer);
+
+                            // Normalize by width
+                            let width_t = T::from(width).unwrap();
+                            for val in &mut row_buffer {
+                                *val = *val / width_t;
+                            }
+
+                            volume_data[row_start..row_end].copy_from_slice(&row_buffer);
+                        }
+                    }
+
+                    // Apply IFFT along height (second-to-last dimension)
+                    for d in 0..depth {
+                        for w in 0..width {
+                            let mut col_buffer = Vec::with_capacity(height);
+                            for h in 0..height {
+                                col_buffer.push(volume_data[(d * height + h) * width + w]);
+                            }
+                            ifft_height.process(&mut col_buffer);
+
+                            // Normalize by height
+                            let height_t = T::from(height).unwrap();
+                            for val in &mut col_buffer {
+                                *val = *val / height_t;
+                            }
+
+                            for (h, &val) in col_buffer.iter().enumerate() {
+                                volume_data[(d * height + h) * width + w] = val;
+                            }
+                        }
+                    }
+
+                    // Apply IFFT along depth (third-to-last dimension)
+                    for h in 0..height {
+                        for w in 0..width {
+                            let mut depth_buffer = Vec::with_capacity(depth);
+                            for d in 0..depth {
+                                depth_buffer.push(volume_data[(d * height + h) * width + w]);
+                            }
+                            ifft_depth.process(&mut depth_buffer);
+
+                            // Normalize by depth
+                            let depth_t = T::from(depth).unwrap();
+                            for val in &mut depth_buffer {
+                                *val = *val / depth_t;
+                            }
+
+                            for (d, &val) in depth_buffer.iter().enumerate() {
+                                volume_data[(d * height + h) * width + w] = val;
+                            }
+                        }
+                    }
+
+                    // Copy result back to output
+                    output_data[volume_start..volume_start + elements_per_volume]
+                        .copy_from_slice(&volume_data);
+                }
+
+                // Create output tensor
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_ifft3_dispatch(gpu_buffer, input.shape().dims()),
+    }
+}
+
+// GPU dispatch functions
+#[cfg(feature = "gpu")]
+fn gpu_fft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<T>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let n = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 1).product::<usize>();
+
+    // Check if n is a power of 2 for efficient FFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU FFT currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_size = batch_size * n;
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("fft_output_buffer"),
+        size: (output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer
+    let fft_info = FFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        is_inverse: 0,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fft_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table
+    let bit_reversal = generate_bit_reversal_table(n);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("fft_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("fft_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some(if n <= 64 { "fft_small" } else { "fft_1d" }),
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fft_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("fft_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        compute_pass.dispatch_workgroups(batch_size as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_ifft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let n = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 1).product::<usize>();
+
+    // Check if n is a power of 2 for efficient FFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU IFFT currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_size = batch_size * n;
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("ifft_output_buffer"),
+        size: (output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer (with is_inverse = 1)
+    let fft_info = FFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        is_inverse: 1,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ifft_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table
+    let bit_reversal = generate_bit_reversal_table(n);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ifft_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("ifft_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some(if n <= 64 { "fft_small" } else { "fft_1d" }),
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ifft_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("ifft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("ifft_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        compute_pass.dispatch_workgroups(batch_size as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_rfft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<T>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let n = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 1).product::<usize>();
+    let output_size_per_batch = n / 2 + 1;
+    let total_output_size = batch_size * output_size_per_batch;
+
+    // Check if n is a power of 2 for efficient FFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU RFFT currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data (n/2+1 size due to real symmetry)
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rfft_output_buffer"),
+        size: (total_output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer
+    let fft_info = FFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        is_inverse: 0, // Forward FFT for real input
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rfft_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table
+    let bit_reversal = generate_bit_reversal_table(n);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline (use real FFT entry point)
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rfft_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("rfft_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("rfft_1d"), // Use real FFT entry point
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rfft_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rfft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("rfft_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        compute_pass.dispatch_workgroups(batch_size as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Create output shape for RFFT (last dimension becomes n/2+1)
+    let mut output_shape = shape.to_vec();
+    output_shape[output_shape.len() - 1] = output_size_per_batch;
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        total_output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, &output_shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_fft2_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<T>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    if shape.len() < 2 {
+        return Err(TensorError::InvalidShape {
+            operation: "fft2d".to_string(),
+            reason: "2D FFT requires at least 2D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    let height = shape[shape.len() - 2];
+    let width = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 2).product::<usize>();
+    let plane_size = height * width;
+    let total_output_size = batch_size * plane_size;
+
+    // Check if dimensions are powers of 2 for efficient FFT
+    if (height & (height - 1)) != 0 || (width & (width - 1)) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU FFT2 currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("fft2_output_buffer"),
+        size: (total_output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for 2D
+    let fft_info = FFTInfo {
+        n: plane_size as u32,           // Total size of the 2D plane
+        log2_n: width.trailing_zeros(), // For now, use width's log2 (shader will handle 2D)
+        batch_size: batch_size as u32,
+        is_inverse: 0,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fft2_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for the largest dimension
+    let max_dim = height.max(width);
+    let twiddle_factors = generate_twiddle_factors::<T>(max_dim);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table for the largest dimension
+    let bit_reversal = generate_bit_reversal_table(max_dim);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline for 2D FFT
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("fft2_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("fft2_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("fft_2d"), // Use 2D FFT entry point
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fft2_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fft2_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("fft2_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        // Dispatch with appropriate workgroups for 2D processing
+        compute_pass.dispatch_workgroups(
+            (width as u32 + 7) / 8, // Assuming workgroup size of 8x8
+            (height as u32 + 7) / 8,
+            batch_size as u32,
+        );
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        total_output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_ifft2_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    if shape.len() < 2 {
+        return Err(TensorError::InvalidShape {
+            operation: "ifft2d".to_string(),
+            reason: "2D IFFT requires at least 2D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    let height = shape[shape.len() - 2];
+    let width = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 2).product::<usize>();
+    let plane_size = height * width;
+    let total_output_size = batch_size * plane_size;
+
+    // Check if dimensions are powers of 2 for efficient FFT
+    if (height & (height - 1)) != 0 || (width & (width - 1)) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU IFFT2 currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("ifft2_output_buffer"),
+        size: (total_output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for 2D inverse
+    let fft_info = FFTInfo {
+        n: plane_size as u32,           // Total size of the 2D plane
+        log2_n: width.trailing_zeros(), // For now, use width's log2 (shader will handle 2D)
+        batch_size: batch_size as u32,
+        is_inverse: 1, // Inverse FFT
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ifft2_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for the largest dimension
+    let max_dim = height.max(width);
+    let twiddle_factors = generate_twiddle_factors::<T>(max_dim);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table for the largest dimension
+    let bit_reversal = generate_bit_reversal_table(max_dim);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline for 2D IFFT
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ifft2_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("ifft2_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("fft_2d"), // Use same 2D FFT entry point, shader handles inverse flag
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ifft2_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("ifft2_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("ifft2_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        // Dispatch with appropriate workgroups for 2D processing
+        compute_pass.dispatch_workgroups(
+            (width as u32 + 7) / 8, // Assuming workgroup size of 8x8
+            (height as u32 + 7) / 8,
+            batch_size as u32,
+        );
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        total_output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_fft3_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<T>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    if shape.len() < 3 {
+        return Err(TensorError::InvalidShape {
+            operation: "fft3d".to_string(),
+            reason: "3D FFT requires at least 3D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    let depth = shape[shape.len() - 3];
+    let height = shape[shape.len() - 2];
+    let width = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 3).product::<usize>();
+    let volume_size = depth * height * width;
+    let total_output_size = batch_size * volume_size;
+
+    // Check if all dimensions are powers of 2 for efficient FFT
+    if (depth & (depth - 1)) != 0 || (height & (height - 1)) != 0 || (width & (width - 1)) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU FFT3 currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("fft3_output_buffer"),
+        size: (total_output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for 3D
+    let fft_info = FFTInfo {
+        n: volume_size as u32,          // Total size of the 3D volume
+        log2_n: width.trailing_zeros(), // For now, use width's log2 (shader will handle 3D)
+        batch_size: batch_size as u32,
+        is_inverse: 0,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fft3_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for the largest dimension
+    let max_dim = depth.max(height.max(width));
+    let twiddle_factors = generate_twiddle_factors::<T>(max_dim);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table for the largest dimension
+    let bit_reversal = generate_bit_reversal_table(max_dim);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline for 3D FFT
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("fft3_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("fft3_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("fft_3d"), // Use 3D FFT entry point
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fft3_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fft3_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("fft3_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        // Dispatch with appropriate workgroups for 3D processing
+        compute_pass.dispatch_workgroups(
+            (width as u32 + 7) / 8, // Assuming workgroup size of 8x8x8
+            (height as u32 + 7) / 8,
+            (depth as u32 + 7) / 8,
+        );
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        total_output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_ifft3_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    if shape.len() < 3 {
+        return Err(TensorError::InvalidShape {
+            operation: "ifft3d".to_string(),
+            reason: "3D IFFT requires at least 3D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    let depth = shape[shape.len() - 3];
+    let height = shape[shape.len() - 2];
+    let width = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 3).product::<usize>();
+    let volume_size = depth * height * width;
+    let total_output_size = batch_size * volume_size;
+
+    // Check if all dimensions are powers of 2 for efficient FFT
+    if (depth & (depth - 1)) != 0 || (height & (height - 1)) != 0 || (width & (width - 1)) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU IFFT3 currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create output buffer for complex data
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("ifft3_output_buffer"),
+        size: (total_output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for 3D inverse
+    let fft_info = FFTInfo {
+        n: volume_size as u32,          // Total size of the 3D volume
+        log2_n: width.trailing_zeros(), // For now, use width's log2 (shader will handle 3D)
+        batch_size: batch_size as u32,
+        is_inverse: 1, // Inverse FFT
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ifft3_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for the largest dimension
+    let max_dim = depth.max(height.max(width));
+    let twiddle_factors = generate_twiddle_factors::<T>(max_dim);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table for the largest dimension
+    let bit_reversal = generate_bit_reversal_table(max_dim);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create compute pipeline for 3D IFFT
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ifft3_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("ifft3_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("fft_3d"), // Use same 3D FFT entry point, shader handles inverse flag
+        });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ifft3_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Execute compute pass
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("ifft3_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("ifft3_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        // Dispatch with appropriate workgroups for 3D processing
+        compute_pass.dispatch_workgroups(
+            (width as u32 + 7) / 8, // Assuming workgroup size of 8x8x8
+            (height as u32 + 7) / 8,
+            (depth as u32 + 7) / 8,
+        );
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    // Convert result back to tensor
+    let result_gpu_buffer = crate::gpu::GpuBuffer::from_buffer(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        gpu_buffer.device_enum(),
+        total_output_size * 2,
+    );
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, shape))
+}
+
+// GPU dispatch for mixed-radix FFT
+#[cfg(feature = "gpu")]
+fn gpu_mixed_radix_fft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<T>,
+    shape: &[usize],
+    axis: Option<usize>,
+    norm: Option<&str>,
+    optimize_size: Option<bool>,
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let axis = axis.unwrap_or(shape.len() - 1);
+    let n = shape[axis];
+    let batch_size = shape
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != axis)
+        .map(|(_, s)| *s)
+        .product::<usize>();
+
+    let optimize = optimize_size.unwrap_or(false);
+    let fft_size = if optimize {
+        next_efficient_fft_size(n)
+    } else {
+        n
+    };
+
+    // Create output buffer for complex data
+    let output_size = batch_size * fft_size;
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("mixed_radix_fft_output_buffer"),
+        size: (output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for mixed-radix FFT
+    let norm_mode = norm.unwrap_or("backward");
+    let is_inverse = 0u32;
+    let fft_info = FFTInfo {
+        n: fft_size as u32,
+        log2_n: if fft_size.is_power_of_two() {
+            fft_size.trailing_zeros()
+        } else {
+            0
+        },
+        batch_size: batch_size as u32,
+        is_inverse,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mixed_radix_fft_info"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for mixed-radix FFT
+    let twiddle_factors = generate_twiddle_factors::<T>(fft_size);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mixed_radix_twiddle_factors"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Load the FFT shader
+    let shader_source = crate::gpu_include_shader!("fft_ops");
+    let shader_module = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("mixed_radix_fft_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+    // Create bind group layout
+    let bind_group_layout =
+        gpu_buffer
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("mixed_radix_fft_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("mixed_radix_fft_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Create compute pipeline
+    let pipeline_layout =
+        gpu_buffer
+            .device()
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mixed_radix_fft_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+    let compute_pipeline =
+        gpu_buffer
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("mixed_radix_fft_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some("fft_1d"), // Use standard 1D FFT entry point for mixed-radix
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+    // Dispatch compute shader
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("mixed_radix_fft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("mixed_radix_fft_pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        let workgroup_size = 32;
+        let num_workgroups = (batch_size + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(num_workgroups as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+    gpu_buffer.device().poll(wgpu::Maintain::Wait);
+
+    // Apply normalization if needed (on GPU or via a separate pass)
+    let norm_mode = norm.unwrap_or("backward");
+    if norm_mode != "backward" {
+        // For simplicity, we'll apply normalization on CPU for now
+        // In a production implementation, this should be a separate GPU kernel
+    }
+
+    // Create result GPU buffer
+    let device_id = match gpu_buffer.device_enum() {
+        crate::Device::Gpu(id) => id,
+        _ => 0,
+    };
+
+    let result_gpu_buffer = crate::gpu::GpuBuffer::new(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        crate::Device::Gpu(device_id),
+        output_size * 2,
+    );
+
+    // Calculate output shape
+    let mut output_shape = shape.to_vec();
+    output_shape[axis] = fft_size;
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, &output_shape))
+}
+
+// GPU dispatch for mixed-radix IFFT
+#[cfg(feature = "gpu")]
+fn gpu_mixed_radix_ifft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+    axis: Option<usize>,
+    norm: Option<&str>,
+    optimize_size: Option<bool>,
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let axis = axis.unwrap_or(shape.len() - 1);
+    let n = shape[axis];
+    let batch_size = shape
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != axis)
+        .map(|(_, s)| *s)
+        .product::<usize>();
+
+    let optimize = optimize_size.unwrap_or(false);
+    let fft_size = if optimize {
+        next_efficient_fft_size(n)
+    } else {
+        n
+    };
+
+    // Create output buffer for complex data
+    let output_size = batch_size * fft_size;
+    let output_buffer = gpu_buffer.device().create_buffer(&wgpu::BufferDescriptor {
+        label: Some("mixed_radix_ifft_output_buffer"),
+        size: (output_size * 2 * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Create FFT info uniform buffer for mixed-radix IFFT (inverse=1)
+    let norm_mode = norm.unwrap_or("backward");
+    let is_inverse = 1u32; // Set to 1 for inverse FFT
+    let fft_info = FFTInfo {
+        n: fft_size as u32,
+        log2_n: if fft_size.is_power_of_two() {
+            fft_size.trailing_zeros()
+        } else {
+            0
+        },
+        batch_size: batch_size as u32,
+        is_inverse,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mixed_radix_ifft_info"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for mixed-radix IFFT
+    let twiddle_factors = generate_twiddle_factors::<T>(fft_size);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mixed_radix_ifft_twiddle_factors"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Load the FFT shader (same shader, different is_inverse flag)
+    let shader_source = crate::gpu_include_shader!("fft_ops");
+    let shader_module = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("mixed_radix_ifft_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+    // Create bind group layout (same as FFT)
+    let bind_group_layout =
+        gpu_buffer
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("mixed_radix_ifft_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+    // Create bind group
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("mixed_radix_ifft_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Create compute pipeline
+    let pipeline_layout =
+        gpu_buffer
+            .device()
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mixed_radix_ifft_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+    let compute_pipeline =
+        gpu_buffer
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("mixed_radix_ifft_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some("fft_1d"), // Use standard 1D FFT entry point (handles inverse via is_inverse flag)
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+    // Dispatch compute shader
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("mixed_radix_ifft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("mixed_radix_ifft_pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        let workgroup_size = 32;
+        let num_workgroups = (batch_size + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(num_workgroups as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+    gpu_buffer.device().poll(wgpu::Maintain::Wait);
+
+    // Apply normalization if needed (on GPU or via a separate pass)
+    let norm_mode = norm.unwrap_or("backward");
+    if norm_mode != "backward" {
+        // For simplicity, we'll apply normalization on CPU for now
+        // In a production implementation, this should be a separate GPU kernel
+    }
+
+    // Create result GPU buffer
+    let device_id = match gpu_buffer.device_enum() {
+        crate::Device::Gpu(id) => id,
+        _ => 0,
+    };
+
+    let result_gpu_buffer = crate::gpu::GpuBuffer::new(
+        output_buffer,
+        Arc::clone(gpu_buffer.device()),
+        Arc::clone(gpu_buffer.queue()),
+        crate::Device::Gpu(device_id),
+        output_size * 2,
+    );
+
+    // Calculate output shape
+    let mut output_shape = shape.to_vec();
+    output_shape[axis] = fft_size;
+
+    Ok(Tensor::from_gpu_buffer(result_gpu_buffer, &output_shape))
+}
+
+// GPU dispatch for in-place FFT
+#[cfg(feature = "gpu")]
+fn gpu_inplace_fft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+) -> Result<()>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let n = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 1).product::<usize>();
+
+    // Check if n is a power of 2 for efficient in-place FFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU in-place FFT currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create FFT info uniform buffer for in-place FFT
+    let fft_info = FFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        is_inverse: 0,
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("inplace_fft_info"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for in-place FFT
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("inplace_fft_twiddle_factors"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Load the FFT shader
+    let shader_source = crate::gpu_include_shader!("fft_ops");
+    let shader_module = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("inplace_fft_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+    // Create bind group layout for in-place operation (input and output are the same buffer)
+    let bind_group_layout =
+        gpu_buffer
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("inplace_fft_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+    // Create bind group for in-place operation
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("inplace_fft_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Create compute pipeline
+    let pipeline_layout =
+        gpu_buffer
+            .device()
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("inplace_fft_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+    let compute_pipeline =
+        gpu_buffer
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("inplace_fft_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some("fft_inplace"), // Use specialized in-place FFT entry point
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+    // Dispatch compute shader
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("inplace_fft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("inplace_fft_pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        let workgroup_size = 32;
+        let num_workgroups = (batch_size + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(num_workgroups as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+    gpu_buffer.device().poll(wgpu::Maintain::Wait);
+
+    Ok(())
+}
+
+// GPU dispatch for in-place IFFT
+#[cfg(feature = "gpu")]
+fn gpu_inplace_ifft_dispatch<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+) -> Result<()>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    use std::sync::Arc;
+
+    let n = shape[shape.len() - 1];
+    let batch_size = shape.iter().take(shape.len() - 1).product::<usize>();
+
+    // Check if n is a power of 2 for efficient in-place IFFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU in-place IFFT currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Create FFT info uniform buffer for in-place IFFT (inverse=1)
+    let fft_info = FFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        is_inverse: 1, // Set to 1 for inverse FFT
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("inplace_ifft_info"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors for in-place IFFT
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("inplace_ifft_twiddle_factors"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Load the FFT shader (same shader, different is_inverse flag)
+    let shader_source = crate::gpu_include_shader!("fft_ops");
+    let shader_module = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("inplace_ifft_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+    // Create bind group layout for in-place operation (input and output are the same buffer)
+    let bind_group_layout =
+        gpu_buffer
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("inplace_ifft_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+    // Create bind group for in-place operation
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("inplace_ifft_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Create compute pipeline
+    let pipeline_layout =
+        gpu_buffer
+            .device()
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("inplace_ifft_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+    let compute_pipeline =
+        gpu_buffer
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("inplace_ifft_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some("fft_inplace"), // Use specialized in-place FFT entry point (handles inverse via is_inverse flag)
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+    // Dispatch compute shader
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("inplace_ifft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("inplace_ifft_pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        let workgroup_size = 32;
+        let num_workgroups = (batch_size + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(num_workgroups as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+    gpu_buffer.device().poll(wgpu::Maintain::Wait);
+
+    Ok(())
+}
+
+// GPU dispatch for in-place FFT along a specific axis
+#[cfg(feature = "gpu")]
+fn gpu_fft_inplace_axis<T>(
+    gpu_buffer: &crate::gpu::GpuBuffer<Complex<T>>,
+    shape: &[usize],
+    axis: usize,
+    is_inverse: bool,
+) -> Result<()>
+where
+    T: Float
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + Signed
+        + Debug
+        + Default
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
+{
+    if axis >= shape.len() {
+        return Err(TensorError::IndexError(format!(
+            "Axis {} out of bounds for tensor with {} dimensions",
+            axis,
+            shape.len()
+        )));
+    }
+
+    let n = shape[axis];
+
+    // Check if n is a power of 2 for efficient in-place FFT
+    if n & (n - 1) != 0 {
+        return Err(TensorError::unsupported_operation_simple(
+            "GPU in-place FFT along axis currently only supports power-of-2 sizes".to_string(),
+        ));
+    }
+
+    // Calculate strides and batch sizes for the specific axis
+    let mut strides = vec![1; shape.len()];
+    for i in (0..shape.len() - 1).rev() {
+        strides[i] = strides[i + 1] * shape[i + 1];
+    }
+
+    let axis_stride = strides[axis];
+    let batch_size = shape.iter().product::<usize>() / n;
+
+    use std::sync::Arc;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    struct AxisFFTInfo {
+        n: u32,
+        log2_n: u32,
+        batch_size: u32,
+        axis_stride: u32,
+        is_inverse: u32,
+        _padding: [u32; 3],
+    }
+
+    let fft_info = AxisFFTInfo {
+        n: n as u32,
+        log2_n: n.trailing_zeros(),
+        batch_size: batch_size as u32,
+        axis_stride: axis_stride as u32,
+        is_inverse: if is_inverse { 1 } else { 0 },
+        _padding: [0; 3],
+    };
+
+    let fft_info_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("axis_fft_info_buffer"),
+                contents: bytemuck::cast_slice(&[fft_info]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+    // Generate twiddle factors
+    let twiddle_factors = generate_twiddle_factors::<T>(n);
+    let twiddle_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("twiddle_buffer"),
+                contents: bytemuck::cast_slice(&twiddle_factors),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Generate bit reversal table
+    let bit_reversal = generate_bit_reversal_table(n);
+    let bit_reversal_buffer =
+        gpu_buffer
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bit_reversal_buffer"),
+                contents: bytemuck::cast_slice(&bit_reversal),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+    // Create shader
+    let shader = gpu_buffer
+        .device()
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("axis_fft_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../gpu/shaders/fft_ops.wgsl").into()),
+        });
+
+    // Create compute pipeline
+    let pipeline = gpu_buffer
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("axis_fft_pipeline"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("fft_axis_inplace"),
+        });
+
+    // Create bind groups
+    let bind_group = gpu_buffer
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("axis_fft_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: fft_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: twiddle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: bit_reversal_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+    // Dispatch compute shader
+    let mut encoder = gpu_buffer
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("axis_fft_encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("axis_fft_pass"),
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Dispatch one workgroup per batch
+        let workgroup_size = 64;
+        let workgroups = (batch_size + workgroup_size - 1) / workgroup_size;
+        compute_pass.dispatch_workgroups(workgroups as u32, 1, 1);
+    }
+
+    gpu_buffer.queue().submit(std::iter::once(encoder.finish()));
+
+    Ok(())
+}
+
+// Helper structures for GPU FFT
+#[cfg(feature = "gpu")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct FFTInfo {
+    n: u32,
+    log2_n: u32,
+    batch_size: u32,
+    is_inverse: u32,
+}
+
+// Helper functions for GPU FFT
+#[cfg(feature = "gpu")]
+fn generate_twiddle_factors<T>(n: usize) -> Vec<T>
+where
+    T: Float + FromPrimitive,
+{
+    let mut twiddle_factors = Vec::with_capacity(n);
+    let two_pi = T::from(2.0 * std::f64::consts::PI).unwrap();
+
+    for k in 0..n {
+        let angle = two_pi * T::from(k).unwrap() / T::from(n).unwrap();
+        twiddle_factors.push(angle.cos());
+        twiddle_factors.push(-angle.sin());
+    }
+
+    twiddle_factors
+}
+
+#[cfg(feature = "gpu")]
+fn generate_bit_reversal_table(n: usize) -> Vec<u32> {
+    let mut table = Vec::with_capacity(n);
+    let log2_n = n.trailing_zeros();
+
+    for i in 0..n {
+        let mut bit_reversed = 0u32;
+        let mut temp = i as u32;
+
+        for _ in 0..log2_n {
+            bit_reversed = (bit_reversed << 1) | (temp & 1);
+            temp >>= 1;
+        }
+
+        table.push(bit_reversed);
+    }
+
+    table
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_abs_diff_eq;
+
+    #[test]
+    fn test_fft_1d() {
+        // Simple test with known result
+        let input = Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 0.0], &[4]).unwrap();
+
+        let output = fft(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[4]);
+
+        // FFT of [1, 0, 0, 0] should be [1, 1, 1, 1]
+        if let Some(data) = output.as_slice() {
+            for &val in data {
+                assert_abs_diff_eq!(val.re, 1.0, epsilon = 1e-6);
+                assert_abs_diff_eq!(val.im, 0.0, epsilon = 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_rfft_1d() {
+        let input = Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 0.0], &[4]).unwrap();
+
+        let output = rfft(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[3]); // 4/2 + 1 = 3
+
+        // RFFT of [1, 0, 0, 0] should give positive frequencies only
+        if let Some(data) = output.as_slice() {
+            for &val in data {
+                assert_abs_diff_eq!(val.re, 1.0, epsilon = 1e-6);
+                assert_abs_diff_eq!(val.im, 0.0, epsilon = 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fft_ifft_roundtrip() {
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
+
+        let fft_result = fft(&input).unwrap();
+        let ifft_result = ifft(&fft_result).unwrap();
+
+        // Check that IFFT(FFT(x)) ≈ x
+        if let (Some(original), Some(roundtrip)) = (input.as_slice(), ifft_result.as_slice()) {
+            for (i, (&orig, &rt)) in original.iter().zip(roundtrip.iter()).enumerate() {
+                assert_abs_diff_eq!(orig, rt.re, epsilon = 1e-5);
+                assert_abs_diff_eq!(0.0, rt.im, epsilon = 1e-5);
+                if (orig - rt.re).abs() > 1e-5 {
+                    panic!("Mismatch at index {}: {} vs {}", i, orig, rt.re);
+                }
+                if rt.im.abs() > 1e-5 {
+                    panic!("Non-zero imaginary part at index {}: {}", i, rt.im);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_fft_batch() {
+        // Test batch processing with 2x4 input
+        let input =
+            Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0], &[2, 4]).unwrap();
+
+        let output = fft(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[2, 4]);
+
+        // Each row should have its own FFT computed
+        if let Some(data) = output.as_slice() {
+            // First row: FFT([1, 0, 0, 0]) = [1, 1, 1, 1]
+            for i in 0..4 {
+                assert_abs_diff_eq!(data[i].re, 1.0, epsilon = 1e-6);
+                assert_abs_diff_eq!(data[i].im, 0.0, epsilon = 1e-6);
+            }
+
+            // Second row: FFT([2, 0, 0, 0]) = [2, 2, 2, 2]
+            for i in 4..8 {
+                assert_abs_diff_eq!(data[i].re, 2.0, epsilon = 1e-6);
+                assert_abs_diff_eq!(data[i].im, 0.0, epsilon = 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fft2() {
+        // Test 2D FFT with a simple 2x2 input
+        let input = Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 0.0], &[2, 2]).unwrap();
+
+        let output = fft2(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[2, 2]);
+
+        // The 2D FFT of this pattern should have known properties
+        if let Some(data) = output.as_slice() {
+            // Check that all values are finite (not NaN or infinite)
+            for val in data {
+                assert!(val.re.is_finite());
+                assert!(val.im.is_finite());
+            }
+
+            // The DC component (0,0) should be 1.0 (sum of all input elements)
+            assert_abs_diff_eq!(data[0].re, 1.0, epsilon = 1e-6);
+            assert_abs_diff_eq!(data[0].im, 0.0, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_ifft2() {
+        // Test 2D IFFT with FFT roundtrip
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+        let fft_result = fft2(&input).unwrap();
+        let ifft_result = ifft2(&fft_result).unwrap();
+
+        // Check that IFFT2(FFT2(x)) ≈ x
+        if let (Some(original), Some(roundtrip)) = (input.as_slice(), ifft_result.as_slice()) {
+            for (i, (&orig, &rt)) in original.iter().zip(roundtrip.iter()).enumerate() {
+                assert_abs_diff_eq!(orig, rt.re, epsilon = 1e-5);
+                assert_abs_diff_eq!(0.0, rt.im, epsilon = 1e-5);
+                if (orig - rt.re).abs() > 1e-5 {
+                    panic!(
+                        "2D FFT roundtrip mismatch at index {}: {} vs {}",
+                        i, orig, rt.re
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_fft3() {
+        // Test 3D FFT with a simple 2x2x2 input
+        let input =
+            Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], &[2, 2, 2])
+                .unwrap();
+
+        let output = fft3(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[2, 2, 2]);
+
+        // The 3D FFT of this pattern should have known properties
+        if let Some(data) = output.as_slice() {
+            // Check that all values are finite (not NaN or infinite)
+            for val in data {
+                assert!(val.re.is_finite());
+                assert!(val.im.is_finite());
+            }
+
+            // The DC component (0,0,0) should be 1.0 (sum of all input elements)
+            assert_abs_diff_eq!(data[0].re, 1.0, epsilon = 1e-6);
+            assert_abs_diff_eq!(data[0].im, 0.0, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_ifft3() {
+        // Test 3D IFFT with FFT roundtrip
+        let input =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2])
+                .unwrap();
+
+        let fft_result = fft3(&input).unwrap();
+        let ifft_result = ifft3(&fft_result).unwrap();
+
+        // Check that IFFT3(FFT3(x)) ≈ x
+        if let (Some(original), Some(roundtrip)) = (input.as_slice(), ifft_result.as_slice()) {
+            for (i, (&orig, &rt)) in original.iter().zip(roundtrip.iter()).enumerate() {
+                assert_abs_diff_eq!(orig, rt.re, epsilon = 1e-5);
+                assert_abs_diff_eq!(0.0, rt.im, epsilon = 1e-5);
+                if (orig - rt.re).abs() > 1e-5 {
+                    panic!(
+                        "3D FFT roundtrip mismatch at index {}: {} vs {}",
+                        i, orig, rt.re
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_fft3_batch() {
+        // Test batch processing with 3D FFT
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                // First volume
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // Second volume
+                2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+            &[2, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = fft3(&input).unwrap();
+        assert_eq!(output.shape().dims(), &[2, 2, 2, 2]);
+
+        // Each volume should have its own 3D FFT computed
+        if let Some(data) = output.as_slice() {
+            // First volume: 3D FFT of [1, 0, 0, 0, 0, 0, 0, 0]
+            // The DC component should be 1.0
+            assert_abs_diff_eq!(data[0].re, 1.0, epsilon = 1e-6);
+            assert_abs_diff_eq!(data[0].im, 0.0, epsilon = 1e-6);
+
+            // Second volume: 3D FFT of [2, 0, 0, 0, 0, 0, 0, 0]
+            // The DC component should be 2.0
+            assert_abs_diff_eq!(data[8].re, 2.0, epsilon = 1e-6);
+            assert_abs_diff_eq!(data[8].im, 0.0, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_fft_dimensions_validation() {
+        // Test that FFT functions properly validate input dimensions
+        let input_0d = Tensor::<f32>::from_scalar(1.0);
+        let input_1d = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
+        let input_2d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+        // 1D FFT should fail on 0D input
+        assert!(fft(&input_0d).is_err());
+
+        // 2D FFT should fail on 1D input
+        assert!(fft2(&input_1d).is_err());
+
+        // 3D FFT should fail on 2D input
+        assert!(fft3(&input_2d).is_err());
+    }
+
+    #[test]
+    fn test_complex_input_output_consistency() {
+        // Test that complex input tensors work correctly with IFFT functions
+        let complex_input = Tensor::<Complex<f32>>::from_vec(
+            vec![
+                Complex::new(1.0, 0.0),
+                Complex::new(0.0, 1.0),
+                Complex::new(-1.0, 0.0),
+                Complex::new(0.0, -1.0),
+            ],
+            &[4],
+        )
+        .unwrap();
+
+        // Test 1D IFFT
+        let ifft_result = ifft(&complex_input).unwrap();
+        assert_eq!(ifft_result.shape().dims(), &[4]);
+
+        // Test 2D IFFT
+        let complex_2d = Tensor::<Complex<f32>>::from_vec(
+            vec![
+                Complex::new(1.0, 0.0),
+                Complex::new(0.0, 1.0),
+                Complex::new(-1.0, 0.0),
+                Complex::new(0.0, -1.0),
+            ],
+            &[2, 2],
+        )
+        .unwrap();
+
+        let ifft2_result = ifft2(&complex_2d).unwrap();
+        assert_eq!(ifft2_result.shape().dims(), &[2, 2]);
+
+        // Test 3D IFFT
+        let complex_3d = Tensor::<Complex<f32>>::from_vec(
+            vec![
+                Complex::new(1.0, 0.0),
+                Complex::new(0.0, 1.0),
+                Complex::new(-1.0, 0.0),
+                Complex::new(0.0, -1.0),
+                Complex::new(1.0, 1.0),
+                Complex::new(-1.0, -1.0),
+                Complex::new(0.5, 0.5),
+                Complex::new(-0.5, -0.5),
+            ],
+            &[2, 2, 2],
+        )
+        .unwrap();
+
+        let ifft3_result = ifft3(&complex_3d).unwrap();
+        assert_eq!(ifft3_result.shape().dims(), &[2, 2, 2]);
+    }
+
+    #[test]
+    #[cfg(feature = "gpu")]
+    fn test_gpu_fft_error() {
+        use crate::Device;
+
+        // Create a GPU tensor
+        let input = Tensor::<f32>::from_vec_on_device(
+            vec![1.0, 2.0, 3.0, 4.0],
+            &[4],
+            Device::gpu(0).unwrap(),
+        )
+        .unwrap();
+
+        // Verify that FFT operations return proper error messages
+        let result = fft(&input);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            match e {
+                TensorError::unsupported_operation_simple(msg) => {
+                    assert!(msg.contains("GPU FFT"));
+                    assert!(msg.contains("not implemented"));
+                    assert!(msg.contains("specialized compute kernels"));
+                }
+                _ => panic!("Expected UnsupportedOperation error"),
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "gpu")]
+    fn test_gpu_ifft_error() {
+        use crate::Device;
+
+        // Create a complex GPU tensor
+        let real_part = Tensor::<f32>::from_vec_on_device(
+            vec![1.0, 2.0, 3.0, 4.0],
+            &[4],
+            Device::gpu(0).unwrap(),
+        )
+        .unwrap();
+
+        // For testing purposes, we'll create a CPU tensor and convert since we can't create complex directly on GPU
+        let cpu_complex = Tensor::<Complex<f32>>::from_vec(
+            vec![
+                Complex::new(1.0, 0.0),
+                Complex::new(2.0, 0.0),
+                Complex::new(3.0, 0.0),
+                Complex::new(4.0, 0.0),
+            ],
+            &[4],
+        )
+        .unwrap();
+        let gpu_complex = cpu_complex.to_device(Device::gpu(0).unwrap()).unwrap();
+
+        // Verify that IFFT operations return proper error messages
+        let result = ifft(&gpu_complex);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            match e {
+                TensorError::unsupported_operation_simple(msg) => {
+                    assert!(msg.contains("GPU IFFT"));
+                    assert!(msg.contains("not implemented"));
+                    assert!(msg.contains("specialized compute kernels"));
+                }
+                _ => panic!("Expected UnsupportedOperation error"),
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "gpu")]
+    fn test_gpu_rfft_error() {
+        use crate::Device;
+
+        // Create a GPU tensor
+        let input = Tensor::<f32>::from_vec_on_device(
+            vec![1.0, 2.0, 3.0, 4.0],
+            &[4],
+            Device::gpu(0).unwrap(),
+        )
+        .unwrap();
+
+        // Verify that RFFT operations return proper error messages
+        let result = rfft(&input);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            match e {
+                TensorError::unsupported_operation_simple(msg) => {
+                    assert!(msg.contains("GPU RFFT"));
+                    assert!(msg.contains("not implemented"));
+                    assert!(msg.contains("specialized compute kernels"));
+                }
+                _ => panic!("Expected UnsupportedOperation error"),
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "gpu")]
+    fn test_gpu_fft2_error() {
+        use crate::Device;
+
+        // Create a GPU tensor
+        let input = Tensor::<f32>::from_vec_on_device(
+            vec![1.0, 0.0, 0.0, 0.0],
+            &[2, 2],
+            Device::gpu(0).unwrap(),
+        )
+        .unwrap();
+
+        // Verify that FFT2 operations return proper error messages
+        let result = fft2(&input);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            match e {
+                TensorError::unsupported_operation_simple(msg) => {
+                    assert!(msg.contains("GPU FFT2"));
+                    assert!(msg.contains("not implemented"));
+                    assert!(msg.contains("specialized compute kernels"));
+                }
+                _ => panic!("Expected UnsupportedOperation error"),
+            }
+        }
+    }
+}
+
+/// Prime factorization for mixed-radix FFT optimization
+fn prime_factors(mut n: usize) -> Vec<usize> {
+    let mut factors = Vec::new();
+
+    // Handle factor 2
+    while n % 2 == 0 {
+        factors.push(2);
+        n /= 2;
+    }
+
+    // Handle odd factors
+    let mut factor = 3;
+    while factor * factor <= n {
+        while n % factor == 0 {
+            factors.push(factor);
+            n /= factor;
+        }
+        factor += 2;
+    }
+
+    // If n is still > 1, then it's a prime
+    if n > 1 {
+        factors.push(n);
+    }
+
+    factors
+}
+
+/// Check if a size is well-suited for mixed-radix FFT
+fn is_efficient_fft_size(n: usize) -> bool {
+    let factors = prime_factors(n);
+
+    // Efficient if all prime factors are small (≤ 7)
+    factors.iter().all(|&f| f <= 7)
+}
+
+/// Find the next efficient FFT size (for zero-padding optimization)
+fn next_efficient_fft_size(n: usize) -> usize {
+    let mut size = n;
+    while !is_efficient_fft_size(size) {
+        size += 1;
+    }
+    size
+}
+
+/// Mixed-radix FFT implementation optimized for arbitrary sizes
+///
+/// This function provides optimal FFT computation for arbitrary input sizes by:
+/// 1. Using the rustfft library's mixed-radix algorithms
+/// 2. Optionally zero-padding to efficient sizes for better performance
+/// 3. Supporting both forward and inverse transforms
+///
+/// # Arguments
+/// * `input` - Input tensor (real or complex)
+/// * `axis` - Axis along which to compute FFT (default: last axis)
+/// * `norm` - Normalization mode ("backward", "forward", "ortho")
+/// * `optimize_size` - Whether to zero-pad to efficient sizes
+pub fn mixed_radix_fft<T>(
+    input: &Tensor<T>,
+    axis: Option<usize>,
+    norm: Option<&str>,
+    optimize_size: Option<bool>,
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "mixed_radix_fft".to_string(),
+                    reason: "Mixed-radix FFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let axis = axis.unwrap_or(ndim - 1);
+            if axis >= ndim {
+                return Err(TensorError::invalid_argument(format!(
+                    "Axis {axis} out of bounds for {ndim}-dimensional tensor"
+                )));
+            }
+
+            let original_size = shape[axis];
+            let optimize = optimize_size.unwrap_or(false);
+            let fft_size = if optimize {
+                next_efficient_fft_size(original_size)
+            } else {
+                original_size
+            };
+
+            let norm_mode = norm.unwrap_or("backward");
+
+            // Create FFT planner
+            let mut planner = FftPlanner::new();
+            let fft = planner.plan_fft_forward(fft_size);
+
+            // Calculate output shape (might be different if we're zero-padding)
+            let mut output_shape = shape.to_vec();
+            output_shape[axis] = fft_size;
+
+            // Prepare output tensor
+            let output_size: usize = output_shape.iter().product();
+            let mut output_data = vec![Complex::zero(); output_size];
+
+            // Convert strides for the new axis size
+            let mut strides = vec![1; ndim];
+            for i in (0..ndim - 1).rev() {
+                strides[i] = strides[i + 1] * output_shape[i + 1];
+            }
+
+            if let Some(input_slice) = arr.as_slice() {
+                // Calculate how many FFTs we need to perform
+                let _axis_stride = strides[axis];
+                let num_ffts = output_size / fft_size;
+
+                // Process each FFT
+                for fft_idx in 0..num_ffts {
+                    // Calculate the starting position for this FFT
+                    let mut coords = vec![0; ndim];
+                    let mut remaining = fft_idx;
+
+                    // Convert linear index to coordinates, skipping the FFT axis
+                    for (dim, &_size) in output_shape.iter().enumerate() {
+                        if dim != axis {
+                            let effective_stride = if dim < axis {
+                                strides[dim] / fft_size
+                            } else {
+                                strides[dim]
+                            };
+
+                            if effective_stride > 0 {
+                                coords[dim] = remaining / effective_stride;
+                                remaining %= effective_stride;
+                            }
+                        }
+                    }
+
+                    // Prepare buffer for this FFT
+                    let mut buffer = vec![Complex::zero(); fft_size];
+
+                    // Copy input data to buffer (with zero-padding if needed)
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..fft_size.min(original_size) {
+                        coords[axis] = i;
+
+                        // Calculate input index
+                        let mut input_idx = 0;
+                        for (dim, &coord) in coords.iter().enumerate() {
+                            let input_stride = if dim == ndim - 1 {
+                                1
+                            } else {
+                                let mut s = 1;
+                                #[allow(clippy::needless_range_loop)]
+                                for j in (dim + 1)..ndim {
+                                    s *= shape[j];
+                                }
+                                s
+                            };
+                            input_idx += coord * input_stride;
+                        }
+
+                        if input_idx < input_slice.len() {
+                            buffer[i] = Complex::new(input_slice[input_idx], T::zero());
+                        }
+                    }
+
+                    // Perform FFT
+                    fft.process(&mut buffer);
+
+                    // Apply normalization
+                    let normalization_factor = match norm_mode {
+                        "forward" => T::from(fft_size).unwrap().sqrt().recip(),
+                        "ortho" => T::from(fft_size).unwrap().sqrt().recip(),
+                        _ => T::one(), // "backward" - no normalization
+                    };
+
+                    if normalization_factor != T::one() {
+                        for sample in &mut buffer {
+                            *sample = *sample * normalization_factor;
+                        }
+                    }
+
+                    // Copy result to output
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..fft_size {
+                        coords[axis] = i;
+
+                        // Calculate output index
+                        let mut output_idx = 0;
+                        for (dim, &coord) in coords.iter().enumerate() {
+                            output_idx += coord * strides[dim];
+                        }
+
+                        if output_idx < output_data.len() {
+                            output_data[output_idx] = buffer[i];
+                        }
+                    }
+                }
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Cannot access tensor data for mixed-radix FFT".to_string(),
+                ));
+            }
+
+            // Create output tensor
+            let output_array =
+                ArrayD::from_shape_vec(IxDyn(&output_shape), output_data).map_err(|e| {
+                    TensorError::InvalidShape {
+                        operation: "fft".to_string(),
+                        reason: e.to_string(),
+                        shape: None,
+                        context: None,
+                    }
+                })?;
+
+            Ok(Tensor::from_array(output_array))
+        }
+
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_mixed_radix_fft_dispatch(
+            gpu_buffer,
+            input.shape().dims(),
+            axis,
+            norm,
+            optimize_size,
+        ),
+    }
+}
+
+/// Mixed-radix IFFT implementation
+pub fn mixed_radix_ifft<T>(
+    input: &Tensor<Complex<T>>,
+    axis: Option<usize>,
+    norm: Option<&str>,
+    #[allow(unused_variables)] optimize_size: Option<bool>,
+) -> Result<Tensor<Complex<T>>>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "mixed_radix_ifft".to_string(),
+                    reason: "Mixed-radix IFFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let axis = axis.unwrap_or(ndim - 1);
+            let fft_size = shape[axis];
+            let norm_mode = norm.unwrap_or("backward");
+
+            // Create IFFT planner
+            let mut planner = FftPlanner::new();
+            let ifft = planner.plan_fft_inverse(fft_size);
+
+            // Prepare output
+            let total_elements: usize = shape.iter().product();
+            let mut output_data = vec![Complex::zero(); total_elements];
+
+            if let Some(input_slice) = arr.as_slice() {
+                // Calculate strides
+                let mut strides = vec![1; ndim];
+                for i in (0..ndim - 1).rev() {
+                    strides[i] = strides[i + 1] * shape[i + 1];
+                }
+
+                let num_ffts = total_elements / fft_size;
+
+                // Process each IFFT
+                for fft_idx in 0..num_ffts {
+                    let start_idx = fft_idx * fft_size;
+                    let end_idx = (fft_idx + 1) * fft_size;
+
+                    // Copy input to buffer
+                    let mut buffer: Vec<Complex<T>> = input_slice[start_idx..end_idx].to_vec();
+
+                    // Perform IFFT
+                    ifft.process(&mut buffer);
+
+                    // Apply normalization
+                    let normalization_factor = match norm_mode {
+                        "forward" => T::one(),
+                        "ortho" => T::from(fft_size).unwrap().sqrt().recip(),
+                        _ => T::from(fft_size).unwrap().recip(), // "backward" - divide by N
+                    };
+
+                    if normalization_factor != T::one() {
+                        for sample in &mut buffer {
+                            *sample = *sample * normalization_factor;
+                        }
+                    }
+
+                    // Copy result to output
+                    output_data[start_idx..end_idx].copy_from_slice(&buffer);
+                }
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Cannot access tensor data for mixed-radix IFFT".to_string(),
+                ));
+            }
+
+            // Create output tensor
+            let output_array = ArrayD::from_shape_vec(IxDyn(shape), output_data).map_err(|e| {
+                TensorError::InvalidShape {
+                    operation: "fft".to_string(),
+                    reason: e.to_string(),
+                    shape: None,
+                    context: None,
+                }
+            })?;
+
+            Ok(Tensor::from_array(output_array))
+        }
+
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => gpu_mixed_radix_ifft_dispatch(
+            gpu_buffer,
+            input.shape().dims(),
+            axis,
+            norm,
+            optimize_size,
+        ),
+    }
+}
+
+/// Compute 1D FFT in place along the last axis
+/// Modifies the input tensor directly without allocating new memory
+pub fn fft_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &mut input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft".to_string(),
+                    reason: "FFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[ndim - 1];
+            let mut planner = FftPlanner::new();
+            let fft = planner.plan_fft_forward(n);
+
+            // Calculate the number of FFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_ffts = total_elements / n;
+
+            // Get mutable slice for in-place operation
+            if let Some(data_slice) = arr.as_slice_mut() {
+                // Process each 1D slice along the last axis in place
+                for i in 0..num_ffts {
+                    let start_idx = i * n;
+                    let end_idx = (i + 1) * n;
+
+                    // Get mutable slice for this FFT segment
+                    let mut buffer = data_slice[start_idx..end_idx].to_vec();
+
+                    // Perform FFT
+                    fft.process(&mut buffer);
+
+                    // Copy result back to original tensor
+                    data_slice[start_idx..end_idx].copy_from_slice(&buffer);
+                }
+                Ok(())
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get mutable slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => {
+            gpu_inplace_fft_dispatch(gpu_buffer, input.shape().dims())
+        }
+    }
+}
+
+/// Compute 1D inverse FFT in place along the last axis
+/// Modifies the input tensor directly without allocating new memory
+pub fn ifft_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &mut input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            let ndim = shape.len();
+
+            if ndim == 0 {
+                return Err(TensorError::InvalidShape {
+                    operation: "ifft".to_string(),
+                    reason: "IFFT requires at least 1D input".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[ndim - 1];
+            let mut planner = FftPlanner::new();
+            let ifft = planner.plan_fft_inverse(n);
+
+            // Calculate the number of IFFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_iffts = total_elements / n;
+
+            // Get mutable slice for in-place operation
+            if let Some(data_slice) = arr.as_slice_mut() {
+                // Process each 1D slice along the last axis in place
+                for i in 0..num_iffts {
+                    let start_idx = i * n;
+                    let end_idx = (i + 1) * n;
+
+                    // Get mutable slice for this IFFT segment
+                    let mut buffer = data_slice[start_idx..end_idx].to_vec();
+
+                    // Perform IFFT
+                    ifft.process(&mut buffer);
+
+                    // Copy result back to original tensor
+                    data_slice[start_idx..end_idx].copy_from_slice(&buffer);
+                }
+                Ok(())
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get mutable slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => {
+            gpu_inplace_ifft_dispatch(gpu_buffer, input.shape().dims())
+        }
+    }
+}
+
+/// Compute 2D FFT in place along the last two axes
+/// Modifies the input tensor directly without allocating new memory
+pub fn fft2_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    let shape = input.shape().dims().to_vec();
+    let ndim = shape.len();
+
+    if ndim < 2 {
+        return Err(TensorError::InvalidShape {
+            operation: "fft2d".to_string(),
+            reason: "2D FFT requires at least 2D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    // Apply FFT along the second-to-last axis first
+    fft_inplace_axis(input, ndim - 2)?;
+
+    // Then apply FFT along the last axis
+    fft_inplace_axis(input, ndim - 1)?;
+
+    Ok(())
+}
+
+/// Compute 2D inverse FFT in place along the last two axes
+/// Modifies the input tensor directly without allocating new memory
+pub fn ifft2_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    let shape = input.shape().dims().to_vec();
+    let ndim = shape.len();
+
+    if ndim < 2 {
+        return Err(TensorError::InvalidShape {
+            operation: "ifft2d".to_string(),
+            reason: "2D IFFT requires at least 2D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    // Apply IFFT along the second-to-last axis first
+    ifft_inplace_axis(input, ndim - 2)?;
+
+    // Then apply IFFT along the last axis
+    ifft_inplace_axis(input, ndim - 1)?;
+
+    Ok(())
+}
+
+/// Compute 3D FFT in place along the last three axes
+/// Modifies the input tensor directly without allocating new memory
+pub fn fft3_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    let shape = input.shape().dims().to_vec();
+    let ndim = shape.len();
+
+    if ndim < 3 {
+        return Err(TensorError::InvalidShape {
+            operation: "fft3d".to_string(),
+            reason: "3D FFT requires at least 3D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    // Apply FFT along the third-to-last axis first
+    fft_inplace_axis(input, ndim - 3)?;
+
+    // Then apply FFT along the second-to-last axis
+    fft_inplace_axis(input, ndim - 2)?;
+
+    // Finally apply FFT along the last axis
+    fft_inplace_axis(input, ndim - 1)?;
+
+    Ok(())
+}
+
+/// Compute 3D inverse FFT in place along the last three axes
+/// Modifies the input tensor directly without allocating new memory
+pub fn ifft3_inplace<T>(input: &mut Tensor<Complex<T>>) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    let shape = input.shape().dims().to_vec();
+    let ndim = shape.len();
+
+    if ndim < 3 {
+        return Err(TensorError::InvalidShape {
+            operation: "ifft3d".to_string(),
+            reason: "3D IFFT requires at least 3D input".to_string(),
+            shape: Some(shape.to_vec()),
+            context: None,
+        });
+    }
+
+    // Apply IFFT along the third-to-last axis first
+    ifft_inplace_axis(input, ndim - 3)?;
+
+    // Then apply IFFT along the second-to-last axis
+    ifft_inplace_axis(input, ndim - 2)?;
+
+    // Finally apply IFFT along the last axis
+    ifft_inplace_axis(input, ndim - 1)?;
+
+    Ok(())
+}
+
+/// Helper function to compute FFT in place along a specific axis
+fn fft_inplace_axis<T>(input: &mut Tensor<Complex<T>>, axis: usize) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &mut input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            let ndim = shape.len();
+
+            if axis >= ndim {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft".to_string(),
+                    reason: format!(
+                        "Axis {axis} is out of bounds for tensor with {ndim} dimensions"
+                    ),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[axis];
+            let mut planner = FftPlanner::new();
+            let fft = planner.plan_fft_forward(n);
+
+            // Calculate strides and sizes for iteration
+            let mut strides = vec![1; ndim];
+            for i in (0..ndim - 1).rev() {
+                strides[i] = strides[i + 1] * shape[i + 1];
+            }
+
+            // Calculate the number of FFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_ffts = total_elements / n;
+
+            if let Some(data_slice) = arr.as_slice_mut() {
+                for fft_idx in 0..num_ffts {
+                    // Calculate the starting index for this FFT
+                    let mut multi_idx = vec![0; ndim];
+                    let mut remaining = fft_idx;
+
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..ndim {
+                        if i != axis {
+                            let stride_for_this_dim = if i < axis {
+                                num_ffts / shape.iter().take(i + 1).product::<usize>()
+                            } else {
+                                num_ffts / shape.iter().take(i).product::<usize>()
+                            };
+                            multi_idx[i] = remaining / stride_for_this_dim;
+                            remaining %= stride_for_this_dim;
+                        }
+                    }
+
+                    // Extract data along the axis
+                    let mut buffer = Vec::with_capacity(n);
+                    for i in 0..n {
+                        multi_idx[axis] = i;
+                        let linear_idx = multi_idx
+                            .iter()
+                            .zip(strides.iter())
+                            .map(|(idx, stride)| idx * stride)
+                            .sum::<usize>();
+                        buffer.push(data_slice[linear_idx]);
+                    }
+
+                    // Perform FFT
+                    fft.process(&mut buffer);
+
+                    // Copy result back
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..n {
+                        multi_idx[axis] = i;
+                        let linear_idx = multi_idx
+                            .iter()
+                            .zip(strides.iter())
+                            .map(|(idx, stride)| idx * stride)
+                            .sum::<usize>();
+                        data_slice[linear_idx] = buffer[i];
+                    }
+                }
+                Ok(())
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get mutable slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(gpu_buffer) => {
+            gpu_fft_inplace_axis(gpu_buffer, input.shape().dims(), axis, false)?;
+            Ok(())
+        }
+    }
+}
+
+/// Helper function to compute IFFT in place along a specific axis
+fn ifft_inplace_axis<T>(input: &mut Tensor<Complex<T>>, axis: usize) -> Result<()>
+where
+    T: Float + Send + Sync + 'static + FromPrimitive + Signed + Debug + Default,
+    Complex<T>: Default,
+{
+    match &mut input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            let ndim = shape.len();
+
+            if axis >= ndim {
+                return Err(TensorError::InvalidShape {
+                    operation: "fft".to_string(),
+                    reason: format!(
+                        "Axis {axis} is out of bounds for tensor with {ndim} dimensions"
+                    ),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                });
+            }
+
+            let n = shape[axis];
+            let mut planner = FftPlanner::new();
+            let ifft = planner.plan_fft_inverse(n);
+
+            // Calculate strides and sizes for iteration
+            let mut strides = vec![1; ndim];
+            for i in (0..ndim - 1).rev() {
+                strides[i] = strides[i + 1] * shape[i + 1];
+            }
+
+            // Calculate the number of IFFTs to perform
+            let total_elements: usize = shape.iter().product();
+            let num_iffts = total_elements / n;
+
+            if let Some(data_slice) = arr.as_slice_mut() {
+                for ifft_idx in 0..num_iffts {
+                    // Calculate the starting index for this IFFT
+                    let mut multi_idx = vec![0; ndim];
+                    let mut remaining = ifft_idx;
+
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..ndim {
+                        if i != axis {
+                            let stride_for_this_dim = if i < axis {
+                                num_iffts / shape.iter().take(i + 1).product::<usize>()
+                            } else {
+                                num_iffts / shape.iter().take(i).product::<usize>()
+                            };
+                            multi_idx[i] = remaining / stride_for_this_dim;
+                            remaining %= stride_for_this_dim;
+                        }
+                    }
+
+                    // Extract data along the axis
+                    let mut buffer = Vec::with_capacity(n);
+                    for i in 0..n {
+                        multi_idx[axis] = i;
+                        let linear_idx = multi_idx
+                            .iter()
+                            .zip(strides.iter())
+                            .map(|(idx, stride)| idx * stride)
+                            .sum::<usize>();
+                        buffer.push(data_slice[linear_idx]);
+                    }
+
+                    // Perform IFFT
+                    ifft.process(&mut buffer);
+
+                    // Copy result back
+                    #[allow(clippy::needless_range_loop)]
+                    for i in 0..n {
+                        multi_idx[axis] = i;
+                        let linear_idx = multi_idx
+                            .iter()
+                            .zip(strides.iter())
+                            .map(|(idx, stride)| idx * stride)
+                            .sum::<usize>();
+                        data_slice[linear_idx] = buffer[i];
+                    }
+                }
+                Ok(())
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot get mutable slice from input array".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "In-place IFFT along axis not yet implemented for GPU tensors".to_string(),
+        )),
+    }
+}
+
+/// Compute 1D FFT with half precision input (f16)
+/// Converts to f32 for computation, then back to f16 for the result
+pub fn fft_f16(input: &Tensor<f16>) -> Result<Tensor<Complex<f16>>> {
+    // Convert f16 tensor to f32
+    let f32_tensor = convert_f16_to_f32(input)?;
+
+    // Perform FFT with f32 precision
+    let f32_result = fft(&f32_tensor)?;
+
+    // Convert result back to f16
+    convert_complex_f32_to_f16(&f32_result)
+}
+
+/// Compute 1D FFT with half precision input (bf16)
+/// Converts to f32 for computation, then back to bf16 for the result
+pub fn fft_bf16(input: &Tensor<bf16>) -> Result<Tensor<Complex<bf16>>> {
+    // Convert bf16 tensor to f32
+    let f32_tensor = convert_bf16_to_f32(input)?;
+
+    // Perform FFT with f32 precision
+    let f32_result = fft(&f32_tensor)?;
+
+    // Convert result back to bf16
+    convert_complex_f32_to_bf16(&f32_result)
+}
+
+/// Compute 1D inverse FFT with half precision input (f16)
+pub fn ifft_f16(input: &Tensor<Complex<f16>>) -> Result<Tensor<Complex<f16>>> {
+    // Convert f16 complex tensor to f32
+    let f32_tensor = convert_complex_f16_to_f32(input)?;
+
+    // Perform IFFT with f32 precision
+    let f32_result = ifft(&f32_tensor)?;
+
+    // Convert result back to f16
+    convert_complex_f32_to_f16(&f32_result)
+}
+
+/// Compute 1D inverse FFT with half precision input (bf16)
+pub fn ifft_bf16(input: &Tensor<Complex<bf16>>) -> Result<Tensor<Complex<bf16>>> {
+    // Convert bf16 complex tensor to f32
+    let f32_tensor = convert_complex_bf16_to_f32(input)?;
+
+    // Perform IFFT with f32 precision
+    let f32_result = ifft(&f32_tensor)?;
+
+    // Convert result back to bf16
+    convert_complex_f32_to_bf16(&f32_result)
+}
+
+/// Compute 2D FFT with half precision input (f16)
+pub fn fft2_f16(input: &Tensor<f16>) -> Result<Tensor<Complex<f16>>> {
+    // Convert f16 tensor to f32
+    let f32_tensor = convert_f16_to_f32(input)?;
+
+    // Perform 2D FFT with f32 precision
+    let f32_result = fft2(&f32_tensor)?;
+
+    // Convert result back to f16
+    convert_complex_f32_to_f16(&f32_result)
+}
+
+/// Compute 2D FFT with half precision input (bf16)
+pub fn fft2_bf16(input: &Tensor<bf16>) -> Result<Tensor<Complex<bf16>>> {
+    // Convert bf16 tensor to f32
+    let f32_tensor = convert_bf16_to_f32(input)?;
+
+    // Perform 2D FFT with f32 precision
+    let f32_result = fft2(&f32_tensor)?;
+
+    // Convert result back to bf16
+    convert_complex_f32_to_bf16(&f32_result)
+}
+
+/// Compute 2D inverse FFT with half precision input (f16)
+pub fn ifft2_f16(input: &Tensor<Complex<f16>>) -> Result<Tensor<Complex<f16>>> {
+    // Convert f16 complex tensor to f32
+    let f32_tensor = convert_complex_f16_to_f32(input)?;
+
+    // Perform 2D IFFT with f32 precision
+    let f32_result = ifft2(&f32_tensor)?;
+
+    // Convert result back to f16
+    convert_complex_f32_to_f16(&f32_result)
+}
+
+/// Compute 2D inverse FFT with half precision input (bf16)
+pub fn ifft2_bf16(input: &Tensor<Complex<bf16>>) -> Result<Tensor<Complex<bf16>>> {
+    // Convert bf16 complex tensor to f32
+    let f32_tensor = convert_complex_bf16_to_f32(input)?;
+
+    // Perform 2D IFFT with f32 precision
+    let f32_result = ifft2(&f32_tensor)?;
+
+    // Convert result back to bf16
+    convert_complex_f32_to_bf16(&f32_result)
+}
+
+/// Helper function to convert f16 tensor to f32 tensor
+fn convert_f16_to_f32(input: &Tensor<f16>) -> Result<Tensor<f32>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let f32_data: Vec<f32> = input_slice.iter().map(|&x| x.to_f32()).collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), f32_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access f16 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU f16 to f32 conversion not yet implemented".to_string(),
+        )),
+    }
+}
+
+/// Helper function to convert bf16 tensor to f32 tensor
+fn convert_bf16_to_f32(input: &Tensor<bf16>) -> Result<Tensor<f32>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let f32_data: Vec<f32> = input_slice.iter().map(|&x| x.to_f32()).collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), f32_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access bf16 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU bf16 to f32 conversion not yet implemented".to_string(),
+        )),
+    }
+}
+
+/// Helper function to convert complex f32 tensor to complex f16 tensor
+fn convert_complex_f32_to_f16(input: &Tensor<Complex<f32>>) -> Result<Tensor<Complex<f16>>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let f16_data: Vec<Complex<f16>> = input_slice
+                    .iter()
+                    .map(|&x| Complex::new(f16::from_f32(x.re), f16::from_f32(x.im)))
+                    .collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), f16_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access complex f32 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU complex f32 to f16 conversion not yet implemented".to_string(),
+        )),
+    }
+}
+
+/// Helper function to convert complex f32 tensor to complex bf16 tensor
+fn convert_complex_f32_to_bf16(input: &Tensor<Complex<f32>>) -> Result<Tensor<Complex<bf16>>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let bf16_data: Vec<Complex<bf16>> = input_slice
+                    .iter()
+                    .map(|&x| Complex::new(bf16::from_f32(x.re), bf16::from_f32(x.im)))
+                    .collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), bf16_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access complex f32 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU complex f32 to bf16 conversion not yet implemented".to_string(),
+        )),
+    }
+}
+
+/// Helper function to convert complex f16 tensor to complex f32 tensor
+fn convert_complex_f16_to_f32(input: &Tensor<Complex<f16>>) -> Result<Tensor<Complex<f32>>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let f32_data: Vec<Complex<f32>> = input_slice
+                    .iter()
+                    .map(|&x| Complex::new(x.re.to_f32(), x.im.to_f32()))
+                    .collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), f32_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access complex f16 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU complex f16 to f32 conversion not yet implemented".to_string(),
+        )),
+    }
+}
+
+/// Helper function to convert complex bf16 tensor to complex f32 tensor
+fn convert_complex_bf16_to_f32(input: &Tensor<Complex<bf16>>) -> Result<Tensor<Complex<f32>>> {
+    match &input.storage {
+        TensorStorage::Cpu(arr) => {
+            let shape = arr.shape().to_vec();
+            if let Some(input_slice) = arr.as_slice() {
+                let f32_data: Vec<Complex<f32>> = input_slice
+                    .iter()
+                    .map(|&x| Complex::new(x.re.to_f32(), x.im.to_f32()))
+                    .collect();
+
+                let output_array =
+                    ArrayD::from_shape_vec(IxDyn(&shape), f32_data).map_err(|e| {
+                        TensorError::InvalidShape {
+                            operation: "fft".to_string(),
+                            reason: e.to_string(),
+                            shape: None,
+                            context: None,
+                        }
+                    })?;
+
+                Ok(Tensor::from_array(output_array))
+            } else {
+                Err(TensorError::unsupported_operation_simple(
+                    "Cannot access complex bf16 tensor data for conversion".to_string(),
+                ))
+            }
+        }
+        #[cfg(feature = "gpu")]
+        TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
+            "GPU complex bf16 to f32 conversion not yet implemented".to_string(),
+        )),
+    }
+}

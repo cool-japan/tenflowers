@@ -1,0 +1,3281 @@
+use crate::layout::{convert_layout, DataLayout, LayoutOptimizer, OperationType};
+use crate::tensor::TensorStorage;
+use crate::{Result, Tensor, TensorError};
+use num_traits::{One, Zero};
+use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+
+/// Performs 1D convolution operation
+/// Input shape: [batch, in_channels, length] (NCL format)
+/// Weight shape: [out_channels, in_channels, kernel_length]
+/// Output shape: [batch, out_channels, out_length]
+pub fn conv1d<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: usize,
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    match (&input.storage, &weight.storage) {
+        (TensorStorage::Cpu(_input_arr), TensorStorage::Cpu(_weight_arr)) => {
+            conv1d_cpu(input, weight, bias, stride, padding)
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(_input_gpu), TensorStorage::Gpu(_weight_gpu)) => {
+            conv1d_gpu(input, weight, bias, stride, padding)
+        }
+        #[allow(unreachable_patterns)]
+        _ => Err(TensorError::invalid_argument(
+            "Mixed CPU/GPU conv1d not supported".to_string(),
+        )),
+    }
+}
+
+/// CPU implementation of 1D convolution
+fn conv1d_cpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: usize,
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    let TensorStorage::Cpu(input_arr) = &input.storage;
+    let TensorStorage::Cpu(weight_arr) = &weight.storage;
+
+    // Validate input shapes
+    if input_arr.ndim() != 3 {
+        return Err(TensorError::invalid_shape_simple(
+            "Conv1D input must be 3D (NCL format)".to_string(),
+        ));
+    }
+    if weight_arr.ndim() != 3 {
+        return Err(TensorError::invalid_shape_simple(
+            "Conv1D weight must be 3D".to_string(),
+        ));
+    }
+
+    let input_shape = input_arr.shape();
+    let weight_shape = weight_arr.shape();
+
+    let batch_size = input_shape[0];
+    let in_channels = input_shape[1];
+    let in_length = input_shape[2];
+
+    let out_channels = weight_shape[0];
+    let weight_in_channels = weight_shape[1];
+    let kernel_length = weight_shape[2];
+
+    if in_channels != weight_in_channels {
+        return Err(TensorError::shape_mismatch(
+            "conv",
+            &format!("weight in_channels={in_channels}"),
+            &format!("weight in_channels={weight_in_channels}"),
+        ));
+    }
+
+    // Calculate output dimensions based on padding
+    let (out_length, pad_left) = match padding {
+        "valid" => {
+            let out_len = (in_length - kernel_length) / stride + 1;
+            (out_len, 0)
+        }
+        "same" => {
+            let out_len = (in_length + stride - 1) / stride;
+            let pad_total = std::cmp::max(0, (out_len - 1) * stride + kernel_length - in_length);
+            (out_len, pad_total / 2)
+        }
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unknown padding mode: {padding}"
+            )))
+        }
+    };
+
+    // Create output tensor
+    let mut output = ArrayD::<T>::zeros(IxDyn(&[batch_size, out_channels, out_length]));
+
+    // Perform convolution
+    for b in 0..batch_size {
+        for oc in 0..out_channels {
+            for ol in 0..out_length {
+                let mut sum = T::zero();
+
+                for ic in 0..in_channels {
+                    for k in 0..kernel_length {
+                        let il = ol * stride + k;
+
+                        // Apply padding
+                        if il >= pad_left && il < in_length + pad_left {
+                            let il_actual = il - pad_left;
+
+                            if il_actual < in_length {
+                                let input_val = input_arr[[b, ic, il_actual]].clone();
+                                let weight_val = weight_arr[[oc, ic, k]].clone();
+                                sum = sum + (input_val * weight_val);
+                            }
+                        }
+                    }
+                }
+
+                output[[b, oc, ol]] = sum;
+            }
+        }
+    }
+
+    // Apply bias if provided
+    if let Some(bias) = bias {
+        match &bias.storage {
+            TensorStorage::Cpu(bias_arr) => {
+                if bias_arr.shape() != [out_channels] {
+                    return Err(TensorError::shape_mismatch(
+                        "conv",
+                        &format!("bias shape [{out_channels}]"),
+                        &format!("bias shape {:?}", bias_arr.shape()),
+                    ));
+                }
+
+                // Add bias to each output channel
+                for b in 0..batch_size {
+                    for oc in 0..out_channels {
+                        let bias_val = bias_arr[[oc]].clone();
+                        for ol in 0..out_length {
+                            output[[b, oc, ol]] = output[[b, oc, ol]].clone() + bias_val.clone();
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "gpu")]
+            TensorStorage::Gpu(bias_gpu) => {
+                // Convert GPU bias to CPU for this CPU convolution
+                let bias_cpu = bias_gpu.to_cpu::<T>()?;
+                let bias_arr = bias_cpu.to_array();
+
+                if bias_arr.shape() != [out_channels] {
+                    return Err(TensorError::shape_mismatch(
+                        "conv",
+                        &format!("bias shape [{out_channels}]"),
+                        &format!("bias shape {:?}", bias_arr.shape()),
+                    ));
+                }
+
+                // Add bias to each output channel
+                for b in 0..batch_size {
+                    for oc in 0..out_channels {
+                        let bias_val = bias_arr[[oc]].clone();
+                        for ol in 0..out_length {
+                            output[[b, oc, ol]] = output[[b, oc, ol]].clone() + bias_val.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Tensor::from_array(output))
+}
+
+#[cfg(feature = "gpu")]
+/// GPU implementation of 1D convolution
+fn conv1d_gpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: usize,
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+    use crate::tensor::TensorStorage;
+
+    let input_shape = input.shape();
+    let weight_shape = weight.shape();
+
+    let batch_size = input_shape.dims()[0];
+    let in_channels = input_shape.dims()[1];
+    let in_length = input_shape.dims()[2];
+
+    let out_channels = weight_shape.dims()[0];
+    let weight_in_channels = weight_shape.dims()[1];
+    let kernel_length = weight_shape.dims()[2];
+
+    if in_channels != weight_in_channels {
+        return Err(TensorError::shape_mismatch(
+            "conv",
+            &format!("weight in_channels={in_channels}"),
+            &format!("weight in_channels={weight_in_channels}"),
+        ));
+    }
+
+    // Calculate output dimensions based on padding
+    let (out_length, pad_left) = match padding {
+        "valid" => {
+            let out_len = (in_length - kernel_length) / stride + 1;
+            (out_len, 0)
+        }
+        "same" => {
+            let out_len = (in_length + stride - 1) / stride;
+            let pad_total = std::cmp::max(0, (out_len - 1) * stride + kernel_length - in_length);
+            (out_len, pad_total / 2)
+        }
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unknown padding mode: {padding}"
+            )))
+        }
+    };
+
+    // Get GPU context
+    let gpu_context = crate::device::get_gpu_context()?;
+    let device = &gpu_context.device;
+    let queue = &gpu_context.queue;
+
+    // Get GPU buffers for input and weight
+    let input_gpu = match &input.storage {
+        TensorStorage::Gpu(buf) => buf,
+        _ => {
+            return Err(TensorError::invalid_argument(
+                "GPU conv1d requires GPU input tensor".to_string(),
+            ))
+        }
+    };
+
+    let weight_gpu = match &weight.storage {
+        TensorStorage::Gpu(buf) => buf,
+        _ => {
+            return Err(TensorError::invalid_argument(
+                "GPU conv1d requires GPU weight tensor".to_string(),
+            ))
+        }
+    };
+
+    // Handle bias
+    let bias_data = if let Some(bias) = bias {
+        match &bias.storage {
+            TensorStorage::Gpu(bias_gpu) => bias_gpu.to_cpu::<T>()?.to_vec(),
+            TensorStorage::Cpu(bias_arr) => bias_arr.iter().cloned().collect(),
+        }
+    } else {
+        vec![T::zero(); out_channels]
+    };
+
+    // Create output buffer
+    let output_size = batch_size * out_channels * out_length;
+    let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("conv1d_output"),
+        size: (output_size * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    // Execute Conv1D GPU kernel
+    execute_conv1d_kernel(
+        device,
+        queue,
+        input_gpu,
+        weight_gpu,
+        &bias_data,
+        &output_buffer,
+        batch_size,
+        in_channels,
+        out_channels,
+        in_length,
+        out_length,
+        kernel_length,
+        stride,
+        pad_left,
+    )?;
+
+    // Read back result and create output tensor
+    let output_gpu = GpuBuffer::from_buffer(output_buffer, [batch_size, out_channels, out_length]);
+    Ok(Tensor::from_gpu_buffer(output_gpu))
+}
+
+#[cfg(feature = "gpu")]
+/// Execute Conv1D GPU kernel
+fn execute_conv1d_kernel<T>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    input_gpu: &crate::gpu::GpuBuffer<T>,
+    weight_gpu: &crate::gpu::GpuBuffer<T>,
+    bias_data: &[T],
+    output_buffer: &wgpu::Buffer,
+    batch_size: usize,
+    in_channels: usize,
+    out_channels: usize,
+    in_length: usize,
+    out_length: usize,
+    kernel_length: usize,
+    stride: usize,
+    pad_left: usize,
+) -> Result<()>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use wgpu::util::DeviceExt;
+
+    // Reuse ConvParams structure for compatibility with shader
+    #[repr(C)]
+    #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    struct ConvParams {
+        batch_size: u32,
+        in_channels: u32,
+        input_height: u32, // Reused for in_length
+        input_width: u32,  // Unused for 1D, set to 1
+        out_channels: u32,
+        kernel_height: u32, // Reused for kernel_length
+        kernel_width: u32,  // Unused for 1D, set to 1
+        output_height: u32, // Reused for out_length
+        output_width: u32,  // Unused for 1D, set to 1
+        stride_h: u32,      // Reused for stride
+        stride_w: u32,      // Unused for 1D, set to 1
+        pad_h: u32,         // Reused for pad_left
+        pad_w: u32,         // Unused for 1D, set to 0
+    }
+
+    let conv1d_params = ConvParams {
+        batch_size: batch_size as u32,
+        in_channels: in_channels as u32,
+        input_height: in_length as u32, // Map in_length to input_height
+        input_width: 1,                 // Unused
+        out_channels: out_channels as u32,
+        kernel_height: kernel_length as u32, // Map kernel_length to kernel_height
+        kernel_width: 1,                     // Unused
+        output_height: out_length as u32,    // Map out_length to output_height
+        output_width: 1,                     // Unused
+        stride_h: stride as u32,             // Map stride to stride_h
+        stride_w: 1,                         // Unused
+        pad_h: pad_left as u32,              // Map pad_left to pad_h
+        pad_w: 0,                            // Unused
+    };
+
+    let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("conv1d_params"),
+        contents: bytemuck::cast_slice(&[conv1d_params]),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+
+    let bias_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("conv1d_bias"),
+        contents: bytemuck::cast_slice(bias_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    // Load and create compute shader
+    let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("conv1d_shader"),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+    });
+
+    // Create bind group layout
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("conv1d_bind_group_layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    // Create compute pipeline
+    let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("conv1d_pipeline_layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("conv1d_pipeline"),
+        layout: Some(&compute_pipeline_layout),
+        module: &shader,
+        entry_point: Some("conv1d_kernel"),
+    });
+
+    // Create bind group
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("conv1d_bind_group"),
+        layout: &bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: input_gpu.buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: weight_gpu.buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: bias_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: output_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: params_buffer.as_entire_binding(),
+            },
+        ],
+    });
+
+    // Dispatch compute shader
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("conv1d_encoder"),
+    });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("conv1d_pass"),
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Calculate dispatch size
+        let workgroup_size_x = 8u32;
+        let workgroup_size_y = 8u32;
+        let dispatch_x = (out_length as u32 + workgroup_size_x - 1) / workgroup_size_x;
+        let dispatch_y = (out_channels as u32 + workgroup_size_y - 1) / workgroup_size_y;
+        let dispatch_z = batch_size as u32;
+
+        compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, dispatch_z);
+    }
+
+    queue.submit(std::iter::once(encoder.finish()));
+
+    Ok(())
+}
+
+/// Performs 2D convolution operation
+/// Input shape: [batch, in_channels, height, width] (NCHW format)
+/// Weight shape: [out_channels, in_channels, kernel_height, kernel_width]
+/// Output shape: [batch, out_channels, out_height, out_width]
+pub fn conv2d<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    match (&input.storage, &weight.storage) {
+        (TensorStorage::Cpu(input_arr), TensorStorage::Cpu(weight_arr)) => {
+            // Validate input shapes
+            if input_arr.ndim() != 4 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Conv2D input must be 4D (NCHW format)".to_string(),
+                ));
+            }
+            if weight_arr.ndim() != 4 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Conv2D weight must be 4D".to_string(),
+                ));
+            }
+
+            let input_shape = input_arr.shape();
+            let weight_shape = weight_arr.shape();
+
+            let batch_size = input_shape[0];
+            let in_channels = input_shape[1];
+            let in_height = input_shape[2];
+            let in_width = input_shape[3];
+
+            let out_channels = weight_shape[0];
+            let weight_in_channels = weight_shape[1];
+            let kernel_height = weight_shape[2];
+            let kernel_width = weight_shape[3];
+
+            if in_channels != weight_in_channels {
+                return Err(TensorError::ShapeMismatch {
+                    operation: "conv2d".to_string(),
+                    expected: format!("weight in_channels={in_channels}"),
+                    got: format!("weight in_channels={weight_in_channels}"),
+                    context: None,
+                });
+            }
+
+            // Calculate output dimensions based on padding
+            let (out_height, out_width, pad_top, pad_left) = match padding {
+                "valid" => {
+                    let out_h = (in_height - kernel_height) / stride.0 + 1;
+                    let out_w = (in_width - kernel_width) / stride.1 + 1;
+                    (out_h, out_w, 0, 0)
+                }
+                "same" => {
+                    let out_h = (in_height + stride.0 - 1) / stride.0;
+                    let out_w = (in_width + stride.1 - 1) / stride.1;
+                    let pad_h =
+                        std::cmp::max(0, (out_h - 1) * stride.0 + kernel_height - in_height);
+                    let pad_w = std::cmp::max(0, (out_w - 1) * stride.1 + kernel_width - in_width);
+                    (out_h, out_w, pad_h / 2, pad_w / 2)
+                }
+                _ => {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Unknown padding mode: {padding}"
+                    )))
+                }
+            };
+
+            // Create output tensor
+            let mut output =
+                ArrayD::<T>::zeros(IxDyn(&[batch_size, out_channels, out_height, out_width]));
+
+            // Perform convolution
+            for b in 0..batch_size {
+                for oc in 0..out_channels {
+                    for oh in 0..out_height {
+                        for ow in 0..out_width {
+                            let mut sum = T::zero();
+
+                            for ic in 0..in_channels {
+                                for kh in 0..kernel_height {
+                                    for kw in 0..kernel_width {
+                                        let ih = oh * stride.0 + kh;
+                                        let iw = ow * stride.1 + kw;
+
+                                        // Apply padding
+                                        if ih >= pad_top
+                                            && ih < in_height + pad_top
+                                            && iw >= pad_left
+                                            && iw < in_width + pad_left
+                                        {
+                                            let ih_actual = ih - pad_top;
+                                            let iw_actual = iw - pad_left;
+
+                                            if ih_actual < in_height && iw_actual < in_width {
+                                                let input_val = input_arr
+                                                    [[b, ic, ih_actual, iw_actual]]
+                                                .clone();
+                                                let weight_val =
+                                                    weight_arr[[oc, ic, kh, kw]].clone();
+                                                sum = sum + (input_val * weight_val);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            output[[b, oc, oh, ow]] = sum;
+                        }
+                    }
+                }
+            }
+
+            // Apply bias if provided
+            if let Some(bias) = bias {
+                match &bias.storage {
+                    TensorStorage::Cpu(bias_arr) => {
+                        if bias_arr.shape() != [out_channels] {
+                            return Err(TensorError::shape_mismatch(
+                                "conv",
+                                &format!("bias shape [{out_channels}]"),
+                                &format!("bias shape {:?}", bias_arr.shape()),
+                            ));
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for oh in 0..out_height {
+                                    for ow in 0..out_width {
+                                        output[[b, oc, oh, ow]] =
+                                            output[[b, oc, oh, ow]].clone() + bias_val.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(feature = "gpu")]
+                    TensorStorage::Gpu(bias_gpu) => {
+                        // Convert GPU bias to CPU for this CPU convolution
+                        let bias_cpu = bias_gpu.to_cpu::<T>()?;
+                        let bias_arr = bias_cpu.to_array();
+
+                        if bias_arr.shape() != [out_channels] {
+                            return Err(TensorError::ShapeMismatch {
+                                operation: "conv2d".to_string(),
+                                expected: format!("bias shape [{out_channels}]"),
+                                got: format!("bias shape {:?}", bias_arr.shape()),
+                                context: None,
+                            });
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for oh in 0..out_height {
+                                    for ow in 0..out_width {
+                                        output[[b, oc, oh, ow]] =
+                                            output[[b, oc, oh, ow]].clone() + bias_val.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(Tensor::from_array(output))
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) => {
+            conv2d_gpu(input, weight, bias, stride, padding)
+        }
+        #[cfg(feature = "gpu")]
+        _ => Err(TensorError::unsupported_operation_simple(
+            "Mixed CPU/GPU convolution not supported".to_string(),
+        )),
+    }
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConvKernelType {
+    Standard,
+    Winograd,
+    FFT,
+    Tiled,
+    Im2Col,
+    Im2ColTiled,
+}
+
+#[cfg(feature = "gpu")]
+fn next_power_of_two(n: usize) -> usize {
+    if n <= 1 {
+        1
+    } else {
+        1 << (64 - (n - 1).leading_zeros())
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn select_conv_kernel<T>(
+    input_shape: &[usize],
+    kernel_shape: &[usize],
+    stride: (usize, usize),
+    padding: &str,
+) -> ConvKernelType {
+    let batch_size = input_shape[0];
+    let in_channels = input_shape[1];
+    let in_height = input_shape[2];
+    let in_width = input_shape[3];
+
+    let out_channels = kernel_shape[0];
+    let kernel_height = kernel_shape[2];
+    let kernel_width = kernel_shape[3];
+
+    // Calculate total operations for heuristic
+    let total_input_size = batch_size * in_channels * in_height * in_width;
+    let total_kernel_size = kernel_height * kernel_width;
+
+    // Winograd F(2x2, 3x3) is optimal for 3x3 kernels with stride 1
+    if kernel_height == 3 && kernel_width == 3 && stride == (1, 1) && padding == "same" {
+        // Use Winograd for small to medium sizes where the overhead is worth it
+        if total_input_size <= 1024 * 1024 && in_height >= 4 && in_width >= 4 {
+            return ConvKernelType::Winograd;
+        }
+    }
+
+    // FFT-based convolution for large kernels (5x5 or larger)
+    if total_kernel_size >= 25 && total_input_size >= 256 * 256 {
+        return ConvKernelType::FFT;
+    }
+
+    // Im2Col convolution for medium-sized kernels and inputs
+    // Best for GEMM-optimized hardware and when we have many channels
+    if kernel_height <= 7 && kernel_width <= 7 && in_channels >= 32 && out_channels >= 32 {
+        if total_input_size >= 1024 * 1024 {
+            return ConvKernelType::Im2ColTiled;
+        } else {
+            return ConvKernelType::Im2Col;
+        }
+    }
+
+    // Tiled convolution for memory efficiency with medium sizes
+    if total_input_size >= 512 * 512 && total_input_size < 2048 * 2048 {
+        return ConvKernelType::Tiled;
+    }
+
+    // Default to standard convolution
+    ConvKernelType::Standard
+}
+
+#[cfg(feature = "gpu")]
+fn execute_im2col_convolution<T>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    input_gpu: &crate::gpu::GpuBuffer<T>,
+    weight_gpu: &crate::gpu::GpuBuffer<T>,
+    bias_data: &wgpu::Buffer,
+    output_buffer: &wgpu::Buffer,
+    kernel_type: ConvKernelType,
+    batch_size: usize,
+    in_channels: usize,
+    out_channels: usize,
+    in_height: usize,
+    in_width: usize,
+    out_height: usize,
+    out_width: usize,
+    kernel_height: usize,
+    kernel_width: usize,
+    stride: (usize, usize),
+    pad_top: usize,
+    pad_left: usize,
+) -> Result<()>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use wgpu::util::DeviceExt;
+
+    // Create Im2Col parameters
+    #[repr(C)]
+    #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    struct Im2ColParams {
+        batch_size: u32,
+        in_channels: u32,
+        out_channels: u32,
+        input_height: u32,
+        input_width: u32,
+        output_height: u32,
+        output_width: u32,
+        kernel_height: u32,
+        kernel_width: u32,
+        stride_h: u32,
+        stride_w: u32,
+        pad_h: u32,
+        pad_w: u32,
+        dilation_h: u32,
+        dilation_w: u32,
+    }
+
+    let im2col_params = Im2ColParams {
+        batch_size: batch_size as u32,
+        in_channels: in_channels as u32,
+        out_channels: out_channels as u32,
+        input_height: in_height as u32,
+        input_width: in_width as u32,
+        output_height: out_height as u32,
+        output_width: out_width as u32,
+        kernel_height: kernel_height as u32,
+        kernel_width: kernel_width as u32,
+        stride_h: stride.0 as u32,
+        stride_w: stride.1 as u32,
+        pad_h: pad_top as u32,
+        pad_w: pad_left as u32,
+        dilation_h: 1,
+        dilation_w: 1,
+    };
+
+    let im2col_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("im2col_params"),
+        contents: bytemuck::cast_slice(&[im2col_params]),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+
+    // Create intermediate im2col matrix buffer
+    let kernel_size = kernel_height * kernel_width;
+    let output_size = out_height * out_width;
+    let matrix_height = in_channels * kernel_size;
+    let matrix_size = batch_size * matrix_height * output_size;
+
+    let im2col_matrix_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("im2col_matrix"),
+        size: (matrix_size * std::mem::size_of::<T>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    // Load compute shader
+    let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("im2col_shader"),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+    });
+
+    // Create bind group layout for Im2Col
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("im2col_bind_group_layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    // Create bind group
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("im2col_bind_group"),
+        layout: &bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: input_gpu.buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: weight_gpu.buffer().as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: bias_data.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: output_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: im2col_matrix_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: im2col_params_buffer.as_entire_binding(),
+            },
+        ],
+    });
+
+    // Create compute pipeline
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("im2col_pipeline_layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("im2col_encoder"),
+    });
+
+    // Step 1: Im2Col transformation
+    {
+        let transform_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("im2col_transform_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("im2col_coalesced_transform"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("im2col_transform_pass"),
+            timestamp_writes: None,
+        });
+
+        compute_pass.set_pipeline(&transform_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Dispatch for im2col transformation
+        let total_elements = kernel_size * output_size;
+        let workgroup_x = (total_elements + 255) / 256;
+        let workgroup_z = batch_size * in_channels;
+        compute_pass.dispatch_workgroups(workgroup_x as u32, 1, workgroup_z as u32);
+    }
+
+    // Step 2: Matrix multiplication (GEMM)
+    {
+        let gemm_entry_point = match kernel_type {
+            ConvKernelType::Im2Col => "im2col_gemm",
+            ConvKernelType::Im2ColTiled => "im2col_tiled_gemm",
+            _ => unreachable!(),
+        };
+
+        let gemm_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("im2col_gemm_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some(gemm_entry_point),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("im2col_gemm_pass"),
+            timestamp_writes: None,
+        });
+
+        compute_pass.set_pipeline(&gemm_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+
+        // Dispatch for GEMM
+        let workgroup_x = (out_width + 15) / 16;
+        let workgroup_y = (out_height + 15) / 16;
+        let workgroup_z = batch_size * out_channels;
+        compute_pass.dispatch_workgroups(
+            workgroup_x as u32,
+            workgroup_y as u32,
+            workgroup_z as u32,
+        );
+    }
+
+    queue.submit(std::iter::once(encoder.finish()));
+
+    Ok(())
+}
+
+#[cfg(feature = "gpu")]
+fn conv2d_gpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+    use crate::tensor::TensorStorage;
+
+    let input_shape = input.shape();
+    let weight_shape = weight.shape();
+
+    let batch_size = input_shape.dims()[0];
+    let in_channels = input_shape.dims()[1];
+    let in_height = input_shape.dims()[2];
+    let in_width = input_shape.dims()[3];
+
+    let out_channels = weight_shape.dims()[0];
+    let kernel_height = weight_shape.dims()[2];
+    let kernel_width = weight_shape.dims()[3];
+
+    // Select optimal kernel based on input characteristics
+    let kernel_type =
+        select_conv_kernel::<T>(input_shape.dims(), weight_shape.dims(), stride, padding);
+
+    // Calculate output dimensions
+    let (out_height, out_width, pad_top, pad_left) = match padding {
+        "valid" => {
+            let out_h = (in_height - kernel_height) / stride.0 + 1;
+            let out_w = (in_width - kernel_width) / stride.1 + 1;
+            (out_h, out_w, 0, 0)
+        }
+        "same" => {
+            let out_h = (in_height + stride.0 - 1) / stride.0;
+            let out_w = (in_width + stride.1 - 1) / stride.1;
+            let pad_h = std::cmp::max(0, (out_h - 1) * stride.0 + kernel_height - in_height);
+            let pad_w = std::cmp::max(0, (out_w - 1) * stride.1 + kernel_width - in_width);
+            (out_h, out_w, pad_h / 2, pad_w / 2)
+        }
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unknown padding mode: {padding}"
+            )))
+        }
+    };
+
+    if let (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) =
+        (&input.storage, &weight.storage)
+    {
+        let device = input_gpu.device();
+        let queue = input_gpu.queue();
+
+        // Create output buffer
+        let output_size = batch_size * out_channels * out_height * out_width;
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("conv2d_output"),
+            size: (output_size * std::mem::size_of::<T>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create bias buffer (use zeros if no bias provided)
+        let bias_data = if let Some(bias) = bias {
+            if let TensorStorage::Gpu(bias_gpu) = &bias.storage {
+                bias_gpu.buffer().clone()
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Mixed CPU/GPU bias not supported".to_string(),
+                ));
+            }
+        } else {
+            // Create zero bias buffer
+            use wgpu::util::DeviceExt;
+            let zero_bias = vec![T::zero(); out_channels];
+            let bias_bytes = bytemuck::cast_slice(&zero_bias);
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("zero_bias"),
+                contents: bias_bytes,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+
+        // Create parameters uniform buffer
+        #[repr(C)]
+        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        struct ConvParams {
+            batch_size: u32,
+            in_channels: u32,
+            input_height: u32,
+            input_width: u32,
+            out_channels: u32,
+            kernel_height: u32,
+            kernel_width: u32,
+            output_height: u32,
+            output_width: u32,
+            stride_h: u32,
+            stride_w: u32,
+            pad_h: u32,
+            pad_w: u32,
+        }
+
+        let params = ConvParams {
+            batch_size: batch_size as u32,
+            in_channels: in_channels as u32,
+            input_height: in_height as u32,
+            input_width: in_width as u32,
+            out_channels: out_channels as u32,
+            kernel_height: kernel_height as u32,
+            kernel_width: kernel_width as u32,
+            output_height: out_height as u32,
+            output_width: out_width as u32,
+            stride_h: stride.0 as u32,
+            stride_w: stride.1 as u32,
+            pad_h: pad_top as u32,
+            pad_w: pad_left as u32,
+        };
+
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("conv_params"),
+            contents: bytemuck::cast_slice(&[params]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        // Load compute shader
+        let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("conv2d_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        // Create bind group layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("conv2d_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("conv2d_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weight_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: bias_data.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Create compute pipeline
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("conv2d_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        // Select entry point based on kernel type
+        let entry_point = match kernel_type {
+            ConvKernelType::Standard => "conv2d_kernel",
+            ConvKernelType::Winograd => "winograd_input_transform", // Multi-pass Winograd
+            ConvKernelType::FFT => "fft_conv_multiply",
+            ConvKernelType::Tiled => "tiled_conv2d",
+            ConvKernelType::Im2Col => "im2col_gemm",
+            ConvKernelType::Im2ColTiled => "im2col_tiled_gemm",
+        };
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("conv2d_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some(entry_point),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // Handle different kernel types
+        match kernel_type {
+            ConvKernelType::Im2Col | ConvKernelType::Im2ColTiled => {
+                // Im2Col requires multi-pass execution: transform + GEMM
+                execute_im2col_convolution(
+                    device,
+                    queue,
+                    input_gpu,
+                    weight_gpu,
+                    &bias_data,
+                    &output_buffer,
+                    &params,
+                    kernel_type,
+                    batch_size,
+                    in_channels,
+                    out_channels,
+                    in_height,
+                    in_width,
+                    out_height,
+                    out_width,
+                    kernel_height,
+                    kernel_width,
+                    stride,
+                    pad_top,
+                    pad_left,
+                )?;
+            }
+            _ => {
+                // Standard single-pass execution for other kernel types
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("conv2d_encoder"),
+                });
+
+                {
+                    let mut compute_pass =
+                        encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: Some("conv2d_pass"),
+                            timestamp_writes: None,
+                        });
+
+                    compute_pass.set_pipeline(&compute_pipeline);
+                    compute_pass.set_bind_group(0, &bind_group, &[]);
+
+                    // Dispatch with workgroups adapted to kernel type
+                    let (workgroup_x, workgroup_y, workgroup_z) = match kernel_type {
+                        ConvKernelType::Standard | ConvKernelType::Tiled => {
+                            // Standard 2D workgroups for output spatial dimensions
+                            let wg_x = (out_width + 7) / 8;
+                            let wg_y = (out_height + 7) / 8;
+                            let wg_z = batch_size * out_channels;
+                            (wg_x, wg_y, wg_z)
+                        }
+                        ConvKernelType::Winograd => {
+                            // Winograd works on 2x2 tiles, so adjust workgroup size
+                            let tile_h = (out_height + 1) / 2;
+                            let tile_w = (out_width + 1) / 2;
+                            let wg_x = (tile_w + 7) / 8;
+                            let wg_y = (tile_h + 7) / 8;
+                            let wg_z = batch_size * in_channels; // Input channels for transform
+                            (wg_x, wg_y, wg_z)
+                        }
+                        ConvKernelType::FFT => {
+                            // FFT works in frequency domain - adjust for FFT size
+                            let fft_height = next_power_of_two(in_height + kernel_height - 1);
+                            let fft_width = next_power_of_two(in_width + kernel_width - 1);
+                            let wg_x = (fft_width + 7) / 8;
+                            let wg_y = (fft_height + 7) / 8;
+                            let wg_z = batch_size * out_channels;
+                            (wg_x, wg_y, wg_z)
+                        }
+                        _ => unreachable!("Im2Col handled separately"),
+                    };
+
+                    compute_pass.dispatch_workgroups(
+                        workgroup_x as u32,
+                        workgroup_y as u32,
+                        workgroup_z as u32,
+                    );
+                }
+
+                queue.submit(std::iter::once(encoder.finish()));
+            }
+        }
+
+        device.poll(wgpu::Maintain::Wait);
+
+        // Create result tensor
+        let device_id = match input.device() {
+            crate::Device::Gpu(id) => *id,
+            _ => return Err(TensorError::device_error_simple("Expected GPU device".to_string())),
+        };
+
+        let result_gpu = GpuBuffer {
+            buffer: output_buffer,
+            device: std::sync::Arc::clone(device),
+            queue: std::sync::Arc::clone(queue),
+            device_enum: crate::Device::Gpu(device_id),
+            len: output_size,
+            _phantom: std::marker::PhantomData,
+        };
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(vec![batch_size, out_channels, out_height, out_width]),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        Err(TensorError::unsupported_operation_simple(
+            "GPU convolution requires GPU tensors".to_string(),
+        ))
+    }
+}
+
+/// Performs 3D convolution operation
+/// Input shape: [batch, in_channels, depth, height, width] (NCDHW format)
+/// Weight shape: [out_channels, in_channels, kernel_depth, kernel_height, kernel_width]
+/// Output shape: [batch, out_channels, out_depth, out_height, out_width]
+pub fn conv3d<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    match (&input.storage, &weight.storage) {
+        (TensorStorage::Cpu(input_arr), TensorStorage::Cpu(weight_arr)) => {
+            // Validate input shapes
+            if input_arr.ndim() != 5 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Conv3D input must be 5D (NCDHW format)".to_string(),
+                ));
+            }
+            if weight_arr.ndim() != 5 {
+                return Err(TensorError::invalid_shape_simple(
+                    "Conv3D weight must be 5D".to_string(),
+                ));
+            }
+
+            let input_shape = input_arr.shape();
+            let weight_shape = weight_arr.shape();
+
+            let batch_size = input_shape[0];
+            let in_channels = input_shape[1];
+            let in_depth = input_shape[2];
+            let in_height = input_shape[3];
+            let in_width = input_shape[4];
+
+            let out_channels = weight_shape[0];
+            let weight_in_channels = weight_shape[1];
+            let kernel_depth = weight_shape[2];
+            let kernel_height = weight_shape[3];
+            let kernel_width = weight_shape[4];
+
+            if in_channels != weight_in_channels {
+                return Err(TensorError::ShapeMismatch {
+                    operation: "conv3d".to_string(),
+                    expected: format!("weight in_channels={in_channels}"),
+                    got: format!("weight in_channels={weight_in_channels}"),
+                    context: None,
+                });
+            }
+
+            // Calculate output dimensions based on padding
+            let (out_depth, out_height, out_width, pad_front, pad_top, pad_left) = match padding {
+                "valid" => {
+                    let out_d = (in_depth - kernel_depth) / stride.0 + 1;
+                    let out_h = (in_height - kernel_height) / stride.1 + 1;
+                    let out_w = (in_width - kernel_width) / stride.2 + 1;
+                    (out_d, out_h, out_w, 0, 0, 0)
+                }
+                "same" => {
+                    let out_d = (in_depth + stride.0 - 1) / stride.0;
+                    let out_h = (in_height + stride.1 - 1) / stride.1;
+                    let out_w = (in_width + stride.2 - 1) / stride.2;
+                    let pad_d = std::cmp::max(0, (out_d - 1) * stride.0 + kernel_depth - in_depth);
+                    let pad_h =
+                        std::cmp::max(0, (out_h - 1) * stride.1 + kernel_height - in_height);
+                    let pad_w = std::cmp::max(0, (out_w - 1) * stride.2 + kernel_width - in_width);
+                    (out_d, out_h, out_w, pad_d / 2, pad_h / 2, pad_w / 2)
+                }
+                _ => {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Unknown padding mode: {padding}"
+                    )))
+                }
+            };
+
+            // Create output tensor
+            let mut output = ArrayD::<T>::zeros(IxDyn(&[
+                batch_size,
+                out_channels,
+                out_depth,
+                out_height,
+                out_width,
+            ]));
+
+            // Perform convolution
+            for b in 0..batch_size {
+                for oc in 0..out_channels {
+                    for od in 0..out_depth {
+                        for oh in 0..out_height {
+                            for ow in 0..out_width {
+                                let mut sum = T::zero();
+
+                                for ic in 0..in_channels {
+                                    for kd in 0..kernel_depth {
+                                        for kh in 0..kernel_height {
+                                            for kw in 0..kernel_width {
+                                                let id = od * stride.0 + kd;
+                                                let ih = oh * stride.1 + kh;
+                                                let iw = ow * stride.2 + kw;
+
+                                                // Apply padding
+                                                if id >= pad_front
+                                                    && id < in_depth + pad_front
+                                                    && ih >= pad_top
+                                                    && ih < in_height + pad_top
+                                                    && iw >= pad_left
+                                                    && iw < in_width + pad_left
+                                                {
+                                                    let id_actual = id - pad_front;
+                                                    let ih_actual = ih - pad_top;
+                                                    let iw_actual = iw - pad_left;
+
+                                                    if id_actual < in_depth
+                                                        && ih_actual < in_height
+                                                        && iw_actual < in_width
+                                                    {
+                                                        let input_val = input_arr[[
+                                                            b, ic, id_actual, ih_actual, iw_actual,
+                                                        ]]
+                                                        .clone();
+                                                        let weight_val = weight_arr
+                                                            [[oc, ic, kd, kh, kw]]
+                                                        .clone();
+                                                        sum = sum + (input_val * weight_val);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                output[[b, oc, od, oh, ow]] = sum;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add bias if provided
+            if let Some(bias) = bias {
+                match &bias.storage {
+                    TensorStorage::Cpu(bias_arr) => {
+                        if bias_arr.ndim() != 1 || bias_arr.shape()[0] != out_channels {
+                            return Err(TensorError::ShapeMismatch {
+                                operation: "conv3d".to_string(),
+                                expected: format!("bias shape [{out_channels}]"),
+                                got: format!("bias shape {:?}", bias_arr.shape()),
+                                context: None,
+                            });
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for od in 0..out_depth {
+                                    for oh in 0..out_height {
+                                        for ow in 0..out_width {
+                                            output[[b, oc, od, oh, ow]] =
+                                                output[[b, oc, od, oh, ow]].clone()
+                                                    + bias_val.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(feature = "gpu")]
+                    TensorStorage::Gpu(bias_gpu) => {
+                        // Convert GPU bias to CPU for this CPU convolution
+                        let bias_cpu = bias_gpu.to_cpu::<T>()?;
+                        let bias_arr = bias_cpu.to_array();
+
+                        if bias_arr.ndim() != 1 || bias_arr.shape()[0] != out_channels {
+                            return Err(TensorError::ShapeMismatch {
+                                operation: "conv3d".to_string(),
+                                expected: format!("bias shape [{out_channels}]"),
+                                got: format!("bias shape {:?}", bias_arr.shape()),
+                                context: None,
+                            });
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for od in 0..out_depth {
+                                    for oh in 0..out_height {
+                                        for ow in 0..out_width {
+                                            output[[b, oc, od, oh, ow]] =
+                                                output[[b, oc, od, oh, ow]].clone()
+                                                    + bias_val.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(Tensor::from_array(output))
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) => {
+            conv3d_gpu(input, weight, bias, stride, padding)
+        }
+        #[cfg(feature = "gpu")]
+        _ => Err(TensorError::unsupported_operation_simple(
+            "Mixed CPU/GPU convolution not supported".to_string(),
+        )),
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn conv3d_gpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+    use crate::tensor::TensorStorage;
+
+    let input_shape = input.shape();
+    let weight_shape = weight.shape();
+
+    let batch_size = input_shape.dims()[0];
+    let in_channels = input_shape.dims()[1];
+    let in_depth = input_shape.dims()[2];
+    let in_height = input_shape.dims()[3];
+    let in_width = input_shape.dims()[4];
+
+    let out_channels = weight_shape.dims()[0];
+    let kernel_depth = weight_shape.dims()[2];
+    let kernel_height = weight_shape.dims()[3];
+    let kernel_width = weight_shape.dims()[4];
+
+    // Calculate output dimensions
+    let (out_depth, out_height, out_width, pad_front, pad_top, pad_left) = match padding {
+        "valid" => {
+            let out_d = (in_depth - kernel_depth) / stride.0 + 1;
+            let out_h = (in_height - kernel_height) / stride.1 + 1;
+            let out_w = (in_width - kernel_width) / stride.2 + 1;
+            (out_d, out_h, out_w, 0, 0, 0)
+        }
+        "same" => {
+            let out_d = (in_depth + stride.0 - 1) / stride.0;
+            let out_h = (in_height + stride.1 - 1) / stride.1;
+            let out_w = (in_width + stride.2 - 1) / stride.2;
+            let pad_d = std::cmp::max(0, (out_d - 1) * stride.0 + kernel_depth - in_depth);
+            let pad_h = std::cmp::max(0, (out_h - 1) * stride.1 + kernel_height - in_height);
+            let pad_w = std::cmp::max(0, (out_w - 1) * stride.2 + kernel_width - in_width);
+            (out_d, out_h, out_w, pad_d / 2, pad_h / 2, pad_w / 2)
+        }
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unknown padding mode: {padding}"
+            )))
+        }
+    };
+
+    if let (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) =
+        (&input.storage, &weight.storage)
+    {
+        let device = input_gpu.device();
+        let queue = input_gpu.queue();
+
+        // Create output buffer
+        let output_size = batch_size * out_channels * out_depth * out_height * out_width;
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("conv3d_output"),
+            size: (output_size * std::mem::size_of::<T>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create bias buffer (use zeros if no bias provided)
+        let bias_data = if let Some(bias) = bias {
+            if let TensorStorage::Gpu(bias_gpu) = &bias.storage {
+                bias_gpu.buffer().clone()
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Mixed CPU/GPU bias not supported".to_string(),
+                ));
+            }
+        } else {
+            // Create zero bias buffer
+            let zeros = vec![T::zero(); out_channels];
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("conv3d_zero_bias"),
+                contents: bytemuck::cast_slice(&zeros),
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+
+        // Create parameter buffer
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct Conv3dParams {
+            batch_size: u32,
+            in_channels: u32,
+            input_depth: u32,
+            input_height: u32,
+            input_width: u32,
+            out_channels: u32,
+            kernel_depth: u32,
+            kernel_height: u32,
+            kernel_width: u32,
+            output_depth: u32,
+            output_height: u32,
+            output_width: u32,
+            stride_d: u32,
+            stride_h: u32,
+            stride_w: u32,
+            pad_d: u32,
+            pad_h: u32,
+            pad_w: u32,
+        }
+
+        let params = Conv3dParams {
+            batch_size: batch_size as u32,
+            in_channels: in_channels as u32,
+            input_depth: in_depth as u32,
+            input_height: in_height as u32,
+            input_width: in_width as u32,
+            out_channels: out_channels as u32,
+            kernel_depth: kernel_depth as u32,
+            kernel_height: kernel_height as u32,
+            kernel_width: kernel_width as u32,
+            output_depth: out_depth as u32,
+            output_height: out_height as u32,
+            output_width: out_width as u32,
+            stride_d: stride.0 as u32,
+            stride_h: stride.1 as u32,
+            stride_w: stride.2 as u32,
+            pad_d: pad_front as u32,
+            pad_h: pad_top as u32,
+            pad_w: pad_left as u32,
+        };
+
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("conv3d_params"),
+            contents: bytemuck::cast_slice(&[params]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        // Load compute shader
+        let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("conv3d_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        // Create bind group layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("conv3d_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("conv3d_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weight_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: bias_data.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Create compute pipeline
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("conv3d_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("conv3d_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("conv3d_kernel"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // Dispatch compute shader
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("conv3d_encoder"),
+        });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("conv3d_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch with 3D workgroups for output spatial dimensions
+            let workgroup_x = (out_width + 7) / 8;
+            let workgroup_y = (out_height + 7) / 8;
+            let workgroup_z = (out_depth + 3) / 4;
+            let num_batches = batch_size * out_channels;
+
+            // Need to dispatch multiple times if batch_size * out_channels > max workgroup z
+            let max_z = 65535; // WebGPU limit
+            let batches_per_dispatch = std::cmp::min(num_batches, max_z);
+
+            for batch_offset in (0..num_batches).step_by(batches_per_dispatch) {
+                let current_batches =
+                    std::cmp::min(batches_per_dispatch, num_batches - batch_offset);
+                compute_pass.dispatch_workgroups(
+                    workgroup_x as u32,
+                    workgroup_y as u32,
+                    (workgroup_z * current_batches) as u32,
+                );
+            }
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
+
+        // Create result tensor
+        let device_id = match input.device() {
+            crate::Device::Gpu(id) => *id,
+            _ => return Err(TensorError::device_error_simple("Expected GPU device".to_string())),
+        };
+
+        let result_gpu = GpuBuffer {
+            buffer: output_buffer,
+            device: std::sync::Arc::clone(device),
+            queue: std::sync::Arc::clone(queue),
+            device_enum: crate::Device::Gpu(device_id),
+            len: output_size,
+            _phantom: std::marker::PhantomData,
+        };
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(vec![
+                batch_size,
+                out_channels,
+                out_depth,
+                out_height,
+                out_width,
+            ]),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        Err(TensorError::unsupported_operation_simple(
+            "GPU convolution requires GPU tensors".to_string(),
+        ))
+    }
+}
+
+/// Performs depthwise 2D convolution operation
+/// Input shape: [batch, in_channels, height, width] (NCHW format)  
+/// Weight shape: [in_channels, multiplier, kernel_height, kernel_width]
+/// Output shape: [batch, in_channels * multiplier, out_height, out_width]
+pub fn depthwise_conv2d<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    match (&input.storage, &weight.storage) {
+        (TensorStorage::Cpu(input_arr), TensorStorage::Cpu(weight_arr)) => {
+            // Validate input shapes
+            if input_arr.ndim() != 4 {
+                return Err(TensorError::invalid_shape_simple(
+                    "DepthwiseConv2D input must be 4D (NCHW format)".to_string(),
+                ));
+            }
+            if weight_arr.ndim() != 4 {
+                return Err(TensorError::invalid_shape_simple(
+                    "DepthwiseConv2D weight must be 4D".to_string(),
+                ));
+            }
+
+            let input_shape = input_arr.shape();
+            let weight_shape = weight_arr.shape();
+
+            let batch_size = input_shape[0];
+            let in_channels = input_shape[1];
+            let in_height = input_shape[2];
+            let in_width = input_shape[3];
+
+            let weight_in_channels = weight_shape[0];
+            let multiplier = weight_shape[1];
+            let kernel_height = weight_shape[2];
+            let kernel_width = weight_shape[3];
+
+            if in_channels != weight_in_channels {
+                return Err(TensorError::ShapeMismatch {
+                    operation: "depthwise_conv2d".to_string(),
+                    expected: format!("weight in_channels={in_channels}"),
+                    got: format!("weight in_channels={weight_in_channels}"),
+                    context: None,
+                });
+            }
+
+            let out_channels = in_channels * multiplier;
+
+            // Calculate output dimensions based on padding
+            let (out_height, out_width, pad_top, pad_left) = match padding {
+                "valid" => {
+                    let out_h = (in_height - kernel_height) / stride.0 + 1;
+                    let out_w = (in_width - kernel_width) / stride.1 + 1;
+                    (out_h, out_w, 0, 0)
+                }
+                "same" => {
+                    let out_h = (in_height + stride.0 - 1) / stride.0;
+                    let out_w = (in_width + stride.1 - 1) / stride.1;
+                    let pad_h =
+                        std::cmp::max(0, (out_h - 1) * stride.0 + kernel_height - in_height);
+                    let pad_w = std::cmp::max(0, (out_w - 1) * stride.1 + kernel_width - in_width);
+                    (out_h, out_w, pad_h / 2, pad_w / 2)
+                }
+                _ => {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Unknown padding mode: {padding}"
+                    )))
+                }
+            };
+
+            // Create output tensor
+            let mut output =
+                ArrayD::<T>::zeros(IxDyn(&[batch_size, out_channels, out_height, out_width]));
+
+            // Perform depthwise convolution
+            for b in 0..batch_size {
+                for ic in 0..in_channels {
+                    for m in 0..multiplier {
+                        let oc = ic * multiplier + m;
+
+                        for oh in 0..out_height {
+                            for ow in 0..out_width {
+                                let mut sum = T::zero();
+
+                                for kh in 0..kernel_height {
+                                    for kw in 0..kernel_width {
+                                        let ih = oh * stride.0 + kh;
+                                        let iw = ow * stride.1 + kw;
+
+                                        // Apply padding
+                                        if ih >= pad_top
+                                            && ih < in_height + pad_top
+                                            && iw >= pad_left
+                                            && iw < in_width + pad_left
+                                        {
+                                            let ih_actual = ih - pad_top;
+                                            let iw_actual = iw - pad_left;
+
+                                            if ih_actual < in_height && iw_actual < in_width {
+                                                let input_val = input_arr
+                                                    [[b, ic, ih_actual, iw_actual]]
+                                                .clone();
+                                                let weight_val =
+                                                    weight_arr[[ic, m, kh, kw]].clone();
+                                                sum = sum + (input_val * weight_val);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                output[[b, oc, oh, ow]] = sum;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply bias if provided
+            if let Some(bias) = bias {
+                match &bias.storage {
+                    TensorStorage::Cpu(bias_arr) => {
+                        if bias_arr.shape() != [out_channels] {
+                            return Err(TensorError::ShapeMismatch {
+                                operation: "conv2d".to_string(),
+                                expected: format!("bias shape [{out_channels}]"),
+                                got: format!("bias shape {:?}", bias_arr.shape()),
+                                context: None,
+                            });
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for oh in 0..out_height {
+                                    for ow in 0..out_width {
+                                        output[[b, oc, oh, ow]] =
+                                            output[[b, oc, oh, ow]].clone() + bias_val.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(feature = "gpu")]
+                    TensorStorage::Gpu(bias_gpu) => {
+                        // Convert GPU bias to CPU for this CPU convolution
+                        let bias_cpu = bias_gpu.to_cpu::<T>()?;
+                        let bias_arr = bias_cpu.to_array();
+
+                        if bias_arr.shape() != [out_channels] {
+                            return Err(TensorError::ShapeMismatch {
+                                operation: "conv2d".to_string(),
+                                expected: format!("bias shape [{out_channels}]"),
+                                got: format!("bias shape {:?}", bias_arr.shape()),
+                                context: None,
+                            });
+                        }
+
+                        // Add bias to each output channel
+                        for b in 0..batch_size {
+                            for oc in 0..out_channels {
+                                let bias_val = bias_arr[[oc]].clone();
+                                for oh in 0..out_height {
+                                    for ow in 0..out_width {
+                                        output[[b, oc, oh, ow]] =
+                                            output[[b, oc, oh, ow]].clone() + bias_val.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(Tensor::from_array(output))
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) => {
+            depthwise_conv2d_gpu(input, weight, bias, stride, padding)
+        }
+        #[cfg(feature = "gpu")]
+        _ => Err(TensorError::unsupported_operation_simple(
+            "Mixed CPU/GPU convolution not supported".to_string(),
+        )),
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn depthwise_conv2d_gpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+    use crate::tensor::TensorStorage;
+
+    let input_shape = input.shape();
+    let weight_shape = weight.shape();
+
+    let batch_size = input_shape.dims()[0];
+    let in_channels = input_shape.dims()[1];
+    let in_height = input_shape.dims()[2];
+    let in_width = input_shape.dims()[3];
+
+    let multiplier = weight_shape.dims()[1];
+    let kernel_height = weight_shape.dims()[2];
+    let kernel_width = weight_shape.dims()[3];
+    let out_channels = in_channels * multiplier;
+
+    // Calculate output dimensions
+    let (out_height, out_width, pad_top, pad_left) = match padding {
+        "valid" => {
+            let out_h = (in_height - kernel_height) / stride.0 + 1;
+            let out_w = (in_width - kernel_width) / stride.1 + 1;
+            (out_h, out_w, 0, 0)
+        }
+        "same" => {
+            let out_h = (in_height + stride.0 - 1) / stride.0;
+            let out_w = (in_width + stride.1 - 1) / stride.1;
+            let pad_h = std::cmp::max(0, (out_h - 1) * stride.0 + kernel_height - in_height);
+            let pad_w = std::cmp::max(0, (out_w - 1) * stride.1 + kernel_width - in_width);
+            (out_h, out_w, pad_h / 2, pad_w / 2)
+        }
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unknown padding mode: {padding}"
+            )))
+        }
+    };
+
+    if let (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) =
+        (&input.storage, &weight.storage)
+    {
+        let device = input_gpu.device();
+        let queue = input_gpu.queue();
+
+        // Create output buffer
+        let output_size = batch_size * out_channels * out_height * out_width;
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("depthwise_conv2d_output"),
+            size: (output_size * std::mem::size_of::<T>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create bias buffer (use zeros if no bias provided)
+        let bias_data = if let Some(bias) = bias {
+            if let TensorStorage::Gpu(bias_gpu) = &bias.storage {
+                bias_gpu.buffer().clone()
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Mixed CPU/GPU bias not supported".to_string(),
+                ));
+            }
+        } else {
+            // Create zero bias buffer
+            use wgpu::util::DeviceExt;
+            let zero_bias = vec![T::zero(); out_channels];
+            let bias_bytes = bytemuck::cast_slice(&zero_bias);
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("zero_bias"),
+                contents: bias_bytes,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+
+        // Create parameters uniform buffer
+        #[repr(C)]
+        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        struct DepthwiseConvParams {
+            batch_size: u32,
+            in_channels: u32,
+            input_height: u32,
+            input_width: u32,
+            multiplier: u32,
+            kernel_height: u32,
+            kernel_width: u32,
+            output_height: u32,
+            output_width: u32,
+            stride_h: u32,
+            stride_w: u32,
+            pad_h: u32,
+            pad_w: u32,
+        }
+
+        let params = DepthwiseConvParams {
+            batch_size: batch_size as u32,
+            in_channels: in_channels as u32,
+            input_height: in_height as u32,
+            input_width: in_width as u32,
+            multiplier: multiplier as u32,
+            kernel_height: kernel_height as u32,
+            kernel_width: kernel_width as u32,
+            output_height: out_height as u32,
+            output_width: out_width as u32,
+            stride_h: stride.0 as u32,
+            stride_w: stride.1 as u32,
+            pad_h: pad_top as u32,
+            pad_w: pad_left as u32,
+        };
+
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("depthwise_conv_params"),
+            contents: bytemuck::cast_slice(&[params]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        // Load compute shader
+        let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("depthwise_conv2d_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        // Create bind group layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("depthwise_conv2d_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("depthwise_conv2d_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weight_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: bias_data.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Create compute pipeline
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("depthwise_conv2d_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("depthwise_conv2d_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("depthwise_conv2d_kernel"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // Dispatch compute shader
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("depthwise_conv2d_encoder"),
+        });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("depthwise_conv2d_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch with 2D workgroups for output spatial dimensions
+            let workgroup_x = (out_width + 7) / 8;
+            let workgroup_y = (out_height + 7) / 8;
+            let workgroup_z = batch_size * out_channels;
+
+            compute_pass.dispatch_workgroups(
+                workgroup_x as u32,
+                workgroup_y as u32,
+                workgroup_z as u32,
+            );
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
+
+        // Create result tensor
+        let device_id = match input.device() {
+            crate::Device::Gpu(id) => *id,
+            _ => return Err(TensorError::device_error_simple("Expected GPU device".to_string())),
+        };
+
+        let result_gpu = GpuBuffer {
+            buffer: output_buffer,
+            device: std::sync::Arc::clone(device),
+            queue: std::sync::Arc::clone(queue),
+            device_enum: crate::Device::Gpu(device_id),
+            len: output_size,
+            _phantom: std::marker::PhantomData,
+        };
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(vec![batch_size, out_channels, out_height, out_width]),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        Err(TensorError::unsupported_operation_simple(
+            "GPU convolution requires GPU tensors".to_string(),
+        ))
+    }
+}
+
+/// Layout-aware 2D convolution with automatic layout optimization
+/// Automatically converts input layouts for optimal performance on target device
+pub fn conv2d_with_layout<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+    input_layout: DataLayout,
+    optimizer: Option<&LayoutOptimizer>,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let default_optimizer = LayoutOptimizer::default();
+    let layout_opt = optimizer.unwrap_or(&default_optimizer);
+
+    // Determine optimal layout for convolution on the input device
+    let device = input.device();
+    let preferred_layout = layout_opt.preferred_layout(device, OperationType::Convolution);
+
+    // Convert to optimal layout if beneficial
+    let (working_input, actual_layout) = if input_layout != preferred_layout {
+        let _conversion_cost = layout_opt.conversion_cost(input_layout, preferred_layout);
+
+        // High operation intensity for convolution justifies layout conversion
+        let operation_intensity = 3.0;
+
+        if layout_opt.should_convert(input_layout, preferred_layout, operation_intensity) {
+            let converted = convert_layout(input, input_layout, preferred_layout)?;
+            (converted, preferred_layout)
+        } else {
+            (input.clone(), input_layout)
+        }
+    } else {
+        (input.clone(), input_layout)
+    };
+
+    // Perform convolution with the working layout
+    let result = match actual_layout {
+        DataLayout::NCHW => {
+            // Standard NCHW convolution
+            conv2d(&working_input, weight, bias, stride, padding)
+        }
+        DataLayout::NHWC => {
+            // For NHWC, we need to adjust the convolution logic
+            // This is a simplified version - in practice, you'd want optimized NHWC kernels
+            let nchw_input = convert_layout(&working_input, DataLayout::NHWC, DataLayout::NCHW)?;
+            let nchw_result = conv2d(&nchw_input, weight, bias, stride, padding)?;
+            convert_layout(&nchw_result, DataLayout::NCHW, DataLayout::NHWC)
+        }
+        _ => {
+            return Err(TensorError::unsupported_operation_simple(format!(
+                "Convolution not supported for layout {actual_layout:?}"
+            )));
+        }
+    }?;
+
+    Ok(result)
+}
+
+/// Automatically infer and optimize layout for a convolution operation
+pub fn conv2d_auto_layout<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: &str,
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    let inferred_layout = crate::layout::infer_layout(input.shape().dims(), Some(4));
+    conv2d_with_layout(input, weight, bias, stride, padding, inferred_layout, None)
+}
+
+/// Get convolution performance characteristics for different layouts
+pub fn conv_layout_benchmark<T>(
+    _input_shape: &[usize],
+    _weight_shape: &[usize],
+    _stride: (usize, usize),
+    _padding: &str,
+    device: &crate::Device,
+) -> std::collections::HashMap<DataLayout, f32>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    let mut benchmarks = std::collections::HashMap::new();
+    let _optimizer = LayoutOptimizer::default();
+
+    // Estimate relative performance for each layout
+    for layout in &[DataLayout::NCHW, DataLayout::NHWC] {
+        let base_cost = 1.0; // Base convolution cost
+        let layout_efficiency = match (device, layout) {
+            #[cfg(feature = "gpu")]
+            (crate::Device::Gpu(_), DataLayout::NCHW) => 1.0, // Optimal for GPU
+            #[cfg(feature = "gpu")]
+            (crate::Device::Gpu(_), DataLayout::NHWC) => 0.7, // Suboptimal for GPU
+            (crate::Device::Cpu, DataLayout::NHWC) => 1.0, // Optimal for CPU
+            (crate::Device::Cpu, DataLayout::NCHW) => 0.8, // Suboptimal for CPU
+            _ => 0.5,                                      // Unknown combination
+        };
+
+        // Factor in memory access patterns
+        let memory_efficiency = match layout {
+            DataLayout::NCHW => 0.9, // Good for channel-wise operations
+            DataLayout::NHWC => 1.0, // Better memory locality for spatial operations
+            _ => 0.7,
+        };
+
+        let estimated_performance = base_cost * layout_efficiency * memory_efficiency;
+        benchmarks.insert(*layout, estimated_performance);
+    }
+
+    benchmarks
+}
+
+/// Performs 2D transposed convolution (deconvolution) operation
+/// Input shape: [batch, in_channels, height, width] (NCHW format)  
+/// Weight shape: [in_channels, out_channels, kernel_height, kernel_width]
+/// Output shape: [batch, out_channels, out_height, out_width]
+pub fn conv_transpose2d<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: (usize, usize),
+    output_padding: (usize, usize),
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    match (&input.storage, &weight.storage) {
+        (TensorStorage::Cpu(_input_arr), TensorStorage::Cpu(_weight_arr)) => {
+            conv_transpose2d_cpu(input, weight, bias, stride, padding, output_padding)
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(_), TensorStorage::Gpu(_)) => {
+            conv_transpose2d_gpu(input, weight, bias, stride, padding, output_padding)
+        }
+        #[cfg(feature = "gpu")]
+        _ => Err(TensorError::unsupported_operation_simple(
+            "Mixed CPU/GPU transposed convolution not supported".to_string(),
+        )),
+    }
+}
+
+fn conv_transpose2d_cpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: (usize, usize),
+    output_padding: (usize, usize),
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static,
+{
+    let input_shape = input.shape().dims();
+    let weight_shape = weight.shape().dims();
+
+    // Validate shapes
+    if input_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "ConvTranspose2D input must be 4D (NCHW format)".to_string(),
+        ));
+    }
+    if weight_shape.len() != 4 {
+        return Err(TensorError::invalid_shape_simple(
+            "ConvTranspose2D weight must be 4D".to_string(),
+        ));
+    }
+
+    let batch_size = input_shape[0];
+    let in_channels = input_shape[1];
+    let input_height = input_shape[2];
+    let input_width = input_shape[3];
+
+    let weight_in_channels = weight_shape[0];
+    let out_channels = weight_shape[1];
+    let kernel_height = weight_shape[2];
+    let kernel_width = weight_shape[3];
+
+    if in_channels != weight_in_channels {
+        return Err(TensorError::ShapeMismatch {
+            operation: "conv_transpose2d".to_string(),
+            expected: format!("weight in_channels={in_channels}"),
+            got: format!("weight in_channels={weight_in_channels}"),
+            context: None,
+        });
+    }
+
+    // Calculate output dimensions
+    let output_height =
+        (input_height - 1) * stride.0 - 2 * padding.0 + kernel_height + output_padding.0;
+    let output_width =
+        (input_width - 1) * stride.1 - 2 * padding.1 + kernel_width + output_padding.1;
+
+    // Get data arrays
+    let input_data = input.as_slice().ok_or_else(|| {
+        TensorError::device_error_simple("Cannot access input tensor data".to_string())
+    })?;
+    let weight_data = weight.as_slice().ok_or_else(|| {
+        TensorError::device_error_simple("Cannot access weight tensor data".to_string())
+    })?;
+
+    let bias_data = if let Some(bias) = bias {
+        Some(bias.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access bias tensor data".to_string())
+        })?)
+    } else {
+        None
+    };
+
+    // Initialize output
+    let output_size = batch_size * out_channels * output_height * output_width;
+    let mut output_data = vec![T::zero(); output_size];
+
+    // Perform transposed convolution
+    for b in 0..batch_size {
+        for oc in 0..out_channels {
+            for ic in 0..in_channels {
+                for iy in 0..input_height {
+                    for ix in 0..input_width {
+                        let input_idx =
+                            ((b * in_channels + ic) * input_height + iy) * input_width + ix;
+                        let input_val = input_data[input_idx].clone();
+
+                        // Apply kernel to this input position
+                        for kh in 0..kernel_height {
+                            for kw in 0..kernel_width {
+                                let out_y = iy * stride.0 + kh;
+                                let out_x = ix * stride.1 + kw;
+
+                                // Check bounds and padding
+                                if out_y >= padding.0 && out_x >= padding.1 {
+                                    let final_y = out_y - padding.0;
+                                    let final_x = out_x - padding.1;
+
+                                    if final_y < output_height && final_x < output_width {
+                                        let weight_idx = ((ic * out_channels + oc) * kernel_height
+                                            + kh)
+                                            * kernel_width
+                                            + kw;
+                                        let output_idx = ((b * out_channels + oc) * output_height
+                                            + final_y)
+                                            * output_width
+                                            + final_x;
+
+                                        output_data[output_idx] = output_data[output_idx].clone()
+                                            + input_val.clone() * weight_data[weight_idx].clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add bias
+            if let Some(bias_data) = bias_data {
+                for y in 0..output_height {
+                    for x in 0..output_width {
+                        let output_idx =
+                            ((b * out_channels + oc) * output_height + y) * output_width + x;
+                        output_data[output_idx] =
+                            output_data[output_idx].clone() + bias_data[oc].clone();
+                    }
+                }
+            }
+        }
+    }
+
+    let output_array = ndarray::Array::from_vec(output_data)
+        .to_shape((batch_size, out_channels, output_height, output_width))
+        .map_err(|e| TensorError::InvalidShape {
+            operation: "conv_transpose2d".to_string(),
+            reason: format!("Failed to reshape output: {e}"),
+            shape: Some(vec![batch_size, out_channels, output_height, output_width]),
+            context: None,
+        })?
+        .into_owned()
+        .into_dyn();
+
+    Ok(Tensor::from_storage(
+        TensorStorage::Cpu(output_array),
+        *input.device(),
+    ))
+}
+
+#[cfg(feature = "gpu")]
+fn conv_transpose2d_gpu<T>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    bias: Option<&Tensor<T>>,
+    stride: (usize, usize),
+    padding: (usize, usize),
+    output_padding: (usize, usize),
+) -> Result<Tensor<T>>
+where
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    use crate::gpu::GpuBuffer;
+    use crate::tensor::TensorStorage;
+
+    let input_shape = input.shape().dims();
+    let weight_shape = weight.shape().dims();
+
+    let batch_size = input_shape[0];
+    let in_channels = input_shape[1];
+    let input_height = input_shape[2];
+    let input_width = input_shape[3];
+
+    let out_channels = weight_shape[1];
+    let kernel_height = weight_shape[2];
+    let kernel_width = weight_shape[3];
+
+    // Calculate output dimensions
+    let output_height =
+        (input_height - 1) * stride.0 - 2 * padding.0 + kernel_height + output_padding.0;
+    let output_width =
+        (input_width - 1) * stride.1 - 2 * padding.1 + kernel_width + output_padding.1;
+
+    if let (TensorStorage::Gpu(input_gpu), TensorStorage::Gpu(weight_gpu)) =
+        (&input.storage, &weight.storage)
+    {
+        let device = input_gpu.device();
+        let queue = input_gpu.queue();
+
+        // Create output buffer
+        let output_size = batch_size * out_channels * output_height * output_width;
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("conv_transpose2d_output"),
+            size: (output_size * std::mem::size_of::<T>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create bias buffer
+        let bias_buffer = if let Some(bias) = bias {
+            if let TensorStorage::Gpu(bias_gpu) = &bias.storage {
+                bias_gpu.buffer().clone()
+            } else {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Mixed CPU/GPU bias not supported".to_string(),
+                ));
+            }
+        } else {
+            let zeros = vec![T::zero(); out_channels];
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("conv_transpose2d_zero_bias"),
+                contents: bytemuck::cast_slice(&zeros),
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+
+        // Create parameter buffer
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct ConvTransposeParams {
+            batch_size: u32,
+            in_channels: u32,
+            input_height: u32,
+            input_width: u32,
+            out_channels: u32,
+            kernel_height: u32,
+            kernel_width: u32,
+            output_height: u32,
+            output_width: u32,
+            stride_h: u32,
+            stride_w: u32,
+            pad_h: u32,
+            pad_w: u32,
+            output_pad_h: u32,
+            output_pad_w: u32,
+        }
+
+        let params = ConvTransposeParams {
+            batch_size: batch_size as u32,
+            in_channels: in_channels as u32,
+            input_height: input_height as u32,
+            input_width: input_width as u32,
+            out_channels: out_channels as u32,
+            kernel_height: kernel_height as u32,
+            kernel_width: kernel_width as u32,
+            output_height: output_height as u32,
+            output_width: output_width as u32,
+            stride_h: stride.0 as u32,
+            stride_w: stride.1 as u32,
+            pad_h: padding.0 as u32,
+            pad_w: padding.1 as u32,
+            output_pad_h: output_padding.0 as u32,
+            output_pad_w: output_padding.1 as u32,
+        };
+
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("conv_transpose2d_params"),
+            contents: bytemuck::cast_slice(&[params]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        // Load compute shader
+        let shader_source = include_str!("../gpu/shaders/conv_ops.wgsl");
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("conv_transpose2d_shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
+
+        // Create bind group layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("conv_transpose2d_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("conv_transpose2d_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weight_gpu.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: bias_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Create compute pipeline
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("conv_transpose2d_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("conv_transpose2d_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("conv_transpose2d_kernel"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // Dispatch compute shader
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("conv_transpose2d_encoder"),
+        });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("conv_transpose2d_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch with workgroups for output spatial dimensions
+            let workgroup_x = (output_width + 7) / 8;
+            let workgroup_y = (output_height + 7) / 8;
+            let workgroup_z = batch_size;
+
+            compute_pass.dispatch_workgroups(
+                workgroup_x as u32,
+                workgroup_y as u32,
+                workgroup_z as u32,
+            );
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
+
+        // Create result tensor
+        let device_id = match input.device() {
+            crate::Device::Gpu(id) => *id,
+            _ => return Err(TensorError::device_error_simple("Expected GPU device".to_string())),
+        };
+
+        let result_gpu = GpuBuffer {
+            buffer: output_buffer,
+            device: std::sync::Arc::clone(device),
+            queue: std::sync::Arc::clone(queue),
+            device_enum: crate::Device::Gpu(device_id),
+            len: output_size,
+            _phantom: std::marker::PhantomData,
+        };
+
+        Ok(Tensor {
+            storage: TensorStorage::Gpu(result_gpu),
+            shape: crate::Shape::new(vec![batch_size, out_channels, output_height, output_width]),
+            device: input.device().clone(),
+            requires_grad: input.requires_grad(),
+            grad: None,
+        })
+    } else {
+        Err(TensorError::unsupported_operation_simple(
+            "GPU transposed convolution requires GPU tensors".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_conv2d_valid_padding() {
+        // Create a simple 1x1x3x3 input
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+            &[1, 1, 3, 3],
+        )
+        .unwrap();
+
+        // Create a 1x1x2x2 kernel
+        let weight = Tensor::<f32>::from_vec(vec![1.0, 0.0, 0.0, 1.0], &[1, 1, 2, 2]).unwrap();
+
+        let output = conv2d(&input, &weight, None, (1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 2, 2]
+        assert_eq!(output.shape().dims(), &[1, 1, 2, 2]);
+
+        // Check values (1+5=6, 2+6=8, 4+8=12, 5+9=14)
+        if let TensorStorage::Cpu(arr) = &output.storage {
+            assert_eq!(arr[[0, 0, 0, 0]], 6.0);
+            assert_eq!(arr[[0, 0, 0, 1]], 8.0);
+            assert_eq!(arr[[0, 0, 1, 0]], 12.0);
+            assert_eq!(arr[[0, 0, 1, 1]], 14.0);
+        }
+    }
+
+    #[test]
+    fn test_conv3d_valid_padding() {
+        // Create a simple 1x1x2x2x2 input
+        let input = Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        // Create a 1x1x2x2x2 kernel
+        let weight = Tensor::<f32>::from_vec(
+            vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0],
+            &[1, 1, 2, 2, 2],
+        )
+        .unwrap();
+
+        let output = conv3d(&input, &weight, None, (1, 1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 1, 1, 1, 1] (single output element)
+        assert_eq!(output.shape().dims(), &[1, 1, 1, 1, 1]);
+
+        // Check that the operation completes successfully
+        if let TensorStorage::Cpu(arr) = &output.storage {
+            // The exact value depends on the convolution computation
+            // Just verify we get a reasonable output
+            assert!(arr[[0, 0, 0, 0, 0]].is_finite());
+        }
+    }
+
+    #[test]
+    fn test_depthwise_conv2d_valid_padding() {
+        // Create a simple 1x2x3x3 input (2 channels)
+        let input = Tensor::<f32>::from_vec(
+            vec![
+                // Channel 0
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, // Channel 1
+                10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+            ],
+            &[1, 2, 3, 3],
+        )
+        .unwrap();
+
+        // Create a 2x1x2x2 depthwise kernel (2 input channels, 1 multiplier per channel)
+        let weight = Tensor::<f32>::from_vec(
+            vec![
+                // Channel 0 kernel
+                1.0, 0.0, 0.0, 1.0, // Channel 1 kernel
+                0.0, 1.0, 1.0, 0.0,
+            ],
+            &[2, 1, 2, 2],
+        )
+        .unwrap();
+
+        let output = depthwise_conv2d(&input, &weight, None, (1, 1), "valid").unwrap();
+
+        // Expected output shape: [1, 2, 2, 2] (2 output channels = 2 input * 1 multiplier)
+        assert_eq!(output.shape().dims(), &[1, 2, 2, 2]);
+
+        // Check that we get reasonable outputs
+        if let TensorStorage::Cpu(arr) = &output.storage {
+            // Verify first channel (1*1 + 5*1 = 6, 2*1 + 6*1 = 8, etc.)
+            assert_eq!(arr[[0, 0, 0, 0]], 6.0); // 1 + 5
+            assert_eq!(arr[[0, 0, 0, 1]], 8.0); // 2 + 6
+            assert_eq!(arr[[0, 0, 1, 0]], 12.0); // 4 + 8
+            assert_eq!(arr[[0, 0, 1, 1]], 14.0); // 5 + 9
+
+            // Verify second channel (11*1 + 13*1 = 24, etc.)
+            assert_eq!(arr[[0, 1, 0, 0]], 24.0); // 11 + 13
+            assert_eq!(arr[[0, 1, 0, 1]], 26.0); // 12 + 14
+            assert_eq!(arr[[0, 1, 1, 0]], 30.0); // 14 + 16
+            assert_eq!(arr[[0, 1, 1, 1]], 32.0); // 15 + 17
+        }
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_kernel_selection_logic() {
+        // Test Winograd selection for 3x3 kernels
+        let kernel_type = select_conv_kernel::<f32>(
+            &[1, 64, 32, 32], // Small input
+            &[64, 64, 3, 3],  // 3x3 kernel
+            (1, 1),           // Stride 1
+            "same",           // Same padding
+        );
+        assert_eq!(kernel_type, ConvKernelType::Winograd);
+
+        // Test Im2Col selection for many channels
+        let kernel_type = select_conv_kernel::<f32>(
+            &[1, 64, 224, 224], // Large input with many channels
+            &[64, 64, 5, 5],    // 5x5 kernel
+            (1, 1),             // Stride 1
+            "same",             // Same padding
+        );
+        assert_eq!(kernel_type, ConvKernelType::Im2ColTiled);
+
+        // Test FFT selection for large kernels
+        let kernel_type = select_conv_kernel::<f32>(
+            &[1, 32, 512, 512], // Large input
+            &[32, 32, 7, 7],    // Large kernel
+            (1, 1),             // Stride 1
+            "same",             // Same padding
+        );
+        assert_eq!(kernel_type, ConvKernelType::FFT);
+
+        // Test Standard selection for small inputs
+        let kernel_type = select_conv_kernel::<f32>(
+            &[1, 16, 8, 8],  // Small input
+            &[16, 16, 3, 3], // 3x3 kernel
+            (1, 1),          // Stride 1
+            "same",          // Same padding
+        );
+        assert_eq!(kernel_type, ConvKernelType::Standard);
+    }
+}

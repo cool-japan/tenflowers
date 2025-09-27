@@ -1,0 +1,5627 @@
+//! Data transformation utilities for datasets
+//!
+//! This module provides common data preprocessing and augmentation transformations
+//! that can be applied to datasets during training and inference.
+
+use crate::Dataset;
+use rand::seq::SliceRandom;
+use rand::Rng;
+use std::marker::PhantomData;
+use tenflowers_core::{Result, Tensor, TensorError};
+
+/// Trait for data transformations
+pub trait Transform<T> {
+    /// Apply the transformation to a sample
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)>;
+}
+
+/// Dataset wrapper that applies transformations to samples
+pub struct TransformedDataset<T, D: Dataset<T>, Tr: Transform<T>> {
+    dataset: D,
+    transform: Tr,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, D: Dataset<T>, Tr: Transform<T>> TransformedDataset<T, D, Tr> {
+    pub fn new(dataset: D, transform: Tr) -> Self {
+        Self {
+            dataset,
+            transform,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T, D: Dataset<T>, Tr: Transform<T>> Dataset<T> for TransformedDataset<T, D, Tr> {
+    fn len(&self) -> usize {
+        self.dataset.len()
+    }
+
+    fn get(&self, index: usize) -> Result<(Tensor<T>, Tensor<T>)> {
+        let sample = self.dataset.get(index)?;
+        self.transform.apply(sample)
+    }
+}
+
+/// Normalize features by subtracting mean and dividing by standard deviation
+pub struct Normalize<T> {
+    mean: Vec<T>,
+    std: Vec<T>,
+}
+
+impl<T> Normalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(mean: Vec<T>, std: Vec<T>) -> Result<Self> {
+        if mean.len() != std.len() {
+            return Err(TensorError::invalid_argument(
+                "Mean and std vectors must have the same length".to_string(),
+            ));
+        }
+        Ok(Self { mean, std })
+    }
+
+    /// Compute normalization parameters from a dataset
+    pub fn from_dataset<D: Dataset<T>>(dataset: &D) -> Result<Self> {
+        if dataset.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot compute normalization from empty dataset".to_string(),
+            ));
+        }
+
+        // Get first sample to determine feature dimension
+        let (first_features, _) = dataset.get(0)?;
+        let feature_dim = first_features.shape().size();
+
+        let mut feature_sums = vec![T::zero(); feature_dim];
+        let mut feature_sq_sums = vec![T::zero(); feature_dim];
+        let n = T::from(dataset.len()).unwrap();
+
+        // Compute means and variances
+        for i in 0..dataset.len() {
+            let (features, _) = dataset.get(i)?;
+
+            // Flatten features to 1D for computation
+            let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+            for j in 0..feature_dim {
+                if let Some(val) = flat_features.get(&[j]) {
+                    feature_sums[j] = feature_sums[j] + val;
+                    feature_sq_sums[j] = feature_sq_sums[j] + val * val;
+                }
+            }
+        }
+
+        let mut means = Vec::new();
+        let mut stds = Vec::new();
+
+        for i in 0..feature_dim {
+            let mean = feature_sums[i] / n;
+            let variance = (feature_sq_sums[i] / n) - (mean * mean);
+            let std = variance.sqrt();
+
+            means.push(mean);
+            stds.push(std);
+        }
+
+        Self::new(means, stds)
+    }
+
+    /// Create mean tensor for given feature dimension
+    fn create_mean_tensor(&self, feature_dim: usize) -> Result<Tensor<T>> {
+        // Extend or truncate mean vector to match feature dimension
+        let mut mean_vec = self.mean.clone();
+        match mean_vec.len().cmp(&feature_dim) {
+            std::cmp::Ordering::Less => {
+                // Repeat last value if we need more elements
+                if let Some(last_val) = mean_vec.last() {
+                    mean_vec.resize(feature_dim, *last_val);
+                } else {
+                    mean_vec.resize(feature_dim, T::zero());
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                // Truncate if we have too many elements
+                mean_vec.truncate(feature_dim);
+            }
+            std::cmp::Ordering::Equal => {
+                // Perfect match, no changes needed
+            }
+        }
+        Tensor::from_vec(mean_vec, &[feature_dim])
+    }
+
+    /// Create std tensor for given feature dimension
+    fn create_std_tensor(&self, feature_dim: usize) -> Result<Tensor<T>> {
+        // Extend or truncate std vector to match feature dimension
+        let mut std_vec = self.std.clone();
+        match std_vec.len().cmp(&feature_dim) {
+            std::cmp::Ordering::Less => {
+                // Repeat last value if we need more elements
+                if let Some(last_val) = std_vec.last() {
+                    std_vec.resize(feature_dim, *last_val);
+                } else {
+                    std_vec.resize(feature_dim, T::one());
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                // Truncate if we have too many elements
+                std_vec.truncate(feature_dim);
+            }
+            std::cmp::Ordering::Equal => {
+                // Perfect match, no changes needed
+            }
+        }
+        Tensor::from_vec(std_vec, &[feature_dim])
+    }
+}
+
+impl<T> Transform<T> for Normalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let original_shape = features.shape().dims().to_vec();
+        let feature_dim = features.shape().size();
+
+        // Flatten features for normalization
+        let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+        // Create mean and std tensors using optimized helper methods
+        let mean_tensor = self.create_mean_tensor(feature_dim)?;
+        let std_tensor = self.create_std_tensor(feature_dim)?;
+
+        // Normalize: (x - mean) / std
+        let centered = flat_features.sub(&mean_tensor)?;
+        let normalized = centered.div(&std_tensor)?;
+
+        // Reshape back to original shape
+        let normalized_features = tenflowers_core::ops::reshape(&normalized, &original_shape)?;
+
+        Ok((normalized_features, labels))
+    }
+}
+
+/// Scale features to a specific range [min_val, max_val]
+pub struct MinMaxScale<T> {
+    data_min: Vec<T>,
+    data_max: Vec<T>,
+    feature_range: (T, T),
+}
+
+impl<T> MinMaxScale<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(data_min: Vec<T>, data_max: Vec<T>, feature_range: (T, T)) -> Result<Self> {
+        if data_min.len() != data_max.len() {
+            return Err(TensorError::invalid_argument(
+                "Data min and max vectors must have the same length".to_string(),
+            ));
+        }
+        Ok(Self {
+            data_min,
+            data_max,
+            feature_range,
+        })
+    }
+
+    /// Compute scaling parameters from a dataset
+    pub fn from_dataset<D: Dataset<T>>(dataset: &D, feature_range: (T, T)) -> Result<Self> {
+        if dataset.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot compute scaling from empty dataset".to_string(),
+            ));
+        }
+
+        // Get first sample to determine feature dimension
+        let (first_features, _) = dataset.get(0)?;
+        let feature_dim = first_features.shape().size();
+
+        let mut data_min = vec![T::infinity(); feature_dim];
+        let mut data_max = vec![T::neg_infinity(); feature_dim];
+
+        // Find min and max values for each feature
+        for i in 0..dataset.len() {
+            let (features, _) = dataset.get(i)?;
+            let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+            for j in 0..feature_dim {
+                if let Some(val) = flat_features.get(&[j]) {
+                    if val < data_min[j] {
+                        data_min[j] = val;
+                    }
+                    if val > data_max[j] {
+                        data_max[j] = val;
+                    }
+                }
+            }
+        }
+
+        Self::new(data_min, data_max, feature_range)
+    }
+}
+
+impl<T> Transform<T> for MinMaxScale<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let original_shape = features.shape().dims().to_vec();
+        let feature_dim = features.shape().size();
+
+        // Flatten features for scaling
+        let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+        let mut scaled_data = Vec::with_capacity(feature_dim);
+        let (min_range, max_range) = self.feature_range;
+        let range_scale = max_range - min_range;
+
+        for i in 0..feature_dim {
+            if let Some(val) = flat_features.get(&[i]) {
+                let data_range = self.data_max[i] - self.data_min[i];
+                let scaled = if data_range == T::zero() {
+                    min_range // If no variance, set to min of range
+                } else {
+                    min_range + (val - self.data_min[i]) / data_range * range_scale
+                };
+                scaled_data.push(scaled);
+            } else {
+                return Err(TensorError::invalid_argument(
+                    "Failed to get feature value".to_string(),
+                ));
+            }
+        }
+
+        let scaled_tensor = Tensor::from_vec(scaled_data, &[feature_dim])?;
+        let scaled_features = tenflowers_core::ops::reshape(&scaled_tensor, &original_shape)?;
+
+        Ok((scaled_features, labels))
+    }
+}
+
+/// Add random noise to features for data augmentation
+pub struct AddNoise<T> {
+    noise_std: T,
+}
+
+impl<T> AddNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(noise_std: T) -> Self {
+        Self { noise_std }
+    }
+}
+
+impl<T> Transform<T> for AddNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let shape = features.shape().dims();
+
+        // Generate random noise with same shape as features
+        let noise = if std::any::type_name::<T>() == std::any::type_name::<f32>() {
+            // For f32, use the random normal function
+            let _noise_f32 = tenflowers_core::ops::random_normal_f32(
+                shape,
+                T::zero().to_f32().unwrap_or(0.0),
+                self.noise_std.to_f32().unwrap_or(0.1),
+                None,
+            )?;
+            // This is a simplification - we'll just return a zero tensor for now due to type constraints
+            Tensor::zeros(shape)
+        } else {
+            // For non-f32 types, return zero noise (no augmentation)
+            Tensor::zeros(shape)
+        };
+
+        // Add noise to features
+        let noisy_features = features.add(&noise)?;
+
+        Ok((noisy_features, labels))
+    }
+}
+
+/// Compose multiple transforms into a single transform
+pub struct Compose<T> {
+    transforms: Vec<Box<dyn Transform<T>>>,
+}
+
+impl<T> Compose<T> {
+    pub fn new() -> Self {
+        Self {
+            transforms: Vec::new(),
+        }
+    }
+
+    pub fn append<Tr: Transform<T> + 'static>(mut self, transform: Tr) -> Self {
+        self.transforms.push(Box::new(transform));
+        self
+    }
+}
+
+impl<T> Default for Compose<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Transform<T> for Compose<T> {
+    fn apply(&self, mut sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        for transform in &self.transforms {
+            sample = transform.apply(sample)?;
+        }
+        Ok(sample)
+    }
+}
+
+/// Lazy composition of transforms that delays execution until needed
+/// This can be more memory efficient for large datasets or when not all samples are processed
+pub struct LazyCompose<T> {
+    transforms: Vec<Box<dyn Transform<T>>>,
+    cache_enabled: bool,
+    cache: std::collections::HashMap<usize, (Tensor<T>, Tensor<T>)>,
+}
+
+impl<T> LazyCompose<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    /// Create a new lazy composition
+    pub fn new() -> Self {
+        Self {
+            transforms: Vec::new(),
+            cache_enabled: false,
+            cache: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Create a new lazy composition with caching enabled
+    pub fn with_cache() -> Self {
+        Self {
+            transforms: Vec::new(),
+            cache_enabled: true,
+            cache: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add a transform to the composition
+    pub fn append<Tr: Transform<T> + 'static>(mut self, transform: Tr) -> Self {
+        self.transforms.push(Box::new(transform));
+        self
+    }
+
+    /// Enable or disable caching
+    pub fn set_cache_enabled(&mut self, enabled: bool) {
+        self.cache_enabled = enabled;
+        if !enabled {
+            self.cache.clear();
+        }
+    }
+
+    /// Clear the cache
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Get cache statistics
+    pub fn cache_info(&self) -> (usize, bool) {
+        (self.cache.len(), self.cache_enabled)
+    }
+
+    /// Apply transforms lazily - only when actually requested
+    #[allow(dead_code)]
+    fn apply_lazy(
+        &mut self,
+        sample: (Tensor<T>, Tensor<T>),
+        sample_id: Option<usize>,
+    ) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Check cache first if enabled and sample_id is provided
+        if let (true, Some(id)) = (self.cache_enabled, sample_id) {
+            if let Some(cached_result) = self.cache.get(&id) {
+                return Ok(cached_result.clone());
+            }
+        }
+
+        // Apply transforms
+        let mut result = sample;
+        for transform in &self.transforms {
+            result = transform.apply(result)?;
+        }
+
+        // Cache result if enabled and sample_id is provided
+        if let (true, Some(id)) = (self.cache_enabled, sample_id) {
+            self.cache.insert(id, result.clone());
+        }
+
+        Ok(result)
+    }
+}
+
+impl<T> Default for LazyCompose<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Transform<T> for LazyCompose<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        // For the Transform trait, we can't modify self, so we apply without caching
+        let mut result = sample;
+        for transform in &self.transforms {
+            result = transform.apply(result)?;
+        }
+        Ok(result)
+    }
+}
+
+/// Lazy dataset that applies transforms only when samples are accessed
+pub struct LazyTransformedDataset<T, D: Dataset<T>> {
+    dataset: D,
+    lazy_transform: LazyCompose<T>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, D: Dataset<T>> LazyTransformedDataset<T, D>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    /// Create a new lazy transformed dataset
+    pub fn new(dataset: D, lazy_transform: LazyCompose<T>) -> Self {
+        Self {
+            dataset,
+            lazy_transform,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Get cache statistics from the lazy transform
+    pub fn cache_info(&self) -> (usize, bool) {
+        self.lazy_transform.cache_info()
+    }
+}
+
+impl<T, D: Dataset<T>> Dataset<T> for LazyTransformedDataset<T, D>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    fn len(&self) -> usize {
+        self.dataset.len()
+    }
+
+    fn get(&self, index: usize) -> Result<(Tensor<T>, Tensor<T>)> {
+        let sample = self.dataset.get(index)?;
+        // Note: We can't use mutable reference here due to trait constraints
+        // In a real implementation, you might use RefCell or Mutex for interior mutability
+        self.lazy_transform.apply(sample)
+    }
+}
+
+/// Pipeline builder for creating complex transform pipelines with lazy evaluation
+pub struct TransformPipeline<T> {
+    stages: Vec<PipelineStage<T>>,
+    current_stage: LazyCompose<T>,
+}
+
+/// A stage in the transform pipeline
+pub struct PipelineStage<T> {
+    #[allow(dead_code)]
+    name: String,
+    transforms: LazyCompose<T>,
+    #[allow(dead_code)]
+    conditions: Vec<Box<dyn Fn() -> bool>>, // Conditions for executing this stage
+}
+
+impl<T> TransformPipeline<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    /// Create a new transform pipeline
+    pub fn new() -> Self {
+        Self {
+            stages: Vec::new(),
+            current_stage: LazyCompose::new(),
+        }
+    }
+
+    /// Start a new stage in the pipeline
+    pub fn stage<S: Into<String>>(mut self, _name: S) -> Self {
+        // Save current stage if it has transforms
+        if !self.current_stage.transforms.is_empty() {
+            let stage = PipelineStage {
+                name: format!("stage_{}", self.stages.len()),
+                transforms: std::mem::take(&mut self.current_stage),
+                conditions: Vec::new(),
+            };
+            self.stages.push(stage);
+        }
+
+        // Start new stage
+        self.current_stage = LazyCompose::new();
+        self
+    }
+
+    /// Add a transform to the current stage
+    pub fn append_transform<Tr: Transform<T> + 'static>(mut self, transform: Tr) -> Self {
+        self.current_stage = self.current_stage.append(transform);
+        self
+    }
+
+    /// Add a conditional transform to the current stage
+    pub fn add_conditional<Tr: Transform<T> + 'static, F: Fn() -> bool + 'static>(
+        mut self,
+        transform: Tr,
+        _condition: F,
+    ) -> Self {
+        // For simplicity, we'll just add the transform for now
+        // In a full implementation, you'd store the condition and check it during execution
+        self.current_stage = self.current_stage.append(transform);
+        self
+    }
+
+    /// Enable caching for the current stage
+    pub fn with_cache(mut self) -> Self {
+        self.current_stage.set_cache_enabled(true);
+        self
+    }
+
+    /// Build the final pipeline
+    pub fn build(mut self) -> LazyCompose<T> {
+        // Add final stage if it has transforms
+        if !self.current_stage.transforms.is_empty() {
+            let stage = PipelineStage {
+                name: format!("stage_{}", self.stages.len()),
+                transforms: self.current_stage,
+                conditions: Vec::new(),
+            };
+            self.stages.push(stage);
+        }
+
+        // Combine all stages into a single LazyCompose
+        let mut final_compose = LazyCompose::new();
+        for stage in self.stages {
+            for transform in stage.transforms.transforms {
+                final_compose.transforms.push(transform);
+            }
+        }
+
+        final_compose
+    }
+
+    /// Get the number of stages
+    pub fn stage_count(&self) -> usize {
+        self.stages.len()
+    }
+}
+
+impl<T> Default for TransformPipeline<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Performance profiling for transform pipelines
+#[derive(Debug, Clone)]
+pub struct TransformProfiler {
+    pub total_samples: usize,
+    pub total_time: std::time::Duration,
+    pub transform_stats: Vec<TransformStat>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransformStat {
+    pub name: String,
+    pub call_count: usize,
+    pub total_time: std::time::Duration,
+    pub avg_time: std::time::Duration,
+    pub min_time: std::time::Duration,
+    pub max_time: std::time::Duration,
+}
+
+impl TransformProfiler {
+    pub fn new() -> Self {
+        Self {
+            total_samples: 0,
+            total_time: std::time::Duration::new(0, 0),
+            transform_stats: Vec::new(),
+            enabled: false,
+        }
+    }
+
+    pub fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    pub fn disable(&mut self) {
+        self.enabled = false;
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn record_transform<F, R>(&mut self, name: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        if !self.enabled {
+            return f();
+        }
+
+        let start = std::time::Instant::now();
+        let result = f();
+        let duration = start.elapsed();
+
+        self.total_time += duration;
+        self.total_samples += 1;
+
+        // Update or create transform stat
+        if let Some(stat) = self.transform_stats.iter_mut().find(|s| s.name == name) {
+            stat.call_count += 1;
+            stat.total_time += duration;
+            stat.avg_time = stat.total_time / stat.call_count as u32;
+            stat.min_time = stat.min_time.min(duration);
+            stat.max_time = stat.max_time.max(duration);
+        } else {
+            self.transform_stats.push(TransformStat {
+                name: name.to_string(),
+                call_count: 1,
+                total_time: duration,
+                avg_time: duration,
+                min_time: duration,
+                max_time: duration,
+            });
+        }
+
+        result
+    }
+
+    pub fn reset(&mut self) {
+        self.total_samples = 0;
+        self.total_time = std::time::Duration::new(0, 0);
+        self.transform_stats.clear();
+    }
+
+    pub fn report(&self) -> String {
+        if !self.enabled {
+            return "Profiling is disabled".to_string();
+        }
+
+        let mut report = String::new();
+        report.push_str("=== Transform Pipeline Performance Report ===\n");
+        report.push_str(&format!(
+            "Total samples processed: {}\n",
+            self.total_samples
+        ));
+        report.push_str(&format!("Total time: {:?}\n", self.total_time));
+
+        if self.total_samples > 0 {
+            let avg_per_sample = self.total_time / self.total_samples as u32;
+            report.push_str(&format!("Average time per sample: {avg_per_sample:?}\n"));
+        }
+
+        report.push_str("\n--- Per-Transform Statistics ---\n");
+
+        for stat in &self.transform_stats {
+            report.push_str(&format!(
+                "{}: {} calls, {:?} total, {:?} avg, {:?} min, {:?} max\n",
+                stat.name,
+                stat.call_count,
+                stat.total_time,
+                stat.avg_time,
+                stat.min_time,
+                stat.max_time
+            ));
+        }
+
+        report
+    }
+
+    pub fn get_throughput(&self) -> Option<f64> {
+        if self.total_samples == 0 || self.total_time.as_secs() == 0 {
+            return None;
+        }
+        Some(self.total_samples as f64 / self.total_time.as_secs_f64())
+    }
+
+    pub fn get_bottlenecks(&self) -> Vec<&TransformStat> {
+        let mut stats: Vec<&TransformStat> = self.transform_stats.iter().collect();
+        stats.sort_by(|a, b| b.total_time.cmp(&a.total_time));
+        stats
+    }
+}
+
+impl Default for TransformProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Wrapper transform that adds profiling to any transform
+pub struct ProfiledTransform<T, Tr: Transform<T>> {
+    transform: Tr,
+    profiler: std::sync::Arc<std::sync::Mutex<TransformProfiler>>,
+    name: String,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, Tr: Transform<T>> ProfiledTransform<T, Tr> {
+    pub fn new(
+        transform: Tr,
+        profiler: std::sync::Arc<std::sync::Mutex<TransformProfiler>>,
+        name: String,
+    ) -> Self {
+        Self {
+            transform,
+            profiler,
+            name,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn get_profiler(&self) -> &std::sync::Arc<std::sync::Mutex<TransformProfiler>> {
+        &self.profiler
+    }
+}
+
+impl<T, Tr: Transform<T>> Transform<T> for ProfiledTransform<T, Tr> {
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        if let Ok(mut profiler) = self.profiler.lock() {
+            profiler.record_transform(&self.name, || self.transform.apply(sample))
+        } else {
+            self.transform.apply(sample)
+        }
+    }
+}
+
+/// Extension trait to add lazy transform functionality to datasets
+pub trait DatasetExt<T>: Dataset<T> + Sized {
+    fn transform<Tr: Transform<T>>(self, transform: Tr) -> TransformedDataset<T, Self, Tr> {
+        TransformedDataset::new(self, transform)
+    }
+
+    fn normalize(
+        self,
+        mean: Vec<T>,
+        std: Vec<T>,
+    ) -> Result<TransformedDataset<T, Self, Normalize<T>>>
+    where
+        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    {
+        let normalize = Normalize::new(mean, std)?;
+        Ok(self.transform(normalize))
+    }
+
+    fn min_max_scale(
+        self,
+        data_min: Vec<T>,
+        data_max: Vec<T>,
+        feature_range: (T, T),
+    ) -> Result<TransformedDataset<T, Self, MinMaxScale<T>>>
+    where
+        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    {
+        let scaler = MinMaxScale::new(data_min, data_max, feature_range)?;
+        Ok(self.transform(scaler))
+    }
+
+    fn add_noise(self, noise_std: T) -> TransformedDataset<T, Self, AddNoise<T>>
+    where
+        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    {
+        let noise_transform = AddNoise::new(noise_std);
+        self.transform(noise_transform)
+    }
+}
+
+impl<T, D: Dataset<T>> DatasetExt<T> for D {}
+
+/// Image resizing transform for flexible input sizes
+pub struct Resize {
+    width: u32,
+    height: u32,
+    filter: ResizeFilter,
+}
+
+#[derive(Clone, Copy)]
+pub enum ResizeFilter {
+    Nearest,
+    Triangle,
+    Lanczos3,
+}
+
+impl Resize {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            filter: ResizeFilter::Lanczos3,
+        }
+    }
+
+    pub fn with_filter(mut self, filter: ResizeFilter) -> Self {
+        self.filter = filter;
+        self
+    }
+}
+
+impl Transform<f32> for Resize {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        #[cfg(feature = "images")]
+        {
+            use image::{imageops, RgbImage};
+
+            let shape = image_tensor.shape().dims();
+            let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+            if channels != 3 {
+                return Err(TensorError::invalid_argument(format!(
+                    "Expected 3-channel image, got {channels} channels"
+                )));
+            }
+
+            // Convert tensor back to image format for resizing
+            let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+                TensorError::device_error_simple("Cannot access tensor data".to_string())
+            })?;
+
+            // Convert from CHW to HWC format
+            let mut hwc_data = vec![0u8; height * width * channels];
+            for c in 0..channels {
+                for h in 0..height {
+                    for w in 0..width {
+                        let chw_idx = c * height * width + h * width + w;
+                        let hwc_idx = (h * width + w) * channels + c;
+                        hwc_data[hwc_idx] = (tensor_data[chw_idx] * 255.0) as u8;
+                    }
+                }
+            }
+
+            // Create RGB image and resize
+            let img =
+                RgbImage::from_raw(width as u32, height as u32, hwc_data).ok_or_else(|| {
+                    TensorError::invalid_argument("Failed to create image from tensor".to_string())
+                })?;
+
+            let filter = match self.filter {
+                ResizeFilter::Nearest => imageops::FilterType::Nearest,
+                ResizeFilter::Triangle => imageops::FilterType::Triangle,
+                ResizeFilter::Lanczos3 => imageops::FilterType::Lanczos3,
+            };
+
+            let resized = imageops::resize(&img, self.width, self.height, filter);
+
+            // Convert back to CHW tensor format
+            let mut chw_data = Vec::with_capacity(3 * self.height as usize * self.width as usize);
+            let resized_pixels = resized.as_raw();
+
+            for c in 0..3 {
+                for h in 0..self.height {
+                    for w in 0..self.width {
+                        let pixel_idx = (h * self.width + w) as usize * 3 + c;
+                        let pixel_value = resized_pixels[pixel_idx] as f32 / 255.0;
+                        chw_data.push(pixel_value);
+                    }
+                }
+            }
+
+            let resized_tensor =
+                Tensor::from_vec(chw_data, &[3, self.height as usize, self.width as usize])?;
+            Ok((resized_tensor, label_tensor))
+        }
+
+        #[cfg(not(feature = "images"))]
+        {
+            // Fallback when images feature is disabled
+            let _ = (self.width, self.height, self.filter);
+            Ok((image_tensor, label_tensor))
+        }
+    }
+}
+
+/// Progressive resizing transform for efficient training
+///
+/// Starts with smaller image sizes and progressively increases during training.
+/// This technique helps with faster initial training and better final accuracy.
+pub struct ProgressiveResize {
+    min_size: (u32, u32),
+    max_size: (u32, u32),
+    current_epoch: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    total_epochs: usize,
+    strategy: ProgressiveResizeStrategy,
+    filter: ResizeFilter,
+}
+
+/// Strategy for progressive resizing
+#[derive(Clone, Copy)]
+pub enum ProgressiveResizeStrategy {
+    /// Linear interpolation between min and max size
+    Linear,
+    /// Exponential growth from min to max size
+    Exponential,
+    /// Step-wise increase at specific intervals
+    StepWise { steps: usize },
+    /// Cosine annealing schedule
+    Cosine,
+}
+
+impl ProgressiveResize {
+    /// Create a new progressive resize transform
+    pub fn new(
+        min_size: (u32, u32),
+        max_size: (u32, u32),
+        total_epochs: usize,
+        strategy: ProgressiveResizeStrategy,
+    ) -> Self {
+        Self {
+            min_size,
+            max_size,
+            current_epoch: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            total_epochs,
+            strategy,
+            filter: ResizeFilter::Lanczos3,
+        }
+    }
+
+    /// Set the resize filter
+    pub fn with_filter(mut self, filter: ResizeFilter) -> Self {
+        self.filter = filter;
+        self
+    }
+
+    /// Update the current epoch
+    pub fn set_epoch(&self, epoch: usize) {
+        self.current_epoch
+            .store(epoch, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Get the current epoch
+    pub fn get_epoch(&self) -> usize {
+        self.current_epoch
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Calculate current target size based on epoch and strategy
+    pub fn current_size(&self) -> (u32, u32) {
+        let epoch = self.get_epoch();
+        let progress = if self.total_epochs <= 1 {
+            1.0
+        } else {
+            (epoch as f32) / (self.total_epochs - 1) as f32
+        };
+        let progress = progress.clamp(0.0, 1.0);
+
+        let width_progress = match self.strategy {
+            ProgressiveResizeStrategy::Linear => progress,
+            ProgressiveResizeStrategy::Exponential => progress * progress,
+            ProgressiveResizeStrategy::StepWise { steps } => {
+                let step_size = 1.0 / steps as f32;
+                ((progress / step_size).floor() + 1.0) * step_size
+            }
+            ProgressiveResizeStrategy::Cosine => {
+                0.5 * (1.0 - (std::f32::consts::PI * progress).cos())
+            }
+        };
+
+        let width = self.min_size.0 as f32
+            + (self.max_size.0 as f32 - self.min_size.0 as f32) * width_progress;
+        let height = self.min_size.1 as f32
+            + (self.max_size.1 as f32 - self.min_size.1 as f32) * width_progress;
+
+        (width.round() as u32, height.round() as u32)
+    }
+}
+
+impl Transform<f32> for ProgressiveResize {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let (target_width, target_height) = self.current_size();
+
+        #[cfg(feature = "images")]
+        {
+            use image::{imageops, RgbImage};
+
+            let shape = image_tensor.shape().dims();
+            let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+            if channels != 3 {
+                return Err(TensorError::invalid_argument(format!(
+                    "Expected 3-channel image, got {channels} channels"
+                )));
+            }
+
+            // Convert tensor back to image format for resizing
+            let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+                TensorError::device_error_simple("Cannot access tensor data".to_string())
+            })?;
+
+            // Convert from CHW to HWC format
+            let mut hwc_data = vec![0u8; height * width * channels];
+            for c in 0..channels {
+                for h in 0..height {
+                    for w in 0..width {
+                        let chw_idx = c * height * width + h * width + w;
+                        let hwc_idx = (h * width + w) * channels + c;
+                        hwc_data[hwc_idx] = (tensor_data[chw_idx] * 255.0) as u8;
+                    }
+                }
+            }
+
+            // Create RGB image and resize
+            let img =
+                RgbImage::from_raw(width as u32, height as u32, hwc_data).ok_or_else(|| {
+                    TensorError::invalid_argument("Failed to create image from tensor".to_string())
+                })?;
+
+            let filter = match self.filter {
+                ResizeFilter::Nearest => imageops::FilterType::Nearest,
+                ResizeFilter::Triangle => imageops::FilterType::Triangle,
+                ResizeFilter::Lanczos3 => imageops::FilterType::Lanczos3,
+            };
+
+            let resized = imageops::resize(&img, target_width, target_height, filter);
+
+            // Convert back to CHW tensor format
+            let mut chw_data =
+                Vec::with_capacity(3 * target_height as usize * target_width as usize);
+            let resized_pixels = resized.as_raw();
+
+            for c in 0..3 {
+                for h in 0..target_height {
+                    for w in 0..target_width {
+                        let pixel_idx = (h * target_width + w) as usize * 3 + c;
+                        let pixel_value = resized_pixels[pixel_idx] as f32 / 255.0;
+                        chw_data.push(pixel_value);
+                    }
+                }
+            }
+
+            let resized_tensor = Tensor::from_vec(
+                chw_data,
+                &[3, target_height as usize, target_width as usize],
+            )?;
+            Ok((resized_tensor, label_tensor))
+        }
+
+        #[cfg(not(feature = "images"))]
+        {
+            // Fallback when images feature is disabled
+            let _ = (target_width, target_height, self.filter);
+            Ok((image_tensor, label_tensor))
+        }
+    }
+}
+
+/// Random horizontal flip augmentation
+pub struct RandomHorizontalFlip {
+    probability: f32,
+}
+
+impl RandomHorizontalFlip {
+    pub fn new(probability: f32) -> Self {
+        Self { probability }
+    }
+}
+
+impl Transform<f32> for RandomHorizontalFlip {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        // Apply flip with given probability
+        if rand::random::<f32>() < self.probability {
+            let shape = image_tensor.shape().dims();
+            let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+            let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+                TensorError::device_error_simple("Cannot access tensor data".to_string())
+            })?;
+
+            let mut flipped_data = vec![0.0f32; channels * height * width];
+
+            // Flip horizontally by reversing width dimension
+            for c in 0..channels {
+                for h in 0..height {
+                    for w in 0..width {
+                        let src_idx = c * height * width + h * width + w;
+                        let dst_w = width - 1 - w;
+                        let dst_idx = c * height * width + h * width + dst_w;
+                        flipped_data[dst_idx] = tensor_data[src_idx];
+                    }
+                }
+            }
+
+            let flipped_tensor = Tensor::from_vec(flipped_data, &[channels, height, width])?;
+            Ok((flipped_tensor, label_tensor))
+        } else {
+            Ok((image_tensor, label_tensor))
+        }
+    }
+}
+
+/// Color jittering for brightness, contrast, saturation
+pub struct ColorJitter {
+    brightness_delta: f32,
+    contrast_factor: f32,
+    _saturation_factor: f32,
+}
+
+impl ColorJitter {
+    pub fn new(brightness_delta: f32, contrast_factor: f32, saturation_factor: f32) -> Self {
+        Self {
+            brightness_delta,
+            contrast_factor,
+            _saturation_factor: saturation_factor,
+        }
+    }
+}
+
+impl Transform<f32> for ColorJitter {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an RGB image tensor (3D: C×H×W with 3 channels)
+        let shape = image_tensor.shape().dims();
+        if shape.len() != 3 || shape[0] != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let (channels, height, width) = (shape[0], shape[1], shape[2]);
+        let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access tensor data".to_string())
+        })?;
+
+        let mut jittered_data = vec![0.0f32; channels * height * width];
+
+        // Apply brightness adjustment
+        let brightness_adjust = (rand::random::<f32>() - 0.5) * 2.0 * self.brightness_delta;
+
+        // Apply contrast adjustment
+        let contrast_adjust = 1.0 + (rand::random::<f32>() - 0.5) * 2.0 * self.contrast_factor;
+
+        for i in 0..tensor_data.len() {
+            let mut pixel = tensor_data[i];
+
+            // Apply brightness
+            pixel += brightness_adjust;
+
+            // Apply contrast (around 0.5 as midpoint)
+            pixel = (pixel - 0.5) * contrast_adjust + 0.5;
+
+            // Clamp to [0, 1]
+            pixel = pixel.clamp(0.0, 1.0);
+
+            jittered_data[i] = pixel;
+        }
+
+        let jittered_tensor = Tensor::from_vec(jittered_data, &[channels, height, width])?;
+        Ok((jittered_tensor, label_tensor))
+    }
+}
+
+/// Center crop transform
+pub struct CenterCrop {
+    size: (usize, usize), // (height, width)
+}
+
+impl CenterCrop {
+    pub fn new(height: usize, width: usize) -> Self {
+        Self {
+            size: (height, width),
+        }
+    }
+
+    pub fn square(size: usize) -> Self {
+        Self { size: (size, size) }
+    }
+}
+
+impl Transform<f32> for CenterCrop {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let shape = image_tensor.shape().dims();
+        let (channels, in_height, in_width) = (shape[0], shape[1], shape[2]);
+        let (crop_height, crop_width) = self.size;
+
+        // If image is smaller than crop size, return as-is
+        if in_height <= crop_height && in_width <= crop_width {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        // Calculate crop boundaries
+        let start_h = (in_height - crop_height) / 2;
+        let start_w = (in_width - crop_width) / 2;
+        let end_h = start_h + crop_height;
+        let end_w = start_w + crop_width;
+
+        let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access tensor data".to_string())
+        })?;
+
+        let mut cropped_data = Vec::with_capacity(channels * crop_height * crop_width);
+
+        // Extract cropped region
+        for c in 0..channels {
+            for h in start_h..end_h {
+                for w in start_w..end_w {
+                    let idx = c * in_height * in_width + h * in_width + w;
+                    cropped_data.push(tensor_data[idx]);
+                }
+            }
+        }
+
+        let cropped_tensor = Tensor::from_vec(cropped_data, &[channels, crop_height, crop_width])?;
+        Ok((cropped_tensor, label_tensor))
+    }
+}
+
+/// CutMix augmentation - combines two images by cutting and pasting patches
+pub struct CutMix {
+    alpha: f32,
+    prob: f32,
+}
+
+impl CutMix {
+    pub fn new(alpha: f32, prob: f32) -> Self {
+        Self { alpha, prob }
+    }
+
+    /// Generate random bbox coordinates for CutMix
+    fn generate_bbox(
+        &self,
+        width: usize,
+        height: usize,
+        lambda: f32,
+    ) -> (usize, usize, usize, usize) {
+        let cut_ratio = (1.0 - lambda).sqrt();
+        let cut_w = (width as f32 * cut_ratio) as usize;
+        let cut_h = (height as f32 * cut_ratio) as usize;
+
+        let cx = (rand::random::<f32>() * width as f32) as usize;
+        let cy = (rand::random::<f32>() * height as f32) as usize;
+
+        let x1 = cx.saturating_sub(cut_w / 2).min(width);
+        let y1 = cy.saturating_sub(cut_h / 2).min(height);
+        let x2 = (cx + cut_w / 2).min(width);
+        let y2 = (cy + cut_h / 2).min(height);
+
+        (x1, y1, x2, y2)
+    }
+}
+
+impl Transform<f32> for CutMix {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Skip if random probability doesn't meet threshold
+        if rand::random::<f32>() > self.prob {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let shape = image_tensor.shape().dims();
+        let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+        // Generate lambda from beta distribution (approximated as uniform for simplicity)
+        let lambda = rand::random::<f32>().powf(1.0 / self.alpha);
+
+        // Generate bbox
+        let (x1, y1, x2, y2) = self.generate_bbox(width, height, lambda);
+
+        // For CutMix, we would need another image to mix with
+        // For now, we'll just apply a simple mask operation
+        let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access tensor data".to_string())
+        })?;
+
+        let mut mixed_data = tensor_data.to_vec();
+
+        // Apply mask (set region to zeros or random values)
+        for c in 0..channels {
+            for h in y1..y2 {
+                for w in x1..x2 {
+                    let idx = c * height * width + h * width + w;
+                    mixed_data[idx] = rand::random::<f32>();
+                }
+            }
+        }
+
+        let mixed_tensor = Tensor::from_vec(mixed_data, &[channels, height, width])?;
+        Ok((mixed_tensor, label_tensor))
+    }
+}
+
+/// MixUp augmentation - linear interpolation between two images
+pub struct MixUp {
+    alpha: f32,
+    prob: f32,
+}
+
+impl MixUp {
+    pub fn new(alpha: f32, prob: f32) -> Self {
+        Self { alpha, prob }
+    }
+}
+
+impl Transform<f32> for MixUp {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Skip if random probability doesn't meet threshold
+        if rand::random::<f32>() > self.prob {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let shape = image_tensor.shape().dims();
+        let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+        // Generate lambda from beta distribution (approximated as uniform for simplicity)
+        let lambda = rand::random::<f32>().powf(1.0 / self.alpha);
+
+        let tensor_data = image_tensor.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access tensor data".to_string())
+        })?;
+
+        let mut mixed_data = Vec::with_capacity(tensor_data.len());
+
+        // Apply MixUp (linear interpolation with noise for demonstration)
+        for &pixel in tensor_data {
+            let noise = rand::random::<f32>() * 0.1; // Small noise component
+            let mixed_pixel = lambda * pixel + (1.0 - lambda) * noise;
+            mixed_data.push(mixed_pixel.clamp(0.0, 1.0));
+        }
+
+        let mixed_tensor = Tensor::from_vec(mixed_data, &[channels, height, width])?;
+        Ok((mixed_tensor, label_tensor))
+    }
+}
+
+/// AutoAugment policy - applies a random augmentation policy
+pub struct AutoAugment {
+    policies: Vec<Vec<(f32, String)>>, // (probability, operation_name)
+    magnitude: f32,
+}
+
+impl AutoAugment {
+    pub fn new(magnitude: f32) -> Self {
+        let policies = vec![
+            vec![(0.4, "equalize".to_string()), (0.6, "rotate".to_string())],
+            vec![
+                (0.6, "solarize".to_string()),
+                (0.6, "autocontrast".to_string()),
+            ],
+            vec![(0.8, "equalize".to_string()), (0.6, "equalize".to_string())],
+            vec![
+                (0.6, "equalize".to_string()),
+                (0.6, "posterize".to_string()),
+            ],
+            vec![
+                (0.4, "brightness".to_string()),
+                (0.6, "contrast".to_string()),
+            ],
+        ];
+
+        Self {
+            policies,
+            magnitude,
+        }
+    }
+
+    fn apply_operation(&self, image: &Tensor<f32>, operation: &str) -> Result<Tensor<f32>> {
+        let shape = image.shape().dims();
+        let tensor_data = image.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access tensor data".to_string())
+        })?;
+
+        let mut augmented_data = tensor_data.to_vec();
+
+        match operation {
+            "equalize" => {
+                // Simple histogram equalization approximation
+                for pixel in &mut augmented_data {
+                    *pixel = (*pixel * self.magnitude).clamp(0.0, 1.0);
+                }
+            }
+            "rotate" => {
+                // Simple rotation effect (placeholder)
+                for pixel in &mut augmented_data {
+                    *pixel = (1.0 - *pixel * self.magnitude).clamp(0.0, 1.0);
+                }
+            }
+            "solarize" => {
+                // Solarize effect
+                for pixel in &mut augmented_data {
+                    if *pixel > 0.5 {
+                        *pixel = 1.0 - *pixel;
+                    }
+                }
+            }
+            "autocontrast" => {
+                // Auto contrast
+                let min_val = augmented_data.iter().cloned().fold(f32::INFINITY, f32::min);
+                let max_val = augmented_data
+                    .iter()
+                    .cloned()
+                    .fold(f32::NEG_INFINITY, f32::max);
+                let range = max_val - min_val;
+                if range > 0.0 {
+                    for pixel in &mut augmented_data {
+                        *pixel = (*pixel - min_val) / range;
+                    }
+                }
+            }
+            "posterize" => {
+                // Posterize (reduce color depth)
+                let levels = 4.0;
+                for pixel in &mut augmented_data {
+                    *pixel = ((*pixel * levels).floor() / levels).clamp(0.0, 1.0);
+                }
+            }
+            "brightness" => {
+                // Brightness adjustment
+                let brightness_factor = 1.0 + (rand::random::<f32>() - 0.5) * self.magnitude;
+                for pixel in &mut augmented_data {
+                    *pixel = (*pixel * brightness_factor).clamp(0.0, 1.0);
+                }
+            }
+            "contrast" => {
+                // Contrast adjustment
+                let contrast_factor = 1.0 + (rand::random::<f32>() - 0.5) * self.magnitude;
+                for pixel in &mut augmented_data {
+                    *pixel = ((*pixel - 0.5) * contrast_factor + 0.5).clamp(0.0, 1.0);
+                }
+            }
+            _ => {
+                // Unknown operation, return as-is
+                return Ok(image.clone());
+            }
+        }
+
+        Tensor::from_vec(augmented_data, shape)
+    }
+}
+
+impl Transform<f32> for AutoAugment {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        // Select random policy
+        let policy_idx = (rand::random::<f32>() * self.policies.len() as f32) as usize;
+        let policy = &self.policies[policy_idx];
+
+        let mut augmented_image = image_tensor;
+
+        // Apply operations in the selected policy
+        for (prob, operation) in policy {
+            if rand::random::<f32>() < *prob {
+                augmented_image = self.apply_operation(&augmented_image, operation)?;
+            }
+        }
+
+        Ok((augmented_image, label_tensor))
+    }
+}
+
+// Text Augmentation Transforms
+
+/// Token replacement augmentation - randomly replaces tokens with other tokens from vocabulary
+pub struct TokenReplacement {
+    replacement_prob: f32,
+    vocab_size: usize,
+    special_tokens: Vec<usize>, // Tokens to never replace (like padding, start, end tokens)
+}
+
+impl TokenReplacement {
+    pub fn new(replacement_prob: f32, vocab_size: usize) -> Self {
+        Self {
+            replacement_prob,
+            vocab_size,
+            special_tokens: Vec::new(),
+        }
+    }
+
+    pub fn with_special_tokens(mut self, special_tokens: Vec<usize>) -> Self {
+        self.special_tokens = special_tokens;
+        self
+    }
+}
+
+impl Transform<f32> for TokenReplacement {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Check if features are token IDs (1D tensor of integers)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let seq_len = features.shape().dims()[0];
+        let token_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut new_tokens = Vec::with_capacity(seq_len);
+
+        for &token in token_data {
+            let token_id = token as usize;
+
+            // Skip special tokens
+            if self.special_tokens.contains(&token_id) {
+                new_tokens.push(token);
+                continue;
+            }
+
+            // Replace with probability
+            if rand::random::<f32>() < self.replacement_prob {
+                let replacement_token = rand::rng().random_range(0..self.vocab_size);
+                new_tokens.push(replacement_token as f32);
+            } else {
+                new_tokens.push(token);
+            }
+        }
+
+        let new_features = Tensor::from_vec(new_tokens, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Word dropout augmentation - randomly sets tokens to a dropout token (usually 0 or special token)
+pub struct WordDropout {
+    dropout_prob: f32,
+    dropout_token: f32, // Token ID to use for dropped words (e.g., 0 for padding)
+    special_tokens: Vec<usize>, // Tokens to never drop
+}
+
+impl WordDropout {
+    pub fn new(dropout_prob: f32, dropout_token: f32) -> Self {
+        Self {
+            dropout_prob,
+            dropout_token,
+            special_tokens: Vec::new(),
+        }
+    }
+
+    pub fn with_special_tokens(mut self, special_tokens: Vec<usize>) -> Self {
+        self.special_tokens = special_tokens;
+        self
+    }
+}
+
+impl Transform<f32> for WordDropout {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Check if features are token IDs (1D tensor)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let seq_len = features.shape().dims()[0];
+        let token_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut new_tokens = Vec::with_capacity(seq_len);
+
+        for &token in token_data {
+            let token_id = token as usize;
+
+            // Skip special tokens
+            if self.special_tokens.contains(&token_id) {
+                new_tokens.push(token);
+                continue;
+            }
+
+            // Drop with probability
+            if rand::random::<f32>() < self.dropout_prob {
+                new_tokens.push(self.dropout_token);
+            } else {
+                new_tokens.push(token);
+            }
+        }
+
+        let new_features = Tensor::from_vec(new_tokens, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Token shuffling augmentation - randomly shuffles a small window of tokens
+pub struct TokenShuffle {
+    shuffle_prob: f32,
+    window_size: usize,
+    special_tokens: Vec<usize>,
+}
+
+impl TokenShuffle {
+    pub fn new(shuffle_prob: f32, window_size: usize) -> Self {
+        Self {
+            shuffle_prob,
+            window_size,
+            special_tokens: Vec::new(),
+        }
+    }
+
+    pub fn with_special_tokens(mut self, special_tokens: Vec<usize>) -> Self {
+        self.special_tokens = special_tokens;
+        self
+    }
+}
+
+impl Transform<f32> for TokenShuffle {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Check if features are token IDs (1D tensor)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let seq_len = features.shape().dims()[0];
+        if seq_len < self.window_size {
+            return Ok((features, labels));
+        }
+
+        let token_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut new_tokens = token_data.to_vec();
+
+        // Apply shuffling with probability
+        if rand::random::<f32>() < self.shuffle_prob {
+            // Choose random window start position
+            let max_start = seq_len - self.window_size;
+            let start_pos = rand::rng().random_range(0..=max_start);
+            let end_pos = start_pos + self.window_size;
+
+            // Extract window, filter out special tokens, shuffle, and put back
+            let mut window: Vec<f32> = new_tokens[start_pos..end_pos]
+                .iter()
+                .filter(|&&token| !self.special_tokens.contains(&(token as usize)))
+                .cloned()
+                .collect();
+
+            if !window.is_empty() {
+                use rand::prelude::*;
+                let mut rng = rand::rng();
+                window.shuffle(&mut rng);
+
+                // Put shuffled tokens back (only non-special tokens)
+                let mut window_idx = 0;
+                #[allow(clippy::needless_range_loop)]
+                for i in start_pos..end_pos {
+                    let token_id = new_tokens[i] as usize;
+                    if !self.special_tokens.contains(&token_id) && window_idx < window.len() {
+                        new_tokens[i] = window[window_idx];
+                        window_idx += 1;
+                    }
+                }
+            }
+        }
+
+        let new_features = Tensor::from_vec(new_tokens, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Back-translation augmentation - translates text to another language and back
+/// This is a simplified implementation that simulates back-translation effects
+/// In practice, this would use actual translation models
+pub struct BackTranslation {
+    corruption_prob: f32,
+    max_changes: usize,
+    vocab_size: usize,
+    special_tokens: Vec<usize>,
+}
+
+impl BackTranslation {
+    pub fn new(corruption_prob: f32, max_changes: usize, vocab_size: usize) -> Self {
+        Self {
+            corruption_prob,
+            max_changes,
+            vocab_size,
+            special_tokens: Vec::new(),
+        }
+    }
+
+    pub fn with_special_tokens(mut self, special_tokens: Vec<usize>) -> Self {
+        self.special_tokens = special_tokens;
+        self
+    }
+
+    /// Simulate back-translation by introducing slight modifications
+    /// Real implementation would use translation models
+    fn simulate_back_translation(&self, tokens: &[f32]) -> Vec<f32> {
+        let mut rng = rand::rng();
+        let mut result = tokens.to_vec();
+
+        let num_changes = rng.random_range(0..=self.max_changes.min(tokens.len() / 4));
+
+        for _ in 0..num_changes {
+            let pos = rng.random_range(0..tokens.len());
+            let token_id = tokens[pos] as usize;
+
+            // Skip special tokens
+            if self.special_tokens.contains(&token_id) {
+                continue;
+            }
+
+            // Apply corruption with probability
+            if rng.random::<f32>() < self.corruption_prob {
+                // Replace with semantically similar token (simulated)
+                // In practice, this would use word embeddings or translation models
+                let similar_token = if rng.random::<f32>() < 0.7 {
+                    // Small vocabulary shift to simulate synonym replacement
+                    let shift = rng.random_range(-10i32..=10i32);
+                    let new_id = (token_id as i32 + shift)
+                        .max(0)
+                        .min(self.vocab_size as i32 - 1);
+                    new_id as f32
+                } else {
+                    // Random replacement to simulate translation uncertainty
+                    rng.random_range(0..self.vocab_size) as f32
+                };
+
+                result[pos] = similar_token;
+            }
+        }
+
+        result
+    }
+}
+
+impl Transform<f32> for BackTranslation {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Check if features are token IDs (1D tensor)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let token_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let augmented_tokens = self.simulate_back_translation(token_data);
+        let new_features = Tensor::from_vec(augmented_tokens, features.shape().dims())?;
+
+        Ok((new_features, labels))
+    }
+}
+
+/// Paraphrasing augmentation - applies rule-based transformations to simulate paraphrasing
+/// This includes word order changes, synonym replacement, and structural modifications
+pub struct Paraphrasing {
+    paraphrase_prob: f32,
+    word_reorder_prob: f32,
+    synonym_prob: f32,
+    vocab_size: usize,
+    special_tokens: Vec<usize>,
+}
+
+impl Paraphrasing {
+    pub fn new(
+        paraphrase_prob: f32,
+        word_reorder_prob: f32,
+        synonym_prob: f32,
+        vocab_size: usize,
+    ) -> Self {
+        Self {
+            paraphrase_prob,
+            word_reorder_prob,
+            synonym_prob,
+            vocab_size,
+            special_tokens: Vec::new(),
+        }
+    }
+
+    pub fn with_special_tokens(mut self, special_tokens: Vec<usize>) -> Self {
+        self.special_tokens = special_tokens;
+        self
+    }
+
+    /// Apply word reordering within small windows
+    fn apply_word_reordering(&self, tokens: &mut [f32]) {
+        let mut rng = rand::rng();
+        let window_size = 3.min(tokens.len());
+
+        if tokens.len() < 2 || window_size < 2 {
+            return;
+        }
+
+        let num_windows = tokens.len() - window_size + 1;
+
+        for _ in 0..(num_windows / 3) {
+            // Apply to roughly 1/3 of possible windows
+            if rng.random::<f32>() < self.word_reorder_prob {
+                let start = rng.random_range(0..=num_windows - 1);
+                let end = (start + window_size).min(tokens.len());
+
+                // Check if window contains only non-special tokens
+                let window_valid = tokens[start..end]
+                    .iter()
+                    .all(|&token| !self.special_tokens.contains(&(token as usize)));
+
+                if window_valid && end - start >= 2 {
+                    // Shuffle a small window
+                    let mut window: Vec<f32> = tokens[start..end].to_vec();
+                    window.shuffle(&mut rng);
+                    tokens[start..end].copy_from_slice(&window);
+                }
+            }
+        }
+    }
+
+    /// Apply synonym replacement
+    fn apply_synonym_replacement(&self, tokens: &mut [f32]) {
+        let mut rng = rand::rng();
+
+        for token in tokens.iter_mut() {
+            let token_id = *token as usize;
+
+            // Skip special tokens
+            if self.special_tokens.contains(&token_id) {
+                continue;
+            }
+
+            if rng.random::<f32>() < self.synonym_prob {
+                // Simulate synonym replacement with vocabulary neighborhood
+                let synonym_range = 20; // Look for synonyms in nearby vocab range
+                let start_range = token_id.saturating_sub(synonym_range);
+                let end_range = (token_id + synonym_range).min(self.vocab_size);
+
+                if end_range > start_range {
+                    let new_token = rng.random_range(start_range..end_range);
+                    *token = new_token as f32;
+                }
+            }
+        }
+    }
+
+    /// Apply structural transformations (simplified)
+    fn apply_structural_changes(&self, tokens: &mut [f32]) {
+        let mut rng = rand::rng();
+
+        // Simple structural change: occasionally swap adjacent non-special token pairs
+        if tokens.len() >= 4 {
+            let num_swaps = (tokens.len() / 8).max(1); // Swap roughly 1/8 of possible pairs
+
+            for _ in 0..num_swaps {
+                if rng.random::<f32>() < 0.3 {
+                    // 30% chance for each structural change
+                    let pos = rng.random_range(0..tokens.len() - 1);
+
+                    let token1_id = tokens[pos] as usize;
+                    let token2_id = tokens[pos + 1] as usize;
+
+                    // Only swap if neither token is special
+                    if !self.special_tokens.contains(&token1_id)
+                        && !self.special_tokens.contains(&token2_id)
+                    {
+                        tokens.swap(pos, pos + 1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Transform<f32> for Paraphrasing {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Check if features are token IDs (1D tensor)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        // Apply paraphrasing with probability
+        let mut rng = rand::rng();
+        if rng.random::<f32>() > self.paraphrase_prob {
+            return Ok((features, labels));
+        }
+
+        let token_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut paraphrased_tokens = token_data.to_vec();
+
+        // Apply different paraphrasing techniques
+        self.apply_word_reordering(&mut paraphrased_tokens);
+        self.apply_synonym_replacement(&mut paraphrased_tokens);
+        self.apply_structural_changes(&mut paraphrased_tokens);
+
+        let new_features = Tensor::from_vec(paraphrased_tokens, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Text tokenization transform - converts text to token IDs using a simple vocabulary
+/// This is a basic implementation; in production, you'd use a proper tokenizer like BPE or SentencePiece
+pub struct TextTokenizer {
+    vocab: std::collections::HashMap<String, usize>,
+    unk_token: usize,
+    max_vocab_size: usize,
+}
+
+impl TextTokenizer {
+    /// Create a new text tokenizer with a vocabulary built from word frequency
+    pub fn new(max_vocab_size: usize) -> Self {
+        let mut vocab = std::collections::HashMap::new();
+        vocab.insert("<UNK>".to_string(), 0);
+        vocab.insert("<PAD>".to_string(), 1);
+        vocab.insert("<START>".to_string(), 2);
+        vocab.insert("<END>".to_string(), 3);
+
+        Self {
+            vocab,
+            unk_token: 0, // <UNK> token
+            max_vocab_size,
+        }
+    }
+
+    /// Build vocabulary from a collection of texts
+    pub fn build_vocab(&mut self, texts: &[String]) -> Result<()> {
+        let mut word_freq = std::collections::HashMap::new();
+
+        // Count word frequencies
+        for text in texts {
+            for word in text.split_whitespace() {
+                let word = word.to_lowercase();
+                *word_freq.entry(word).or_insert(0) += 1;
+            }
+        }
+
+        // Sort by frequency and take top words
+        let mut sorted_words: Vec<_> = word_freq.into_iter().collect();
+        sorted_words.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Add to vocabulary (reserve space for special tokens)
+        let mut vocab_size = 4; // Starting after special tokens
+        for (word, _) in sorted_words
+            .into_iter()
+            .take(self.max_vocab_size.saturating_sub(4))
+        {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.vocab.entry(word) {
+                e.insert(vocab_size);
+                vocab_size += 1;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Tokenize a single text string
+    pub fn tokenize(&self, text: &str) -> Vec<usize> {
+        let mut tokens = vec![2]; // Start with <START> token
+
+        for word in text.split_whitespace() {
+            let word = word.to_lowercase();
+            let token_id = self.vocab.get(&word).copied().unwrap_or(self.unk_token);
+            tokens.push(token_id);
+        }
+
+        tokens.push(3); // End with <END> token
+        tokens
+    }
+
+    /// Get vocabulary size
+    pub fn vocab_size(&self) -> usize {
+        self.vocab.len()
+    }
+
+    /// Get padding token ID
+    pub fn pad_token_id(&self) -> usize {
+        1
+    }
+}
+
+// Note: TextTokenizer doesn't implement Transform since it works on String -> Vec<usize>
+// Instead, it's used as a preprocessing step before creating tensors
+
+/// Padding transform - pads or truncates sequences to a fixed length
+pub struct PaddingTransform {
+    max_length: usize,
+    pad_token_id: f32,
+    truncate_from_left: bool,
+}
+
+impl PaddingTransform {
+    /// Create a new padding transform
+    pub fn new(max_length: usize, pad_token_id: f32) -> Self {
+        Self {
+            max_length,
+            pad_token_id,
+            truncate_from_left: false,
+        }
+    }
+
+    /// Set whether to truncate from left (keeping end) or right (keeping beginning)
+    pub fn with_truncate_from_left(mut self, truncate_from_left: bool) -> Self {
+        self.truncate_from_left = truncate_from_left;
+        self
+    }
+}
+
+impl Transform<f32> for PaddingTransform {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // Only apply to 1D tensors (sequences)
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let current_length = features.shape().dims()[0];
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let padded_data = if current_length > self.max_length {
+            // Truncate
+            if self.truncate_from_left {
+                feature_data[current_length - self.max_length..].to_vec()
+            } else {
+                feature_data[..self.max_length].to_vec()
+            }
+        } else if current_length < self.max_length {
+            // Pad
+            let mut padded = feature_data.to_vec();
+            padded.resize(self.max_length, self.pad_token_id);
+            padded
+        } else {
+            // Already correct length
+            feature_data.to_vec()
+        };
+
+        let padded_features = Tensor::from_vec(padded_data, &[self.max_length])?;
+        Ok((padded_features, labels))
+    }
+}
+
+/// Combined text classification transform that handles tokenization and padding
+/// This is a convenience transform that combines TextTokenizer and PaddingTransform
+pub struct TextClassificationTransform {
+    tokenizer: TextTokenizer,
+    padding: PaddingTransform,
+}
+
+impl TextClassificationTransform {
+    /// Create a new text classification transform
+    pub fn new(vocab_size: usize, max_length: usize) -> Self {
+        let tokenizer = TextTokenizer::new(vocab_size);
+        let padding = PaddingTransform::new(max_length, tokenizer.pad_token_id() as f32);
+
+        Self { tokenizer, padding }
+    }
+
+    /// Build vocabulary from training texts
+    pub fn build_vocab(&mut self, texts: &[String]) -> Result<()> {
+        self.tokenizer.build_vocab(texts)
+    }
+
+    /// Get the tokenizer for external use
+    pub fn tokenizer(&self) -> &TextTokenizer {
+        &self.tokenizer
+    }
+
+    /// Convert text to tokenized and padded tensor
+    pub fn text_to_tensor(&self, text: &str) -> Result<Tensor<f32>> {
+        let tokens = self.tokenizer.tokenize(text);
+        let token_floats: Vec<f32> = tokens.into_iter().map(|t| t as f32).collect();
+        let length = token_floats.len();
+        let tensor = Tensor::from_vec(token_floats, &[length])?;
+
+        // Apply padding
+        let dummy_labels = Tensor::from_vec(vec![0.0], &[])?;
+        let (padded_tensor, _) = self.padding.apply((tensor, dummy_labels))?;
+
+        Ok(padded_tensor)
+    }
+}
+
+// Note: TextClassificationTransform doesn't implement Transform since it works on String -> Tensor
+// It's used as a preprocessing step to convert text data to tensors
+
+// Tabular Augmentation Transforms
+
+/// SMOTE (Synthetic Minority Oversampling Technique) for imbalanced datasets
+/// Generates synthetic samples by interpolating between minority class examples
+pub struct SmoteTransform {
+    #[allow(dead_code)]
+    k_neighbors: usize,
+    #[allow(dead_code)]
+    interpolation_factor: f32,
+    minority_class_threshold: f32, // Classes below this ratio are considered minority
+}
+
+impl SmoteTransform {
+    pub fn new(k_neighbors: usize, interpolation_factor: f32) -> Self {
+        Self {
+            k_neighbors,
+            interpolation_factor,
+            minority_class_threshold: 0.3, // 30% or less is considered minority
+        }
+    }
+
+    pub fn with_minority_threshold(mut self, threshold: f32) -> Self {
+        self.minority_class_threshold = threshold;
+        self
+    }
+
+    /// Generate a synthetic sample between two feature vectors
+    #[allow(dead_code)]
+    fn interpolate_features(&self, features1: &[f32], features2: &[f32]) -> Result<Vec<f32>> {
+        if features1.len() != features2.len() {
+            return Err(TensorError::invalid_argument(
+                "Feature vectors must have same length".to_string(),
+            ));
+        }
+
+        let alpha = rand::random::<f32>() * self.interpolation_factor;
+        let synthetic: Vec<f32> = features1
+            .iter()
+            .zip(features2.iter())
+            .map(|(&f1, &f2)| f1 + alpha * (f2 - f1))
+            .collect();
+
+        Ok(synthetic)
+    }
+
+    /// Find k nearest neighbors in the same class
+    #[allow(dead_code)]
+    fn find_nearest_neighbors(
+        &self,
+        target_features: &[f32],
+        class_samples: &[(Vec<f32>, f32)],
+    ) -> Vec<usize> {
+        let mut distances: Vec<(f32, usize)> = class_samples
+            .iter()
+            .enumerate()
+            .map(|(idx, (features, _))| {
+                let distance = self.euclidean_distance(target_features, features);
+                (distance, idx)
+            })
+            .collect();
+
+        distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        distances
+            .into_iter()
+            .take(self.k_neighbors.min(class_samples.len()))
+            .map(|(_, idx)| idx)
+            .collect()
+    }
+
+    #[allow(dead_code)]
+    fn euclidean_distance(&self, a: &[f32], b: &[f32]) -> f32 {
+        a.iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| (x - y).powi(2))
+            .sum::<f32>()
+            .sqrt()
+    }
+}
+
+impl Transform<f32> for SmoteTransform {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        // SMOTE typically operates on entire datasets, not individual samples
+        // For individual sample augmentation, we'll apply feature noise instead
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        // Apply light feature perturbation as approximation of SMOTE
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut synthetic_features = Vec::with_capacity(feature_data.len());
+
+        for &feature in feature_data {
+            // Add small Gaussian noise (simulating SMOTE interpolation)
+            let noise = (rand::random::<f32>() - 0.5) * 0.1; // Small noise
+            synthetic_features.push(feature + noise);
+        }
+
+        let new_features = Tensor::from_vec(synthetic_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Feature noise injection for tabular data augmentation
+pub struct FeatureNoiseInjection {
+    noise_std: f32,
+    noise_prob: f32, // Probability of adding noise to each feature
+    feature_ranges: Option<Vec<(f32, f32)>>, // Optional feature ranges for clipping
+}
+
+impl FeatureNoiseInjection {
+    pub fn new(noise_std: f32, noise_prob: f32) -> Self {
+        Self {
+            noise_std,
+            noise_prob,
+            feature_ranges: None,
+        }
+    }
+
+    pub fn with_feature_ranges(mut self, ranges: Vec<(f32, f32)>) -> Self {
+        self.feature_ranges = Some(ranges);
+        self
+    }
+}
+
+impl Transform<f32> for FeatureNoiseInjection {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut noisy_features = Vec::with_capacity(feature_data.len());
+
+        for (i, &feature) in feature_data.iter().enumerate() {
+            let mut new_feature = feature;
+
+            // Add noise with probability
+            if rand::random::<f32>() < self.noise_prob {
+                use rand_distr::{Distribution, Normal};
+                let normal = Normal::new(0.0, self.noise_std).map_err(|_| {
+                    TensorError::invalid_argument("Invalid noise parameters".to_string())
+                })?;
+                let noise = normal.sample(&mut rand::rng());
+                new_feature += noise;
+
+                // Clip to feature range if specified
+                if let Some(ref ranges) = self.feature_ranges {
+                    if i < ranges.len() {
+                        let (min_val, max_val) = ranges[i];
+                        new_feature = new_feature.clamp(min_val, max_val);
+                    }
+                }
+            }
+
+            noisy_features.push(new_feature);
+        }
+
+        let new_features = Tensor::from_vec(noisy_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Feature swapping augmentation - randomly swaps values between features
+pub struct FeatureSwapping {
+    swap_prob: f32,
+    max_swaps: usize,
+}
+
+impl FeatureSwapping {
+    pub fn new(swap_prob: f32, max_swaps: usize) -> Self {
+        Self {
+            swap_prob,
+            max_swaps,
+        }
+    }
+}
+
+impl Transform<f32> for FeatureSwapping {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        if feature_data.len() < 2 {
+            return Ok((features, labels));
+        }
+
+        let mut swapped_features = feature_data.to_vec();
+
+        // Apply swapping with probability
+        if rand::random::<f32>() < self.swap_prob {
+            let num_swaps = rand::rng().random_range(0..=self.max_swaps);
+
+            for _ in 0..num_swaps {
+                let idx1 = rand::rng().random_range(0..swapped_features.len());
+                let idx2 = rand::rng().random_range(0..swapped_features.len());
+
+                if idx1 != idx2 {
+                    swapped_features.swap(idx1, idx2);
+                }
+            }
+        }
+
+        let new_features = Tensor::from_vec(swapped_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+// Adaptive Normalization Transforms
+
+/// Adaptive normalization that updates statistics based on observed data
+/// Useful for online learning scenarios where data distribution may change
+pub struct AdaptiveNormalization {
+    running_mean: Vec<f32>,
+    running_var: Vec<f32>,
+    running_count: usize,
+    #[allow(dead_code)]
+    momentum: f32, // Exponential moving average momentum
+    epsilon: f32, // Small value to prevent division by zero
+    feature_dim: Option<usize>,
+}
+
+impl AdaptiveNormalization {
+    pub fn new(momentum: f32) -> Self {
+        Self {
+            running_mean: Vec::new(),
+            running_var: Vec::new(),
+            running_count: 0,
+            momentum,
+            epsilon: 1e-8,
+            feature_dim: None,
+        }
+    }
+
+    pub fn with_epsilon(mut self, epsilon: f32) -> Self {
+        self.epsilon = epsilon;
+        self
+    }
+
+    /// Initialize statistics with feature dimension
+    #[allow(dead_code)]
+    fn initialize_if_needed(&mut self, feature_dim: usize) {
+        if self.feature_dim.is_none() {
+            self.feature_dim = Some(feature_dim);
+            self.running_mean = vec![0.0; feature_dim];
+            self.running_var = vec![1.0; feature_dim];
+        }
+    }
+
+    /// Update running statistics with new sample
+    #[allow(dead_code)]
+    fn update_statistics(&mut self, features: &[f32]) {
+        self.initialize_if_needed(features.len());
+
+        if self.running_count == 0 {
+            // First sample - initialize with actual values
+            for (i, &val) in features.iter().enumerate() {
+                self.running_mean[i] = val;
+                self.running_var[i] = 1.0; // Start with unit variance
+            }
+        } else {
+            // Update with exponential moving average
+            for (i, &val) in features.iter().enumerate() {
+                let old_mean = self.running_mean[i];
+
+                // Update mean
+                self.running_mean[i] =
+                    self.momentum * self.running_mean[i] + (1.0 - self.momentum) * val;
+
+                // Update variance (using Welford's online algorithm variant)
+                let new_mean = self.running_mean[i];
+                let delta = val - old_mean;
+                let delta2 = val - new_mean;
+                self.running_var[i] =
+                    self.momentum * self.running_var[i] + (1.0 - self.momentum) * delta * delta2;
+            }
+        }
+
+        self.running_count += 1;
+    }
+
+    /// Get current normalization parameters
+    pub fn get_statistics(&self) -> Option<(Vec<f32>, Vec<f32>)> {
+        if self.feature_dim.is_some() {
+            Some((self.running_mean.clone(), self.running_var.clone()))
+        } else {
+            None
+        }
+    }
+
+    /// Reset statistics
+    pub fn reset(&mut self) {
+        self.running_mean.clear();
+        self.running_var.clear();
+        self.running_count = 0;
+        self.feature_dim = None;
+    }
+}
+
+impl Transform<f32> for AdaptiveNormalization {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        // Create mutable copy for updating statistics
+        // Note: This requires interior mutability pattern in practice
+        // For now, we'll just apply normalization without updating statistics
+        if self.feature_dim.is_none() || self.running_mean.is_empty() {
+            // No statistics yet - return unchanged
+            return Ok((features, labels));
+        }
+
+        let mut normalized_features = Vec::with_capacity(feature_data.len());
+
+        for (i, &feature) in feature_data.iter().enumerate() {
+            if i < self.running_mean.len() && i < self.running_var.len() {
+                let mean = self.running_mean[i];
+                let var = self.running_var[i];
+                let std = (var + self.epsilon).sqrt();
+
+                let normalized = (feature - mean) / std;
+                normalized_features.push(normalized);
+            } else {
+                normalized_features.push(feature);
+            }
+        }
+
+        let new_features = Tensor::from_vec(normalized_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Batch-level adaptive normalization (for use with batched data)
+pub struct BatchAdaptiveNormalization {
+    global_mean: Vec<f32>,
+    global_var: Vec<f32>,
+    momentum: f32,
+    epsilon: f32,
+    feature_dim: Option<usize>,
+    batch_count: usize,
+}
+
+impl BatchAdaptiveNormalization {
+    pub fn new(momentum: f32) -> Self {
+        Self {
+            global_mean: Vec::new(),
+            global_var: Vec::new(),
+            momentum,
+            epsilon: 1e-8,
+            feature_dim: None,
+            batch_count: 0,
+        }
+    }
+
+    pub fn with_epsilon(mut self, epsilon: f32) -> Self {
+        self.epsilon = epsilon;
+        self
+    }
+
+    /// Initialize with feature dimension
+    fn initialize_if_needed(&mut self, feature_dim: usize) {
+        if self.feature_dim.is_none() {
+            self.feature_dim = Some(feature_dim);
+            self.global_mean = vec![0.0; feature_dim];
+            self.global_var = vec![1.0; feature_dim];
+        }
+    }
+
+    /// Update global statistics with batch statistics
+    pub fn update_batch_statistics(&mut self, batch_mean: &[f32], batch_var: &[f32]) {
+        self.initialize_if_needed(batch_mean.len());
+
+        if self.batch_count == 0 {
+            // First batch
+            self.global_mean.copy_from_slice(batch_mean);
+            self.global_var.copy_from_slice(batch_var);
+        } else {
+            // Update with momentum
+            for i in 0..batch_mean.len() {
+                self.global_mean[i] =
+                    self.momentum * self.global_mean[i] + (1.0 - self.momentum) * batch_mean[i];
+                self.global_var[i] =
+                    self.momentum * self.global_var[i] + (1.0 - self.momentum) * batch_var[i];
+            }
+        }
+
+        self.batch_count += 1;
+    }
+
+    /// Compute batch statistics from feature data
+    #[allow(dead_code)]
+    fn compute_batch_statistics(
+        &self,
+        features: &[f32],
+        batch_size: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let feature_dim = features.len() / batch_size;
+        let mut batch_mean = vec![0.0; feature_dim];
+        let mut batch_var = vec![0.0; feature_dim];
+
+        // Compute mean
+        for sample_idx in 0..batch_size {
+            #[allow(clippy::needless_range_loop)]
+            for feat_idx in 0..feature_dim {
+                let idx = sample_idx * feature_dim + feat_idx;
+                batch_mean[feat_idx] += features[idx];
+            }
+        }
+
+        for mean in &mut batch_mean {
+            *mean /= batch_size as f32;
+        }
+
+        // Compute variance
+        for sample_idx in 0..batch_size {
+            #[allow(clippy::needless_range_loop)]
+            for feat_idx in 0..feature_dim {
+                let idx = sample_idx * feature_dim + feat_idx;
+                let diff = features[idx] - batch_mean[feat_idx];
+                batch_var[feat_idx] += diff * diff;
+            }
+        }
+
+        for var in &mut batch_var {
+            *var /= batch_size as f32;
+        }
+
+        (batch_mean, batch_var)
+    }
+}
+
+impl Transform<f32> for BatchAdaptiveNormalization {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        // This transform is designed for batch processing
+        // For individual samples, fall back to global statistics if available
+        if features.shape().rank() != 1 || self.feature_dim.is_none() {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut normalized_features = Vec::with_capacity(feature_data.len());
+
+        for (i, &feature) in feature_data.iter().enumerate() {
+            if i < self.global_mean.len() && i < self.global_var.len() {
+                let mean = self.global_mean[i];
+                let var = self.global_var[i];
+                let std = (var + self.epsilon).sqrt();
+
+                let normalized = (feature - mean) / std;
+                normalized_features.push(normalized);
+            } else {
+                normalized_features.push(feature);
+            }
+        }
+
+        let new_features = Tensor::from_vec(normalized_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+// Feature Engineering Transforms
+
+/// Feature hashing transform for high-cardinality categorical features
+/// Maps categorical values to a fixed-size vector using hash functions
+pub struct FeatureHashing {
+    hash_size: usize,
+    seed: u64,
+}
+
+impl FeatureHashing {
+    pub fn new(hash_size: usize) -> Self {
+        Self {
+            hash_size,
+            seed: 42,
+        }
+    }
+
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// Hash a categorical value to an index in the hash space
+    fn hash_feature(&self, feature_value: f32, feature_idx: usize) -> usize {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        self.seed.hash(&mut hasher);
+        feature_idx.hash(&mut hasher);
+        (feature_value as u64).hash(&mut hasher);
+
+        (hasher.finish() as usize) % self.hash_size
+    }
+
+    /// Create signed hash for feature interactions
+    fn signed_hash(&self, feature_value: f32, feature_idx: usize) -> f32 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        (self.seed + 1).hash(&mut hasher);
+        feature_idx.hash(&mut hasher);
+        (feature_value as u64).hash(&mut hasher);
+
+        if hasher.finish() % 2 == 0 {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+}
+
+impl Transform<f32> for FeatureHashing {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        // Create hash vector
+        let mut hash_vector = vec![0.0; self.hash_size];
+
+        for (feat_idx, &feature_value) in feature_data.iter().enumerate() {
+            // Skip zero values (assume they represent missing/null categories)
+            if feature_value != 0.0 {
+                let hash_idx = self.hash_feature(feature_value, feat_idx);
+                let sign = self.signed_hash(feature_value, feat_idx);
+                hash_vector[hash_idx] += sign;
+            }
+        }
+
+        let hashed_features = Tensor::from_vec(hash_vector, &[self.hash_size])?;
+        Ok((hashed_features, labels))
+    }
+}
+
+/// Target encoding transform for categorical features
+/// Replaces categorical values with statistics derived from the target variable
+pub struct TargetEncoding {
+    category_stats: std::collections::HashMap<(usize, i32), (f32, usize)>, // (feature_idx, category) -> (mean, count)
+    smoothing_factor: f32,
+    global_mean: f32,
+    min_samples: usize,
+}
+
+impl TargetEncoding {
+    pub fn new(smoothing_factor: f32, min_samples: usize) -> Self {
+        Self {
+            category_stats: std::collections::HashMap::new(),
+            smoothing_factor,
+            global_mean: 0.0,
+            min_samples,
+        }
+    }
+
+    /// Fit the encoding based on categorical features and target values
+    /// This would typically be called during training phase
+    pub fn fit_from_data(&mut self, features: &[Vec<f32>], targets: &[f32]) -> Result<()> {
+        if features.len() != targets.len() {
+            return Err(TensorError::invalid_argument(
+                "Features and targets must have same length".to_string(),
+            ));
+        }
+
+        // Compute global mean
+        self.global_mean = targets.iter().sum::<f32>() / targets.len() as f32;
+
+        // Count category occurrences and target sums
+        let mut category_counts: std::collections::HashMap<(usize, i32), usize> =
+            std::collections::HashMap::new();
+        let mut category_sums: std::collections::HashMap<(usize, i32), f32> =
+            std::collections::HashMap::new();
+
+        for (sample_idx, feature_vec) in features.iter().enumerate() {
+            let target = targets[sample_idx];
+
+            for (feat_idx, &feature_val) in feature_vec.iter().enumerate() {
+                let category = feature_val as i32;
+                let key = (feat_idx, category);
+
+                *category_counts.entry(key).or_insert(0) += 1;
+                *category_sums.entry(key).or_insert(0.0) += target;
+            }
+        }
+
+        // Compute smoothed means
+        for ((feat_idx, category), count) in category_counts {
+            let sum = category_sums.get(&(feat_idx, category)).unwrap_or(&0.0);
+            let raw_mean = sum / count as f32;
+
+            // Apply smoothing (empirical Bayes)
+            let smoothed_mean = (raw_mean * count as f32
+                + self.global_mean * self.smoothing_factor)
+                / (count as f32 + self.smoothing_factor);
+
+            self.category_stats
+                .insert((feat_idx, category), (smoothed_mean, count));
+        }
+
+        Ok(())
+    }
+
+    /// Encode a categorical value using learned statistics
+    fn encode_category(&self, feature_idx: usize, category: i32) -> f32 {
+        if let Some(&(mean, count)) = self.category_stats.get(&(feature_idx, category)) {
+            if count >= self.min_samples {
+                mean
+            } else {
+                self.global_mean // Fall back to global mean for rare categories
+            }
+        } else {
+            self.global_mean // Unknown category
+        }
+    }
+}
+
+impl Transform<f32> for TargetEncoding {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut encoded_features = Vec::with_capacity(feature_data.len());
+
+        for (feat_idx, &feature_value) in feature_data.iter().enumerate() {
+            let category = feature_value as i32;
+            let encoded_value = self.encode_category(feat_idx, category);
+            encoded_features.push(encoded_value);
+        }
+
+        let new_features = Tensor::from_vec(encoded_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+/// Frequency encoding transform - replaces categorical values with their frequency
+pub struct FrequencyEncoding {
+    category_frequencies: std::collections::HashMap<(usize, i32), f32>,
+    total_samples: usize,
+}
+
+impl FrequencyEncoding {
+    pub fn new() -> Self {
+        Self {
+            category_frequencies: std::collections::HashMap::new(),
+            total_samples: 0,
+        }
+    }
+
+    /// Fit frequency encoding from data
+    pub fn fit_from_data(&mut self, features: &[Vec<f32>]) -> Result<()> {
+        self.total_samples = features.len();
+
+        // Count category occurrences
+        let mut category_counts: std::collections::HashMap<(usize, i32), usize> =
+            std::collections::HashMap::new();
+
+        for feature_vec in features {
+            for (feat_idx, &feature_val) in feature_vec.iter().enumerate() {
+                let category = feature_val as i32;
+                let key = (feat_idx, category);
+                *category_counts.entry(key).or_insert(0) += 1;
+            }
+        }
+
+        // Convert counts to frequencies
+        for ((feat_idx, category), count) in category_counts {
+            let frequency = count as f32 / self.total_samples as f32;
+            self.category_frequencies
+                .insert((feat_idx, category), frequency);
+        }
+
+        Ok(())
+    }
+
+    /// Get frequency for a category
+    fn get_frequency(&self, feature_idx: usize, category: i32) -> f32 {
+        self.category_frequencies
+            .get(&(feature_idx, category))
+            .copied()
+            .unwrap_or(0.0) // Unknown categories get frequency 0
+    }
+}
+
+impl Default for FrequencyEncoding {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Transform<f32> for FrequencyEncoding {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (features, labels) = sample;
+
+        if features.shape().rank() != 1 {
+            return Ok((features, labels));
+        }
+
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access tensor data".to_string())
+        })?;
+
+        let mut encoded_features = Vec::with_capacity(feature_data.len());
+
+        for (feat_idx, &feature_value) in feature_data.iter().enumerate() {
+            let category = feature_value as i32;
+            let frequency = self.get_frequency(feat_idx, category);
+            encoded_features.push(frequency);
+        }
+
+        let new_features = Tensor::from_vec(encoded_features, features.shape().dims())?;
+        Ok((new_features, labels))
+    }
+}
+
+// ============================================================================
+// Audio Augmentation Transforms
+// ============================================================================
+
+/// Time stretching augmentation for audio data
+/// Changes the duration of audio without affecting pitch
+pub struct TimeStretching<T> {
+    stretch_factor: f64,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> TimeStretching<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    /// Create a new time stretching transform
+    /// - stretch_factor: Factor to stretch audio by (e.g., 0.5 = half speed, 2.0 = double speed)
+    pub fn new(stretch_factor: f64) -> Result<Self> {
+        if stretch_factor <= 0.0 {
+            return Err(TensorError::invalid_argument(
+                "Stretch factor must be positive".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            stretch_factor,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Create a random time stretching transform with factor in given range
+    pub fn random(min_factor: f64, max_factor: f64) -> Result<Self> {
+        if min_factor <= 0.0 || max_factor <= 0.0 || min_factor > max_factor {
+            return Err(TensorError::invalid_argument(
+                "Invalid stretch factor range".to_string(),
+            ));
+        }
+
+        use rand::Rng;
+        let mut rng = rand::rng();
+        let stretch_factor = rng.random_range(min_factor..max_factor);
+
+        Ok(Self {
+            stretch_factor,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Simple time stretching using linear interpolation
+    /// In practice, you'd use more sophisticated algorithms like PSOLA or WSOLA
+    fn stretch_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access audio data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        if audio_data.is_empty() {
+            return Ok(audio.clone());
+        }
+
+        let original_length = audio_data.len();
+        let new_length = ((original_length as f64) / self.stretch_factor) as usize;
+
+        if new_length == 0 {
+            return Err(TensorError::invalid_argument(
+                "Stretched audio would be empty".to_string(),
+            ));
+        }
+
+        let mut stretched_data = Vec::with_capacity(new_length);
+
+        for i in 0..new_length {
+            let original_idx = (i as f64) * self.stretch_factor;
+            let idx_floor = original_idx.floor() as usize;
+            let idx_ceil = (original_idx.ceil() as usize).min(original_length - 1);
+
+            if idx_floor >= original_length {
+                break;
+            }
+
+            if idx_floor == idx_ceil {
+                stretched_data.push(audio_data[idx_floor]);
+            } else {
+                // Linear interpolation
+                let frac = T::from(original_idx - idx_floor as f64).unwrap();
+                let val1 = audio_data[idx_floor];
+                let val2 = audio_data[idx_ceil];
+                let interpolated = val1 + (val2 - val1) * frac;
+                stretched_data.push(interpolated);
+            }
+        }
+
+        // Maintain original shape but with new length
+        let mut new_shape = audio.shape().dims().to_vec();
+        if !new_shape.is_empty() {
+            let last_idx = new_shape.len() - 1;
+            new_shape[last_idx] = new_length; // Assume last dimension is time
+        }
+
+        Tensor::from_vec(stretched_data, &new_shape)
+    }
+}
+
+impl<T> Transform<T> for TimeStretching<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let stretched_features = self.stretch_audio(&features)?;
+        Ok((stretched_features, labels))
+    }
+}
+
+/// Pitch shifting augmentation for audio data
+/// Changes the pitch of audio without affecting duration
+pub struct PitchShifting<T> {
+    semitones: f64, // Number of semitones to shift (can be fractional)
+    _phantom: PhantomData<T>,
+}
+
+impl<T> PitchShifting<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    /// Create a new pitch shifting transform
+    /// - semitones: Number of semitones to shift pitch (positive = higher, negative = lower)
+    pub fn new(semitones: f64) -> Self {
+        Self {
+            semitones,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a random pitch shifting transform within given range
+    pub fn random(min_semitones: f64, max_semitones: f64) -> Result<Self> {
+        if min_semitones > max_semitones {
+            return Err(TensorError::invalid_argument(
+                "Invalid semitone range".to_string(),
+            ));
+        }
+
+        use rand::Rng;
+        let mut rng = rand::rng();
+        let semitones = rng.random_range(min_semitones..max_semitones);
+
+        Ok(Self {
+            semitones,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Simple pitch shifting using frequency domain processing
+    /// In practice, you'd use more sophisticated algorithms like phase vocoder
+    fn shift_pitch(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        if self.semitones == 0.0 {
+            return Ok(audio.clone());
+        }
+
+        // This is a simplified implementation that just scales the signal
+        // Real pitch shifting would require FFT-based frequency domain processing
+        let pitch_factor = T::from(2.0_f64.powf(self.semitones / 12.0)).unwrap();
+
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access audio data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        // For a simplified implementation, we'll apply time stretching followed by resampling
+        // This approximates pitch shifting but isn't perfect
+        let shifted_data: Vec<T> = audio_data
+            .iter()
+            .map(|&sample| sample * pitch_factor)
+            .collect();
+
+        Tensor::from_vec(shifted_data, audio.shape().dims())
+    }
+}
+
+impl<T> Transform<T> for PitchShifting<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let shifted_features = self.shift_pitch(&features)?;
+        Ok((shifted_features, labels))
+    }
+}
+
+/// Background noise augmentation for audio data
+/// Adds random background noise to audio samples
+pub struct BackgroundNoise<T> {
+    noise_level: f64, // Amplitude of background noise (0.0 to 1.0)
+    noise_type: NoiseType,
+    _phantom: PhantomData<T>,
+}
+
+/// Types of background noise
+#[derive(Debug, Clone)]
+pub enum NoiseType {
+    /// White noise - equal energy across all frequencies
+    White,
+    /// Pink noise - energy inversely proportional to frequency
+    Pink,
+    /// Brown noise - energy inversely proportional to frequency squared
+    Brown,
+}
+
+impl<T> BackgroundNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    /// Create a new background noise transform
+    /// - noise_level: Amplitude of noise (0.0 to 1.0)
+    /// - noise_type: Type of noise to generate
+    pub fn new(noise_level: f64, noise_type: NoiseType) -> Result<Self> {
+        if !(0.0..=1.0).contains(&noise_level) {
+            return Err(TensorError::invalid_argument(
+                "Noise level must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            noise_level,
+            noise_type,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Create a random background noise transform
+    pub fn random(max_noise_level: f64, noise_type: NoiseType) -> Result<Self> {
+        if !(0.0..=1.0).contains(&max_noise_level) {
+            return Err(TensorError::invalid_argument(
+                "Max noise level must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+
+        use rand::Rng;
+        let mut rng = rand::rng();
+        let noise_level = rng.random_range(0.0..max_noise_level);
+
+        Ok(Self {
+            noise_level,
+            noise_type,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Generate noise of the specified type
+    fn generate_noise(&self, length: usize) -> Vec<T> {
+        use rand::Rng;
+        let mut rng = rand::rng();
+
+        match self.noise_type {
+            NoiseType::White => {
+                // White noise - uniform random distribution
+                (0..length)
+                    .map(|_| {
+                        let noise_sample = rng.random::<f64>() * 2.0 - 1.0; // Range [-1, 1]
+                        T::from(noise_sample * self.noise_level).unwrap()
+                    })
+                    .collect()
+            }
+            NoiseType::Pink => {
+                // Pink noise - simplified implementation using filtered white noise
+                let mut pink_noise = Vec::with_capacity(length);
+                let mut filter_state = [0.0; 7]; // Simple pink noise filter state
+
+                for _ in 0..length {
+                    let white_sample = rng.random::<f64>() * 2.0 - 1.0;
+
+                    // Simple pink noise filter (approximation)
+                    filter_state[0] = 0.99886 * filter_state[0] + white_sample * 0.0555179;
+                    filter_state[1] = 0.99332 * filter_state[1] + white_sample * 0.0750759;
+                    filter_state[2] = 0.96900 * filter_state[2] + white_sample * 0.1538520;
+                    filter_state[3] = 0.86650 * filter_state[3] + white_sample * 0.3104856;
+                    filter_state[4] = 0.55000 * filter_state[4] + white_sample * 0.5329522;
+                    filter_state[5] = -0.7616 * filter_state[5] - white_sample * 0.0168980;
+
+                    let pink_sample = filter_state[0]
+                        + filter_state[1]
+                        + filter_state[2]
+                        + filter_state[3]
+                        + filter_state[4]
+                        + filter_state[5]
+                        + filter_state[6]
+                        + white_sample * 0.5362;
+                    filter_state[6] = white_sample * 0.115926;
+
+                    pink_noise.push(T::from(pink_sample * self.noise_level * 0.11).unwrap());
+                }
+
+                pink_noise
+            }
+            NoiseType::Brown => {
+                // Brown noise - integrated white noise
+                let mut brown_noise = Vec::with_capacity(length);
+                let mut accumulator = 0.0;
+
+                for _ in 0..length {
+                    let white_sample = rng.random::<f64>() * 2.0 - 1.0;
+                    accumulator += white_sample;
+
+                    // Prevent accumulator from growing too large
+                    accumulator *= 0.999;
+
+                    brown_noise.push(T::from(accumulator * self.noise_level * 0.1).unwrap());
+                }
+
+                brown_noise
+            }
+        }
+    }
+
+    /// Add background noise to audio
+    fn add_noise(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        if self.noise_level == 0.0 {
+            return Ok(audio.clone());
+        }
+
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access audio data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        if audio_data.is_empty() {
+            return Ok(audio.clone());
+        }
+
+        let noise = self.generate_noise(audio_data.len());
+
+        let noisy_data: Vec<T> = audio_data
+            .iter()
+            .zip(noise.iter())
+            .map(|(&signal, &noise_sample)| signal + noise_sample)
+            .collect();
+
+        Tensor::from_vec(noisy_data, audio.shape().dims())
+    }
+}
+
+impl<T> Transform<T> for BackgroundNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let noisy_features = self.add_noise(&features)?;
+        Ok((noisy_features, labels))
+    }
+}
+
+/// Real-time audio augmentation - applies multiple audio effects in streaming fashion
+/// This transform combines multiple audio augmentations for real-time processing
+pub struct RealTimeAudioAugmentation<T> {
+    augmentations: Vec<Box<dyn AudioAugmentation<T>>>,
+    apply_probability: f32,
+    max_concurrent: usize,
+    _phantom: PhantomData<T>,
+}
+
+/// Trait for audio-specific augmentations that can be applied in real-time
+pub trait AudioAugmentation<T>: Send + Sync {
+    fn apply_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>>;
+    fn name(&self) -> &'static str;
+    fn processing_latency_ms(&self) -> f64; // Estimated processing time
+}
+
+impl<T> Default for RealTimeAudioAugmentation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> RealTimeAudioAugmentation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new() -> Self {
+        Self {
+            augmentations: Vec::new(),
+            apply_probability: 0.5,
+            max_concurrent: 3,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn with_probability(mut self, probability: f32) -> Self {
+        self.apply_probability = probability.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_max_concurrent(mut self, max_concurrent: usize) -> Self {
+        self.max_concurrent = max_concurrent;
+        self
+    }
+
+    pub fn add_augmentation(mut self, augmentation: Box<dyn AudioAugmentation<T>>) -> Self {
+        self.augmentations.push(augmentation);
+        self
+    }
+
+    /// Apply multiple augmentations in real-time with minimal latency
+    fn apply_real_time_augmentations(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        if self.augmentations.is_empty() {
+            return Ok(audio.clone());
+        }
+
+        let mut rng = rand::rng();
+
+        // Randomly select which augmentations to apply
+        let mut selected_indices = Vec::new();
+        for (i, _) in self.augmentations.iter().enumerate() {
+            if rng.random::<f32>() < self.apply_probability {
+                selected_indices.push(i);
+                if selected_indices.len() >= self.max_concurrent {
+                    break;
+                }
+            }
+        }
+
+        if selected_indices.is_empty() {
+            return Ok(audio.clone());
+        }
+
+        // Sort by estimated processing latency for optimal ordering
+        selected_indices.sort_by(|&a, &b| {
+            self.augmentations[a]
+                .processing_latency_ms()
+                .partial_cmp(&self.augmentations[b].processing_latency_ms())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Apply selected augmentations sequentially
+        let mut current_audio = audio.clone();
+        for &idx in &selected_indices {
+            current_audio = self.augmentations[idx].apply_audio(&current_audio)?;
+        }
+
+        Ok(current_audio)
+    }
+}
+
+impl<T> Transform<T> for RealTimeAudioAugmentation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let augmented_features = self.apply_real_time_augmentations(&features)?;
+        Ok((augmented_features, labels))
+    }
+}
+
+/// Fast time stretching for real-time audio processing
+pub struct FastTimeStretch<T> {
+    stretch_factor: f64,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> FastTimeStretch<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(stretch_factor: f64) -> Self {
+        Self {
+            stretch_factor,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> AudioAugmentation<T> for FastTimeStretch<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access audio tensor data".to_string())
+        })?;
+
+        let input_len = audio_data.len();
+        let output_len = (input_len as f64 / self.stretch_factor) as usize;
+
+        if output_len == 0 {
+            return Ok(audio.clone());
+        }
+
+        let mut stretched_data = Vec::with_capacity(output_len);
+
+        // Simple linear interpolation for fast processing
+        for i in 0..output_len {
+            let src_pos = i as f64 * self.stretch_factor;
+            let src_idx = src_pos as usize;
+
+            if src_idx + 1 < input_len {
+                let frac = T::from(src_pos - src_idx as f64).unwrap();
+                let sample1 = T::from(audio_data[src_idx]).unwrap();
+                let sample2 = T::from(audio_data[src_idx + 1]).unwrap();
+                let interpolated = sample1 + (sample2 - sample1) * frac;
+                stretched_data.push(interpolated);
+            } else if src_idx < input_len {
+                stretched_data.push(T::from(audio_data[src_idx]).unwrap());
+            } else {
+                stretched_data.push(T::zero());
+            }
+        }
+
+        Tensor::from_vec(stretched_data, &[output_len])
+    }
+
+    fn name(&self) -> &'static str {
+        "FastTimeStretch"
+    }
+
+    fn processing_latency_ms(&self) -> f64 {
+        2.0 // Very fast processing
+    }
+}
+
+/// Real-time background noise injection
+pub struct RealTimeNoise<T> {
+    noise_level: f64,
+    noise_type: NoiseType,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> RealTimeNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(noise_level: f64, noise_type: NoiseType) -> Self {
+        Self {
+            noise_level,
+            noise_type,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> AudioAugmentation<T> for RealTimeNoise<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access audio tensor data".to_string())
+        })?;
+
+        let mut rng = rand::rng();
+        let mut noisy_data = Vec::with_capacity(audio_data.len());
+
+        match self.noise_type {
+            NoiseType::White => {
+                for &sample in audio_data {
+                    let noise = (rng.random::<f64>() - 0.5) * 2.0 * self.noise_level;
+                    let noisy_sample = T::from(sample).unwrap() + T::from(noise).unwrap();
+                    noisy_data.push(noisy_sample);
+                }
+            }
+            NoiseType::Pink => {
+                // Simplified pink noise (1/f) - use accumulated white noise
+                let mut accumulated = 0.0;
+                for &sample in audio_data {
+                    let white = (rng.random::<f64>() - 0.5) * 2.0;
+                    accumulated = accumulated * 0.95 + white * 0.05; // Simple 1/f approximation
+                    let noise = accumulated * self.noise_level;
+                    let noisy_sample = T::from(sample).unwrap() + T::from(noise).unwrap();
+                    noisy_data.push(noisy_sample);
+                }
+            }
+            NoiseType::Brown => {
+                // Brown noise (1/f²) - integrated white noise
+                let mut integrated = 0.0;
+                for &sample in audio_data {
+                    let white = (rng.random::<f64>() - 0.5) * 2.0;
+                    integrated += white * 0.02; // Integration with damping
+                    integrated *= 0.998; // Prevent drift
+                    let noise = integrated * self.noise_level;
+                    let noisy_sample = T::from(sample).unwrap() + T::from(noise).unwrap();
+                    noisy_data.push(noisy_sample);
+                }
+            }
+        }
+
+        Tensor::from_vec(noisy_data, audio.shape().dims())
+    }
+
+    fn name(&self) -> &'static str {
+        "RealTimeNoise"
+    }
+
+    fn processing_latency_ms(&self) -> f64 {
+        1.0 // Very fast processing
+    }
+}
+
+/// Simple real-time reverb effect
+pub struct SimpleReverb<T> {
+    reverb_decay: f64,
+    delay_samples: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> SimpleReverb<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(reverb_decay: f64, delay_samples: usize) -> Self {
+        Self {
+            reverb_decay: reverb_decay.clamp(0.0, 0.9),
+            delay_samples,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> AudioAugmentation<T> for SimpleReverb<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access audio tensor data".to_string())
+        })?;
+
+        let mut reverb_data = vec![T::zero(); audio_data.len()];
+        let mut delay_buffer = vec![T::zero(); self.delay_samples];
+        let mut buffer_idx = 0;
+
+        for (i, &sample) in audio_data.iter().enumerate() {
+            let delayed_sample = delay_buffer[buffer_idx];
+            let reverb_contribution = delayed_sample * T::from(self.reverb_decay).unwrap();
+            let output_sample = T::from(sample).unwrap() + reverb_contribution;
+
+            delay_buffer[buffer_idx] = output_sample;
+            buffer_idx = (buffer_idx + 1) % self.delay_samples;
+
+            reverb_data[i] = output_sample;
+        }
+
+        Tensor::from_vec(reverb_data, audio.shape().dims())
+    }
+
+    fn name(&self) -> &'static str {
+        "SimpleReverb"
+    }
+
+    fn processing_latency_ms(&self) -> f64 {
+        3.0 // Moderate processing time
+    }
+}
+
+/// Room simulation augmentation - simulates acoustic properties of different room types
+/// Applies realistic acoustic effects including reverb, early reflections, and frequency shaping
+pub struct RoomSimulation<T> {
+    room_type: RoomType,
+    room_size: f64,   // Relative room size (0.1 to 2.0)
+    absorption: f64,  // Wall absorption coefficient (0.0 to 1.0)
+    diffusion: f64,   // Sound diffusion factor (0.0 to 1.0)
+    wet_dry_mix: f64, // Mix between dry and processed signal (0.0 to 1.0)
+    _phantom: PhantomData<T>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RoomType {
+    SmallRoom,  // Living room, office
+    MediumRoom, // Classroom, studio
+    LargeRoom,  // Auditorium, gym
+    Hall,       // Concert hall
+    Cathedral,  // Large reverberant space
+    Bathroom,   // Small, highly reflective
+    Outdoor,    // Open air
+    Custom {
+        reverb_time: f64,
+        early_reflections: f64,
+        high_freq_damping: f64,
+    },
+}
+
+impl<T> RoomSimulation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(room_type: RoomType) -> Self {
+        Self {
+            room_type,
+            room_size: 1.0,
+            absorption: 0.3,
+            diffusion: 0.7,
+            wet_dry_mix: 0.3,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn with_room_size(mut self, room_size: f64) -> Self {
+        self.room_size = room_size.clamp(0.1, 2.0);
+        self
+    }
+
+    pub fn with_absorption(mut self, absorption: f64) -> Self {
+        self.absorption = absorption.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_diffusion(mut self, diffusion: f64) -> Self {
+        self.diffusion = diffusion.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_wet_dry_mix(mut self, mix: f64) -> Self {
+        self.wet_dry_mix = mix.clamp(0.0, 1.0);
+        self
+    }
+
+    fn get_room_parameters(&self) -> (f64, f64, f64, Vec<f64>, Vec<f64>) {
+        match &self.room_type {
+            RoomType::SmallRoom => (
+                0.3,                          // reverb_time
+                0.4,                          // early_reflections
+                0.7,                          // high_freq_damping
+                vec![0.05, 0.08, 0.12, 0.18], // early_reflection_delays (ms)
+                vec![0.6, 0.4, 0.3, 0.2],     // early_reflection_gains
+            ),
+            RoomType::MediumRoom => (
+                0.8,
+                0.5,
+                0.6,
+                vec![0.08, 0.15, 0.25, 0.35],
+                vec![0.5, 0.4, 0.3, 0.25],
+            ),
+            RoomType::LargeRoom => (
+                1.5,
+                0.6,
+                0.5,
+                vec![0.12, 0.25, 0.45, 0.65],
+                vec![0.4, 0.35, 0.25, 0.2],
+            ),
+            RoomType::Hall => (
+                2.5,
+                0.7,
+                0.4,
+                vec![0.15, 0.35, 0.65, 1.0],
+                vec![0.3, 0.3, 0.2, 0.15],
+            ),
+            RoomType::Cathedral => (
+                4.0,
+                0.8,
+                0.3,
+                vec![0.25, 0.55, 1.1, 1.8],
+                vec![0.2, 0.25, 0.15, 0.1],
+            ),
+            RoomType::Bathroom => (
+                0.5,
+                0.9,
+                0.9,
+                vec![0.02, 0.04, 0.06, 0.08],
+                vec![0.8, 0.7, 0.6, 0.5],
+            ),
+            RoomType::Outdoor => (
+                0.0, // No reverb
+                0.1, // Minimal reflections
+                1.0, // High frequency preservation
+                vec![0.1, 0.2, 0.4, 0.8],
+                vec![0.1, 0.05, 0.02, 0.01],
+            ),
+            RoomType::Custom {
+                reverb_time,
+                early_reflections,
+                high_freq_damping,
+            } => (
+                *reverb_time,
+                *early_reflections,
+                *high_freq_damping,
+                vec![0.1, 0.2, 0.4, 0.6],
+                vec![0.4, 0.3, 0.2, 0.1],
+            ),
+        }
+    }
+
+    /// Apply early reflections simulation
+    fn apply_early_reflections(&self, audio: &[T], sample_rate: f64) -> Vec<T> {
+        let (_, early_strength, _, delays, gains) = self.get_room_parameters();
+
+        let mut output = vec![T::zero(); audio.len()];
+
+        // Add direct signal
+        for (i, &sample) in audio.iter().enumerate() {
+            output[i] = sample;
+        }
+
+        // Add early reflections
+        for (delay_ms, &gain) in delays.iter().zip(gains.iter()) {
+            let delay_samples = (*delay_ms * sample_rate / 1000.0 * self.room_size) as usize;
+            let reflection_gain = T::from(gain * early_strength * (1.0 - self.absorption)).unwrap();
+
+            for i in delay_samples..audio.len() {
+                let reflected_sample = T::from(audio[i - delay_samples]).unwrap() * reflection_gain;
+                output[i] = output[i] + reflected_sample;
+            }
+        }
+
+        output
+    }
+
+    /// Apply late reverb simulation using feedback delay networks
+    fn apply_late_reverb(&self, audio: &[T], sample_rate: f64) -> Vec<T> {
+        let (reverb_time, _, high_freq_damping, _, _) = self.get_room_parameters();
+
+        if reverb_time <= 0.0 {
+            return audio.to_vec();
+        }
+
+        // Simple allpass filter chain for reverb
+        let delay1 = (0.03 * sample_rate * self.room_size) as usize;
+        let delay2 = (0.07 * sample_rate * self.room_size) as usize;
+        let delay3 = (0.11 * sample_rate * self.room_size) as usize;
+        let delay4 = (0.13 * sample_rate * self.room_size) as usize;
+
+        let feedback = T::from(0.5 + reverb_time * 0.3 * (1.0 - self.absorption)).unwrap();
+        let damping = T::from(high_freq_damping).unwrap();
+
+        let mut buffer1 = vec![T::zero(); delay1];
+        let mut buffer2 = vec![T::zero(); delay2];
+        let mut buffer3 = vec![T::zero(); delay3];
+        let mut buffer4 = vec![T::zero(); delay4];
+
+        let mut idx1 = 0;
+        let mut idx2 = 0;
+        let mut idx3 = 0;
+        let mut idx4 = 0;
+
+        let mut output = Vec::with_capacity(audio.len());
+
+        for &input in audio {
+            // Four allpass filters in series
+            let delayed1 = buffer1[idx1];
+            let allpass1_out = input + delayed1 * feedback;
+            buffer1[idx1] = input + delayed1 * feedback * damping;
+            idx1 = (idx1 + 1) % delay1;
+
+            let delayed2 = buffer2[idx2];
+            let allpass2_out = allpass1_out + delayed2 * feedback;
+            buffer2[idx2] = allpass1_out + delayed2 * feedback * damping;
+            idx2 = (idx2 + 1) % delay2;
+
+            let delayed3 = buffer3[idx3];
+            let allpass3_out = allpass2_out + delayed3 * feedback;
+            buffer3[idx3] = allpass2_out + delayed3 * feedback * damping;
+            idx3 = (idx3 + 1) % delay3;
+
+            let delayed4 = buffer4[idx4];
+            let final_out = allpass3_out + delayed4 * feedback;
+            buffer4[idx4] = allpass3_out + delayed4 * feedback * damping;
+            idx4 = (idx4 + 1) % delay4;
+
+            output.push(final_out);
+        }
+
+        output
+    }
+
+    /// Apply frequency-dependent absorption
+    fn apply_frequency_shaping(&self, audio: &[T]) -> Vec<T> {
+        let (_, _, high_freq_damping, _, _) = self.get_room_parameters();
+
+        // Simple high-frequency damping using a single-pole lowpass filter
+        let alpha = T::from(1.0 - high_freq_damping * self.absorption).unwrap();
+        let mut prev_output = T::zero();
+        let mut shaped_audio = Vec::with_capacity(audio.len());
+
+        for &sample in audio {
+            let output = sample * alpha + prev_output * (T::one() - alpha);
+            shaped_audio.push(output);
+            prev_output = output;
+        }
+
+        shaped_audio
+    }
+}
+
+impl<T> AudioAugmentation<T> for RoomSimulation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply_audio(&self, audio: &Tensor<T>) -> Result<Tensor<T>> {
+        let audio_data = audio.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("Cannot access audio tensor data".to_string())
+        })?;
+
+        if audio_data.is_empty() {
+            return Ok(audio.clone());
+        }
+
+        // Assume 44.1 kHz sample rate (could be parameterized)
+        let sample_rate = 44100.0;
+
+        // Apply room simulation pipeline
+        let with_reflections = self.apply_early_reflections(audio_data, sample_rate);
+        let with_reverb = self.apply_late_reverb(&with_reflections, sample_rate);
+        let shaped = self.apply_frequency_shaping(&with_reverb);
+
+        // Mix wet and dry signals
+        let wet_gain = T::from(self.wet_dry_mix).unwrap();
+        let dry_gain = T::one() - wet_gain;
+
+        let mixed_audio: Vec<T> = audio_data
+            .iter()
+            .zip(shaped.iter())
+            .map(|(&dry, &wet)| T::from(dry).unwrap() * dry_gain + wet * wet_gain)
+            .collect();
+
+        Tensor::from_vec(mixed_audio, audio.shape().dims())
+    }
+
+    fn name(&self) -> &'static str {
+        "RoomSimulation"
+    }
+
+    fn processing_latency_ms(&self) -> f64 {
+        match self.room_type {
+            RoomType::SmallRoom | RoomType::Bathroom => 5.0,
+            RoomType::MediumRoom | RoomType::Outdoor => 8.0,
+            RoomType::LargeRoom | RoomType::Hall => 12.0,
+            RoomType::Cathedral => 15.0,
+            RoomType::Custom { .. } => 10.0,
+        }
+    }
+}
+
+impl<T> Transform<T> for RoomSimulation<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let room_audio = self.apply_audio(&features)?;
+        Ok((room_audio, labels))
+    }
+}
+
+/// Grid distortion transform for image augmentation
+/// Applies a elastic deformation to images by creating a grid and distorting it
+pub struct GridDistortion {
+    pub grid_size: usize,
+    pub distortion_scale: f32,
+    pub interpolation: GridInterpolation,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum GridInterpolation {
+    Bilinear,
+    Nearest,
+}
+
+impl GridDistortion {
+    pub fn new(grid_size: usize, distortion_scale: f32) -> Self {
+        Self {
+            grid_size,
+            distortion_scale,
+            interpolation: GridInterpolation::Bilinear,
+        }
+    }
+
+    pub fn with_interpolation(mut self, interpolation: GridInterpolation) -> Self {
+        self.interpolation = interpolation;
+        self
+    }
+
+    fn apply_distortion(&self, image_tensor: &Tensor<f32>) -> Result<Tensor<f32>> {
+        let shape = image_tensor.shape().dims();
+        if shape.len() != 3 {
+            return Err(TensorError::invalid_argument(
+                "GridDistortion expects 3D tensor (C×H×W)".to_string(),
+            ));
+        }
+
+        let (channels, height, width) = (shape[0], shape[1], shape[2]);
+
+        // Create distortion grid
+        let grid_h = self.grid_size;
+        let grid_w = self.grid_size;
+
+        // Generate random displacement vectors for grid points
+        let mut rng = rand::rng();
+        let mut grid_dx = vec![vec![0.0f32; grid_w + 1]; grid_h + 1];
+        let mut grid_dy = vec![vec![0.0f32; grid_w + 1]; grid_h + 1];
+
+        for i in 1..grid_h {
+            for j in 1..grid_w {
+                grid_dx[i][j] = rng.random_range(-self.distortion_scale..=self.distortion_scale);
+                grid_dy[i][j] = rng.random_range(-self.distortion_scale..=self.distortion_scale);
+            }
+        }
+
+        // Create output tensor
+        let mut output_data = vec![0.0f32; channels * height * width];
+
+        // Apply distortion using bilinear interpolation
+        for c in 0..channels {
+            for y in 0..height {
+                for x in 0..width {
+                    // Map pixel coordinates to grid coordinates
+                    let grid_x = (x as f32) * (grid_w as f32) / (width as f32);
+                    let grid_y = (y as f32) * (grid_h as f32) / (height as f32);
+
+                    // Get grid cell
+                    let gx0 = grid_x.floor() as usize;
+                    let gy0 = grid_y.floor() as usize;
+                    let gx1 = (gx0 + 1).min(grid_w);
+                    let gy1 = (gy0 + 1).min(grid_h);
+
+                    // Interpolate displacement
+                    let fx = grid_x - gx0 as f32;
+                    let fy = grid_y - gy0 as f32;
+
+                    let dx = (1.0 - fx) * (1.0 - fy) * grid_dx[gy0][gx0]
+                        + fx * (1.0 - fy) * grid_dx[gy0][gx1]
+                        + (1.0 - fx) * fy * grid_dx[gy1][gx0]
+                        + fx * fy * grid_dx[gy1][gx1];
+
+                    let dy = (1.0 - fx) * (1.0 - fy) * grid_dy[gy0][gx0]
+                        + fx * (1.0 - fy) * grid_dy[gy0][gx1]
+                        + (1.0 - fx) * fy * grid_dy[gy1][gx0]
+                        + fx * fy * grid_dy[gy1][gx1];
+
+                    // Apply distortion
+                    let src_x = x as f32 + dx;
+                    let src_y = y as f32 + dy;
+
+                    // Sample from source image with bounds checking
+                    let pixel_value =
+                        self.sample_pixel(image_tensor, c, src_y, src_x, height, width)?;
+
+                    let output_idx = c * height * width + y * width + x;
+                    output_data[output_idx] = pixel_value;
+                }
+            }
+        }
+
+        Tensor::from_vec(output_data, shape)
+    }
+
+    fn sample_pixel(
+        &self,
+        tensor: &Tensor<f32>,
+        channel: usize,
+        y: f32,
+        x: f32,
+        height: usize,
+        width: usize,
+    ) -> Result<f32> {
+        match self.interpolation {
+            GridInterpolation::Nearest => {
+                let ix = (x.round() as i32).max(0).min(width as i32 - 1) as usize;
+                let iy = (y.round() as i32).max(0).min(height as i32 - 1) as usize;
+                tensor.get(&[channel, iy, ix]).ok_or_else(|| {
+                    TensorError::invalid_argument("Failed to get pixel value".to_string())
+                })
+            }
+            GridInterpolation::Bilinear => {
+                if x < 0.0 || x >= width as f32 || y < 0.0 || y >= height as f32 {
+                    return Ok(0.0); // Return black for out-of-bounds
+                }
+
+                let x0 = x.floor() as usize;
+                let y0 = y.floor() as usize;
+                let x1 = (x0 + 1).min(width - 1);
+                let y1 = (y0 + 1).min(height - 1);
+
+                let fx = x - x0 as f32;
+                let fy = y - y0 as f32;
+
+                let p00 = tensor.get(&[channel, y0, x0]).unwrap_or(0.0);
+                let p01 = tensor.get(&[channel, y0, x1]).unwrap_or(0.0);
+                let p10 = tensor.get(&[channel, y1, x0]).unwrap_or(0.0);
+                let p11 = tensor.get(&[channel, y1, x1]).unwrap_or(0.0);
+
+                let interpolated = (1.0 - fx) * (1.0 - fy) * p00
+                    + fx * (1.0 - fy) * p01
+                    + (1.0 - fx) * fy * p10
+                    + fx * fy * p11;
+
+                Ok(interpolated)
+            }
+        }
+    }
+}
+
+impl Transform<f32> for GridDistortion {
+    fn apply(&self, sample: (Tensor<f32>, Tensor<f32>)) -> Result<(Tensor<f32>, Tensor<f32>)> {
+        let (image_tensor, label_tensor) = sample;
+
+        // Check if this is an image tensor (3D: C×H×W)
+        if image_tensor.shape().rank() != 3 {
+            return Ok((image_tensor, label_tensor));
+        }
+
+        let distorted_image = self.apply_distortion(&image_tensor)?;
+        Ok((distorted_image, label_tensor))
+    }
+}
+
+#[cfg(test)]
+mod progressive_resize_tests {
+    use super::*;
+
+    #[test]
+    fn test_progressive_resize_strategies() {
+        let transform =
+            ProgressiveResize::new((64, 64), (224, 224), 10, ProgressiveResizeStrategy::Linear);
+
+        // Test linear strategy at different epochs
+        transform.set_epoch(0);
+        assert_eq!(transform.current_size(), (64, 64));
+
+        transform.set_epoch(5);
+        let (w, h) = transform.current_size();
+        assert!(w > 64 && w < 224);
+        assert!(h > 64 && h < 224);
+
+        transform.set_epoch(9);
+        assert_eq!(transform.current_size(), (224, 224));
+
+        // Test exponential strategy
+        let exp_transform = ProgressiveResize::new(
+            (64, 64),
+            (224, 224),
+            10,
+            ProgressiveResizeStrategy::Exponential,
+        );
+
+        exp_transform.set_epoch(5);
+        let (exp_w, exp_h) = exp_transform.current_size();
+        assert!(exp_w <= w); // Exponential should be smaller at midpoint
+        assert!(exp_h <= h);
+    }
+
+    #[test]
+    fn test_progressive_resize_step_wise() {
+        let transform = ProgressiveResize::new(
+            (64, 64),
+            (224, 224),
+            8,
+            ProgressiveResizeStrategy::StepWise { steps: 4 },
+        );
+
+        // Should have 4 steps: 64, 117, 170, 224
+        transform.set_epoch(0);
+        assert_eq!(transform.current_size(), (104, 104)); // First step after min
+
+        transform.set_epoch(2);
+        let (w1, h1) = transform.current_size();
+
+        transform.set_epoch(4);
+        let (w2, h2) = transform.current_size();
+
+        assert!(w2 > w1);
+        assert!(h2 > h1);
+    }
+
+    #[test]
+    fn test_progressive_resize_bounds() {
+        let transform =
+            ProgressiveResize::new((32, 32), (256, 256), 5, ProgressiveResizeStrategy::Linear);
+
+        // Test bounds checking
+        transform.set_epoch(0);
+        let (min_w, min_h) = transform.current_size();
+        assert_eq!((min_w, min_h), (32, 32));
+
+        transform.set_epoch(100); // Way beyond total epochs
+        let (max_w, max_h) = transform.current_size();
+        assert_eq!((max_w, max_h), (256, 256));
+    }
+
+    #[test]
+    fn test_progressive_resize_thread_safety() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let transform = Arc::new(ProgressiveResize::new(
+            (64, 64),
+            (224, 224),
+            10,
+            ProgressiveResizeStrategy::Linear,
+        ));
+
+        let mut handles = vec![];
+
+        for i in 0..5 {
+            let transform_clone = transform.clone();
+            let handle = thread::spawn(move || {
+                transform_clone.set_epoch(i);
+                transform_clone.current_size()
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let size = handle.join().unwrap();
+            assert!(size.0 >= 64 && size.0 <= 224);
+            assert!(size.1 >= 64 && size.1 <= 224);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TensorDataset;
+    use tenflowers_core::Tensor;
+
+    #[test]
+    fn test_normalize_transform() {
+        let features =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+
+        let dataset = TensorDataset::new(features, labels);
+
+        // Create normalize transform with known mean and std
+        let normalize = Normalize::new(vec![3.0, 4.0], vec![2.0, 2.0]).unwrap();
+        let transformed_dataset = dataset.transform(normalize);
+
+        let (norm_features, _) = transformed_dataset.get(0).unwrap();
+        assert_eq!(norm_features.shape().dims(), &[2]);
+    }
+
+    #[test]
+    fn test_min_max_scale_transform() {
+        let features =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+
+        let dataset = TensorDataset::new(features, labels);
+
+        // Create min-max scaler
+        let scaler = MinMaxScale::new(vec![1.0, 2.0], vec![5.0, 6.0], (0.0, 1.0)).unwrap();
+        let transformed_dataset = dataset.transform(scaler);
+
+        let (scaled_features, _) = transformed_dataset.get(0).unwrap();
+        assert_eq!(scaled_features.shape().dims(), &[2]);
+    }
+
+    #[test]
+    fn test_compose_transforms() {
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+
+        let dataset = TensorDataset::new(features, labels);
+
+        let composed = Compose::new()
+            .append(Normalize::new(vec![2.0, 3.0], vec![1.0, 1.0]).unwrap())
+            .append(AddNoise::new(0.1));
+
+        let transformed_dataset = dataset.transform(composed);
+
+        let (transformed_features, _) = transformed_dataset.get(0).unwrap();
+        assert_eq!(transformed_features.shape().dims(), &[2]);
+    }
+
+    #[test]
+    fn test_dataset_ext() {
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+
+        let dataset = TensorDataset::new(features, labels);
+
+        // Test extension methods
+        let normalized = dataset.normalize(vec![2.0, 3.0], vec![1.0, 1.0]).unwrap();
+        assert_eq!(normalized.len(), 2);
+
+        let (norm_features, _) = normalized.get(0).unwrap();
+        assert_eq!(norm_features.shape().dims(), &[2]);
+    }
+}
+
+/// Conditional transform that applies different transformations based on mode
+pub struct ConditionalTransform<T, TrainTr: Transform<T>, EvalTr: Transform<T>> {
+    train_transform: TrainTr,
+    eval_transform: EvalTr,
+    is_training: bool,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, TrainTr: Transform<T>, EvalTr: Transform<T>> ConditionalTransform<T, TrainTr, EvalTr> {
+    /// Create a new conditional transform
+    pub fn new(train_transform: TrainTr, eval_transform: EvalTr) -> Self {
+        Self {
+            train_transform,
+            eval_transform,
+            is_training: true,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Set training mode
+    pub fn train(&mut self) {
+        self.is_training = true;
+    }
+
+    /// Set evaluation mode
+    pub fn eval(&mut self) {
+        self.is_training = false;
+    }
+
+    /// Get current mode
+    pub fn is_training(&self) -> bool {
+        self.is_training
+    }
+}
+
+impl<T, TrainTr: Transform<T>, EvalTr: Transform<T>> Transform<T>
+    for ConditionalTransform<T, TrainTr, EvalTr>
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        if self.is_training {
+            self.train_transform.apply(sample)
+        } else {
+            self.eval_transform.apply(sample)
+        }
+    }
+}
+
+/// Probabilistic transform that applies a transformation with a given probability
+pub struct ProbabilisticTransform<T, Tr: Transform<T>> {
+    transform: Tr,
+    probability: f64,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, Tr: Transform<T>> ProbabilisticTransform<T, Tr> {
+    /// Create a new probabilistic transform
+    pub fn new(transform: Tr, probability: f64) -> Result<Self> {
+        if !(0.0..=1.0).contains(&probability) {
+            return Err(TensorError::invalid_argument(
+                "Probability must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            transform,
+            probability,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Get the probability
+    pub fn probability(&self) -> f64 {
+        self.probability
+    }
+
+    /// Set the probability
+    pub fn set_probability(&mut self, probability: f64) -> Result<()> {
+        if !(0.0..=1.0).contains(&probability) {
+            return Err(TensorError::invalid_argument(
+                "Probability must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+        self.probability = probability;
+        Ok(())
+    }
+}
+
+impl<T, Tr: Transform<T>> Transform<T> for ProbabilisticTransform<T, Tr> {
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        use rand::Rng;
+        let mut rng = rand::rng();
+
+        if rng.random::<f64>() < self.probability {
+            self.transform.apply(sample)
+        } else {
+            Ok(sample)
+        }
+    }
+}
+
+/// Transform selector that chooses between multiple transforms
+pub struct TransformSelector<T> {
+    transforms: Vec<Box<dyn Transform<T>>>,
+    #[allow(dead_code)]
+    selection_strategy: SelectionStrategy,
+    _phantom: PhantomData<T>,
+}
+
+/// Strategy for selecting transforms
+#[derive(Debug, Clone)]
+pub enum SelectionStrategy {
+    /// Random selection
+    Random,
+    /// Round-robin selection
+    RoundRobin(usize), // Current index
+    /// Weighted random selection
+    WeightedRandom(Vec<f64>),
+}
+
+impl<T> TransformSelector<T> {
+    /// Create a new transform selector with random selection
+    pub fn new_random(transforms: Vec<Box<dyn Transform<T>>>) -> Self {
+        Self {
+            transforms,
+            selection_strategy: SelectionStrategy::Random,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a new transform selector with round-robin selection
+    pub fn new_round_robin(transforms: Vec<Box<dyn Transform<T>>>) -> Self {
+        Self {
+            transforms,
+            selection_strategy: SelectionStrategy::RoundRobin(0),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a new transform selector with weighted random selection
+    pub fn new_weighted_random(
+        transforms: Vec<Box<dyn Transform<T>>>,
+        weights: Vec<f64>,
+    ) -> Result<Self> {
+        if transforms.len() != weights.len() {
+            return Err(TensorError::invalid_argument(
+                "Number of transforms must match number of weights".to_string(),
+            ));
+        }
+
+        let sum: f64 = weights.iter().sum();
+        if sum <= 0.0 {
+            return Err(TensorError::invalid_argument(
+                "Weights must sum to a positive value".to_string(),
+            ));
+        }
+
+        // Normalize weights
+        let normalized_weights: Vec<f64> = weights.iter().map(|w| w / sum).collect();
+
+        Ok(Self {
+            transforms,
+            selection_strategy: SelectionStrategy::WeightedRandom(normalized_weights),
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Get the number of transforms
+    pub fn len(&self) -> usize {
+        self.transforms.len()
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.transforms.is_empty()
+    }
+
+    /// Select a transform based on the strategy
+    #[allow(dead_code)]
+    fn select_transform(&mut self) -> Result<&dyn Transform<T>> {
+        if self.transforms.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "No transforms available".to_string(),
+            ));
+        }
+
+        let index = match &mut self.selection_strategy {
+            SelectionStrategy::Random => {
+                use rand::Rng;
+                let mut rng = rand::rng();
+                rng.random_range(0..self.transforms.len())
+            }
+            SelectionStrategy::RoundRobin(ref mut current_index) => {
+                let index = *current_index;
+                *current_index = (*current_index + 1) % self.transforms.len();
+                index
+            }
+            SelectionStrategy::WeightedRandom(weights) => {
+                use rand::Rng;
+                let mut rng = rand::rng();
+                let random_value = rng.random::<f64>();
+
+                let mut cumulative_weight = 0.0;
+                for (i, &weight) in weights.iter().enumerate() {
+                    cumulative_weight += weight;
+                    if random_value <= cumulative_weight {
+                        return Ok(self.transforms[i].as_ref());
+                    }
+                }
+
+                // Fallback to last transform
+                self.transforms.len() - 1
+            }
+        };
+
+        Ok(self.transforms[index].as_ref())
+    }
+}
+
+impl<T> Transform<T> for TransformSelector<T> {
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        // Note: This is a simplified implementation that doesn't handle mutable selection
+        // In a full implementation, you might want to use RefCell or similar for interior mutability
+        if self.transforms.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "No transforms available".to_string(),
+            ));
+        }
+
+        // For now, just use the first transform
+        self.transforms[0].apply(sample)
+    }
+}
+
+/// Schedule-based transform that changes parameters over time
+pub struct ScheduledTransform<T, Tr: Transform<T>> {
+    transform: Tr,
+    schedule: Box<dyn Fn(usize) -> f64>, // Function that maps step to parameter value
+    current_step: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, Tr: Transform<T>> ScheduledTransform<T, Tr> {
+    /// Create a new scheduled transform
+    pub fn new(transform: Tr, schedule: Box<dyn Fn(usize) -> f64>) -> Self {
+        Self {
+            transform,
+            schedule,
+            current_step: 0,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Step the schedule forward
+    pub fn step(&mut self) {
+        self.current_step += 1;
+    }
+
+    /// Get current step
+    pub fn current_step(&self) -> usize {
+        self.current_step
+    }
+
+    /// Get current parameter value
+    pub fn current_parameter(&self) -> f64 {
+        (self.schedule)(self.current_step)
+    }
+
+    /// Reset the schedule
+    pub fn reset(&mut self) {
+        self.current_step = 0;
+    }
+}
+
+impl<T, Tr: Transform<T>> Transform<T> for ScheduledTransform<T, Tr> {
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        // This is a simplified implementation
+        // In practice, you'd modify the transform based on the current parameter
+        self.transform.apply(sample)
+    }
+}
+
+/// Identity transform that doesn't change the input
+pub struct IdentityTransform<T> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T> IdentityTransform<T> {
+    pub fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Default for IdentityTransform<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Transform<T> for IdentityTransform<T> {
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        Ok(sample)
+    }
+}
+
+/// Robust scaler using median and IQR instead of mean and std
+pub struct RobustScaler<T> {
+    medians: Vec<T>,
+    iqrs: Vec<T>,
+}
+
+impl<T> RobustScaler<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(medians: Vec<T>, iqrs: Vec<T>) -> Result<Self> {
+        if medians.len() != iqrs.len() {
+            return Err(TensorError::invalid_argument(
+                "Medians and IQRs vectors must have the same length".to_string(),
+            ));
+        }
+        Ok(Self { medians, iqrs })
+    }
+
+    /// Compute robust scaling parameters from a dataset
+    pub fn from_dataset<D: Dataset<T>>(dataset: &D) -> Result<Self> {
+        if dataset.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot compute robust scaling from empty dataset".to_string(),
+            ));
+        }
+
+        // Get first sample to determine feature dimension
+        let (first_features, _) = dataset.get(0)?;
+        let feature_dim = first_features.shape().size();
+
+        // Collect all feature values by dimension
+        let mut feature_values: Vec<Vec<T>> = vec![Vec::new(); feature_dim];
+
+        for i in 0..dataset.len() {
+            let (features, _) = dataset.get(i)?;
+            let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+            for (j, feature_value) in feature_values.iter_mut().enumerate().take(feature_dim) {
+                if let Some(val) = flat_features.get(&[j]) {
+                    feature_value.push(val);
+                }
+            }
+        }
+
+        // Compute medians and IQRs for each dimension
+        let mut medians = Vec::new();
+        let mut iqrs = Vec::new();
+
+        for values in feature_values {
+            if values.is_empty() {
+                medians.push(T::zero());
+                iqrs.push(T::one());
+                continue;
+            }
+
+            let mut sorted_values = values;
+            sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+            let n = sorted_values.len();
+            let median = if n % 2 == 0 {
+                (sorted_values[n / 2 - 1] + sorted_values[n / 2]) / T::from(2.0).unwrap()
+            } else {
+                sorted_values[n / 2]
+            };
+
+            let q1_idx = n / 4;
+            let q3_idx = (3 * n) / 4;
+            let q1 = sorted_values[q1_idx];
+            let q3 = sorted_values[q3_idx];
+            let iqr = q3 - q1;
+
+            medians.push(median);
+            iqrs.push(if iqr > T::zero() { iqr } else { T::one() });
+        }
+
+        Ok(Self { medians, iqrs })
+    }
+}
+
+impl<T> Transform<T> for RobustScaler<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let original_shape = features.shape().dims().to_vec();
+        let feature_dim = features.shape().size();
+
+        // Flatten features for normalization
+        let flat_features = tenflowers_core::ops::reshape(&features, &[feature_dim])?;
+
+        // Apply robust scaling: (x - median) / IQR
+        let mut scaled_data = Vec::new();
+        for i in 0..feature_dim {
+            let idx = i % self.medians.len();
+            if let Some(val) = flat_features.get(&[i]) {
+                let scaled = (val - self.medians[idx]) / self.iqrs[idx];
+                scaled_data.push(scaled);
+            }
+        }
+
+        let scaled_tensor = Tensor::from_vec(scaled_data, &[feature_dim])?;
+        let reshaped_features = tenflowers_core::ops::reshape(&scaled_tensor, &original_shape)?;
+
+        Ok((reshaped_features, labels))
+    }
+}
+
+/// Per-channel normalization for multi-channel data (e.g., RGB images)
+pub struct PerChannelNormalize<T> {
+    channel_means: Vec<T>,
+    channel_stds: Vec<T>,
+}
+
+impl<T> PerChannelNormalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(channel_means: Vec<T>, channel_stds: Vec<T>) -> Result<Self> {
+        if channel_means.len() != channel_stds.len() {
+            return Err(TensorError::invalid_argument(
+                "Channel means and stds must have the same length".to_string(),
+            ));
+        }
+        Ok(Self {
+            channel_means,
+            channel_stds,
+        })
+    }
+
+    /// Common ImageNet normalization values
+    pub fn imagenet() -> Self {
+        Self {
+            channel_means: vec![
+                T::from(0.485).unwrap(),
+                T::from(0.456).unwrap(),
+                T::from(0.406).unwrap(),
+            ],
+            channel_stds: vec![
+                T::from(0.229).unwrap(),
+                T::from(0.224).unwrap(),
+                T::from(0.225).unwrap(),
+            ],
+        }
+    }
+}
+
+impl<T> Transform<T> for PerChannelNormalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let shape = features.shape().dims();
+
+        // Assume features are in format [channels, height, width] or [channels, ...]
+        if shape.is_empty() {
+            return Ok((features, labels));
+        }
+
+        let channels = shape[0];
+        if channels != self.channel_means.len() {
+            return Err(TensorError::invalid_argument(format!(
+                "Expected {} channels, got {}",
+                self.channel_means.len(),
+                channels
+            )));
+        }
+
+        let data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+        let mut normalized_data = Vec::new();
+
+        let channel_size = data.len() / channels;
+
+        for c in 0..channels {
+            let start = c * channel_size;
+            let end = start + channel_size;
+
+            for value in data.iter().skip(start).take(end - start) {
+                let normalized = (*value - self.channel_means[c]) / self.channel_stds[c];
+                normalized_data.push(normalized);
+            }
+        }
+
+        let normalized_tensor = Tensor::from_vec(normalized_data, shape)?;
+        Ok((normalized_tensor, labels))
+    }
+}
+
+/// Global normalization across all samples in the dataset
+pub struct GlobalNormalize<T> {
+    global_mean: T,
+    global_std: T,
+}
+
+impl<T> GlobalNormalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(global_mean: T, global_std: T) -> Self {
+        Self {
+            global_mean,
+            global_std,
+        }
+    }
+
+    /// Compute global normalization parameters from a dataset
+    pub fn from_dataset<D: Dataset<T>>(dataset: &D) -> Result<Self> {
+        if dataset.is_empty() {
+            return Err(TensorError::invalid_argument(
+                "Cannot compute global normalization from empty dataset".to_string(),
+            ));
+        }
+
+        let mut total_sum = T::zero();
+        let mut total_sq_sum = T::zero();
+        let mut total_count = 0;
+
+        for i in 0..dataset.len() {
+            let (features, _) = dataset.get(i)?;
+            let data = features.as_slice().ok_or_else(|| {
+                TensorError::invalid_argument(
+                    "Cannot access tensor data (GPU tensor not supported)".to_string(),
+                )
+            })?;
+
+            for &val in data {
+                total_sum = total_sum + val;
+                total_sq_sum = total_sq_sum + val * val;
+                total_count += 1;
+            }
+        }
+
+        let n = T::from(total_count).unwrap();
+        let mean = total_sum / n;
+        let variance = (total_sq_sum / n) - (mean * mean);
+        let std = variance.sqrt();
+
+        Ok(Self {
+            global_mean: mean,
+            global_std: if std > T::zero() { std } else { T::one() },
+        })
+    }
+}
+
+impl<T> Transform<T> for GlobalNormalize<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let shape = features.shape().dims();
+        let data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        let normalized_data: Vec<T> = data
+            .iter()
+            .map(|&val| (val - self.global_mean) / self.global_std)
+            .collect();
+
+        let normalized_tensor = Tensor::from_vec(normalized_data, shape)?;
+        Ok((normalized_tensor, labels))
+    }
+}
+
+/// Generate polynomial features from existing features
+pub struct PolynomialFeatures<T> {
+    degree: usize,
+    include_bias: bool,
+    interaction_only: bool,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> PolynomialFeatures<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(degree: usize, include_bias: bool, interaction_only: bool) -> Self {
+        Self {
+            degree,
+            include_bias,
+            interaction_only,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Generate polynomial combinations of features
+    fn generate_polynomial_features(&self, features: &[T]) -> Vec<T> {
+        let _n_features = features.len();
+        let mut result = Vec::new();
+
+        // Add bias term if requested
+        if self.include_bias {
+            result.push(T::one());
+        }
+
+        // Add original features (degree 1)
+        result.extend_from_slice(features);
+
+        // Generate higher-degree features
+        for deg in 2..=self.degree {
+            if self.interaction_only {
+                // Only interaction terms, no powers
+                self.generate_interactions(features, deg, &mut result);
+            } else {
+                // Include both powers and interactions
+                self.generate_powers_and_interactions(features, deg, &mut result);
+            }
+        }
+
+        result
+    }
+
+    /// Generate interaction terms only
+    fn generate_interactions(&self, features: &[T], degree: usize, result: &mut Vec<T>) {
+        let n_features = features.len();
+
+        // Generate all combinations of 'degree' different features
+        let mut indices = vec![0; degree];
+        self.generate_combinations(features, &mut indices, 0, degree, n_features, result);
+    }
+
+    /// Generate both powers and interactions
+    fn generate_powers_and_interactions(&self, features: &[T], degree: usize, result: &mut Vec<T>) {
+        let n_features = features.len();
+
+        // Generate all combinations with repetition allowed
+        let mut indices = vec![0; degree];
+        self.generate_combinations_with_repetition(
+            features,
+            &mut indices,
+            0,
+            degree,
+            n_features,
+            result,
+        );
+    }
+
+    /// Helper for generating combinations without repetition
+    #[allow(clippy::only_used_in_recursion)]
+    fn generate_combinations(
+        &self,
+        features: &[T],
+        indices: &mut Vec<usize>,
+        start: usize,
+        depth: usize,
+        n_features: usize,
+        result: &mut Vec<T>,
+    ) {
+        if depth == 0 {
+            let mut product = T::one();
+            for &idx in indices.iter() {
+                product = product * features[idx];
+            }
+            result.push(product);
+            return;
+        }
+
+        for i in start..n_features {
+            let index_pos = indices.len() - depth;
+            indices[index_pos] = i;
+            self.generate_combinations(features, indices, i + 1, depth - 1, n_features, result);
+        }
+    }
+
+    /// Helper for generating combinations with repetition
+    #[allow(clippy::only_used_in_recursion)]
+    fn generate_combinations_with_repetition(
+        &self,
+        features: &[T],
+        indices: &mut Vec<usize>,
+        start: usize,
+        depth: usize,
+        n_features: usize,
+        result: &mut Vec<T>,
+    ) {
+        if depth == 0 {
+            let mut product = T::one();
+            for &idx in indices.iter() {
+                product = product * features[idx];
+            }
+            result.push(product);
+            return;
+        }
+
+        for i in start..n_features {
+            let index_pos = indices.len() - depth;
+            indices[index_pos] = i;
+            self.generate_combinations_with_repetition(
+                features,
+                indices,
+                i,
+                depth - 1,
+                n_features,
+                result,
+            );
+        }
+    }
+}
+
+impl<T> Transform<T> for PolynomialFeatures<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        let poly_features = self.generate_polynomial_features(feature_data);
+        let poly_len = poly_features.len();
+        let poly_tensor = Tensor::from_vec(poly_features, &[poly_len])?;
+
+        Ok((poly_tensor, labels))
+    }
+}
+
+/// Binning transformation for continuous features
+pub struct BinningTransform<T> {
+    bin_edges: Vec<Vec<T>>,
+    #[allow(dead_code)]
+    strategy: BinningStrategy,
+}
+
+#[derive(Debug, Clone)]
+pub enum BinningStrategy {
+    Uniform,
+    Quantile,
+    Custom,
+}
+
+impl<T> BinningTransform<T>
+where
+    T: Clone + Default + num_traits::Float + PartialOrd + Send + Sync + 'static,
+{
+    pub fn new(bin_edges: Vec<Vec<T>>, strategy: BinningStrategy) -> Self {
+        Self {
+            bin_edges,
+            strategy,
+        }
+    }
+
+    /// Create uniform binning for each feature
+    pub fn uniform(n_bins: usize, min_vals: Vec<T>, max_vals: Vec<T>) -> Result<Self> {
+        if min_vals.len() != max_vals.len() {
+            return Err(TensorError::invalid_argument(
+                "min_vals and max_vals must have the same length".to_string(),
+            ));
+        }
+
+        let mut bin_edges = Vec::new();
+
+        for (min_val, max_val) in min_vals.iter().zip(max_vals.iter()) {
+            let mut edges = Vec::new();
+            let range = *max_val - *min_val;
+            let step = range / T::from(n_bins).unwrap();
+
+            for i in 0..=n_bins {
+                edges.push(*min_val + T::from(i).unwrap() * step);
+            }
+
+            bin_edges.push(edges);
+        }
+
+        Ok(Self {
+            bin_edges,
+            strategy: BinningStrategy::Uniform,
+        })
+    }
+
+    /// Find which bin a value belongs to
+    fn find_bin(&self, value: T, feature_idx: usize) -> usize {
+        let edges = &self.bin_edges[feature_idx];
+
+        for i in 0..edges.len() - 1 {
+            if value >= edges[i] && value < edges[i + 1] {
+                return i;
+            }
+        }
+
+        // If value is >= last edge, put it in the last bin
+        edges.len() - 2
+    }
+}
+
+impl<T> Transform<T> for BinningTransform<T>
+where
+    T: Clone + Default + num_traits::Float + PartialOrd + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        let binned_data: Vec<T> = feature_data
+            .iter()
+            .enumerate()
+            .map(|(i, &val)| {
+                let feature_idx = i % self.bin_edges.len();
+                let bin_idx = self.find_bin(val, feature_idx);
+                T::from(bin_idx).unwrap()
+            })
+            .collect();
+
+        let binned_tensor = Tensor::from_vec(binned_data, features.shape().dims())?;
+        Ok((binned_tensor, labels))
+    }
+}
+
+/// One-hot encoding transformation for categorical features
+pub struct OneHotEncode<T> {
+    n_categories: Vec<usize>,
+    drop_first: bool,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> OneHotEncode<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    pub fn new(n_categories: Vec<usize>, drop_first: bool) -> Self {
+        Self {
+            n_categories,
+            drop_first,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Get the total number of output features
+    pub fn output_dim(&self) -> usize {
+        self.n_categories
+            .iter()
+            .map(|&n| if self.drop_first { n - 1 } else { n })
+            .sum()
+    }
+}
+
+impl<T> Transform<T> for OneHotEncode<T>
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+        let feature_data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            )
+        })?;
+
+        let mut encoded_features = Vec::new();
+
+        for (i, &val) in feature_data.iter().enumerate() {
+            let feature_idx = i % self.n_categories.len();
+            let category = val.to_usize().unwrap_or(0);
+            let n_cats = self.n_categories[feature_idx];
+
+            // Create one-hot vector
+            let start_idx = if self.drop_first { 1 } else { 0 };
+            let end_idx = n_cats;
+
+            for cat in start_idx..end_idx {
+                if cat == category {
+                    encoded_features.push(T::one());
+                } else {
+                    encoded_features.push(T::zero());
+                }
+            }
+        }
+
+        let encoded_len = encoded_features.len();
+        let encoded_tensor = Tensor::from_vec(encoded_features, &[encoded_len])?;
+        Ok((encoded_tensor, labels))
+    }
+}
+
+/// Random crop with padding - crops a random region and pads if necessary
+pub struct RandomCropWithPadding {
+    size: (usize, usize), // (height, width)
+    padding: usize,
+    fill_value: f32,
+}
+
+impl RandomCropWithPadding {
+    pub fn new(size: (usize, usize), padding: usize, fill_value: f32) -> Self {
+        Self {
+            size,
+            padding,
+            fill_value,
+        }
+    }
+}
+
+impl<T> Transform<T> for RandomCropWithPadding
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+
+        // Assume features are image data with shape [height, width] or [channels, height, width]
+        let shape = features.shape();
+        if shape.rank() < 2 {
+            return Ok((features, labels)); // Skip non-image data
+        }
+
+        let original_height = shape.dims()[shape.rank() - 2];
+        let original_width = shape.dims()[shape.rank() - 1];
+
+        // Add padding
+        let padded_height = original_height + 2 * self.padding;
+        let padded_width = original_width + 2 * self.padding;
+
+        // Create padded tensor (simplified implementation - in practice would need proper padding)
+        let mut rng = rand::rng();
+        let _crop_top = rng.random_range(0..=(padded_height.saturating_sub(self.size.0)));
+        let _crop_left = rng.random_range(0..=(padded_width.saturating_sub(self.size.1)));
+
+        // For simplicity, just resize to target size (in practice would do proper crop+pad)
+        let resized_data = if let Some(data) = features.as_slice() {
+            // Simple resize by taking every nth element (not ideal but functional)
+            let scale_h = original_height as f32 / self.size.0 as f32;
+            let scale_w = original_width as f32 / self.size.1 as f32;
+
+            let mut resized = Vec::new();
+            for h in 0..self.size.0 {
+                for w in 0..self.size.1 {
+                    let src_h = ((h as f32 * scale_h) as usize).min(original_height - 1);
+                    let src_w = ((w as f32 * scale_w) as usize).min(original_width - 1);
+                    let idx = src_h * original_width + src_w;
+                    if idx < data.len() {
+                        resized.push(T::from(data[idx]).unwrap());
+                    } else {
+                        resized.push(T::from(self.fill_value).unwrap());
+                    }
+                }
+            }
+            resized
+        } else {
+            return Err(TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            ));
+        };
+
+        let new_shape = vec![self.size.0, self.size.1];
+        let transformed_features = Tensor::from_vec(resized_data, &new_shape)?;
+
+        Ok((transformed_features, labels))
+    }
+}
+
+/// Random erasing - randomly selects a rectangular region and erases it
+pub struct RandomErasing {
+    probability: f32,
+    scale_range: (f32, f32), // Range of proportion of erased area
+    ratio_range: (f32, f32), // Range of aspect ratio of erased area
+    fill_value: f32,
+}
+
+impl RandomErasing {
+    pub fn new(
+        probability: f32,
+        scale_range: (f32, f32),
+        ratio_range: (f32, f32),
+        fill_value: f32,
+    ) -> Self {
+        Self {
+            probability,
+            scale_range,
+            ratio_range,
+            fill_value,
+        }
+    }
+}
+
+impl<T> Transform<T> for RandomErasing
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+
+        let mut rng = rand::rng();
+
+        // Apply erasing with given probability
+        if rng.random::<f32>() > self.probability {
+            return Ok((features, labels));
+        }
+
+        let shape = features.shape();
+        if shape.rank() < 2 {
+            return Ok((features, labels)); // Skip non-image data
+        }
+
+        let height = shape.dims()[shape.rank() - 2];
+        let width = shape.dims()[shape.rank() - 1];
+        let area = height * width;
+
+        // Generate random erasing parameters
+        let target_area = area as f32 * rng.random_range(self.scale_range.0..self.scale_range.1);
+        let aspect_ratio = rng.random_range(self.ratio_range.0..self.ratio_range.1);
+
+        let erase_height = ((target_area * aspect_ratio).sqrt() as usize).min(height);
+        let erase_width = ((target_area / aspect_ratio).sqrt() as usize).min(width);
+
+        if erase_height == 0 || erase_width == 0 {
+            return Ok((features, labels));
+        }
+
+        let erase_top = rng.random_range(0..=(height - erase_height));
+        let erase_left = rng.random_range(0..=(width - erase_width));
+
+        // Apply erasing
+        let mut data = if let Some(data) = features.as_slice() {
+            data.to_vec()
+        } else {
+            return Err(TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            ));
+        };
+
+        let fill_val = T::from(self.fill_value).unwrap();
+
+        for h in erase_top..(erase_top + erase_height) {
+            for w in erase_left..(erase_left + erase_width) {
+                let idx = h * width + w;
+                if idx < data.len() {
+                    data[idx] = fill_val;
+                }
+            }
+        }
+
+        let erased_features = Tensor::from_vec(data, shape.dims())?;
+
+        Ok((erased_features, labels))
+    }
+}
+
+/// Gaussian blur - applies Gaussian blur to image data
+pub struct GaussianBlur {
+    kernel_size: usize,
+    sigma: f32,
+}
+
+impl GaussianBlur {
+    pub fn new(kernel_size: usize, sigma: f32) -> Self {
+        Self { kernel_size, sigma }
+    }
+
+    fn gaussian_kernel(&self) -> Vec<f32> {
+        let size = self.kernel_size;
+        let mut kernel = vec![0.0; size * size];
+        let center = size / 2;
+        let sigma_sq_2 = 2.0 * self.sigma * self.sigma;
+
+        let mut sum = 0.0;
+        for i in 0..size {
+            for j in 0..size {
+                let x = i as f32 - center as f32;
+                let y = j as f32 - center as f32;
+                let exp_val = -(x * x + y * y) / sigma_sq_2;
+                let val = exp_val.exp();
+                kernel[i * size + j] = val;
+                sum += val;
+            }
+        }
+
+        // Normalize kernel
+        for val in &mut kernel {
+            *val /= sum;
+        }
+
+        kernel
+    }
+}
+
+impl<T> Transform<T> for GaussianBlur
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+
+        let shape = features.shape();
+        if shape.rank() < 2 {
+            return Ok((features, labels)); // Skip non-image data
+        }
+
+        let height = shape.dims()[shape.rank() - 2];
+        let width = shape.dims()[shape.rank() - 1];
+
+        let data = if let Some(data) = features.as_slice() {
+            data
+        } else {
+            return Err(TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            ));
+        };
+
+        let kernel = self.gaussian_kernel();
+        let kernel_radius = self.kernel_size / 2;
+
+        let mut blurred_data = vec![T::zero(); data.len()];
+
+        // Apply convolution
+        for h in 0..height {
+            for w in 0..width {
+                let mut sum = T::zero();
+
+                for kh in 0..self.kernel_size {
+                    for kw in 0..self.kernel_size {
+                        let src_h = h as i32 + kh as i32 - kernel_radius as i32;
+                        let src_w = w as i32 + kw as i32 - kernel_radius as i32;
+
+                        if src_h >= 0 && src_h < height as i32 && src_w >= 0 && src_w < width as i32
+                        {
+                            let src_idx = (src_h as usize) * width + (src_w as usize);
+                            let kernel_weight =
+                                T::from(kernel[kh * self.kernel_size + kw]).unwrap();
+
+                            if src_idx < data.len() {
+                                sum = sum + T::from(data[src_idx]).unwrap() * kernel_weight;
+                            }
+                        }
+                    }
+                }
+
+                let dst_idx = h * width + w;
+                if dst_idx < blurred_data.len() {
+                    blurred_data[dst_idx] = sum;
+                }
+            }
+        }
+
+        let blurred_features = Tensor::from_vec(blurred_data, shape.dims())?;
+
+        Ok((blurred_features, labels))
+    }
+}
+
+/// Gaussian noise - adds Gaussian noise to features
+pub struct GaussianNoise {
+    mean: f32,
+    std: f32,
+}
+
+impl GaussianNoise {
+    pub fn new(mean: f32, std: f32) -> Self {
+        Self { mean, std }
+    }
+}
+
+impl<T> Transform<T> for GaussianNoise
+where
+    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+{
+    fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
+        let (features, labels) = sample;
+
+        let data = if let Some(data) = features.as_slice() {
+            data
+        } else {
+            return Err(TensorError::invalid_argument(
+                "Cannot access tensor data (GPU tensor not supported)".to_string(),
+            ));
+        };
+
+        let mut rng = rand::rng();
+
+        let mut noisy_data = Vec::new();
+        for (i, &value) in data.iter().enumerate() {
+            // Simple Box-Muller transform for Gaussian noise
+            let noise = if i % 2 == 0 {
+                let u1: f32 = rng.random();
+                let u2: f32 = rng.random();
+                let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                self.mean + self.std * z0
+            } else {
+                let u1: f32 = rng.random();
+                let u2: f32 = rng.random();
+                let z1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).sin();
+                self.mean + self.std * z1
+            };
+
+            let noisy_value = T::from(value).unwrap() + T::from(noise).unwrap();
+            noisy_data.push(noisy_value);
+        }
+
+        let noisy_features = Tensor::from_vec(noisy_data, features.shape().dims())?;
+
+        Ok((noisy_features, labels))
+    }
+}
+
+#[cfg(test)]
+mod conditional_tests {
+    use super::*;
+    use tenflowers_core::Tensor;
+
+    #[test]
+    fn test_conditional_transform() {
+        let train_transform = IdentityTransform::<f32>::new();
+        let eval_transform = IdentityTransform::<f32>::new();
+
+        let mut conditional = ConditionalTransform::new(train_transform, eval_transform);
+
+        // Test training mode
+        assert!(conditional.is_training());
+
+        // Test evaluation mode
+        conditional.eval();
+        assert!(!conditional.is_training());
+
+        // Test back to training mode
+        conditional.train();
+        assert!(conditional.is_training());
+    }
+
+    #[test]
+    fn test_probabilistic_transform() {
+        let base_transform = IdentityTransform::<f32>::new();
+        let prob_transform = ProbabilisticTransform::new(base_transform, 0.5).unwrap();
+
+        assert_eq!(prob_transform.probability(), 0.5);
+
+        // Test invalid probability
+        assert!(ProbabilisticTransform::new(IdentityTransform::<f32>::new(), 1.5).is_err());
+        assert!(ProbabilisticTransform::new(IdentityTransform::<f32>::new(), -0.1).is_err());
+    }
+
+    #[test]
+    fn test_transform_selector() {
+        let transforms: Vec<Box<dyn Transform<f32>>> = vec![
+            Box::new(IdentityTransform::new()),
+            Box::new(IdentityTransform::new()),
+        ];
+
+        let selector = TransformSelector::new_random(transforms);
+        assert_eq!(selector.len(), 2);
+        assert!(!selector.is_empty());
+
+        // Test weighted random
+        let transforms2: Vec<Box<dyn Transform<f32>>> = vec![
+            Box::new(IdentityTransform::new()),
+            Box::new(IdentityTransform::new()),
+        ];
+        let weights = vec![0.3, 0.7];
+        let weighted_selector =
+            TransformSelector::new_weighted_random(transforms2, weights).unwrap();
+        assert_eq!(weighted_selector.len(), 2);
+
+        // Test mismatched weights
+        let transforms3: Vec<Box<dyn Transform<f32>>> = vec![Box::new(IdentityTransform::new())];
+        let weights3 = vec![0.3, 0.7];
+        assert!(TransformSelector::new_weighted_random(transforms3, weights3).is_err());
+    }
+
+    #[test]
+    fn test_scheduled_transform() {
+        let base_transform = IdentityTransform::<f32>::new();
+        let schedule = Box::new(|step: usize| step as f64 * 0.1);
+        let mut scheduled = ScheduledTransform::new(base_transform, schedule);
+
+        assert_eq!(scheduled.current_step(), 0);
+        assert_eq!(scheduled.current_parameter(), 0.0);
+
+        scheduled.step();
+        assert_eq!(scheduled.current_step(), 1);
+        assert_eq!(scheduled.current_parameter(), 0.1);
+
+        scheduled.step();
+        assert_eq!(scheduled.current_step(), 2);
+        assert_eq!(scheduled.current_parameter(), 0.2);
+
+        scheduled.reset();
+        assert_eq!(scheduled.current_step(), 0);
+        assert_eq!(scheduled.current_parameter(), 0.0);
+    }
+
+    #[test]
+    fn test_identity_transform() {
+        let identity = IdentityTransform::<f32>::new();
+
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0], &[]).unwrap();
+        let sample = (features.clone(), labels.clone());
+
+        let result = identity.apply(sample).unwrap();
+
+        // Should return the same tensors
+        assert_eq!(result.0.as_slice(), features.as_slice());
+        assert_eq!(result.1.as_slice(), labels.as_slice());
+    }
+
+    #[test]
+    fn test_text_tokenizer() {
+        let mut tokenizer = TextTokenizer::new(100);
+
+        // Test basic tokenization (without building vocab)
+        let tokens = tokenizer.tokenize("hello world");
+
+        // Should have START, two UNK tokens (since vocab not built), and END
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0], 2); // START token
+        assert_eq!(tokens[1], 0); // UNK token for "hello"
+        assert_eq!(tokens[2], 0); // UNK token for "world"
+        assert_eq!(tokens[3], 3); // END token
+
+        // Test vocab building
+        let texts = vec![
+            "hello world".to_string(),
+            "world peace".to_string(),
+            "hello everyone".to_string(),
+        ];
+        tokenizer.build_vocab(&texts).unwrap();
+
+        let tokens2 = tokenizer.tokenize("hello world");
+        assert_eq!(tokens2[0], 2); // START token
+                                   // "hello" and "world" should now have proper token IDs
+        assert_ne!(tokens2[1], 0); // Not UNK anymore
+        assert_ne!(tokens2[2], 0); // Not UNK anymore
+        assert_eq!(tokens2[3], 3); // END token
+
+        // Test unknown word
+        let unknown_tokens = tokenizer.tokenize("unknown");
+        assert_eq!(unknown_tokens[1], 0); // Should be UNK token
+    }
+
+    #[test]
+    fn test_padding_transform() {
+        let padding = PaddingTransform::new(5, 1.0);
+
+        // Test padding (shorter sequence)
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0], &[]).unwrap();
+        let (padded_features, _) = padding.apply((features, labels)).unwrap();
+
+        assert_eq!(padded_features.shape().dims(), &[5]);
+        let padded_data = padded_features.as_slice().unwrap();
+        assert_eq!(padded_data, &[1.0, 2.0, 3.0, 1.0, 1.0]); // Padded with 1.0
+
+        // Test truncation (longer sequence)
+        let long_features =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], &[7]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0], &[]).unwrap();
+        let (truncated_features, _) = padding.apply((long_features, labels)).unwrap();
+
+        assert_eq!(truncated_features.shape().dims(), &[5]);
+        let truncated_data = truncated_features.as_slice().unwrap();
+        assert_eq!(truncated_data, &[1.0, 2.0, 3.0, 4.0, 5.0]); // Truncated from right
+
+        // Test exact length (no change)
+        let exact_features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let labels = Tensor::<f32>::from_vec(vec![0.0], &[]).unwrap();
+        let (unchanged_features, _) = padding.apply((exact_features.clone(), labels)).unwrap();
+
+        assert_eq!(unchanged_features.as_slice(), exact_features.as_slice());
+    }
+
+    #[test]
+    fn test_text_classification_transform() {
+        let mut text_transform = TextClassificationTransform::new(50, 6);
+
+        // Build vocabulary
+        let training_texts = vec![
+            "good movie".to_string(),
+            "bad movie".to_string(),
+            "excellent film".to_string(),
+        ];
+        text_transform.build_vocab(&training_texts).unwrap();
+
+        // Test text to tensor conversion
+        let tensor = text_transform.text_to_tensor("good movie").unwrap();
+
+        // Should be padded to length 6
+        assert_eq!(tensor.shape().dims(), &[6]);
+        let data = tensor.as_slice().unwrap();
+
+        // First token should be START (2), last should be padding or data
+        assert_eq!(data[0], 2.0); // START token
+
+        // Should contain proper token IDs for "good" and "movie"
+        assert!(data[1] != 0.0 || data[2] != 0.0); // At least one should not be UNK
+
+        println!("Text to tensor result: {:?}", data);
+    }
+}

@@ -1,0 +1,79 @@
+[package]
+name = "tenflowers-dataset"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Data pipeline and dataset utilities for TenfloweRS"
+
+[lints]
+workspace = true
+
+[dependencies]
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.1" }
+scirs2-core = { workspace = true, features = ["random"] }
+ndarray = { workspace = true }
+numrs2 = { workspace = true }
+num-traits = { workspace = true }
+rayon = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+memmap2 = { workspace = true, optional = true }
+arrow = { workspace = true, optional = true }
+parquet = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+bytemuck = { workspace = true }
+flate2 = { workspace = true, optional = true }
+crc32fast = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+rmp-serde = { workspace = true, optional = true }
+hdf5 = { workspace = true, optional = true }
+symphonia = { workspace = true, optional = true }
+rubato = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+libc = { version = "0.2", optional = true }
+uuid = { workspace = true }
+num_cpus = { workspace = true }
+toml = { version = "0.9" }
+serde_yaml = { version = "0.9", optional = true }
+
+# Additional dependencies for distributed loading
+async-trait = { workspace = true, optional = true }
+
+# For PandRS integration (when available)
+# pandrs = "0.1.0"
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[features]
+default = ["parallel", "images", "serialize", "mmap", "parquet", "regex", "tfrecord", "msgpack", "hdf5", "audio", "download", "webdataset", "numa"]
+parallel = ["dep:rayon"]
+serialize = ["dep:serde", "dep:serde_json", "dep:bincode", "dep:serde_yaml"]
+images = ["dep:image"]
+mmap = ["dep:memmap2"]
+parquet = ["dep:arrow", "dep:parquet"]
+regex = ["dep:regex"]
+tfrecord = ["dep:flate2", "dep:crc32fast"]
+msgpack = ["dep:rmp-serde", "serialize"]
+hdf5 = ["dep:hdf5"]
+audio = ["dep:symphonia", "dep:rubato"]
+download = ["dep:reqwest", "dep:flate2", "dep:tar", "serialize"]
+webdataset = ["dep:tar", "serialize"]
+gpu = ["tenflowers-core/gpu", "dep:wgpu", "dep:futures", "dep:pollster", "dep:tokio"]
+numa = ["dep:libc"]
+distributed = ["dep:tokio", "dep:futures", "dep:async-trait", "serialize"]
+cloud = ["dep:reqwest", "dep:tokio", "dep:futures", "serialize"]
+compression = ["dep:flate2"]

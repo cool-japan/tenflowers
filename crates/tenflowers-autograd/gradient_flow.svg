@@ -1,0 +1,13 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+<polygon points="0 0, 10 3.5, 0 7" fill="#000" />
+</marker>
+</defs>
+<circle cx="100" cy="300" r="20" fill="#FFB6C1" stroke="#000" stroke-width="2" />
+<text x="100" y="305" text-anchor="middle" dominant-baseline="middle" font-size="10">target</text>
+<circle cx="250" cy="300" r="20" fill="#90EE90" stroke="#000" stroke-width="2" />
+<text x="250" y="305" text-anchor="middle" dominant-baseline="middle" font-size="10">source_0</text>
+<circle cx="400" cy="300" r="20" fill="#90EE90" stroke="#000" stroke-width="2" />
+<text x="400" y="305" text-anchor="middle" dominant-baseline="middle" font-size="10">source_1</text>
+</svg>

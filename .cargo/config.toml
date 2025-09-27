@@ -1,0 +1,36 @@
+# Ultra-performance Rust configuration for maximum optimization
+
+[build]
+# Target CPU features for maximum SIMD utilization
+rustflags = [
+    "-C", "target-cpu=native",           # Use native CPU features
+    "-C", "target-feature=+avx2",        # Enable AVX2 if available
+    "-C", "target-feature=+fma",         # Enable Fused Multiply-Add
+    "-C", "opt-level=3",                 # Maximum optimization
+    "-C", "codegen-units=1",             # Single codegen unit
+    "-C", "panic=abort",                 # Abort on panic for performance
+]
+
+[target.'cfg(target_arch = "x86_64")']
+rustflags = [
+    "-C", "target-cpu=native",
+    "-C", "target-feature=+avx2,+fma,+bmi1,+bmi2,+popcnt,+lzcnt",
+]
+
+[target.'cfg(target_arch = "aarch64")']
+rustflags = [
+    "-C", "target-cpu=native",
+    "-C", "target-feature=+neon,+fp-armv8,+crc",
+]
+
+# Profile-guided optimization hints
+[profile.release]
+# These are defined in Cargo.toml but can be overridden here
+# lto = "fat"
+# codegen-units = 1
+# opt-level = 3
+
+[unstable]
+# Enable unstable features for maximum performance
+build-std = ["std", "panic_abort"]     # Build std library with optimizations
+build-std-features = ["panic_immediate_abort"]

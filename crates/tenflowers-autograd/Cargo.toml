@@ -1,0 +1,58 @@
+[package]
+name = "tenflowers-autograd"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Automatic differentiation engine for TenfloweRS"
+
+[lints]
+workspace = true
+
+[dependencies]
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.1" }
+scirs2-core = { workspace = true, features = ["memory_management", "memory_efficient", "parallel", "simd", "profiling"] }
+scirs2-autograd = { workspace = true }
+ndarray = { workspace = true }
+numrs2 = { workspace = true }
+thiserror = { workspace = true }
+num-traits = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+num_cpus = { workspace = true, optional = true }
+bytemuck = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-alpha.1" }
+
+[features]
+default = []
+gpu = ["tenflowers-core/gpu"]
+rocm = ["tenflowers-core/rocm"]
+jit = ["futures"]
+parallel = ["futures", "tokio", "num_cpus"]
+
+[[bench]]
+name = "gradient_performance"
+harness = false
+
+[[bench]]
+name = "performance_comparison"
+harness = false
+
+[[bench]]
+name = "pytorch_comparison"
+harness = false
+
+[[bench]]
+name = "advanced_gradient_benchmarks"
+harness = false

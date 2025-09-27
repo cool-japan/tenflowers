@@ -1,0 +1,259 @@
+{
+  "analysis": {
+    "flow_stats": {
+      "avg_gradient_magnitude": 0.0,
+      "backward_depth": 3,
+      "flow_efficiency": 0.8,
+      "gradient_magnitude_variance": 0.0,
+      "num_edges": 12,
+      "num_nodes": 3
+    },
+    "health_score": 80.0,
+    "issues": [
+      {
+        "affected_nodes": [
+          8,
+          0,
+          1
+        ],
+        "description": "Detected 3 nodes with vanishing gradients",
+        "evidence": 3.0,
+        "issue_type": "VanishingGradients",
+        "severity": "High",
+        "suggested_fixes": [
+          "Consider using gradient clipping",
+          "Try different activation functions (ReLU, GELU)",
+          "Reduce network depth",
+          "Use residual connections"
+        ]
+      }
+    ],
+    "recommendations": []
+  },
+  "edges": [
+    {
+      "edge_type": "Forward",
+      "from": 7,
+      "to": 8,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 4,
+      "to": 7,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 6,
+      "to": 7,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 2,
+      "to": 4,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 3,
+      "to": 4,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 5,
+      "to": 6,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 0,
+      "to": 2,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 1,
+      "to": 2,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 0,
+      "to": 3,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 0,
+      "to": 3,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 0,
+      "to": 5,
+      "weight": 1.0
+    },
+    {
+      "edge_type": "Forward",
+      "from": 1,
+      "to": 5,
+      "weight": 1.0
+    }
+  ],
+  "nodes": {
+    "0": {
+      "gradient_stats": {
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "histogram_edges": [
+          0.0,
+          0.10000000149011612,
+          0.20000000298023224,
+          0.30000001192092896,
+          0.4000000059604645,
+          0.5,
+          0.6000000238418579,
+          0.699999988079071,
+          0.800000011920929,
+          0.8999999761581421,
+          1.0
+        ],
+        "l2_norm": 0.0,
+        "max_magnitude": 0.0,
+        "mean_magnitude": 0.0,
+        "min_magnitude": 0.0,
+        "std_magnitude": 0.0
+      },
+      "id": 0,
+      "name": "source_0",
+      "node_type": "Input",
+      "operation": "input",
+      "position": null,
+      "shape": [
+        3
+      ],
+      "value_stats": {
+        "l2_norm": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "std": 0.0
+      }
+    },
+    "1": {
+      "gradient_stats": {
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "histogram_edges": [
+          0.0,
+          0.10000000149011612,
+          0.20000000298023224,
+          0.30000001192092896,
+          0.4000000059604645,
+          0.5,
+          0.6000000238418579,
+          0.699999988079071,
+          0.800000011920929,
+          0.8999999761581421,
+          1.0
+        ],
+        "l2_norm": 0.0,
+        "max_magnitude": 0.0,
+        "mean_magnitude": 0.0,
+        "min_magnitude": 0.0,
+        "std_magnitude": 0.0
+      },
+      "id": 1,
+      "name": "source_1",
+      "node_type": "Input",
+      "operation": "input",
+      "position": null,
+      "shape": [
+        3
+      ],
+      "value_stats": {
+        "l2_norm": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "std": 0.0
+      }
+    },
+    "8": {
+      "gradient_stats": {
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "histogram_edges": [
+          0.0,
+          0.10000000149011612,
+          0.20000000298023224,
+          0.30000001192092896,
+          0.4000000059604645,
+          0.5,
+          0.6000000238418579,
+          0.699999988079071,
+          0.800000011920929,
+          0.8999999761581421,
+          1.0
+        ],
+        "l2_norm": 0.0,
+        "max_magnitude": 0.0,
+        "mean_magnitude": 0.0,
+        "min_magnitude": 0.0,
+        "std_magnitude": 0.0
+      },
+      "id": 8,
+      "name": "target",
+      "node_type": "Output",
+      "operation": "target",
+      "position": null,
+      "shape": [],
+      "value_stats": {
+        "l2_norm": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "std": 0.0
+      }
+    }
+  },
+  "settings": {
+    "gradient_threshold": 1e-6,
+    "show_gradients": true,
+    "show_values": true
+  }
+}

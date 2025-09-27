@@ -1,0 +1,181 @@
+[workspace]
+members = [
+    "crates/tenflowers-core",
+    "crates/tenflowers-autograd",
+    "crates/tenflowers-neural",
+    "crates/tenflowers-dataset",
+    "crates/tenflowers-ffi",
+]
+# Disable FFI Temporarily (due to Python env issue)
+default-members = [
+    "crates/tenflowers-core",
+    "crates/tenflowers-autograd",
+    "crates/tenflowers-neural",
+    "crates/tenflowers-dataset",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+authors = ["TenfloweRS Contributors"]
+edition = "2021"
+rust-version = "1.70"
+homepage = "https://github.com/cool-japan/tenflowers"
+repository = "https://github.com/cool-japan/tenflowers"
+license = "MIT OR Apache-2.0"
+keywords = ["machine-learning", "neural-network", "tensor", "autograd", "gpu"]
+categories = ["science", "mathematics"]
+
+[workspace.lints.clippy]
+# Allow commonly triggered but low-priority lints
+clone_on_copy = "allow"
+empty_line_after_doc_comments = "allow"
+len_zero = "allow"
+new_without_default = "allow"
+unwrap_or_default = "allow"
+
+# Allow lints that are triggered by auto-generated code or common patterns
+too_many_arguments = "allow"
+module_inception = "allow"
+redundant_field_names = "allow"
+redundant_static_lifetimes = "allow"
+
+# Keep important lints as warnings
+needless_pass_by_value = "allow"  # Common in ML code with small structs
+large_enum_variant = "warn"
+inefficient_to_string = "warn"
+
+[workspace.lints.rust]
+# Allow commonly triggered warnings during development
+unused_imports = "allow"
+unused_variables = "allow"
+dead_code = "allow"
+unused_mut = "allow"
+unused_doc_comments = "allow"
+
+[workspace.dependencies]
+# Core dependencies (using SciRS2 ecosystem)
+# NOTE: ndarray still needed as workspace dependency until all crates migrate imports
+# TODO: Remove once all crates use scirs2-autograd::ndarray and scirs2-core::ndarray_ext
+ndarray = "0.16"  # Legacy support during SciRS2 migration
+num-traits = "0.2"
+rayon = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+anyhow = "1.0"
+
+# NumRS2 and SciRS2 ecosystem (using latest versions)
+numrs2 = "0.1.0-beta.2"
+scirs2-core = "0.1.0-beta.2"
+scirs2-autograd = "0.1.0-beta.2"
+scirs2-neural = "0.1.0-beta.2"
+optirs = "0.1.0-beta.1"
+
+# GPU support
+wgpu = { version = "24.0", features = ["wgsl"] }
+bytemuck = { version = "1.23", features = ["derive"] }
+futures = "0.3"
+pollster = "0.4"
+tokio = { version = "1.47", features = ["full"] }
+num_cpus = "1.17"
+
+# BLAS support - backends configured at crate level
+blas-src = { version = "0.13", default-features = false }
+lapack-src = { version = "0.12", default-features = false }
+ndarray-linalg = { version = "0.17", default-features = false }
+
+# Serialization
+bincode = "1.3"
+serde_json = "1.0"
+rmp-serde = "1.3"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Python bindings (updated to latest versions)
+pyo3 = { version = "0.26" }
+numpy = { version = "0.26" }
+
+# Testing and benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+proptest = "1.7"
+
+# Random number generation
+# NOTE: Migrated to scirs2_core::random - these dependencies kept for compatibility during transition
+# TODO: Remove completely once all crates verified to work without direct rand usage
+rand = "0.9.2"
+rand_distr = "0.5.1"
+rand-chacha = "0.3"
+
+# Half precision types
+half = { version = "2.4", features = ["bytemuck", "serde", "num-traits"] }
+
+# Image processing
+image = "0.25"
+
+# Data processing
+arrow = "54.3"
+parquet = "54.3"
+memmap2 = "0.9"
+regex = "1.11"
+
+# Tensorboard logging
+tensorboard-rs = "0.5"
+
+# ONNX export
+prost = "0.14.1"
+prost-build = "0.14.1"
+prost-types = "0.14.1"
+parking_lot = "0.12.4"
+
+# Graph algorithms
+petgraph = "0.8"
+
+# HTTP client for dataset downloading
+reqwest = { version = "0.12", features = ["blocking", "stream"] }
+
+# Compression and archives
+flate2 = "1.1"
+crc32fast = "1.5"
+tar = "0.4"
+
+# File formats
+hdf5 = "0.8"
+
+# Audio processing
+symphonia = { version = "0.5", features = ["wav", "mp3", "flac"] }
+rubato = "0.16"
+
+# Utilities
+uuid = { version = "1.18", features = ["v4"] }
+async-trait = "0.1"
+tempfile = "3.23"
+
+[profile.release]
+lto = "fat"                    # Full LTO for maximum optimization
+codegen-units = 1              # Single codegen unit for best optimization
+opt-level = 3                  # Maximum optimization level
+strip = "symbols"              # Strip symbols for smaller binary
+panic = "abort"                # Abort on panic for performance
+overflow-checks = false        # Disable overflow checks in release
+debug = false                  # No debug info in release
+rpath = false                  # Disable rpath for smaller binary
+
+[profile.release.build-override]
+opt-level = 3                  # Optimize build scripts too
+
+[profile.bench]
+inherits = "release"
+debug = true                   # Keep debug info for profiling
+
+# Ultra-performance profile for maximum optimization
+[profile.ultra]
+inherits = "release"
+lto = "fat"                    # Maximum LTO
+codegen-units = 1              # Single unit for best optimization
+opt-level = 3                  # Maximum optimization
+strip = "symbols"              # Strip all symbols
+panic = "abort"                # Abort on panic
+overflow-checks = false        # No overflow checks
+debug = false                  # No debug info
+rpath = false                  # No rpath
+

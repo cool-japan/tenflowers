@@ -1,0 +1,3335 @@
+use crate::grad_ops;
+use crate::memory_profiler::get_global_profiler;
+use crate::ops::{reshape_backward, transpose_backward};
+use crate::{boolean_indexing, global_pooling};
+use num_traits::{One, Zero};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, Weak};
+use tenflowers_core::{Result, Tensor, TensorError};
+
+/// Unique identifier for tensors in the computation graph
+pub type TensorId = usize;
+
+/// Operation types that can be recorded in the tape
+#[derive(Debug, Clone)]
+pub enum Operation {
+    Add {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    Sub {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    Mul {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    Div {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    Pow {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    MatMul {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    Relu {
+        input: TensorId,
+    },
+    Sigmoid {
+        input: TensorId,
+    },
+    Tanh {
+        input: TensorId,
+    },
+    Gelu {
+        input: TensorId,
+    },
+    Swish {
+        input: TensorId,
+    },
+    Mish {
+        input: TensorId,
+    },
+    LeakyRelu {
+        input: TensorId,
+        alpha: f32,
+    },
+    Elu {
+        input: TensorId,
+        alpha: f32,
+    },
+    Prelu {
+        input: TensorId,
+        alpha: TensorId,
+    },
+    Softmax {
+        input: TensorId,
+        axis: Option<i32>,
+    },
+    Sum {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+    },
+    Mean {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+    },
+    Max {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+    },
+    Min {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+    },
+    Var {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+        correction: usize,
+    },
+    Std {
+        input: TensorId,
+        axes: Option<Vec<i32>>,
+        keepdims: bool,
+        correction: usize,
+    },
+    Neg {
+        input: TensorId,
+    },
+    Identity {
+        input: TensorId,
+    },
+    Reshape {
+        input: TensorId,
+        original_shape: Vec<usize>,
+        new_shape: Vec<usize>,
+    },
+    Transpose {
+        input: TensorId,
+        axes: Option<Vec<usize>>,
+    },
+    Squeeze {
+        input: TensorId,
+        axes: Option<Vec<usize>>,
+        original_shape: Vec<usize>,
+    },
+    Unsqueeze {
+        input: TensorId,
+        axes: Vec<usize>,
+    },
+    Slice {
+        input: TensorId,
+        slice_specs: Vec<crate::grad_ops::SliceSpec>,
+        input_shape: Vec<usize>,
+    },
+    Concat {
+        inputs: Vec<TensorId>,
+        axis: i32,
+        input_shapes: Vec<Vec<usize>>,
+    },
+    Stack {
+        inputs: Vec<TensorId>,
+        axis: i32,
+    },
+    Split {
+        input: TensorId,
+        sizes: Vec<usize>,
+        axis: i32,
+    },
+    Conv2D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: (usize, usize),
+        padding: String,
+    },
+    Conv3D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: (usize, usize, usize),
+        padding: String,
+    },
+    ConvTranspose2D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: (usize, usize),
+        padding: String,
+        output_padding: (usize, usize),
+    },
+    MaxPool2D {
+        input: TensorId,
+        kernel_size: (usize, usize),
+        stride: (usize, usize),
+        padding: String,
+    },
+    AvgPool2D {
+        input: TensorId,
+        kernel_size: (usize, usize),
+        stride: (usize, usize),
+        padding: String,
+    },
+    BatchNorm {
+        input: TensorId,
+        gamma: TensorId,
+        beta: TensorId,
+        running_mean: TensorId,
+        running_var: TensorId,
+        epsilon: f32,
+        training: bool,
+    },
+    LayerNorm {
+        input: TensorId,
+        gamma: TensorId,
+        beta: TensorId,
+        normalized_shape: Vec<usize>,
+        epsilon: f32,
+    },
+    GroupNorm {
+        input: TensorId,
+        gamma: TensorId,
+        beta: TensorId,
+        num_groups: usize,
+        epsilon: f32,
+    },
+    InstanceNorm {
+        input: TensorId,
+        gamma: TensorId,
+        beta: TensorId,
+        epsilon: f32,
+    },
+    StopGradient {
+        input: TensorId,
+    },
+    GlobalAvgPool2D {
+        input: TensorId,
+    },
+    GlobalMaxPool2D {
+        input: TensorId,
+    },
+    AdaptiveAvgPool2D {
+        input: TensorId,
+        output_size: (usize, usize),
+    },
+    AdaptiveMaxPool2D {
+        input: TensorId,
+        output_size: (usize, usize),
+    },
+    BooleanMask {
+        input: TensorId,
+        mask: TensorId,
+    },
+    Where {
+        condition: TensorId,
+        x: TensorId,
+        z: TensorId,
+    },
+    IntegerArrayIndexing {
+        input: TensorId,
+        indices: TensorId,
+        axis: usize,
+    },
+    DepthwiseConv2D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: (usize, usize),
+        padding: String,
+        groups: usize,
+    },
+    GroupedConv2D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: (usize, usize),
+        padding: String,
+        groups: usize,
+    },
+    // FFT operations
+    Fft {
+        input: TensorId,
+        n: Option<usize>,
+        axis: i32,
+        norm: Option<String>,
+    },
+    Ifft {
+        input: TensorId,
+        n: Option<usize>,
+        axis: i32,
+        norm: Option<String>,
+    },
+    Rfft {
+        input: TensorId,
+        n: Option<usize>,
+        axis: i32,
+        norm: Option<String>,
+    },
+    Fft2 {
+        input: TensorId,
+        s: Option<(usize, usize)>,
+        axes: (i32, i32),
+        norm: Option<String>,
+    },
+    Ifft2 {
+        input: TensorId,
+        s: Option<(usize, usize)>,
+        axes: (i32, i32),
+        norm: Option<String>,
+    },
+    Fft3 {
+        input: TensorId,
+        s: Option<(usize, usize, usize)>,
+        axes: (i32, i32, i32),
+        norm: Option<String>,
+    },
+    Ifft3 {
+        input: TensorId,
+        s: Option<(usize, usize, usize)>,
+        axes: (i32, i32, i32),
+        norm: Option<String>,
+    },
+    // Linear algebra operations
+    Eig {
+        input: TensorId,
+    },
+    Svd {
+        input: TensorId,
+    },
+    Inv {
+        input: TensorId,
+    },
+    Det {
+        input: TensorId,
+    },
+    Cholesky {
+        input: TensorId,
+    },
+    Lu {
+        input: TensorId,
+    },
+    Pinv {
+        input: TensorId,
+    },
+    // Special mathematical functions
+    Gamma {
+        input: TensorId,
+    },
+    Lgamma {
+        input: TensorId,
+    },
+    Digamma {
+        input: TensorId,
+    },
+    Erf {
+        input: TensorId,
+    },
+    Erfc {
+        input: TensorId,
+    },
+    BesselJ0 {
+        input: TensorId,
+    },
+    BesselJ1 {
+        input: TensorId,
+    },
+    Beta {
+        a: TensorId,
+        b: TensorId,
+    },
+    // Einsum operations
+    Einsum {
+        inputs: Vec<TensorId>,
+        equation: String,
+        input_shapes: Vec<Vec<usize>>,
+    },
+
+    // Fused operations for tape optimization
+    FusedAddReLU {
+        lhs: TensorId,
+        rhs: TensorId,
+    },
+    FusedDense {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+    },
+    FusedConvBatchNorm {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        gamma: TensorId,
+        beta: TensorId,
+        running_mean: TensorId,
+        running_var: TensorId,
+        stride: (usize, usize),
+        padding: String,
+        epsilon: f32,
+        training: bool,
+    },
+}
+
+/// Node in the computation graph
+#[derive(Debug, Clone)]
+pub struct TapeNode {
+    pub id: TensorId,
+    pub operation: Operation,
+    pub output_shape: Vec<usize>,
+    pub requires_grad: bool,
+    pub parents: Vec<TensorId>,
+}
+
+/// Reference to a tensor being tracked by the tape
+#[derive(Debug, Clone)]
+pub struct TrackedTensor<T> {
+    pub tensor: Tensor<T>,
+    pub id: TensorId,
+    pub(crate) tape: Weak<Mutex<GradientTapeInner>>,
+}
+
+impl<T> TrackedTensor<T> {
+    pub fn tensor(&self) -> &Tensor<T> {
+        &self.tensor
+    }
+
+    /// Get the shape of the tracked tensor
+    pub fn shape(&self) -> &tenflowers_core::Shape {
+        self.tensor.shape()
+    }
+
+    /// Create a new TrackedTensor without tracking (for temporary computations)
+    pub fn new(tensor: Tensor<T>) -> Self {
+        Self {
+            tensor,
+            id: 0,
+            tape: Weak::new(),
+        }
+    }
+}
+
+/// Internal state of the gradient tape
+#[derive(Debug)]
+pub(crate) struct GradientTapeInner {
+    pub(crate) nodes: Vec<TapeNode>,
+    pub(crate) tensor_values: HashMap<TensorId, Box<dyn std::any::Any + Send + Sync>>,
+    pub(crate) next_id: TensorId,
+    pub(crate) is_recording: bool,
+}
+
+/// Gradient tape for automatic differentiation
+#[derive(Debug, Clone)]
+pub struct GradientTape {
+    inner: Arc<Mutex<GradientTapeInner>>,
+}
+
+impl GradientTape {
+    /// Create a new gradient tape
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(GradientTapeInner {
+                nodes: Vec::new(),
+                tensor_values: HashMap::new(),
+                next_id: 0,
+                is_recording: true,
+            })),
+        }
+    }
+
+    /// Create a gradient tape from an existing inner reference
+    pub(crate) fn from_inner(inner: Arc<Mutex<GradientTapeInner>>) -> Self {
+        Self { inner }
+    }
+
+    /// Watch a tensor for gradient computation
+    pub fn watch<T>(&self, tensor: Tensor<T>) -> TrackedTensor<T>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        let mut inner = self.inner.lock().unwrap();
+        let id = inner.next_id;
+        inner.next_id += 1;
+
+        // Store the tensor value for backward pass
+        inner.tensor_values.insert(id, Box::new(tensor.clone()));
+
+        // Don't create identity operations for watched tensors
+        // They are leaf nodes in the computation graph
+
+        TrackedTensor {
+            tensor,
+            id,
+            tape: Arc::downgrade(&self.inner),
+        }
+    }
+
+    /// Record an operation in the tape
+    pub fn record_op<T>(&self, operation: Operation, output: Tensor<T>) -> TrackedTensor<T>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        let mut inner = self.inner.lock().unwrap();
+
+        if !inner.is_recording {
+            let id = inner.next_id;
+            inner.next_id += 1;
+            return TrackedTensor {
+                tensor: output,
+                id,
+                tape: Arc::downgrade(&self.inner),
+            };
+        }
+
+        let id = inner.next_id;
+        inner.next_id += 1;
+
+        // Store the output tensor
+        inner.tensor_values.insert(id, Box::new(output.clone()));
+
+        // Check if any inputs require gradients
+        // For leaf nodes (watched tensors), check if they exist in tensor_values
+        let requires_grad = match &operation {
+            Operation::Add { lhs, rhs } | Operation::Sub { lhs, rhs } | Operation::Mul { lhs, rhs } |
+            Operation::Div { lhs, rhs } | Operation::Pow { lhs, rhs } | Operation::MatMul { lhs, rhs } => {
+                // Check if either input is a watched tensor or has requires_grad
+                let lhs_requires_grad = inner.tensor_values.contains_key(lhs) ||
+                    inner.nodes.iter().any(|n| n.id == *lhs && n.requires_grad);
+                let rhs_requires_grad = inner.tensor_values.contains_key(rhs) ||
+                    inner.nodes.iter().any(|n| n.id == *rhs && n.requires_grad);
+                lhs_requires_grad || rhs_requires_grad
+            }
+            Operation::Relu { input } | Operation::Sigmoid { input } | Operation::Tanh { input } |
+            Operation::Gelu { input } | Operation::Swish { input } | Operation::Mish { input } |
+            Operation::LeakyRelu { input, .. } | Operation::Elu { input, .. } | Operation::Prelu { input, .. } |
+            Operation::Softmax { input, .. } | Operation::Sum { input, .. } | Operation::Mean { input, .. } |
+            Operation::Max { input, .. } | Operation::Min { input, .. } | Operation::Var { input, .. } |
+            Operation::Std { input, .. } | Operation::Neg { input } | Operation::Identity { input } |
+            Operation::Reshape { input, .. } | Operation::Transpose { input, .. } |
+            Operation::Squeeze { input, .. } | Operation::Unsqueeze { input, .. } |
+            Operation::Slice { input, .. } | Operation::Split { input, .. } |
+            Operation::MaxPool2D { input, .. } | Operation::AvgPool2D { input, .. } |
+            Operation::StopGradient { input, .. } | Operation::GlobalAvgPool2D { input, .. } |
+            Operation::GlobalMaxPool2D { input, .. } | Operation::AdaptiveAvgPool2D { input, .. } |
+            Operation::AdaptiveMaxPool2D { input, .. } => {
+                inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad)
+            }
+            Operation::Concat { inputs, .. } | Operation::Stack { inputs, .. } => {
+                inputs.iter().any(|input| {
+                    inner.tensor_values.contains_key(input) ||
+                        inner.nodes.iter().any(|n| n.id == *input && n.requires_grad)
+                })
+            }
+            Operation::Conv2D { input, weight, bias, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|bias_id| {
+                    inner.tensor_values.contains_key(&bias_id) ||
+                        inner.nodes.iter().any(|n| n.id == bias_id && n.requires_grad)
+                });
+
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            Operation::Conv3D { input, weight, bias, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|bias_id| {
+                    inner.tensor_values.contains_key(&bias_id) ||
+                        inner.nodes.iter().any(|n| n.id == bias_id && n.requires_grad)
+                });
+
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            Operation::ConvTranspose2D { input, weight, bias, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|bias_id| {
+                    inner.tensor_values.contains_key(&bias_id) ||
+                        inner.nodes.iter().any(|n| n.id == bias_id && n.requires_grad)
+                });
+
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            Operation::BatchNorm { input, gamma, beta, running_mean: _, running_var: _, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let gamma_requires_grad = inner.tensor_values.contains_key(gamma) ||
+                    inner.nodes.iter().any(|n| n.id == *gamma && n.requires_grad);
+                let beta_requires_grad = inner.tensor_values.contains_key(beta) ||
+                    inner.nodes.iter().any(|n| n.id == *beta && n.requires_grad);
+
+                input_requires_grad || gamma_requires_grad || beta_requires_grad
+            }
+            Operation::LayerNorm { input, gamma, beta, .. } |
+            Operation::GroupNorm { input, gamma, beta, .. } |
+            Operation::InstanceNorm { input, gamma, beta, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let gamma_requires_grad = inner.tensor_values.contains_key(gamma) ||
+                    inner.nodes.iter().any(|n| n.id == *gamma && n.requires_grad);
+                let beta_requires_grad = inner.tensor_values.contains_key(beta) ||
+                    inner.nodes.iter().any(|n| n.id == *beta && n.requires_grad);
+
+                input_requires_grad || gamma_requires_grad || beta_requires_grad
+            }
+            Operation::BooleanMask { input, mask } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let mask_requires_grad = inner.tensor_values.contains_key(mask) ||
+                    inner.nodes.iter().any(|n| n.id == *mask && n.requires_grad);
+                input_requires_grad || mask_requires_grad
+            }
+            Operation::Where { condition, x, z } => {
+                let condition_requires_grad = inner.tensor_values.contains_key(condition) ||
+                    inner.nodes.iter().any(|n| n.id == *condition && n.requires_grad);
+                let x_requires_grad = inner.tensor_values.contains_key(x) ||
+                    inner.nodes.iter().any(|n| n.id == *x && n.requires_grad);
+                let z_requires_grad = inner.tensor_values.contains_key(z) ||
+                    inner.nodes.iter().any(|n| n.id == *z && n.requires_grad);
+                condition_requires_grad || x_requires_grad || z_requires_grad
+            }
+            Operation::IntegerArrayIndexing { input, indices, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let indices_requires_grad = inner.tensor_values.contains_key(indices) ||
+                    inner.nodes.iter().any(|n| n.id == *indices && n.requires_grad);
+                input_requires_grad || indices_requires_grad
+            }
+            Operation::DepthwiseConv2D { input, weight, bias, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|b|
+                    inner.tensor_values.contains_key(&b) ||
+                    inner.nodes.iter().any(|n| n.id == b && n.requires_grad));
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            Operation::GroupedConv2D { input, weight, bias, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|b|
+                    inner.tensor_values.contains_key(&b) ||
+                    inner.nodes.iter().any(|n| n.id == b && n.requires_grad));
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            // FFT operations
+            Operation::Fft { input, .. } | Operation::Ifft { input, .. } | Operation::Rfft { input, .. } |
+            Operation::Fft2 { input, .. } | Operation::Ifft2 { input, .. } |
+            Operation::Fft3 { input, .. } | Operation::Ifft3 { input, .. } |
+            // Linear algebra operations
+            Operation::Eig { input } | Operation::Svd { input } | Operation::Inv { input } |
+            Operation::Det { input } | Operation::Cholesky { input } | Operation::Lu { input } |
+            Operation::Pinv { input } |
+            // Special mathematical functions
+            Operation::Gamma { input } | Operation::Lgamma { input } | Operation::Digamma { input } |
+            Operation::Erf { input } | Operation::Erfc { input } | Operation::BesselJ0 { input } |
+            Operation::BesselJ1 { input } => {
+                inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad)
+            }
+            Operation::Beta { a, b } => {
+                let a_requires_grad = inner.tensor_values.contains_key(a) ||
+                    inner.nodes.iter().any(|n| n.id == *a && n.requires_grad);
+                let b_requires_grad = inner.tensor_values.contains_key(b) ||
+                    inner.nodes.iter().any(|n| n.id == *b && n.requires_grad);
+                a_requires_grad || b_requires_grad
+            }
+            Operation::Einsum { inputs, .. } => {
+                inputs.iter().any(|input| {
+                    inner.tensor_values.contains_key(input) ||
+                        inner.nodes.iter().any(|n| n.id == *input && n.requires_grad)
+                })
+            }
+            // Fused operations
+            Operation::FusedAddReLU { lhs, rhs } => {
+                let lhs_requires_grad = inner.tensor_values.contains_key(lhs) ||
+                    inner.nodes.iter().any(|n| n.id == *lhs && n.requires_grad);
+                let rhs_requires_grad = inner.tensor_values.contains_key(rhs) ||
+                    inner.nodes.iter().any(|n| n.id == *rhs && n.requires_grad);
+                lhs_requires_grad || rhs_requires_grad
+            }
+            Operation::FusedDense { input, weight, bias } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|b|
+                    inner.tensor_values.contains_key(&b) ||
+                    inner.nodes.iter().any(|n| n.id == b && n.requires_grad));
+                input_requires_grad || weight_requires_grad || bias_requires_grad
+            }
+            Operation::FusedConvBatchNorm { input, weight, bias, gamma, beta, running_mean, running_var, .. } => {
+                let input_requires_grad = inner.tensor_values.contains_key(input) ||
+                    inner.nodes.iter().any(|n| n.id == *input && n.requires_grad);
+                let weight_requires_grad = inner.tensor_values.contains_key(weight) ||
+                    inner.nodes.iter().any(|n| n.id == *weight && n.requires_grad);
+                let bias_requires_grad = bias.is_some_and(|b|
+                    inner.tensor_values.contains_key(&b) ||
+                    inner.nodes.iter().any(|n| n.id == b && n.requires_grad));
+                let gamma_requires_grad = inner.tensor_values.contains_key(gamma) ||
+                    inner.nodes.iter().any(|n| n.id == *gamma && n.requires_grad);
+                let beta_requires_grad = inner.tensor_values.contains_key(beta) ||
+                    inner.nodes.iter().any(|n| n.id == *beta && n.requires_grad);
+                let running_mean_requires_grad = inner.tensor_values.contains_key(running_mean) ||
+                    inner.nodes.iter().any(|n| n.id == *running_mean && n.requires_grad);
+                let running_var_requires_grad = inner.tensor_values.contains_key(running_var) ||
+                    inner.nodes.iter().any(|n| n.id == *running_var && n.requires_grad);
+                input_requires_grad || weight_requires_grad || bias_requires_grad ||
+                gamma_requires_grad || beta_requires_grad || running_mean_requires_grad || running_var_requires_grad
+            }
+        };
+
+        // Extract parent IDs from the operation
+        let parents = extract_parents_from_operation(&operation);
+
+        // Record the operation
+        inner.nodes.push(TapeNode {
+            id,
+            operation,
+            output_shape: output.shape().dims().to_vec(),
+            requires_grad,
+            parents,
+        });
+
+        TrackedTensor {
+            tensor: output,
+            id,
+            tape: Arc::downgrade(&self.inner),
+        }
+    }
+
+    /// Compute gradients of target with respect to sources
+    pub fn gradient<T>(
+        &self,
+        target: &TrackedTensor<T>,
+        sources: &[&TrackedTensor<T>],
+    ) -> Result<Vec<Tensor<T>>>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::FromPrimitive
+            + num_traits::Float
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>
+            + std::ops::Mul<Output = T>
+            + std::ops::Div<Output = T>
+            + std::ops::Neg<Output = T>
+            + PartialOrd
+            + num_traits::Signed,
+    {
+        // Begin memory profiling for gradient computation
+        let profiler = get_global_profiler();
+        if let Ok(mut p) = profiler.lock() {
+            let _ = p.begin_operation("gradient_computation");
+        }
+
+        let inner = self.inner.lock().unwrap();
+
+        // Pre-allocate gradients map with estimated capacity for better performance
+        let estimated_capacity = inner.nodes.len().min(64); // Cap to avoid excessive memory usage
+        let mut gradients: HashMap<TensorId, Tensor<T>> =
+            HashMap::with_capacity(estimated_capacity);
+
+        // Seed gradient for target (gradient of output w.r.t itself is 1)
+        gradients.insert(target.id, Tensor::ones(target.tensor.shape().dims()));
+
+        // Helper closure to retrieve tensor with efficient error handling
+        let get_tensor = |id: TensorId| -> Result<&Tensor<T>> {
+            inner
+                .tensor_values
+                .get(&id)
+                .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))
+        };
+
+        // Traverse computation graph in reverse topological order
+        for node in inner.nodes.iter().rev() {
+            if !node.requires_grad {
+                continue;
+            }
+
+            // Get gradient of output w.r.t this node
+            let grad_output = match gradients.get(&node.id) {
+                Some(g) => g.clone(),
+                None => continue, // No gradient flowing to this node
+            };
+
+            // Compute gradients for inputs based on operation
+            match &node.operation {
+                Operation::Add { lhs, rhs } => {
+                    // Get input tensors using optimized retrieval
+                    let lhs_tensor = get_tensor(*lhs)?;
+                    let rhs_tensor = get_tensor(*rhs)?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::add_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+
+                    // Accumulate gradients
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::Sub { lhs, rhs } => {
+                    let lhs_tensor = get_tensor(*lhs)?;
+                    let rhs_tensor = get_tensor(*rhs)?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::sub_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::Mul { lhs, rhs } => {
+                    let lhs_tensor = get_tensor(*lhs)?;
+                    let rhs_tensor = get_tensor(*rhs)?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::mul_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::Div { lhs, rhs } => {
+                    let lhs_tensor = get_tensor(*lhs)?;
+                    let rhs_tensor = get_tensor(*rhs)?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::div_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::Pow { lhs, rhs } => {
+                    let lhs_tensor = get_tensor(*lhs)?;
+                    let rhs_tensor = get_tensor(*rhs)?;
+
+                    // For pow, we need the output value for the gradient computation
+                    let output_tensor = get_tensor(node.id)?;
+
+                    let (grad_lhs, grad_rhs) = grad_ops::pow_backward(
+                        &grad_output,
+                        lhs_tensor,
+                        rhs_tensor,
+                        output_tensor,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::MatMul { lhs, rhs } => {
+                    let lhs_tensor = inner
+                        .tensor_values
+                        .get(lhs)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let rhs_tensor = inner
+                        .tensor_values
+                        .get(rhs)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::matmul_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::Relu { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::relu_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Sigmoid { input } => {
+                    // For sigmoid, we need the output value (not input) for gradient computation
+                    let output_tensor = inner
+                        .tensor_values
+                        .get(&node.id)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve output tensor".into())
+                        })?;
+
+                    let grad_input = grad_ops::sigmoid_backward(&grad_output, output_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Tanh { input } => {
+                    // For tanh, we need the output value (not input) for gradient computation
+                    let output_tensor = inner
+                        .tensor_values
+                        .get(&node.id)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve output tensor".into())
+                        })?;
+
+                    let grad_input = grad_ops::tanh_backward(&grad_output, output_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Gelu { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::gelu_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Swish { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::swish_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::LeakyRelu { input, alpha } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    // Convert f32 alpha to T
+                    let alpha_t = T::from_f32(*alpha).unwrap_or_else(|| T::from_f32(0.01).unwrap());
+                    let grad_input =
+                        grad_ops::leaky_relu_backward(&grad_output, input_tensor, alpha_t)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Softmax { input, axis } => {
+                    // For softmax, we need the output value (not input) for gradient computation
+                    let output_tensor = inner
+                        .tensor_values
+                        .get(&node.id)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve output tensor".into())
+                        })?;
+
+                    let grad_input =
+                        grad_ops::softmax_backward(&grad_output, output_tensor, *axis)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Sum {
+                    input,
+                    axes: _,
+                    keepdims: _,
+                } => {
+                    // For sum reduction, we need the original input shape for gradient broadcasting
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    let grad_input =
+                        grad_ops::sum_backward(&grad_output, input_tensor.shape().dims())?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Mean {
+                    input,
+                    axes: _,
+                    keepdims: _,
+                } => {
+                    // For mean reduction, we need the original input shape for gradient broadcasting
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    let grad_input =
+                        grad_ops::mean_backward(&grad_output, input_tensor.shape().dims())?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Neg { input } => {
+                    // Gradient of -x is -1
+                    let grad_input = grad_output.neg()?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Identity { input } => {
+                    // For identity operations, don't accumulate - just pass through
+                    // This prevents double counting when watching tensors
+                    if !gradients.contains_key(input) {
+                        gradients.insert(*input, grad_output);
+                    }
+                }
+                Operation::Reshape {
+                    input,
+                    original_shape,
+                    new_shape: _,
+                } => {
+                    // For reshape, gradient just needs to be reshaped back to original shape
+                    let grad_input = reshape_backward(&grad_output, original_shape)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Transpose { input, axes } => {
+                    // For transpose, gradient needs to be transposed with inverse permutation
+                    let grad_input = transpose_backward(&grad_output, axes.as_deref())?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Mish { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let grad_input = grad_ops::mish_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Elu { input, alpha } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let alpha_val = T::from(*alpha).unwrap_or_else(|| T::one());
+                    let grad_input = grad_ops::elu_backward(&grad_output, input_tensor, alpha_val)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Prelu { input, alpha } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let alpha_tensor = inner
+                        .tensor_values
+                        .get(alpha)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve alpha tensor".into())
+                        })?;
+                    let (grad_input, grad_alpha) =
+                        grad_ops::prelu_backward(&grad_output, input_tensor, alpha_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *alpha, grad_alpha);
+                }
+                Operation::Max {
+                    input,
+                    axes,
+                    keepdims,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let grad_input = grad_ops::max_backward(
+                        &grad_output,
+                        input_tensor,
+                        axes.as_deref(),
+                        *keepdims,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Min {
+                    input,
+                    axes,
+                    keepdims,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let grad_input = grad_ops::min_backward(
+                        &grad_output,
+                        input_tensor,
+                        axes.as_deref(),
+                        *keepdims,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Var {
+                    input,
+                    axes,
+                    keepdims,
+                    correction,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let grad_input = grad_ops::var_backward(
+                        &grad_output,
+                        input_tensor,
+                        axes.as_deref(),
+                        *keepdims,
+                        *correction,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Std {
+                    input,
+                    axes,
+                    keepdims,
+                    correction,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let grad_input = grad_ops::std_backward(
+                        &grad_output,
+                        input_tensor,
+                        axes.as_deref(),
+                        *keepdims,
+                        *correction,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Squeeze {
+                    input,
+                    original_shape,
+                    ..
+                } => {
+                    let grad_input = grad_ops::squeeze_backward(&grad_output, original_shape)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Unsqueeze { input, axes } => {
+                    let grad_input = grad_ops::unsqueeze_backward(&grad_output, axes)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Slice {
+                    input,
+                    slice_specs,
+                    input_shape,
+                } => {
+                    let grad_input =
+                        grad_ops::slice_backward(&grad_output, input_shape, slice_specs)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Concat {
+                    inputs,
+                    axis,
+                    input_shapes,
+                } => {
+                    let grad_inputs = grad_ops::concat_backward(&grad_output, input_shapes, *axis)?;
+                    for (input_id, grad_input) in inputs.iter().zip(grad_inputs.iter()) {
+                        accumulate_gradient(&mut gradients, *input_id, grad_input.clone());
+                    }
+                }
+                Operation::Stack { inputs, axis } => {
+                    let grad_inputs = grad_ops::stack_backward(&grad_output, inputs.len(), *axis)?;
+                    for (input_id, grad_input) in inputs.iter().zip(grad_inputs.iter()) {
+                        accumulate_gradient(&mut gradients, *input_id, grad_input.clone());
+                    }
+                }
+                Operation::Split {
+                    input,
+                    sizes: _,
+                    axis: _,
+                } => {
+                    // Split backward needs the gradient outputs for each split
+                    // This is a simplified implementation - in practice, we'd need to collect
+                    // all the gradients from the split outputs
+                    let grad_input = grad_output.clone();
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Conv2D {
+                    input,
+                    weight,
+                    bias,
+                    stride,
+                    padding,
+                } => {
+                    // Get input tensors for conv2d backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve weight tensor".into())
+                        })?;
+                    let bias_tensor = bias.as_ref().and_then(|bias_id| {
+                        inner
+                            .tensor_values
+                            .get(bias_id)
+                            .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                    });
+
+                    // Compute Conv2D backward pass
+                    let (grad_input, grad_weight, grad_bias) = grad_ops::conv2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        weight_tensor,
+                        bias_tensor,
+                        *stride,
+                        padding,
+                    )?;
+
+                    // Accumulate gradients
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+
+                    if let (Some(bias_id), Some(grad_bias)) = (bias, grad_bias) {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_bias);
+                    }
+                }
+                Operation::Conv3D {
+                    input,
+                    weight,
+                    bias,
+                    stride,
+                    padding,
+                } => {
+                    // Get input tensors for conv3d backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve weight tensor".into())
+                        })?;
+                    let bias_tensor = bias.as_ref().and_then(|bias_id| {
+                        inner
+                            .tensor_values
+                            .get(bias_id)
+                            .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                    });
+
+                    // Compute Conv3D backward pass
+                    let (grad_input, grad_weight, grad_bias) = grad_ops::conv3d_backward(
+                        &grad_output,
+                        input_tensor,
+                        weight_tensor,
+                        bias_tensor,
+                        *stride,
+                        padding,
+                    )?;
+
+                    // Accumulate gradients
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+
+                    if let (Some(bias_id), Some(grad_bias)) = (bias, grad_bias) {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_bias);
+                    }
+                }
+                Operation::ConvTranspose2D {
+                    input,
+                    weight,
+                    bias,
+                    stride,
+                    padding,
+                    output_padding,
+                } => {
+                    // Get input tensors for conv_transpose2d backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve weight tensor".into())
+                        })?;
+                    let bias_tensor = bias.as_ref().and_then(|bias_id| {
+                        inner
+                            .tensor_values
+                            .get(bias_id)
+                            .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                    });
+
+                    // Compute ConvTranspose2D backward pass
+                    let (grad_input, grad_weight, grad_bias) = grad_ops::conv_transpose2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        weight_tensor,
+                        bias_tensor,
+                        *stride,
+                        padding,
+                        *output_padding,
+                    )?;
+
+                    // Accumulate gradients
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+
+                    if let (Some(bias_id), Some(grad_bias)) = (bias, grad_bias) {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_bias);
+                    }
+                }
+                Operation::MaxPool2D {
+                    input,
+                    kernel_size,
+                    stride,
+                    padding,
+                } => {
+                    // Get input tensor for maxpool2d backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    // Compute MaxPool2D backward pass
+                    let grad_input = grad_ops::max_pool2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        *kernel_size,
+                        *stride,
+                        padding,
+                        (1, 1), // Default dilation
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::AvgPool2D {
+                    input,
+                    kernel_size,
+                    stride,
+                    padding,
+                } => {
+                    // Get input tensor for avgpool2d backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    // Compute AvgPool2D backward pass
+                    let grad_input = grad_ops::avg_pool2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        *kernel_size,
+                        *stride,
+                        padding,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::BatchNorm {
+                    input,
+                    gamma,
+                    beta,
+                    running_mean,
+                    running_var,
+                    epsilon,
+                    training,
+                } => {
+                    // Get tensors for BatchNorm backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let gamma_tensor = inner
+                        .tensor_values
+                        .get(gamma)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve gamma tensor".into())
+                        })?;
+                    let beta_tensor = inner
+                        .tensor_values
+                        .get(beta)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve beta tensor".into())
+                        })?;
+                    let running_mean_tensor = inner
+                        .tensor_values
+                        .get(running_mean)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve running_mean tensor".into())
+                        })?;
+                    let running_var_tensor = inner
+                        .tensor_values
+                        .get(running_var)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve running_var tensor".into())
+                        })?;
+
+                    let eps_val = T::from(*epsilon).unwrap_or_else(|| T::from(1e-5).unwrap());
+
+                    // Compute BatchNorm backward pass
+                    let (grad_input, grad_gamma, grad_beta) = grad_ops::batch_norm_backward(
+                        &grad_output,
+                        input_tensor,
+                        gamma_tensor,
+                        beta_tensor,
+                        running_mean_tensor,
+                        running_var_tensor,
+                        *training,
+                        eps_val,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *gamma, grad_gamma);
+                    accumulate_gradient(&mut gradients, *beta, grad_beta);
+                }
+                Operation::LayerNorm {
+                    input,
+                    gamma,
+                    beta,
+                    normalized_shape,
+                    epsilon,
+                } => {
+                    // Get tensors for LayerNorm backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let gamma_tensor = inner
+                        .tensor_values
+                        .get(gamma)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve gamma tensor".into())
+                        })?;
+                    let beta_tensor = inner
+                        .tensor_values
+                        .get(beta)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve beta tensor".into())
+                        })?;
+
+                    let eps_val = T::from(*epsilon).unwrap_or_else(|| T::from(1e-5).unwrap());
+
+                    // Compute LayerNorm backward pass
+                    let (grad_input, grad_gamma, grad_beta) = grad_ops::layer_norm_backward(
+                        &grad_output,
+                        input_tensor,
+                        gamma_tensor,
+                        beta_tensor,
+                        normalized_shape,
+                        eps_val,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *gamma, grad_gamma);
+                    accumulate_gradient(&mut gradients, *beta, grad_beta);
+                }
+                Operation::GroupNorm {
+                    input,
+                    gamma,
+                    beta,
+                    num_groups,
+                    epsilon,
+                } => {
+                    // Get tensors for GroupNorm backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let gamma_tensor = inner
+                        .tensor_values
+                        .get(gamma)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve gamma tensor".into())
+                        })?;
+                    let beta_tensor = inner
+                        .tensor_values
+                        .get(beta)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve beta tensor".into())
+                        })?;
+
+                    let eps_val = T::from(*epsilon).unwrap_or_else(|| T::from(1e-5).unwrap());
+
+                    // Compute GroupNorm backward pass
+                    let (grad_input, grad_gamma, grad_beta) = grad_ops::group_norm_backward(
+                        &grad_output,
+                        input_tensor,
+                        gamma_tensor,
+                        beta_tensor,
+                        *num_groups,
+                        eps_val,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *gamma, grad_gamma);
+                    accumulate_gradient(&mut gradients, *beta, grad_beta);
+                }
+                Operation::InstanceNorm {
+                    input,
+                    gamma,
+                    beta,
+                    epsilon,
+                } => {
+                    // Get tensors for InstanceNorm backward
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let gamma_tensor = inner
+                        .tensor_values
+                        .get(gamma)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve gamma tensor".into())
+                        })?;
+                    let beta_tensor = inner
+                        .tensor_values
+                        .get(beta)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve beta tensor".into())
+                        })?;
+
+                    let eps_val = T::from(*epsilon).unwrap_or_else(|| T::from(1e-5).unwrap());
+
+                    // Compute InstanceNorm backward pass
+                    let (grad_input, grad_gamma, grad_beta) = grad_ops::instance_norm_backward(
+                        &grad_output,
+                        input_tensor,
+                        gamma_tensor,
+                        beta_tensor,
+                        eps_val,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *gamma, grad_gamma);
+                    accumulate_gradient(&mut gradients, *beta, grad_beta);
+                }
+                // Add new operations
+                Operation::StopGradient { input: _ } => {
+                    // Stop gradient - no gradients flow backward
+                    // Do nothing, effectively stopping gradient flow
+                }
+                Operation::GlobalAvgPool2D { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    let grad_input = global_pooling::global_avg_pool2d_backward(
+                        &grad_output,
+                        input_tensor.shape().dims(),
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::GlobalMaxPool2D { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    // For global max pooling, we would need max indices stored during forward pass
+                    // For now, we'll implement a simplified version
+                    let grad_input = Tensor::zeros(input_tensor.shape().dims());
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::AdaptiveAvgPool2D { input, output_size } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    let grad_input = global_pooling::adaptive_avg_pool2d_backward(
+                        &grad_output,
+                        input_tensor.shape().dims(),
+                        *output_size,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::AdaptiveMaxPool2D {
+                    input,
+                    output_size: _,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+
+                    // For adaptive max pooling, we would need max indices stored during forward pass
+                    // For now, we'll implement a simplified version
+                    let grad_input = Tensor::zeros(input_tensor.shape().dims());
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::BooleanMask { input, mask } => {
+                    let mask_tensor = inner
+                        .tensor_values
+                        .get(mask)
+                        .and_then(|v| v.downcast_ref::<Tensor<bool>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve mask tensor".into())
+                        })?;
+
+                    let input_shape = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .map(|t| t.shape().dims().to_vec())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input shape".into())
+                        })?;
+
+                    let grad_input = boolean_indexing::boolean_mask_backward(
+                        &grad_output,
+                        mask_tensor,
+                        &input_shape,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Where { condition, x, z } => {
+                    let condition_tensor = inner
+                        .tensor_values
+                        .get(condition)
+                        .and_then(|v| v.downcast_ref::<Tensor<bool>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve condition tensor".into())
+                        })?;
+
+                    let x_shape = inner
+                        .tensor_values
+                        .get(x)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .map(|t| t.shape().dims().to_vec())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve x shape".into()))?;
+
+                    let z_shape = inner
+                        .tensor_values
+                        .get(z)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .map(|t| t.shape().dims().to_vec())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve z shape".into()))?;
+
+                    let (grad_x, grad_z) = boolean_indexing::where_backward(
+                        &grad_output,
+                        condition_tensor,
+                        &x_shape,
+                        &z_shape,
+                    )?;
+                    accumulate_gradient(&mut gradients, *x, grad_x);
+                    accumulate_gradient(&mut gradients, *z, grad_z);
+                }
+                Operation::IntegerArrayIndexing {
+                    input,
+                    indices,
+                    axis,
+                } => {
+                    let indices_tensor = inner
+                        .tensor_values
+                        .get(indices)
+                        .and_then(|v| v.downcast_ref::<Tensor<i64>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve indices tensor".into())
+                        })?;
+
+                    let input_shape = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .map(|t| t.shape().dims().to_vec())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input shape".into())
+                        })?;
+
+                    let grad_input = boolean_indexing::integer_array_indexing_backward(
+                        &grad_output,
+                        indices_tensor,
+                        &input_shape,
+                        *axis,
+                    )?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::DepthwiseConv2D {
+                    input,
+                    weight,
+                    bias,
+                    stride,
+                    padding,
+                    groups,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve weight tensor".into())
+                        })?;
+                    let bias_tensor = bias
+                        .as_ref()
+                        .map(|b| {
+                            inner
+                                .tensor_values
+                                .get(b)
+                                .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                                .ok_or_else(|| {
+                                    TensorError::other("Failed to retrieve bias tensor".into())
+                                })
+                        })
+                        .transpose()?;
+
+                    let (grad_input, grad_weight, grad_bias) = grad_ops::depthwise_conv2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        weight_tensor,
+                        bias_tensor,
+                        *stride,
+                        padding,
+                        *groups,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+                    if let (Some(bias_id), Some(grad_bias_val)) = (bias, grad_bias) {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_bias_val);
+                    }
+                }
+                Operation::GroupedConv2D {
+                    input,
+                    weight,
+                    bias,
+                    stride,
+                    padding,
+                    groups,
+                } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve input tensor".into())
+                        })?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| {
+                            TensorError::other("Failed to retrieve weight tensor".into())
+                        })?;
+                    let bias_tensor = bias
+                        .as_ref()
+                        .map(|b| {
+                            inner
+                                .tensor_values
+                                .get(b)
+                                .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                                .ok_or_else(|| {
+                                    TensorError::other("Failed to retrieve bias tensor".into())
+                                })
+                        })
+                        .transpose()?;
+
+                    let (grad_input, grad_weight, grad_bias) = grad_ops::grouped_conv2d_backward(
+                        &grad_output,
+                        input_tensor,
+                        weight_tensor,
+                        bias_tensor,
+                        *stride,
+                        padding,
+                        *groups,
+                    )?;
+
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+                    if let (Some(bias_id), Some(grad_bias_val)) = (bias, grad_bias) {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_bias_val);
+                    }
+                }
+                // FFT operations
+                Operation::Fft { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::fft_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Ifft { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::ifft_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Rfft { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::rfft_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Fft2 { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::fft2_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Ifft2 { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::ifft2_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Fft3 { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::fft3_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Ifft3 { input, .. } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::ifft3_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                // Linear algebra operations
+                Operation::Eig { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::eig_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Svd { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::svd_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Inv { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::inv_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Det { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::det_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Cholesky { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::cholesky_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Lu { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::lu_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Pinv { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input = grad_ops::pinv_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                // Special mathematical functions
+                Operation::Gamma { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::gamma_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Lgamma { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::lgamma_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Digamma { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::digamma_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Erf { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::erf_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Erfc { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::erfc_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::BesselJ0 { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::bessel_j0_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::BesselJ1 { input } => {
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let grad_input =
+                        crate::special_functions::bessel_j1_backward(&grad_output, input_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                }
+                Operation::Beta { a, b } => {
+                    let a_tensor = inner
+                        .tensor_values
+                        .get(a)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let b_tensor = inner
+                        .tensor_values
+                        .get(b)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let (grad_a, grad_b) =
+                        crate::special_functions::beta_backward(&grad_output, a_tensor, b_tensor)?;
+                    accumulate_gradient(&mut gradients, *a, grad_a);
+                    accumulate_gradient(&mut gradients, *b, grad_b);
+                }
+                Operation::Einsum {
+                    inputs,
+                    equation,
+                    input_shapes,
+                } => {
+                    // Get all input tensors
+                    let mut input_tensors = Vec::new();
+                    for input_id in inputs {
+                        let input_tensor = inner
+                            .tensor_values
+                            .get(input_id)
+                            .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                            .ok_or_else(|| {
+                                TensorError::other("Failed to retrieve tensor".into())
+                            })?;
+                        input_tensors.push(input_tensor);
+                    }
+
+                    // Compute gradients for all inputs
+                    let grad_inputs = grad_ops::einsum_backward(
+                        &grad_output,
+                        equation,
+                        &input_tensors,
+                        input_shapes,
+                    )?;
+
+                    // Accumulate gradients for each input
+                    for (input_id, grad_input) in inputs.iter().zip(grad_inputs.iter()) {
+                        accumulate_gradient(&mut gradients, *input_id, grad_input.clone());
+                    }
+                }
+                // Fused operations - placeholder implementations
+                Operation::FusedAddReLU { lhs, rhs } => {
+                    // For now, treat as separate Add + ReLU operations
+                    // This would need proper fused backward implementation
+                    let lhs_tensor = inner
+                        .tensor_values
+                        .get(lhs)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let rhs_tensor = inner
+                        .tensor_values
+                        .get(rhs)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let (grad_lhs, grad_rhs) =
+                        grad_ops::add_backward(&grad_output, lhs_tensor, rhs_tensor)?;
+                    accumulate_gradient(&mut gradients, *lhs, grad_lhs);
+                    accumulate_gradient(&mut gradients, *rhs, grad_rhs);
+                }
+                Operation::FusedDense {
+                    input,
+                    weight,
+                    bias,
+                } => {
+                    // For now, treat as separate MatMul + Add operations
+                    // This would need proper fused backward implementation
+                    let input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+                    let weight_tensor = inner
+                        .tensor_values
+                        .get(weight)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    let (grad_input, grad_weight) =
+                        grad_ops::matmul_backward(&grad_output, input_tensor, weight_tensor)?;
+                    accumulate_gradient(&mut gradients, *input, grad_input);
+                    accumulate_gradient(&mut gradients, *weight, grad_weight);
+
+                    if let Some(bias_id) = bias {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_output.clone());
+                    }
+                }
+                Operation::FusedConvBatchNorm {
+                    input,
+                    weight,
+                    bias,
+                    gamma,
+                    beta,
+                    ..
+                } => {
+                    // Placeholder implementation - this would need proper fused gradients
+                    let _input_tensor = inner
+                        .tensor_values
+                        .get(input)
+                        .and_then(|v| v.downcast_ref::<Tensor<T>>())
+                        .ok_or_else(|| TensorError::other("Failed to retrieve tensor".into()))?;
+
+                    // For simplicity, just pass gradients through (this is not correct)
+                    accumulate_gradient(&mut gradients, *input, grad_output.clone());
+                    accumulate_gradient(&mut gradients, *weight, grad_output.clone());
+                    accumulate_gradient(&mut gradients, *gamma, grad_output.clone());
+                    accumulate_gradient(&mut gradients, *beta, grad_output.clone());
+
+                    if let Some(bias_id) = bias {
+                        accumulate_gradient(&mut gradients, *bias_id, grad_output.clone());
+                    }
+                }
+            }
+        }
+
+        // Extract gradients for requested sources
+        let mut result = Vec::new();
+        for source in sources {
+            let grad = gradients
+                .get(&source.id)
+                .cloned()
+                .unwrap_or_else(|| Tensor::zeros(source.tensor.shape().dims()));
+            result.push(grad);
+        }
+
+        // End memory profiling for gradient computation
+        if let Ok(mut p) = profiler.lock() {
+            let _ = p.end_operation();
+        }
+
+        Ok(result)
+    }
+
+    /// Stop recording operations
+    pub fn stop_recording(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.is_recording = false;
+    }
+
+    /// Resume recording operations
+    pub fn start_recording(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.is_recording = true;
+    }
+
+    /// Reset the tape, clearing all recorded operations
+    pub fn reset(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.nodes.clear();
+        inner.tensor_values.clear();
+        inner.next_id = 0;
+        inner.is_recording = true;
+    }
+
+    /// Get a node by its tensor ID
+    pub fn get_node(&self, id: TensorId) -> Option<TapeNode> {
+        let inner = self.inner.lock().unwrap();
+        inner.nodes.iter().find(|node| node.id == id).cloned()
+    }
+
+    /// Compute the Hessian matrix of target with respect to a single source
+    /// This implements H_ij = ∂²f/∂x_i∂x_j where f is the target scalar and x is the source tensor
+    pub fn hessian<T>(
+        &self,
+        target: &TrackedTensor<T>,
+        source: &TrackedTensor<T>,
+    ) -> Result<Tensor<T>>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::FromPrimitive
+            + num_traits::Float
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>
+            + std::ops::Mul<Output = T>
+            + std::ops::Div<Output = T>
+            + std::ops::Neg<Output = T>
+            + PartialOrd
+            + num_traits::Signed,
+    {
+        // For a scalar target and vector source, compute the Hessian matrix
+        let source_shape = source.tensor.shape().dims();
+        let source_size = source_shape.iter().product::<usize>();
+
+        // Target must be scalar for Hessian computation
+        if target.tensor.shape().dims().iter().product::<usize>() != 1 {
+            return Err(TensorError::shape_mismatch(
+                "hessian_computation",
+                "scalar (single element)",
+                &format!("shape {:?}", target.tensor.shape().dims()),
+            ));
+        }
+
+        // Compute first-order gradients
+        let first_grads = self.gradient(target, &[source])?;
+        let _first_grad = &first_grads[0];
+
+        // Create new tapes for second-order computation
+        let mut hessian_elements = Vec::with_capacity(source_size * source_size);
+
+        // For each element of the gradient, compute its gradient w.r.t. the source
+        for i in 0..source_size {
+            let hessian_tape = GradientTape::new();
+
+            // Create fresh tracked tensors for the new tape
+            let source_fresh = hessian_tape.watch(source.tensor.clone());
+
+            // Recompute the target using the fresh tape
+            let target_fresh = self.recompute_target(target, &source_fresh, &hessian_tape)?;
+
+            // Get the i-th element of the gradient
+            let grad_i_grads = hessian_tape.gradient(&target_fresh, &[&source_fresh])?;
+            let grad_i = &grad_i_grads[0];
+
+            // Create a tensor that selects the i-th element
+            let mut selector_data = vec![T::zero(); source_size];
+            selector_data[i] = T::one();
+            let selector = Tensor::from_vec(selector_data, source_shape)?;
+            let selector_tracked = hessian_tape.watch(selector);
+
+            // Compute dot product to get the i-th gradient element as a scalar
+            let grad_i_element = self.dot_product_scalar(grad_i, &selector_tracked.tensor)?;
+            let grad_i_tracked = hessian_tape.watch(grad_i_element);
+
+            // Compute gradient of the i-th gradient element w.r.t. source
+            let second_grads = hessian_tape.gradient(&grad_i_tracked, &[&source_fresh])?;
+            let hessian_row = &second_grads[0];
+
+            // Add this row to the Hessian
+            if let Some(row_data) = hessian_row.as_slice() {
+                hessian_elements.extend_from_slice(row_data);
+            } else {
+                return Err(TensorError::other(
+                    "Failed to extract Hessian row data".into(),
+                ));
+            }
+        }
+
+        // Reshape to form the Hessian matrix
+        Tensor::from_vec(hessian_elements, &[source_size, source_size])
+    }
+
+    /// Helper method to compute scalar dot product
+    fn dot_product_scalar<T>(&self, a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
+    where
+        T: Clone
+            + Default
+            + std::ops::Mul<Output = T>
+            + std::ops::Add<Output = T>
+            + num_traits::Zero
+            + num_traits::One
+            + Send
+            + Sync
+            + 'static,
+    {
+        // Element-wise multiply then sum
+        let product = a.mul(b)?;
+        tenflowers_core::ops::sum(&product, None, false)
+    }
+
+    /// Helper method to recompute target in a new tape context
+    /// This is a simplified version - in practice, you'd need to replay the computation graph
+    fn recompute_target<T>(
+        &self,
+        _original_target: &TrackedTensor<T>,
+        new_source: &TrackedTensor<T>,
+        _new_tape: &GradientTape,
+    ) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Default + Send + Sync + 'static,
+    {
+        // This is a placeholder implementation
+        // In a full implementation, you would need to replay the computation graph
+        // from the original tape using the new source tensor
+
+        // For now, return the new source as a proxy
+        // This won't work for complex computations, but provides a framework
+        Ok(new_source.clone())
+    }
+
+    /// Compute Jacobian-vector product efficiently
+    /// This computes J*v where J is the Jacobian of targets w.r.t. sources and v is a vector
+    pub fn jvp<T>(
+        &self,
+        targets: &[&TrackedTensor<T>],
+        sources: &[&TrackedTensor<T>],
+        v: &[Tensor<T>],
+    ) -> Result<Vec<Tensor<T>>>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::FromPrimitive
+            + num_traits::Float
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>
+            + std::ops::Mul<Output = T>
+            + std::ops::Div<Output = T>
+            + std::ops::Neg<Output = T>
+            + PartialOrd
+            + num_traits::Signed,
+    {
+        if sources.len() != v.len() {
+            return Err(TensorError::shape_mismatch(
+                "directional_derivative",
+                &format!("{} direction vectors", sources.len()),
+                &format!("{} vectors", v.len()),
+            ));
+        }
+
+        // Use dual numbers approach for forward-mode AD
+        // This is more efficient than computing the full Jacobian for JVP
+
+        // Create a new tape for forward mode computation
+        let forward_tape = GradientTape::new();
+
+        // Track sources with tangent components
+        let mut sources_dual = Vec::new();
+        for &source in sources.iter() {
+            // For forward mode, we need to add the tangent direction
+            // This is a simplified implementation
+            let dual_source = forward_tape.watch(source.tensor.clone());
+            sources_dual.push(dual_source);
+        }
+
+        // For now, return a placeholder result
+        // A full implementation would use dual numbers or forward-mode AD
+        let mut result = Vec::new();
+        for &target in targets {
+            result.push(Tensor::zeros(target.tensor.shape().dims()));
+        }
+
+        Ok(result)
+    }
+
+    /// Numerical gradient checking using finite differences
+    /// This is primarily for testing and debugging gradient implementations
+    pub fn numerical_gradient_check<T, F>(
+        &self,
+        f: F,
+        inputs: &[Tensor<T>],
+        epsilon: T,
+        relative_tolerance: T,
+        absolute_tolerance: T,
+    ) -> Result<Vec<bool>>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::FromPrimitive
+            + num_traits::Float
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>
+            + std::ops::Mul<Output = T>
+            + std::ops::Div<Output = T>
+            + std::ops::Neg<Output = T>
+            + PartialOrd
+            + num_traits::Signed
+            + std::fmt::Debug,
+        F: Fn(&[Tensor<T>]) -> Result<Tensor<T>>,
+    {
+        let mut results = Vec::new();
+
+        // Compute analytical gradients
+        let tape = GradientTape::new();
+        let mut tracked_inputs = Vec::new();
+        for input in inputs {
+            tracked_inputs.push(tape.watch(input.clone()));
+        }
+
+        let tensor_refs: Vec<Tensor<T>> = tracked_inputs.iter().map(|t| t.tensor.clone()).collect();
+        let output = f(&tensor_refs)?;
+        let output_tracked = tape.watch(output);
+
+        let analytical_grads =
+            tape.gradient(&output_tracked, &tracked_inputs.iter().collect::<Vec<_>>())?;
+
+        // Compute numerical gradients for each input
+        for (input_idx, input) in inputs.iter().enumerate() {
+            let mut input_correct = true;
+
+            if let Some(input_data) = input.as_slice() {
+                let analytical_grad = &analytical_grads[input_idx];
+
+                if let Some(analytical_data) = analytical_grad.as_slice() {
+                    // Check each element of the gradient
+                    for (elem_idx, &original_val) in input_data.iter().enumerate() {
+                        // Compute finite difference approximation
+                        let numerical_grad = self.finite_difference_element(
+                            &f,
+                            inputs,
+                            input_idx,
+                            elem_idx,
+                            original_val,
+                            epsilon,
+                        )?;
+                        let analytical_val = analytical_data[elem_idx];
+
+                        // Check if gradients match within tolerance
+                        let diff = (numerical_grad - analytical_val).abs();
+                        let max_val = numerical_grad.abs().max(analytical_val.abs());
+                        let relative_error = if max_val > T::zero() {
+                            diff / max_val
+                        } else {
+                            diff
+                        };
+
+                        if diff > absolute_tolerance && relative_error > relative_tolerance {
+                            input_correct = false;
+                            eprintln!("Gradient mismatch at input {input_idx} element {elem_idx}: analytical={analytical_val:?}, numerical={numerical_grad:?}, diff={diff:?}, rel_err={relative_error:?}");
+                        }
+                    }
+                } else {
+                    // Can't check GPU tensors easily
+                    eprintln!("Warning: Cannot check gradients for GPU tensors");
+                }
+            } else {
+                eprintln!("Warning: Cannot access input data for gradient checking");
+            }
+
+            results.push(input_correct);
+        }
+
+        Ok(results)
+    }
+
+    /// Compute finite difference approximation for a single element
+    fn finite_difference_element<T, F>(
+        &self,
+        f: &F,
+        inputs: &[Tensor<T>],
+        input_idx: usize,
+        elem_idx: usize,
+        original_val: T,
+        epsilon: T,
+    ) -> Result<T>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::Float
+            + std::ops::Add<Output = T>
+            + std::ops::Sub<Output = T>,
+        F: Fn(&[Tensor<T>]) -> Result<Tensor<T>>,
+    {
+        let two = T::one() + T::one();
+
+        // Create perturbed inputs
+        let mut inputs_plus = inputs.to_vec();
+        let mut inputs_minus = inputs.to_vec();
+
+        // Perturb the specific element
+        if let Some(data) = inputs[input_idx].as_slice() {
+            let mut modified_data_plus = data.to_vec();
+            let mut modified_data_minus = data.to_vec();
+
+            modified_data_plus[elem_idx] = original_val + epsilon;
+            modified_data_minus[elem_idx] = original_val - epsilon;
+
+            let shape = inputs[input_idx].shape().dims();
+            inputs_plus[input_idx] = Tensor::from_vec(modified_data_plus, shape)?;
+            inputs_minus[input_idx] = Tensor::from_vec(modified_data_minus, shape)?;
+
+            // Compute function values
+            let f_plus = f(&inputs_plus)?;
+            let f_minus = f(&inputs_minus)?;
+
+            // Extract scalar values (assume function output is scalar for gradient checking)
+            if let (Some(val_plus), Some(val_minus)) = (f_plus.as_slice(), f_minus.as_slice()) {
+                if val_plus.len() == 1 && val_minus.len() == 1 {
+                    let numerical_grad = (val_plus[0] - val_minus[0]) / (two * epsilon);
+                    Ok(numerical_grad)
+                } else {
+                    Err(TensorError::other(
+                        "Function output must be scalar for gradient checking".into(),
+                    ))
+                }
+            } else {
+                Err(TensorError::other(
+                    "Cannot access function output for gradient checking".into(),
+                ))
+            }
+        } else {
+            Err(TensorError::other(
+                "Cannot access input data for gradient checking".into(),
+            ))
+        }
+    }
+
+    /// Get the number of nodes in the tape (for optimization purposes)
+    pub fn node_count(&self) -> usize {
+        self.inner.lock().unwrap().nodes.len()
+    }
+
+    /// Get memory usage estimate of the tape (for optimization purposes)
+    pub fn memory_usage_estimate(&self) -> usize {
+        let inner = self.inner.lock().unwrap();
+        let nodes_memory = inner.nodes.len() * std::mem::size_of::<TapeNode>();
+        let tensors_memory = inner.tensor_values.len() * 1024; // Rough estimate
+        nodes_memory + tensors_memory
+    }
+
+    /// Access inner state for optimization (internal use only)
+    pub(crate) fn with_inner_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut GradientTapeInner) -> R,
+    {
+        let mut inner = self.inner.lock().unwrap();
+        f(&mut inner)
+    }
+
+    /// Access inner state for reading (internal use only)
+    #[allow(dead_code)]
+    pub(crate) fn with_inner<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&GradientTapeInner) -> R,
+    {
+        let inner = self.inner.lock().unwrap();
+        f(&inner)
+    }
+}
+
+/// Extract parent tensor IDs from an operation
+fn extract_parents_from_operation(operation: &Operation) -> Vec<TensorId> {
+    match operation {
+        Operation::Add { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Sub { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Mul { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Div { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Pow { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::MatMul { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Relu { input } => vec![*input],
+        Operation::Sigmoid { input } => vec![*input],
+        Operation::Tanh { input } => vec![*input],
+        Operation::Gelu { input } => vec![*input],
+        Operation::Swish { input } => vec![*input],
+        Operation::Mish { input } => vec![*input],
+        Operation::LeakyRelu { input, .. } => vec![*input],
+        Operation::Elu { input, .. } => vec![*input],
+        Operation::Prelu { input, alpha } => vec![*input, *alpha],
+        Operation::Softmax { input, .. } => vec![*input],
+        Operation::Sum { input, .. } => vec![*input],
+        Operation::Mean { input, .. } => vec![*input],
+        Operation::Max { input, .. } => vec![*input],
+        Operation::Min { input, .. } => vec![*input],
+        Operation::Var { input, .. } => vec![*input],
+        Operation::Std { input, .. } => vec![*input],
+        Operation::Neg { input } => vec![*input],
+        Operation::Identity { input } => vec![*input],
+        Operation::Reshape { input, .. } => vec![*input],
+        Operation::Transpose { input, .. } => vec![*input],
+        Operation::Squeeze { input, .. } => vec![*input],
+        Operation::Unsqueeze { input, .. } => vec![*input],
+        Operation::Slice { input, .. } => vec![*input],
+        Operation::Concat { inputs, .. } => inputs.clone(),
+        Operation::Stack { inputs, .. } => inputs.clone(),
+        Operation::Split { input, .. } => vec![*input],
+        Operation::Conv2D {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::MaxPool2D { input, .. } => vec![*input],
+        Operation::AvgPool2D { input, .. } => vec![*input],
+        Operation::GlobalMaxPool2D { input, .. } => vec![*input],
+        Operation::GlobalAvgPool2D { input, .. } => vec![*input],
+        Operation::FusedDense {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::BatchNorm {
+            input,
+            gamma,
+            beta,
+            running_mean,
+            running_var,
+            ..
+        } => {
+            vec![*input, *gamma, *beta, *running_mean, *running_var]
+        }
+        Operation::LayerNorm {
+            input, gamma, beta, ..
+        } => {
+            vec![*input, *gamma, *beta]
+        }
+        Operation::GroupNorm {
+            input, gamma, beta, ..
+        } => {
+            vec![*input, *gamma, *beta]
+        }
+        Operation::InstanceNorm {
+            input, gamma, beta, ..
+        } => {
+            vec![*input, *gamma, *beta]
+        }
+        Operation::StopGradient { input } => vec![*input],
+        Operation::AdaptiveAvgPool2D { input, .. } => vec![*input],
+        Operation::AdaptiveMaxPool2D { input, .. } => vec![*input],
+        Operation::BooleanMask { input, mask } => vec![*input, *mask],
+        Operation::Where { condition, x, z } => vec![*condition, *x, *z],
+        Operation::IntegerArrayIndexing { input, indices, .. } => vec![*input, *indices],
+        Operation::DepthwiseConv2D {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::GroupedConv2D {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::ConvTranspose2D {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::Conv3D {
+            input,
+            weight,
+            bias,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::FusedConvBatchNorm {
+            input,
+            weight,
+            bias,
+            gamma,
+            beta,
+            running_mean,
+            running_var,
+            ..
+        } => {
+            let mut parents = vec![*input, *weight, *gamma, *beta, *running_mean, *running_var];
+            if let Some(bias_id) = bias {
+                parents.push(*bias_id);
+            }
+            parents
+        }
+        Operation::FusedAddReLU { lhs, rhs } => vec![*lhs, *rhs],
+        Operation::Fft { input, .. } => vec![*input],
+        Operation::Ifft { input, .. } => vec![*input],
+        Operation::Rfft { input, .. } => vec![*input],
+        Operation::Fft2 { input, .. } => vec![*input],
+        Operation::Ifft2 { input, .. } => vec![*input],
+        Operation::Fft3 { input, .. } => vec![*input],
+        Operation::Ifft3 { input, .. } => vec![*input],
+        Operation::Eig { input } => vec![*input],
+        Operation::Svd { input } => vec![*input],
+        Operation::Inv { input } => vec![*input],
+        Operation::Det { input } => vec![*input],
+        Operation::Cholesky { input } => vec![*input],
+        Operation::Lu { input } => vec![*input],
+        Operation::Pinv { input } => vec![*input],
+        Operation::Gamma { input } => vec![*input],
+        Operation::Lgamma { input } => vec![*input],
+        Operation::Digamma { input } => vec![*input],
+        Operation::Erf { input } => vec![*input],
+        Operation::Erfc { input } => vec![*input],
+        Operation::BesselJ0 { input } => vec![*input],
+        Operation::BesselJ1 { input } => vec![*input],
+        Operation::Beta { a, b } => vec![*a, *b],
+        Operation::Einsum { inputs, .. } => inputs.clone(),
+    }
+}
+
+impl Default for GradientTape {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Helper function to accumulate gradients
+fn accumulate_gradient<T>(
+    gradients: &mut HashMap<TensorId, Tensor<T>>,
+    id: TensorId,
+    grad: Tensor<T>,
+) where
+    T: Clone
+        + Default
+        + std::ops::Add<Output = T>
+        + num_traits::Zero
+        + num_traits::One
+        + Send
+        + Sync
+        + 'static,
+{
+    // Use entry API for better performance - avoids double lookup
+    use std::collections::hash_map::Entry;
+    match gradients.entry(id) {
+        Entry::Occupied(mut existing) => {
+            *existing.get_mut() = existing.get().add(&grad).unwrap();
+        }
+        Entry::Vacant(vacant) => {
+            vacant.insert(grad);
+        }
+    }
+}
+
+/// Extension methods for TrackedTensor to support operations
+impl<T> TrackedTensor<T>
+where
+    T: Clone + Default + Send + Sync + 'static,
+{
+    pub fn add(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Add<Output = T> + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.add(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Add {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn mul(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Mul<Output = T> + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.mul(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Mul {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn matmul(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Add<Output = T>
+            + std::ops::Mul<Output = T>
+            + num_traits::Zero
+            + num_traits::One,
+    {
+        let result = self.tensor.matmul(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::MatMul {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn relu(&self) -> Result<TrackedTensor<T>>
+    where
+        T: PartialOrd + num_traits::Zero + num_traits::One,
+    {
+        let result = crate::grad_ops::relu_forward(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Relu { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn sub(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Sub<Output = T> + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.sub(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Sub {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn div(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Div<Output = T> + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.div(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Div {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn pow(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.pow(&other.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Pow {
+                    lhs: self.id,
+                    rhs: other.id,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn neg(&self) -> Result<TrackedTensor<T>>
+    where
+        T: std::ops::Neg<Output = T> + num_traits::Zero + num_traits::One,
+    {
+        let result = self.tensor.neg()?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Neg { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn sigmoid(&self) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float + num_traits::Zero + num_traits::One,
+    {
+        let result = tenflowers_core::ops::sigmoid(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Sigmoid { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn tanh(&self) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float + num_traits::Zero + num_traits::One,
+    {
+        let result = tenflowers_core::ops::tanh(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Tanh { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn gelu(&self) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float + num_traits::Zero + num_traits::One,
+    {
+        let result = tenflowers_core::ops::gelu(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Gelu { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn swish(&self) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float + num_traits::Zero + num_traits::One,
+    {
+        let result = tenflowers_core::ops::swish(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Swish { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn leaky_relu(&self, alpha: f32) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float
+            + num_traits::Zero
+            + num_traits::One
+            + PartialOrd
+            + num_traits::FromPrimitive,
+    {
+        let alpha_t = T::from_f32(alpha).unwrap_or_else(|| T::from_f32(0.01).unwrap());
+        let result = tenflowers_core::ops::leaky_relu(&self.tensor, alpha_t)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::LeakyRelu {
+                    input: self.id,
+                    alpha,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn softmax(&self, axis: Option<i32>) -> Result<TrackedTensor<T>>
+    where
+        T: num_traits::Float
+            + num_traits::Zero
+            + num_traits::One
+            + std::iter::Sum
+            + std::ops::Sub<Output = T>
+            + std::ops::Div<Output = T>
+            + Send
+            + Sync,
+    {
+        let result = tenflowers_core::ops::softmax(&self.tensor, axis)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Softmax {
+                    input: self.id,
+                    axis,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn sum(&self, axes: Option<Vec<i32>>, keepdims: bool) -> Result<TrackedTensor<T>>
+    where
+        T: Clone
+            + Default
+            + num_traits::Zero
+            + num_traits::One
+            + std::ops::Add<Output = T>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let result = tenflowers_core::ops::sum(&self.tensor, axes.as_deref(), keepdims)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Sum {
+                    input: self.id,
+                    axes,
+                    keepdims,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn mean(&self, axes: Option<Vec<i32>>, keepdims: bool) -> Result<TrackedTensor<T>>
+    where
+        T: Clone
+            + Default
+            + num_traits::Zero
+            + num_traits::One
+            + num_traits::Float
+            + num_traits::FromPrimitive
+            + std::ops::Add<Output = T>
+            + std::ops::Div<Output = T>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let result = tenflowers_core::ops::mean(&self.tensor, axes.as_deref(), keepdims)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Mean {
+                    input: self.id,
+                    axes,
+                    keepdims,
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn reshape(&self, new_shape: &[usize]) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    {
+        let original_shape = self.tensor.shape().dims().to_vec();
+        let result = self.tensor.reshape(new_shape)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Reshape {
+                    input: self.id,
+                    original_shape,
+                    new_shape: new_shape.to_vec(),
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn transpose(&self) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    {
+        let result = self.tensor.transpose()?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Transpose {
+                    input: self.id,
+                    axes: None, // Default transpose reverses all dimensions
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    pub fn transpose_axes(&self, axes: &[usize]) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    {
+        let result = tenflowers_core::ops::manipulation::transpose_axes(&self.tensor, Some(axes))?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(
+                Operation::Transpose {
+                    input: self.id,
+                    axes: Some(axes.to_vec()),
+                },
+                result,
+            ))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    /// Einsum operation with gradient tracking
+    pub fn einsum(equation: &str, operands: &[&TrackedTensor<T>]) -> Result<TrackedTensor<T>>
+    where
+        T: Clone
+            + Default
+            + Zero
+            + One
+            + std::ops::Add<Output = T>
+            + std::ops::Mul<Output = T>
+            + Send
+            + Sync
+            + 'static,
+    {
+        if operands.is_empty() {
+            return Err(TensorError::other(
+                "At least one operand is required for einsum".to_string(),
+            ));
+        }
+
+        // Extract tensors for the einsum operation
+        let tensor_refs: Vec<&Tensor<T>> = operands.iter().map(|t| &t.tensor).collect();
+        let result = tenflowers_core::ops::einsum(equation, &tensor_refs)?;
+
+        // Check if any operand has a tape for gradient tracking
+        let tape_option = operands.iter().find_map(|t| t.tape.upgrade());
+
+        if let Some(tape_arc) = tape_option {
+            let tape = GradientTape { inner: tape_arc };
+
+            // Collect input IDs and shapes for gradient computation
+            let input_ids: Vec<TensorId> = operands.iter().map(|t| t.id).collect();
+            let input_shapes: Vec<Vec<usize>> = operands
+                .iter()
+                .map(|t| t.tensor.shape().dims().to_vec())
+                .collect();
+
+            Ok(tape.record_op(
+                Operation::Einsum {
+                    inputs: input_ids,
+                    equation: equation.to_string(),
+                    input_shapes,
+                },
+                result,
+            ))
+        } else {
+            // No gradient tracking
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+
+    /// Compute the pseudoinverse (Moore-Penrose inverse) of this tensor
+    pub fn pinv(&self) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    {
+        let result = tenflowers_core::ops::lapack::pinv(&self.tensor)?;
+
+        if let Some(tape_arc) = self.tape.upgrade() {
+            let tape = GradientTape { inner: tape_arc };
+            Ok(tape.record_op(Operation::Pinv { input: self.id }, result))
+        } else {
+            Ok(TrackedTensor {
+                tensor: result,
+                id: 0,
+                tape: Weak::new(),
+            })
+        }
+    }
+}

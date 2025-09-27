@@ -1,0 +1,52 @@
+[package]
+name = "tenflowers-neural"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Neural network layers, models and training APIs for TenfloweRS"
+
+[lints]
+workspace = true
+
+[dependencies]
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.1" }
+tenflowers-autograd = { path = "../tenflowers-autograd", version = "0.1.0-alpha.1" }
+tenflowers-dataset = { path = "../tenflowers-dataset", version = "0.1.0-alpha.1" }
+scirs2-core = { workspace = true, features = ["random", "memory_management", "memory_efficient", "parallel", "simd", "profiling", "gpu"] }
+scirs2-autograd = { workspace = true }
+scirs2-neural = { workspace = true }
+optirs = { workspace = true }
+ndarray = { workspace = true }
+numrs2 = { workspace = true }
+num-traits = { workspace = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+thiserror = { workspace = true }
+bytemuck = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+tensorboard-rs = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+prost-types = { workspace = true, optional = true }
+num_cpus = { workspace = true, optional = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+tempfile = "3.23"
+
+[features]
+default = []
+gpu = ["tenflowers-core/gpu", "tenflowers-autograd/gpu"]
+serialize = ["serde", "serde_json", "chrono", "tenflowers-core/serialize"]
+tensorboard = ["tensorboard-rs"]
+onnx = ["prost", "prost-types", "serialize"]
+gloo = ["num_cpus"]

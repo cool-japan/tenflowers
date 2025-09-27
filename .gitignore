@@ -1,0 +1,73 @@
+# Rust
+target/
+**/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Backup
+*.bak
+*.tmp
+*.log
+*.rs.backup
+*.rs.old
+*.old
+*.backup
+*.orig
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python (for FFI)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.dylib
+*.dll
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Documentation
+docs/_build/
+
+# Benchmarks
+benches/target/
+criterion/
+
+# Test artifacts
+*.profraw
+*.profdata
+
+# ONNX models
+*.onnx
+
+# Saved models
+*.npz
+*.pth
+*.h5
+
+# Claude
+.claude/*

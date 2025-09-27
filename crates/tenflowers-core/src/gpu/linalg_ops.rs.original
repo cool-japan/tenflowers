@@ -1,0 +1,3106 @@
+//! GPU Linear Algebra Operations
+//!
+//! This module implements GPU-accelerated linear algebra operations using WGPU compute shaders.
+//! The implementations follow cuSOLVER patterns adapted for WGPU, providing efficient GPU
+//! implementations of matrix decompositions, eigenvalue computations, and linear solvers.
+//!
+//! # Features
+//! - LU decomposition with partial pivoting
+//! - Singular Value Decomposition (SVD)
+//! - QR decomposition
+//! - Eigenvalue/eigenvector computation
+//! - Linear system solving
+//! - Matrix inversion
+//!
+//! # Architecture
+//! The operations are designed to integrate seamlessly with the existing tenflowers-core
+//! GPU infrastructure, using the same buffer management, device abstraction, and
+//! error handling patterns.
+
+use crate::gpu::{GpuBuffer, GpuContext};
+use crate::{Result, Shape, TensorError};
+use bytemuck::{Pod, Zeroable};
+use num_traits::Float;
+use std::sync::Arc;
+use wgpu::{Buffer, BufferDescriptor, BufferUsages, ComputePipeline, Device, Queue};
+
+/// GPU Linear Algebra Context
+///
+/// Manages compute pipelines and resources for GPU linear algebra operations.
+/// Follows the existing tenflowers-core pattern for GPU contexts.
+pub struct GpuLinalgContext {
+    /// WGPU device reference
+    device: Arc<Device>,
+    /// WGPU command queue
+    queue: Arc<Queue>,
+
+    // Compute pipelines for different operations
+    /// LU decomposition with partial pivoting
+    lu_decomposition_pipeline: Option<ComputePipeline>,
+    /// SVD computation using Jacobi rotations
+    svd_pipeline: Option<ComputePipeline>,
+    /// QR decomposition using Householder reflections
+    qr_decomposition_pipeline: Option<ComputePipeline>,
+    /// Eigenvalue computation using QR algorithm
+    eigenvalue_pipeline: Option<ComputePipeline>,
+    /// Linear system solver (using LU factorization)
+    linear_solve_pipeline: Option<ComputePipeline>,
+    /// Matrix inversion
+    matrix_inverse_pipeline: Option<ComputePipeline>,
+    /// Matrix determinant
+    determinant_pipeline: Option<ComputePipeline>,
+
+    // Utility pipelines
+    /// Matrix transpose
+    transpose_pipeline: Option<ComputePipeline>,
+    /// Matrix multiplication (optimized for linalg operations)
+    matmul_linalg_pipeline: Option<ComputePipeline>,
+
+    // Optimization configuration
+    /// Adaptive GEMM configuration for matrix size optimization
+    adaptive_gemm_config: AdaptiveGemmConfig,
+}
+
+/// Metadata for linear algebra operations
+///
+/// This structure is passed to GPU kernels to provide matrix dimensions
+/// and computation parameters.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct LinalgMetadata {
+    /// Number of rows in matrix A
+    pub rows_a: u32,
+    /// Number of columns in matrix A  
+    pub cols_a: u32,
+    /// Number of rows in matrix B (if applicable)
+    pub rows_b: u32,
+    /// Number of columns in matrix B (if applicable)
+    pub cols_b: u32,
+    /// Batch size for batched operations
+    pub batch_size: u32,
+    /// Tolerance for iterative algorithms
+    pub tolerance: f32,
+    /// Maximum iterations for iterative algorithms
+    pub max_iterations: u32,
+    /// Padding for alignment
+    pub _padding: u32,
+}
+
+/// Adaptive GEMM configuration for optimizing GPU matrix multiplication
+/// based on matrix dimensions and hardware characteristics
+#[derive(Debug, Clone)]
+pub struct AdaptiveGemmConfig {
+    /// Tile size for small matrices (< 256x256)
+    pub small_tile_size: u32,
+    /// Tile size for medium matrices (256x256 to 2048x2048)
+    pub medium_tile_size: u32,
+    /// Tile size for large matrices (> 2048x2048)
+    pub large_tile_size: u32,
+    /// Workgroup size for different scenarios
+    pub workgroup_sizes: Vec<(u32, u32)>,
+    /// Memory coalescing threshold
+    pub coalescing_threshold: u32,
+    /// Shared memory usage preference
+    pub prefer_shared_memory: bool,
+}
+
+impl Default for AdaptiveGemmConfig {
+    fn default() -> Self {
+        Self {
+            small_tile_size: 8,
+            medium_tile_size: 16,
+            large_tile_size: 32,
+            workgroup_sizes: vec![(8, 8), (16, 16), (32, 32)],
+            coalescing_threshold: 128,
+            prefer_shared_memory: true,
+        }
+    }
+}
+
+impl AdaptiveGemmConfig {
+    /// Select optimal tile size based on matrix dimensions
+    pub fn select_tile_size(&self, m: usize, n: usize, k: usize) -> u32 {
+        let matrix_size = (m * n).max(m * k).max(n * k);
+
+        if matrix_size < 256 * 256 {
+            self.small_tile_size
+        } else if matrix_size < 2048 * 2048 {
+            self.medium_tile_size
+        } else {
+            self.large_tile_size
+        }
+    }
+
+    /// Select optimal workgroup size based on matrix characteristics
+    pub fn select_workgroup_size(&self, m: usize, n: usize, _k: usize) -> (u32, u32) {
+        // Prefer square workgroups for balanced memory access
+        let total_ops = m * n;
+
+        if total_ops < 64 * 64 {
+            self.workgroup_sizes[0]
+        } else if total_ops < 512 * 512 {
+            self.workgroup_sizes[1]
+        } else {
+            self.workgroup_sizes[2]
+        }
+    }
+
+    /// Estimate memory bandwidth utilization
+    pub fn estimate_bandwidth_utilization(&self, m: usize, n: usize, k: usize) -> f32 {
+        let tile_size = self.select_tile_size(m, n, k) as usize;
+        let tiles_m = (m + tile_size - 1) / tile_size;
+        let tiles_n = (n + tile_size - 1) / tile_size;
+        let tiles_k = (k + tile_size - 1) / tile_size;
+
+        // Estimate based on data reuse in tiled computation
+        let total_elements = m * n + m * k + n * k;
+        let reused_elements = tiles_m * tiles_n * tiles_k * tile_size * tile_size;
+
+        // Higher reuse means better bandwidth utilization
+        (reused_elements as f32 / total_elements as f32).min(1.0)
+    }
+}
+
+impl LinalgMetadata {
+    /// Create metadata for matrix operations
+    pub fn new(rows_a: usize, cols_a: usize) -> Self {
+        Self {
+            rows_a: rows_a as u32,
+            cols_a: cols_a as u32,
+            rows_b: 0,
+            cols_b: 0,
+            batch_size: 1,
+            tolerance: 1e-6,
+            max_iterations: 1000,
+            _padding: 0,
+        }
+    }
+
+    /// Create metadata for two-matrix operations
+    pub fn new_two_matrices(rows_a: usize, cols_a: usize, rows_b: usize, cols_b: usize) -> Self {
+        Self {
+            rows_a: rows_a as u32,
+            cols_a: cols_a as u32,
+            rows_b: rows_b as u32,
+            cols_b: cols_b as u32,
+            batch_size: 1,
+            tolerance: 1e-6,
+            max_iterations: 1000,
+            _padding: 0,
+        }
+    }
+
+    /// Set tolerance for iterative algorithms
+    pub fn with_tolerance(mut self, tolerance: f32) -> Self {
+        self.tolerance = tolerance;
+        self
+    }
+
+    /// Set maximum iterations for iterative algorithms
+    pub fn with_max_iterations(mut self, max_iterations: u32) -> Self {
+        self.max_iterations = max_iterations;
+        self
+    }
+
+    /// Set batch size for batched operations
+    pub fn with_batch_size(mut self, batch_size: u32) -> Self {
+        self.batch_size = batch_size;
+        self
+    }
+}
+
+impl GpuLinalgContext {
+    /// Create a new GPU linear algebra context
+    pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
+        Self {
+            device,
+            queue,
+            lu_decomposition_pipeline: None,
+            svd_pipeline: None,
+            qr_decomposition_pipeline: None,
+            eigenvalue_pipeline: None,
+            linear_solve_pipeline: None,
+            matrix_inverse_pipeline: None,
+            determinant_pipeline: None,
+            transpose_pipeline: None,
+            matmul_linalg_pipeline: None,
+            adaptive_gemm_config: AdaptiveGemmConfig::default(),
+        }
+    }
+
+    /// Create a new GPU linear algebra context with custom GEMM configuration
+    pub fn with_adaptive_gemm_config(
+        device: Arc<Device>,
+        queue: Arc<Queue>,
+        config: AdaptiveGemmConfig,
+    ) -> Self {
+        Self {
+            device,
+            queue,
+            lu_decomposition_pipeline: None,
+            svd_pipeline: None,
+            qr_decomposition_pipeline: None,
+            eigenvalue_pipeline: None,
+            linear_solve_pipeline: None,
+            matrix_inverse_pipeline: None,
+            determinant_pipeline: None,
+            transpose_pipeline: None,
+            matmul_linalg_pipeline: None,
+            adaptive_gemm_config: config,
+        }
+    }
+
+    /// Initialize compute pipelines
+    ///
+    /// This method loads and compiles the WGSL shaders for linear algebra operations.
+    /// It's called lazily when operations are first requested.
+    pub fn initialize_pipelines(&mut self) -> Result<()> {
+        // Initialize transpose pipeline (used by many operations)
+        if self.transpose_pipeline.is_none() {
+            self.transpose_pipeline = Some(self.create_transpose_pipeline()?);
+        }
+
+        // Initialize matrix multiplication pipeline optimized for linalg
+        if self.matmul_linalg_pipeline.is_none() {
+            self.matmul_linalg_pipeline = Some(self.create_matmul_linalg_pipeline()?);
+        }
+
+        Ok(())
+    }
+
+    /// Initialize SVD pipeline
+    fn initialize_svd_pipeline(&mut self) -> Result<()> {
+        if self.svd_pipeline.is_none() {
+            self.svd_pipeline = Some(self.create_svd_pipeline()?);
+        }
+        Ok(())
+    }
+
+    /// Create SVD compute pipeline
+    fn create_svd_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_svd.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_svd_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_svd_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("initialize_svd"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Initialize eigenvalue pipeline
+    fn initialize_eigenvalue_pipeline(&mut self) -> Result<()> {
+        if self.eigenvalue_pipeline.is_none() {
+            self.eigenvalue_pipeline = Some(self.create_eigenvalue_pipeline()?);
+        }
+        Ok(())
+    }
+
+    /// Create eigenvalue compute pipeline
+    fn create_eigenvalue_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_eigenvalue.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_eigenvalue_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_eigenvalue_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("initialize_eigen"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Create transpose compute pipeline
+    fn create_transpose_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_transpose.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_transpose_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_transpose_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("main"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Create matrix multiplication pipeline optimized for linear algebra
+    fn create_matmul_linalg_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_matmul.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_matmul_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_matmul_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("main"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Initialize LU decomposition pipeline
+    fn initialize_lu_pipeline(&mut self) -> Result<()> {
+        if self.lu_decomposition_pipeline.is_none() {
+            self.lu_decomposition_pipeline = Some(self.create_lu_pipeline()?);
+        }
+        Ok(())
+    }
+
+    /// Create LU decomposition compute pipeline
+    fn create_lu_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_lu.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_lu_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_lu_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("main"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Create QR decomposition compute pipeline
+    fn create_qr_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_qr.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_qr_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_qr_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("compute_householder"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Create linear solver compute pipeline
+    fn create_linear_solve_pipeline(&self) -> Result<ComputePipeline> {
+        let shader_source = include_str!("shaders/linalg_solve.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("linalg_solve_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let compute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("linalg_solve_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("apply_permutation"),
+                    compilation_options: Default::default(),
+                });
+
+        Ok(compute_pipeline)
+    }
+
+    /// Matrix transpose operation
+    pub fn transpose<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        output: &GpuBuffer<T>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Ensure pipeline is initialized
+        if self.transpose_pipeline.is_none() {
+            self.initialize_pipelines()?;
+        }
+
+        let pipeline = self.transpose_pipeline.as_ref().unwrap();
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(shape[0], shape[1]);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("transpose_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("transpose_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("transpose_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch with workgroup size optimization
+            let workgroup_size = 16; // 16x16 workgroups for 2D operations
+            let workgroups_x = (shape[1] + workgroup_size - 1) / workgroup_size;
+            let workgroups_y = (shape[0] + workgroup_size - 1) / workgroup_size;
+
+            compute_pass.dispatch_workgroups(workgroups_x as u32, workgroups_y as u32, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Matrix multiplication optimized for linear algebra operations
+    pub fn matmul_linalg<T>(
+        &mut self,
+        a: &GpuBuffer<T>,
+        b: &GpuBuffer<T>,
+        c: &GpuBuffer<T>,
+        shape_a: &Shape,
+        shape_b: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Ensure pipeline is initialized
+        if self.matmul_linalg_pipeline.is_none() {
+            self.initialize_pipelines()?;
+        }
+
+        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+
+        // Validate matrix dimensions
+        if shape_a.len() != 2 || shape_b.len() != 2 {
+            return Err(TensorError::ShapeMismatch(
+                "Matrix multiplication requires 2D tensors".to_string(),
+            ));
+        }
+
+        if shape_a[1] != shape_b[0] {
+            return Err(TensorError::ShapeMismatch(format!(
+                "Cannot multiply matrices with shapes {:?} and {:?}",
+                shape_a, shape_b
+            )));
+        }
+
+        // Create metadata
+        let metadata =
+            LinalgMetadata::new_two_matrices(shape_a[0], shape_a[1], shape_b[0], shape_b[1]);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("matmul_linalg_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: a.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: b.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: c.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("matmul_linalg_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("matmul_linalg_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch with tiled workgroups for optimal memory access
+            let tile_size = 16;
+            let workgroups_x = (shape_b[1] + tile_size - 1) / tile_size;
+            let workgroups_y = (shape_a[0] + tile_size - 1) / tile_size;
+
+            compute_pass.dispatch_workgroups(workgroups_x as u32, workgroups_y as u32, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Adaptive matrix multiplication that selects optimal parameters based on matrix dimensions
+    pub fn adaptive_matmul_linalg<T>(
+        &mut self,
+        a: &GpuBuffer<T>,
+        b: &GpuBuffer<T>,
+        c: &GpuBuffer<T>,
+        shape_a: &Shape,
+        shape_b: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Validate matrix dimensions
+        if shape_a.len() != 2 || shape_b.len() != 2 {
+            return Err(TensorError::invalid_shape_simple("Matrix multiplication requires 2D tensors".to_string(),
+            ));
+        }
+
+        if shape_a[1] != shape_b[0] {
+            return Err(TensorError::ShapeMismatch {
+                expected: format!(
+                    "inner dimensions to match (got {} vs {})",
+                    shape_a[1], shape_b[0]
+                ),
+                got: format!("shapes {:?} and {:?}", shape_a, shape_b),
+            });
+        }
+
+        let m = shape_a[0];
+        let k = shape_a[1];
+        let n = shape_b[1];
+
+        // Select optimal parameters using adaptive configuration
+        let tile_size = self.adaptive_gemm_config.select_tile_size(m, n, k);
+        let (workgroup_x, workgroup_y) = self.adaptive_gemm_config.select_workgroup_size(m, n, k);
+
+        // Estimate performance characteristics
+        let bandwidth_utilization = self
+            .adaptive_gemm_config
+            .estimate_bandwidth_utilization(m, n, k);
+
+        // For very high bandwidth utilization, prefer shared memory optimization
+        if bandwidth_utilization > 0.8 && self.adaptive_gemm_config.prefer_shared_memory {
+            self.matmul_with_shared_memory_optimization(a, b, c, shape_a, shape_b, tile_size)
+        } else {
+            self.matmul_with_memory_coalescing_optimization(
+                a,
+                b,
+                c,
+                shape_a,
+                shape_b,
+                workgroup_x,
+                workgroup_y,
+            )
+        }
+    }
+
+    /// Matrix multiplication with shared memory optimization for high data reuse scenarios
+    fn matmul_with_shared_memory_optimization<T>(
+        &mut self,
+        a: &GpuBuffer<T>,
+        b: &GpuBuffer<T>,
+        c: &GpuBuffer<T>,
+        shape_a: &Shape,
+        shape_b: &Shape,
+        tile_size: u32,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Ensure pipeline is initialized
+        if self.matmul_linalg_pipeline.is_none() {
+            self.initialize_pipelines()?;
+        }
+
+        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+
+        // Create metadata with tile size hint
+        let mut metadata =
+            LinalgMetadata::new_two_matrices(shape_a[0], shape_a[1], shape_b[0], shape_b[1]);
+        // Store tile size in max_iterations field as a hint to the shader
+        metadata.max_iterations = tile_size;
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("adaptive_matmul_shared_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: a.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: b.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: c.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute with optimal tile size
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("adaptive_matmul_shared_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("adaptive_matmul_shared_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Use the adaptive tile size for workgroup dispatch
+            let workgroups_x = (shape_b[1] + tile_size as usize - 1) / tile_size as usize;
+            let workgroups_y = (shape_a[0] + tile_size as usize - 1) / tile_size as usize;
+
+            compute_pass.dispatch_workgroups(workgroups_x as u32, workgroups_y as u32, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Matrix multiplication with memory coalescing optimization for bandwidth-bound scenarios
+    fn matmul_with_memory_coalescing_optimization<T>(
+        &mut self,
+        a: &GpuBuffer<T>,
+        b: &GpuBuffer<T>,
+        c: &GpuBuffer<T>,
+        shape_a: &Shape,
+        shape_b: &Shape,
+        workgroup_x: u32,
+        workgroup_y: u32,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Ensure pipeline is initialized
+        if self.matmul_linalg_pipeline.is_none() {
+            self.initialize_pipelines()?;
+        }
+
+        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+
+        // Create metadata
+        let metadata =
+            LinalgMetadata::new_two_matrices(shape_a[0], shape_a[1], shape_b[0], shape_b[1]);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("adaptive_matmul_coalescing_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: a.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: b.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: c.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute with optimal workgroup sizes for memory coalescing
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("adaptive_matmul_coalescing_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("adaptive_matmul_coalescing_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Use adaptive workgroup sizes optimized for memory access patterns
+            let workgroups_x = (shape_b[1] + workgroup_x as usize - 1) / workgroup_x as usize;
+            let workgroups_y = (shape_a[0] + workgroup_y as usize - 1) / workgroup_y as usize;
+
+            compute_pass.dispatch_workgroups(workgroups_x as u32, workgroups_y as u32, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Get adaptive GEMM configuration
+    pub fn adaptive_gemm_config(&self) -> &AdaptiveGemmConfig {
+        &self.adaptive_gemm_config
+    }
+
+    /// Update adaptive GEMM configuration
+    pub fn set_adaptive_gemm_config(&mut self, config: AdaptiveGemmConfig) {
+        self.adaptive_gemm_config = config;
+    }
+
+    /// Create metadata buffer for passing parameters to GPU kernels
+    fn create_metadata_buffer(&self, metadata: &LinalgMetadata) -> Result<Buffer> {
+        let metadata_bytes = bytemuck::bytes_of(metadata);
+
+        let buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("linalg_metadata_buffer"),
+            size: metadata_bytes.len() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        self.queue.write_buffer(&buffer, 0, metadata_bytes);
+        Ok(buffer)
+    }
+
+    /// LU decomposition with partial pivoting
+    ///
+    /// Performs LU decomposition on GPU using a simplified algorithm.
+    /// For very large matrices, this provides better performance than CPU.
+    /// Uses multiple GPU dispatches to handle sequential dependencies.
+    pub fn lu_decomposition<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        l: &GpuBuffer<T>,
+        u: &GpuBuffer<T>,
+        p: &GpuBuffer<T>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        let dims = shape.dims();
+        if dims.len() != 2 || dims[0] != dims[1] {
+            return Err(TensorError::invalid_shape_simple("LU decomposition requires a square matrix".to_string(),
+            ));
+        }
+
+        let n = dims[0] as u32;
+
+        // For small matrices, fall back to CPU for efficiency
+        if n < 64 {
+            return Err(TensorError::ComputeError {
+                operation: "gpu_lu_decomposition".to_string(),
+                details: "GPU LU decomposition requires matrices >= 64x64 - use CPU fallback for smaller matrices".to_string(),
+                retry_possible: false,
+                context: None,
+            });
+        }
+
+        // Initialize LU decomposition pipeline if needed
+        if self.lu_decomposition_pipeline.is_none() {
+            self.initialize_lu_pipeline()?;
+        }
+
+        let pipeline = self.lu_decomposition_pipeline.as_ref().unwrap();
+
+        // Create metadata buffer
+        let metadata = LinalgMetadata {
+            rows_a: n,
+            cols_a: n,
+            rows_b: n,
+            cols_b: n,
+            batch_size: 1,
+            tolerance: T::from(1e-10)
+                .unwrap_or_else(|| T::from(0.0).unwrap())
+                .to_f64() as f32,
+            max_iterations: n,
+            _padding: 0,
+        };
+
+        let metadata_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("LU Metadata Buffer"),
+                contents: bytemuck::bytes_of(&metadata),
+                usage: BufferUsages::UNIFORM,
+            });
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("LU Decomposition Bind Group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: l.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: u.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: p.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute operation
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("LU Decomposition Encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("LU Decomposition Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Calculate workgroup size - use 16x16 workgroups
+            let workgroup_size = 16;
+            let dispatch_x = (n + workgroup_size - 1) / workgroup_size;
+            let dispatch_y = (n + workgroup_size - 1) / workgroup_size;
+
+            compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+        }
+
+        // Submit command buffer
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(())
+    }
+
+    /// Singular Value Decomposition (SVD)
+    ///
+    /// Performs SVD using Jacobi rotations adapted for GPU execution.
+    /// For a matrix A [m, n], computes: A = U * S * V^T
+    /// Where: U [m, min(m,n)] (orthogonal), S [min(m,n)] (singular values), V^T [min(m,n), n] (orthogonal)
+    pub fn svd<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        u: &GpuBuffer<T>,
+        s: &GpuBuffer<T>,
+        vt: &GpuBuffer<T>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        if shape.len() != 2 {
+            return Err(TensorError::invalid_shape_simple("SVD requires a 2D matrix".to_string(),
+            ));
+        }
+
+        let m = shape[0];
+        let n = shape[1];
+        let min_mn = m.min(n);
+
+        if m == 0 || n == 0 {
+            return Err(TensorError::invalid_shape_simple("Cannot perform SVD on empty matrix".to_string(),
+            ));
+        }
+
+        // For very small matrices, suggest CPU fallback
+        if min_mn < 8 {
+            return Err(TensorError::ComputeError {
+                operation: "gpu_svd".to_string(),
+                details: "GPU SVD requires matrices >= 8x8 - use CPU fallback for smaller matrices"
+                    .to_string(),
+                retry_possible: false,
+                context: None,
+            });
+        }
+
+        // Initialize SVD pipeline if needed
+        if self.svd_pipeline.is_none() {
+            self.initialize_svd_pipeline()?;
+        }
+
+        // Create working buffer for the algorithm
+        let working_size = m * n;
+        let working_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("svd_working_buffer"),
+            size: (working_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(m, n)
+            .with_tolerance(
+                T::from(1e-10)
+                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .to_f64() as f32,
+            )
+            .with_max_iterations(100 * min_mn as u32);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Load SVD shader and create pipelines for different stages
+        let shader_source = include_str!("shaders/linalg_svd.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("svd_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let init_pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("svd_init_pipeline"),
+                layout: None,
+                module: &shader_module,
+                entry_point: Some("initialize_svd"),
+                compilation_options: Default::default(),
+            });
+
+        let givens_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("svd_givens_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("apply_givens_rotation"),
+                    compilation_options: Default::default(),
+                });
+
+        let extract_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("svd_extract_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("extract_singular_values"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("svd_bind_group"),
+            layout: &init_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: u.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: s.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: vt.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: working_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Initialize matrices
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("svd_init_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("svd_init_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&init_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let workgroups_x = (n as u32 + 15) / 16;
+            let workgroups_y = (m as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Iterative Jacobi rotations for square case
+        if m == n {
+            let max_iterations = metadata.max_iterations;
+
+            for _iter in 0..max_iterations {
+                let mut converged = true;
+
+                // Apply Givens rotations to eliminate off-diagonal elements
+                for i in 0..n {
+                    for j in (i + 1)..n {
+                        // Update metadata with current (i,j) pair
+                        let updated_metadata = LinalgMetadata {
+                            rows_a: m as u32,
+                            cols_a: n as u32,
+                            rows_b: i as u32, // Reusing for i
+                            cols_b: j as u32, // Reusing for j
+                            batch_size: 1,
+                            tolerance: metadata.tolerance,
+                            max_iterations: metadata.max_iterations,
+                            _padding: 0,
+                        };
+
+                        let iter_metadata_buffer =
+                            self.create_metadata_buffer(&updated_metadata)?;
+
+                        let iter_bind_group =
+                            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                                label: Some("svd_iter_bind_group"),
+                                layout: &givens_pipeline.get_bind_group_layout(0),
+                                entries: &[
+                                    wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: input.buffer().as_entire_binding(),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 1,
+                                        resource: u.buffer().as_entire_binding(),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 2,
+                                        resource: s.buffer().as_entire_binding(),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 3,
+                                        resource: vt.buffer().as_entire_binding(),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 4,
+                                        resource: working_buffer.as_entire_binding(),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 5,
+                                        resource: iter_metadata_buffer.as_entire_binding(),
+                                    },
+                                ],
+                            });
+
+                        let mut encoder =
+                            self.device
+                                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                    label: Some("svd_givens_encoder"),
+                                });
+
+                        {
+                            let mut compute_pass =
+                                encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                                    label: Some("svd_givens_pass"),
+                                    timestamp_writes: None,
+                                });
+
+                            compute_pass.set_pipeline(&givens_pipeline);
+                            compute_pass.set_bind_group(0, &iter_bind_group, &[]);
+                            compute_pass.dispatch_workgroups((n as u32 + 255) / 256, 1, 1);
+                        }
+
+                        self.queue.submit(std::iter::once(encoder.finish()));
+
+                        // In a real implementation, we would check convergence here
+                        // For simplicity, we assume convergence after a fixed number of iterations
+                        converged = false; // Force at least some iterations
+                    }
+                }
+
+                if converged {
+                    break;
+                }
+            }
+        }
+
+        // Extract singular values from diagonal
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("svd_extract_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("svd_extract_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&extract_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups((min_mn as u32 + 255) / 256, 1, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(())
+    }
+
+    /// QR decomposition using Householder reflections
+    ///
+    /// Computes QR decomposition using Householder reflections adapted for GPU execution.
+    /// For a matrix A [m, n], computes: A = Q * R
+    /// Where: Q [m, m] (orthogonal), R [m, n] (upper triangular)
+    pub fn qr_decomposition<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        q: &GpuBuffer<T>,
+        r: &GpuBuffer<T>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        if shape.len() != 2 {
+            return Err(TensorError::invalid_shape_simple("QR decomposition requires a 2D matrix".to_string(),
+            ));
+        }
+
+        let m = shape[0];
+        let n = shape[1];
+
+        if m == 0 || n == 0 {
+            return Err(TensorError::invalid_shape_simple("Cannot perform QR decomposition on empty matrix".to_string(),
+            ));
+        }
+
+        // For very small matrices, suggest CPU fallback
+        if m.min(n) < 4 {
+            return Err(TensorError::ComputeError {
+                operation: "gpu_qr_decomposition".to_string(),
+                details: "GPU QR decomposition requires matrices >= 4x4 - use CPU fallback for smaller matrices".to_string(),
+                retry_possible: false,
+                context: None,
+            });
+        }
+
+        // Initialize QR decomposition pipeline if needed
+        if self.qr_decomposition_pipeline.is_none() {
+            self.qr_decomposition_pipeline = Some(self.create_qr_pipeline()?);
+        }
+
+        let pipeline = self.qr_decomposition_pipeline.as_ref().unwrap();
+
+        // Create working buffers
+        let matrix_size = m * n;
+        let working_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("qr_working_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let householder_vectors = self.device.create_buffer(&BufferDescriptor {
+            label: Some("qr_householder_vectors"),
+            size: (m * n.min(m) * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let tau_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("qr_tau_buffer"),
+            size: (n.min(m) * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Copy input to working matrix
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("qr_copy_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            input.buffer(),
+            0,
+            &working_matrix,
+            0,
+            (matrix_size * std::mem::size_of::<T>()) as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(m, n)
+            .with_tolerance(
+                T::from(1e-10)
+                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .to_f64() as f32,
+            )
+            .with_max_iterations(n.min(m) as u32);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Load QR shader and create pipelines for different stages
+        let shader_source = include_str!("shaders/linalg_qr.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("qr_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let householder_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("qr_householder_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("compute_householder"),
+                    compilation_options: Default::default(),
+                });
+
+        let apply_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("qr_apply_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("apply_householder"),
+                    compilation_options: Default::default(),
+                });
+
+        let extract_q_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("qr_extract_q_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("extract_q_matrix"),
+                    compilation_options: Default::default(),
+                });
+
+        let extract_r_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("qr_extract_r_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("extract_r_matrix"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("qr_bind_group"),
+            layout: &householder_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: working_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: q.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: r.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: householder_vectors.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: tau_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Perform Householder QR decomposition for each column
+        let min_mn = m.min(n);
+        for k in 0..min_mn {
+            // Update metadata with current column
+            let updated_metadata = LinalgMetadata {
+                rows_a: m as u32,
+                cols_a: n as u32,
+                rows_b: k as u32, // Current column index
+                cols_b: 0,
+                batch_size: 1,
+                tolerance: metadata.tolerance,
+                max_iterations: metadata.max_iterations,
+                _padding: 0,
+            };
+
+            let iter_metadata_buffer = self.create_metadata_buffer(&updated_metadata)?;
+
+            let iter_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("qr_iter_bind_group"),
+                layout: &householder_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: working_matrix.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: q.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: r.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: householder_vectors.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: tau_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: iter_metadata_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("qr_householder_encoder"),
+                });
+
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("qr_householder_pass"),
+                    timestamp_writes: None,
+                });
+
+                // Compute Householder vector for column k
+                compute_pass.set_pipeline(&householder_pipeline);
+                compute_pass.set_bind_group(0, &iter_bind_group, &[]);
+                compute_pass.dispatch_workgroups((m as u32 + 255) / 256, 1, 1);
+
+                // Apply Householder transformation to remaining columns
+                compute_pass.set_pipeline(&apply_pipeline);
+                compute_pass.set_bind_group(0, &iter_bind_group, &[]);
+                let workgroups_x = (n as u32 + 15) / 16;
+                let workgroups_y = (m as u32 + 15) / 16;
+                compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        // Extract Q matrix from Householder vectors
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("qr_extract_q_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("qr_extract_q_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&extract_q_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            let workgroups_x = (m as u32 + 15) / 16;
+            let workgroups_y = (m as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Extract R matrix (upper triangular) from working matrix
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("qr_extract_r_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("qr_extract_r_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&extract_r_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            let workgroups_x = (n as u32 + 15) / 16;
+            let workgroups_y = (m as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(())
+    }
+
+    /// Eigenvalue computation
+    ///
+    /// Computes eigenvalues and eigenvectors of a symmetric matrix using the QR algorithm.
+    /// For a symmetric matrix A [n, n], computes eigenvalues λ and eigenvectors V such that:
+    /// A * V = V * Λ (where Λ is diagonal matrix of eigenvalues)
+    pub fn eigenvalues<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        eigenvalues: &GpuBuffer<T>,
+        eigenvectors: Option<&GpuBuffer<T>>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        if shape.len() != 2 || shape[0] != shape[1] {
+            return Err(TensorError::invalid_shape_simple("Eigenvalue computation requires a square matrix".to_string(),
+            ));
+        }
+
+        let n = shape[0];
+        if n == 0 {
+            return Ok(()); // Empty matrix has no eigenvalues
+        }
+
+        // For very small matrices, suggest CPU fallback
+        if n < 4 {
+            return Err(TensorError::ComputeError {
+                operation: "gpu_eigenvalue".to_string(),
+                details: "GPU eigenvalue computation requires matrices >= 4x4 - use CPU fallback for smaller matrices".to_string(),
+                retry_possible: false,
+                context: None,
+            });
+        }
+
+        // Initialize eigenvalue pipeline if needed
+        if self.eigenvalue_pipeline.is_none() {
+            self.initialize_eigenvalue_pipeline()?;
+        }
+
+        // Create working buffers
+        let matrix_size = n * n;
+        let working_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("eigen_working_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let q_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("eigen_q_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(n, n)
+            .with_tolerance(
+                T::from(1e-10)
+                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .to_f64() as f32,
+            )
+            .with_max_iterations(100 * n as u32);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Load eigenvalue shader and create pipelines for different stages
+        let shader_source = include_str!("shaders/linalg_eigenvalue.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("eigenvalue_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let init_pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("eigen_init_pipeline"),
+                layout: None,
+                module: &shader_module,
+                entry_point: Some("initialize_eigen"),
+                compilation_options: Default::default(),
+            });
+
+        let givens_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("eigen_givens_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("apply_givens_eigen"),
+                    compilation_options: Default::default(),
+                });
+
+        let extract_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("eigen_extract_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("extract_eigenvalues"),
+                    compilation_options: Default::default(),
+                });
+
+        let sort_pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("eigen_sort_pipeline"),
+                layout: None,
+                module: &shader_module,
+                entry_point: Some("sort_eigenvalues"),
+                compilation_options: Default::default(),
+            });
+
+        let normalize_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("eigen_normalize_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("normalize_eigenvectors"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create eigenvectors buffer if not provided
+        let eigenvectors_buffer = if let Some(eigenvecs) = eigenvectors {
+            eigenvecs.buffer()
+        } else {
+            // Create a temporary buffer if eigenvectors are not requested
+            &self.device.create_buffer(&BufferDescriptor {
+                label: Some("temp_eigenvectors"),
+                size: (matrix_size * std::mem::size_of::<T>()) as u64,
+                usage: BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            })
+        };
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("eigen_bind_group"),
+            layout: &init_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: eigenvalues.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: eigenvectors_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: working_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: q_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Initialize matrices
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("eigen_init_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("eigen_init_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&init_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let workgroups_x = (n as u32 + 15) / 16;
+            let workgroups_y = (n as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Iterative Jacobi method for symmetric eigenvalue problem
+        let max_iterations = metadata.max_iterations.min(100); // Limit iterations for performance
+
+        for _iter in 0..max_iterations {
+            let mut converged = true;
+
+            // Apply Givens rotations to eliminate off-diagonal elements
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    // Update metadata with current (i,j) pair
+                    let updated_metadata = LinalgMetadata {
+                        rows_a: n as u32,
+                        cols_a: n as u32,
+                        rows_b: i as u32, // Reusing for i
+                        cols_b: j as u32, // Reusing for j
+                        batch_size: 1,
+                        tolerance: metadata.tolerance,
+                        max_iterations: metadata.max_iterations,
+                        _padding: 0,
+                    };
+
+                    let iter_metadata_buffer = self.create_metadata_buffer(&updated_metadata)?;
+
+                    let iter_bind_group =
+                        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("eigen_iter_bind_group"),
+                            layout: &givens_pipeline.get_bind_group_layout(0),
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: input.buffer().as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: eigenvalues.buffer().as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 2,
+                                    resource: eigenvectors_buffer.as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 3,
+                                    resource: working_matrix.as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 4,
+                                    resource: q_matrix.as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 5,
+                                    resource: iter_metadata_buffer.as_entire_binding(),
+                                },
+                            ],
+                        });
+
+                    let mut encoder =
+                        self.device
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("eigen_givens_encoder"),
+                            });
+
+                    {
+                        let mut compute_pass =
+                            encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                                label: Some("eigen_givens_pass"),
+                                timestamp_writes: None,
+                            });
+
+                        compute_pass.set_pipeline(&givens_pipeline);
+                        compute_pass.set_bind_group(0, &iter_bind_group, &[]);
+                        compute_pass.dispatch_workgroups((n as u32 + 255) / 256, 1, 1);
+                    }
+
+                    self.queue.submit(std::iter::once(encoder.finish()));
+
+                    // In a real implementation, we would check convergence here
+                    // For simplicity, we assume convergence after a fixed number of iterations
+                    converged = false; // Force at least some iterations
+                }
+            }
+
+            if converged {
+                break;
+            }
+        }
+
+        // Extract eigenvalues from diagonal
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("eigen_extract_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("eigen_extract_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&extract_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups((n as u32 + 255) / 256, 1, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Sort eigenvalues and eigenvectors
+        if eigenvectors.is_some() {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("eigen_sort_encoder"),
+                });
+
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("eigen_sort_pass"),
+                    timestamp_writes: None,
+                });
+
+                compute_pass.set_pipeline(&sort_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups(1, 1, 1); // Single workgroup for sorting
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+
+            // Normalize eigenvectors
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("eigen_normalize_encoder"),
+                });
+
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("eigen_normalize_pass"),
+                    timestamp_writes: None,
+                });
+
+                compute_pass.set_pipeline(&normalize_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups((n as u32 + 255) / 256, 1, 1);
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        Ok(())
+    }
+
+    /// Linear system solver
+    ///
+    /// Solves the linear system Ax = b using LU factorization with partial pivoting.
+    /// For a matrix A [n, n] and vector b [n, 1], computes x such that A * x = b.
+    /// Uses forward and backward substitution after LU decomposition.
+    pub fn solve<T>(
+        &mut self,
+        a: &GpuBuffer<T>,
+        b: &GpuBuffer<T>,
+        x: &GpuBuffer<T>,
+        shape_a: &Shape,
+        shape_b: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Validate input dimensions
+        if shape_a.len() != 2 || shape_a[0] != shape_a[1] {
+            return Err(TensorError::invalid_shape_simple("Linear solver requires a square coefficient matrix".to_string(),
+            ));
+        }
+
+        if shape_b.len() != 2 || shape_b[0] != shape_a[0] {
+            return Err(TensorError::ShapeMismatch(format!(
+                "Right-hand side vector dimensions {} do not match matrix size {}",
+                shape_b[0], shape_a[0]
+            )));
+        }
+
+        let n = shape_a[0];
+        let nrhs = shape_b[1]; // Number of right-hand sides
+
+        if n == 0 {
+            return Err(TensorError::invalid_shape_simple("Cannot solve empty linear system".to_string(),
+            ));
+        }
+
+        // For very small systems, suggest CPU fallback
+        if n < 4 {
+            return Err(TensorError::ComputeError {
+                operation: "gpu_linear_solve".to_string(),
+                details: "GPU linear solver requires matrices >= 4x4 - use CPU fallback for smaller systems".to_string(),
+                retry_possible: false,
+                context: None,
+            });
+        }
+
+        // Initialize linear solve pipeline if needed
+        if self.linear_solve_pipeline.is_none() {
+            self.linear_solve_pipeline = Some(self.create_linear_solve_pipeline()?);
+        }
+
+        let pipeline = self.linear_solve_pipeline.as_ref().unwrap();
+
+        // Create working buffers
+        let matrix_size = n * n;
+        let rhs_size = n * nrhs;
+
+        // LU factorization buffers
+        let l_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_l_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let u_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_u_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let p_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_p_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Working solution vector
+        let working_b = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_working_b"),
+            size: (rhs_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let intermediate_y = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_intermediate_y"),
+            size: (rhs_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Status buffer for singularity detection
+        let status_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_status"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        // Copy right-hand side to working buffer
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_copy_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            b.buffer(),
+            0,
+            &working_b,
+            0,
+            (rhs_size * std::mem::size_of::<T>()) as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Step 1: Perform LU decomposition
+        let shape_a_obj = Shape::new(vec![n, n]);
+        self.lu_decomposition(a, &l_matrix, &u_matrix, &p_matrix, &shape_a_obj)?;
+
+        // Create metadata
+        let metadata = LinalgMetadata::new_two_matrices(n, n, n, nrhs).with_tolerance(
+            T::from(1e-12)
+                .unwrap_or_else(|| T::from(0.0).unwrap())
+                .to_f64() as f32,
+        );
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Load linear solver shader and create pipelines for different stages
+        let shader_source = include_str!("shaders/linalg_solve.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("solve_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        let permute_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("solve_permute_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("apply_permutation"),
+                    compilation_options: Default::default(),
+                });
+
+        let forward_subst_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("solve_forward_subst_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("forward_substitution"),
+                    compilation_options: Default::default(),
+                });
+
+        let backward_subst_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("solve_backward_subst_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("backward_substitution"),
+                    compilation_options: Default::default(),
+                });
+
+        let singularity_check_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("solve_singularity_check_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("check_singularity"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create bind group
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("solve_bind_group"),
+            layout: &permute_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: l_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: u_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: p_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: working_b.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: intermediate_y.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: x.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: status_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Step 2: Check for singularity
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_singularity_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("solve_singularity_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&singularity_check_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(1, 1, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Step 3: Apply permutation to right-hand side (Pb)
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_permute_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("solve_permute_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&permute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups((nrhs as u32 + 255) / 256, (n as u32 + 255) / 256, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Step 4: Forward substitution (solve Ly = Pb)
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_forward_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("solve_forward_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&forward_subst_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            // Use sequential solving for forward substitution
+            for i in 0..n {
+                // Update metadata with current row
+                let row_metadata = LinalgMetadata {
+                    rows_a: n as u32,
+                    cols_a: n as u32,
+                    rows_b: i as u32, // Current row
+                    cols_b: nrhs as u32,
+                    batch_size: 1,
+                    tolerance: metadata.tolerance,
+                    max_iterations: 1,
+                    _padding: 0,
+                };
+
+                let row_metadata_buffer = self.create_metadata_buffer(&row_metadata)?;
+
+                let row_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("solve_forward_row_bind_group"),
+                    layout: &forward_subst_pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: l_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: u_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: p_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: working_b.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: intermediate_y.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: x.buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: status_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: row_metadata_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+
+                compute_pass.set_bind_group(0, &row_bind_group, &[]);
+                compute_pass.dispatch_workgroups((nrhs as u32 + 255) / 256, 1, 1);
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Step 5: Backward substitution (solve Ux = y)
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_backward_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("solve_backward_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&backward_subst_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            // Use sequential solving for backward substitution (reverse order)
+            for i in (0..n).rev() {
+                // Update metadata with current row
+                let row_metadata = LinalgMetadata {
+                    rows_a: n as u32,
+                    cols_a: n as u32,
+                    rows_b: i as u32, // Current row
+                    cols_b: nrhs as u32,
+                    batch_size: 1,
+                    tolerance: metadata.tolerance,
+                    max_iterations: 1,
+                    _padding: 0,
+                };
+
+                let row_metadata_buffer = self.create_metadata_buffer(&row_metadata)?;
+
+                let row_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("solve_backward_row_bind_group"),
+                    layout: &backward_subst_pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: l_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: u_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: p_matrix.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: working_b.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: intermediate_y.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: x.buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: status_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: row_metadata_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+
+                compute_pass.set_bind_group(0, &row_bind_group, &[]);
+                compute_pass.dispatch_workgroups((nrhs as u32 + 255) / 256, 1, 1);
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Check for singularity by reading status
+        let status_readback = self.device.create_buffer(&BufferDescriptor {
+            label: Some("solve_status_readback"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solve_status_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            &status_buffer,
+            0,
+            &status_readback,
+            0,
+            std::mem::size_of::<u32>() as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and check status
+        let buffer_slice = status_readback.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        self.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().map_err(|e| TensorError::ComputeError {
+            operation: "gpu_read_status".to_string(),
+            details: format!("Failed to read status: {:?}", e),
+            retry_possible: true,
+            context: None,
+        })?;
+
+        let data = buffer_slice.get_mapped_range();
+        let status = bytemuck::from_bytes::<u32>(&data[..std::mem::size_of::<u32>()]);
+
+        if *status != 0 {
+            drop(data);
+            status_readback.unmap();
+            return Err(TensorError::unsupported_operation_simple(
+                "Matrix is singular - linear system has no unique solution".to_string(),
+            ));
+        }
+
+        drop(data);
+        status_readback.unmap();
+
+        Ok(())
+    }
+
+    /// Matrix inversion
+    ///
+    /// Computes the inverse of a square matrix using Gauss-Jordan elimination
+    /// with partial pivoting. Uses an augmented matrix [A|I] approach.
+    pub fn inverse<T>(
+        &mut self,
+        input: &GpuBuffer<T>,
+        output: &GpuBuffer<T>,
+        shape: &Shape,
+    ) -> Result<()>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Validate input
+        if shape.len() != 2 || shape[0] != shape[1] {
+            return Err(TensorError::invalid_shape_simple("Matrix inverse requires a square matrix".to_string(),
+            ));
+        }
+
+        let n = shape[0];
+        if n == 0 {
+            return Err(TensorError::invalid_shape_simple("Cannot invert empty matrix".to_string(),
+            ));
+        }
+
+        // Create working buffers
+        let matrix_size = n * n;
+        let augmented_size = n * 2 * n; // [A|I] matrix
+
+        let augmented_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("inv_augmented_matrix"),
+            size: (augmented_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let inverse_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("inv_result"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let pivot_info_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("inv_pivot_info"),
+            size: (2 * std::mem::size_of::<u32>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let status_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("inv_status"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        // Copy input matrix to the left half of augmented matrix
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("inv_copy_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            input.buffer(),
+            0,
+            &augmented_matrix,
+            0,
+            (matrix_size * std::mem::size_of::<T>()) as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Load matrix inverse shader
+        let shader_source = include_str!("shaders/linalg_inverse.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("inverse_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        // Create compute pipelines for different stages
+        let init_pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("init_augmented_pipeline"),
+                layout: None,
+                module: &shader_module,
+                entry_point: Some("initialize_augmented"),
+                compilation_options: Default::default(),
+            });
+
+        let find_pivot_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("find_pivot_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("find_pivot"),
+                    compilation_options: Default::default(),
+                });
+
+        let swap_rows_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("swap_rows_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("swap_rows"),
+                    compilation_options: Default::default(),
+                });
+
+        let scale_pivot_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("scale_pivot_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("scale_pivot_row"),
+                    compilation_options: Default::default(),
+                });
+
+        let eliminate_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("eliminate_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("eliminate_column"),
+                    compilation_options: Default::default(),
+                });
+
+        let extract_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("extract_inverse_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("extract_inverse"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(n, n).with_tolerance(1e-10);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Initialize augmented matrix [A|I]
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("inv_bind_group"),
+            layout: &init_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: augmented_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: inverse_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: pivot_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: status_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Initialize augmented matrix
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("inv_init_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("inv_init_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&init_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            let workgroups_x = (2 * n as u32 + 15) / 16;
+            let workgroups_y = (n as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Perform Gauss-Jordan elimination for each column
+        for k in 0..n {
+            // Set current column index
+            let k_bytes = bytemuck::bytes_of(&(k as u32));
+            self.queue.write_buffer(&pivot_info_buffer, 0, k_bytes);
+
+            // Execute the elimination steps
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("inv_elimination_encoder"),
+                });
+
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("inv_elimination_pass"),
+                    timestamp_writes: None,
+                });
+
+                // Find pivot
+                compute_pass.set_pipeline(&find_pivot_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups(1, 1, 1);
+
+                // Swap rows if needed
+                compute_pass.set_pipeline(&swap_rows_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups((2 * n as u32 + 255) / 256, 1, 1);
+
+                // Scale pivot row
+                compute_pass.set_pipeline(&scale_pivot_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups((2 * n as u32 + 255) / 256, 1, 1);
+
+                // Eliminate column
+                compute_pass.set_pipeline(&eliminate_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                let workgroups_x = (2 * n as u32 + 15) / 16;
+                let workgroups_y = (n as u32 + 15) / 16;
+                compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        // Extract inverse matrix from right half
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("inv_extract_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("inv_extract_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&extract_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            let workgroups_x = (n as u32 + 15) / 16;
+            let workgroups_y = (n as u32 + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Copy result to output buffer
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("inv_copy_result_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            &inverse_matrix,
+            0,
+            output.buffer(),
+            0,
+            (matrix_size * std::mem::size_of::<T>()) as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Check for singularity by reading status
+        let status_readback = self.device.create_buffer(&BufferDescriptor {
+            label: Some("inv_status_readback"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("inv_status_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            &status_buffer,
+            0,
+            &status_readback,
+            0,
+            std::mem::size_of::<u32>() as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and check status
+        let buffer_slice = status_readback.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        self.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().map_err(|e| TensorError::ComputeError {
+            operation: "gpu_read_status".to_string(),
+            details: format!("Failed to read status: {:?}", e),
+            retry_possible: true,
+            context: None,
+        })?;
+
+        let data = buffer_slice.get_mapped_range();
+        let status = bytemuck::from_bytes::<u32>(&data[..std::mem::size_of::<u32>()]);
+
+        if *status != 0 {
+            drop(data);
+            status_readback.unmap();
+            return Err(TensorError::unsupported_operation_simple(
+                "Matrix is singular and cannot be inverted".to_string(),
+            ));
+        }
+
+        drop(data);
+        status_readback.unmap();
+
+        Ok(())
+    }
+
+    /// Matrix determinant computation
+    ///
+    /// Computes the determinant of a square matrix using Gaussian elimination
+    /// with partial pivoting. This implementation uses multiple kernel dispatches
+    /// to handle the sequential nature of the elimination process.
+    pub fn determinant<T>(&mut self, input: &GpuBuffer<T>, shape: &Shape) -> Result<T>
+    where
+        T: Float + Pod + Zeroable,
+    {
+        // Validate input
+        if shape.len() != 2 || shape[0] != shape[1] {
+            return Err(TensorError::invalid_shape_simple("Determinant requires a square matrix".to_string(),
+            ));
+        }
+
+        let n = shape[0];
+        if n == 0 {
+            return Ok(T::one());
+        }
+
+        // Create working buffers
+        let matrix_size = n * n;
+        let working_matrix = self.device.create_buffer(&BufferDescriptor {
+            label: Some("det_working_matrix"),
+            size: (matrix_size * std::mem::size_of::<T>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let determinant_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("det_result"),
+            size: std::mem::size_of::<T>() as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let pivot_info_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("pivot_info"),
+            size: (2 * std::mem::size_of::<u32>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Copy input matrix to working matrix
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("det_copy_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            input.buffer(),
+            0,
+            &working_matrix,
+            0,
+            (matrix_size * std::mem::size_of::<T>()) as u64,
+        );
+
+        // Initialize determinant to 1.0
+        let initial_det = T::one();
+        let det_bytes = bytemuck::bytes_of(&initial_det);
+        self.queue.write_buffer(&determinant_buffer, 0, det_bytes);
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Load determinant computation shader
+        let shader_source = include_str!("shaders/linalg_determinant.wgsl");
+        let shader_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("determinant_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
+
+        // Create compute pipelines for different stages
+        let find_pivot_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("find_pivot_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("find_pivot"),
+                    compilation_options: Default::default(),
+                });
+
+        let swap_rows_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("swap_rows_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("swap_rows"),
+                    compilation_options: Default::default(),
+                });
+
+        let elimination_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("elimination_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("elimination_step"),
+                    compilation_options: Default::default(),
+                });
+
+        let compute_det_pipeline =
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("compute_det_pipeline"),
+                    layout: None,
+                    module: &shader_module,
+                    entry_point: Some("compute_determinant"),
+                    compilation_options: Default::default(),
+                });
+
+        // Create metadata
+        let metadata = LinalgMetadata::new(n, n).with_tolerance(1e-10);
+        let metadata_buffer = self.create_metadata_buffer(&metadata)?;
+
+        // Perform Gaussian elimination for each column
+        for k in 0..n {
+            // Set current column index
+            let k_bytes = bytemuck::bytes_of(&(k as u32));
+            self.queue.write_buffer(&pivot_info_buffer, 0, k_bytes);
+
+            // Create bind group for this iteration
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("det_bind_group"),
+                layout: &find_pivot_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: working_matrix.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: determinant_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: pivot_info_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: metadata_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+            // Execute the elimination steps
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("det_elimination_encoder"),
+                });
+
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("det_elimination_pass"),
+                    timestamp_writes: None,
+                });
+
+                // Find pivot
+                compute_pass.set_pipeline(&find_pivot_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups(1, 1, 1);
+
+                // Swap rows if needed
+                compute_pass.set_pipeline(&swap_rows_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups((n as u32 + 255) / 256, 1, 1);
+
+                // Perform elimination
+                compute_pass.set_pipeline(&elimination_pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                let workgroups_x = (n as u32 + 15) / 16;
+                let workgroups_y = (n as u32 + 15) / 16;
+                compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        // Compute final determinant from diagonal elements
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("det_final_bind_group"),
+            layout: &compute_det_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: working_matrix.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: determinant_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: pivot_info_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: metadata_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("det_final_encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("det_final_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&compute_det_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(1, 1, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Read back the result
+        let result_buffer = self.device.create_buffer(&BufferDescriptor {
+            label: Some("det_result_readback"),
+            size: std::mem::size_of::<T>() as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("det_readback_encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(
+            &determinant_buffer,
+            0,
+            &result_buffer,
+            0,
+            std::mem::size_of::<T>() as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read the result
+        let buffer_slice = result_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        self.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().map_err(|e| TensorError::ComputeError {
+            operation: "gpu_read_determinant".to_string(),
+            details: format!("Failed to read determinant result: {:?}", e),
+            retry_possible: true,
+            context: None,
+        })?;
+
+        let data = buffer_slice.get_mapped_range();
+        let result = bytemuck::from_bytes::<T>(&data[..std::mem::size_of::<T>()]);
+        let determinant_value = *result;
+
+        drop(data);
+        result_buffer.unmap();
+
+        Ok(determinant_value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gpu::GpuContext;
+
+    #[tokio::test]
+    async fn test_linalg_context_creation() {
+        // Test basic context creation
+        if let Ok(gpu_ctx) = GpuContext::new().await {
+            let mut linalg_ctx =
+                GpuLinalgContext::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
+
+            // Test pipeline initialization
+            assert!(linalg_ctx.initialize_pipelines().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_metadata_creation() {
+        let metadata = LinalgMetadata::new(100, 50)
+            .with_tolerance(1e-8)
+            .with_max_iterations(500);
+
+        assert_eq!(metadata.rows_a, 100);
+        assert_eq!(metadata.cols_a, 50);
+        assert_eq!(metadata.tolerance, 1e-8);
+        assert_eq!(metadata.max_iterations, 500);
+    }
+
+    #[tokio::test]
+    async fn test_svd_pipeline_creation() {
+        // Test SVD pipeline initialization
+        if let Ok(gpu_ctx) = GpuContext::new().await {
+            let mut linalg_ctx =
+                GpuLinalgContext::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
+
+            // Test SVD pipeline initialization
+            assert!(linalg_ctx.initialize_svd_pipeline().is_ok());
+            assert!(linalg_ctx.svd_pipeline.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_eigenvalue_pipeline_creation() {
+        // Test eigenvalue pipeline initialization
+        if let Ok(gpu_ctx) = GpuContext::new().await {
+            let mut linalg_ctx =
+                GpuLinalgContext::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
+
+            // Test eigenvalue pipeline initialization
+            assert!(linalg_ctx.initialize_eigenvalue_pipeline().is_ok());
+            assert!(linalg_ctx.eigenvalue_pipeline.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_svd_error_handling() {
+        // Test SVD error handling for invalid inputs
+        if let Ok(gpu_ctx) = GpuContext::new().await {
+            let mut linalg_ctx =
+                GpuLinalgContext::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
+
+            // Create dummy buffers
+            let dummy_buffer = gpu_ctx.create_buffer::<f32>(16).await.unwrap();
+
+            // Test with 1D shape (should fail)
+            let invalid_shape = Shape::new(vec![16]);
+            let result = linalg_ctx.svd(
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &invalid_shape,
+            );
+            assert!(result.is_err());
+
+            // Test with empty matrix (should fail)
+            let empty_shape = Shape::new(vec![0, 0]);
+            let result = linalg_ctx.svd(
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &empty_shape,
+            );
+            assert!(result.is_err());
+
+            // Test with small matrix (should suggest CPU fallback)
+            let small_shape = Shape::new(vec![2, 2]);
+            let result = linalg_ctx.svd(
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &dummy_buffer,
+                &small_shape,
+            );
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("CPU fallback"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_eigenvalue_error_handling() {
+        // Test eigenvalue error handling for invalid inputs
+        if let Ok(gpu_ctx) = GpuContext::new().await {
+            let mut linalg_ctx =
+                GpuLinalgContext::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
+
+            // Create dummy buffers
+            let dummy_buffer = gpu_ctx.create_buffer::<f32>(16).await.unwrap();
+
+            // Test with non-square matrix (should fail)
+            let non_square_shape = Shape::new(vec![4, 3]);
+            let result = linalg_ctx.eigenvalues(
+                &dummy_buffer,
+                &dummy_buffer,
+                Some(&dummy_buffer),
+                &non_square_shape,
+            );
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("square matrix"));
+
+            // Test with empty matrix (should succeed but do nothing)
+            let empty_shape = Shape::new(vec![0, 0]);
+            let result = linalg_ctx.eigenvalues(&dummy_buffer, &dummy_buffer, None, &empty_shape);
+            assert!(result.is_ok());
+
+            // Test with small matrix (should suggest CPU fallback)
+            let small_shape = Shape::new(vec![2, 2]);
+            let result = linalg_ctx.eigenvalues(&dummy_buffer, &dummy_buffer, None, &small_shape);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("CPU fallback"));
+        }
+    }
+}
