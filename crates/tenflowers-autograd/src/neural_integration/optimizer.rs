@@ -2,7 +2,7 @@
 
 use crate::gradient_accumulation::GradientAccumulator;
 use crate::tape::{GradientTape, TrackedTensor};
-use num_traits::{Float, One, Zero};
+use scirs2_core::numeric::{Float, One, Zero};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tenflowers_core::ops::scalar_add;
@@ -58,8 +58,8 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
-        + num_traits::Signed
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Signed
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

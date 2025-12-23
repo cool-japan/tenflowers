@@ -5,7 +5,7 @@
 //! stability that's less dependent on batch size than BatchNorm.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Group Normalization - divides channels into groups and normalizes within each group

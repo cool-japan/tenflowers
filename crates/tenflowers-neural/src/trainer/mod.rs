@@ -37,8 +37,8 @@ impl<T> Trainer<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -50,9 +50,9 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Signed
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Signed
         + bytemuck::Pod,
 {
     /// Create a new trainer
@@ -263,7 +263,7 @@ where
                 state.step,
                 loss.as_slice()
                     .and_then(|s| s.first())
-                    .and_then(|&val| num_traits::cast::<T, f32>(val))
+                    .and_then(|&val| scirs2_core::num_traits::cast::<T, f32>(val))
                     .unwrap_or(0.0),
             );
 
@@ -354,8 +354,8 @@ impl<T> Default for Trainer<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -367,9 +367,9 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Signed
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Signed
         + bytemuck::Pod,
 {
     fn default() -> Self {

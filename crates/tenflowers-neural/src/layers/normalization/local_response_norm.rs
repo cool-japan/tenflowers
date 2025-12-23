@@ -8,7 +8,7 @@
 //! In WithinChannel mode, the sum is over a local spatial neighborhood within each channel.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Local Response Normalization mode

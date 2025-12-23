@@ -113,8 +113,10 @@ mod integration_tests {
         ];
 
         for strategy in strategies {
-            let mut config = SubgraphConfig::default();
-            config.strategy = strategy;
+            let config = SubgraphConfig {
+                strategy,
+                ..Default::default()
+            };
             let extractor = SubgraphExtractor::new(config);
 
             let result = extractor.extract_subgraphs(&operations);

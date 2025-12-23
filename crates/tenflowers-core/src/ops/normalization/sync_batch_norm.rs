@@ -7,9 +7,9 @@
 use crate::collective::{all_reduce, ReductionOp};
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::numeric::{Float, FromPrimitive};
 
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
@@ -17,9 +17,9 @@ use super::batch_norm::batch_norm;
 
 /// Synchronized batch normalization for multi-GPU training
 /// This synchronizes batch statistics across multiple devices to ensure consistent normalization
-/// Input shape: [batch, channels, height, width]
-/// Running mean/var shapes: [channels]
-/// Gamma/beta shapes: [channels]
+/// Input shape: `[batch, channels, height, width]`
+/// Running mean/var shapes: `[channels]`
+/// Gamma/beta shapes: `[channels]`
 #[allow(clippy::too_many_arguments)]
 pub fn sync_batch_norm<T>(
     input: &Tensor<T>,
@@ -42,8 +42,8 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>,
@@ -193,8 +193,8 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>,
@@ -328,8 +328,8 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>,

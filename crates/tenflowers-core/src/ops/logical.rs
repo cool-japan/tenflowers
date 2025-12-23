@@ -1,6 +1,6 @@
 use crate::tensor::TensorStorage;
 use crate::{Result, Shape, Tensor, TensorError};
-use scirs2_autograd::ndarray::{ArrayD, Zip};
+use scirs2_core::ndarray::{ArrayD, Zip};
 
 #[cfg(feature = "gpu")]
 use crate::gpu::buffer::GpuBuffer;
@@ -138,7 +138,7 @@ where
 
 /// Broadcast an array to a target shape
 fn broadcast_array<T: Clone>(array: &ArrayD<T>, target_shape: &Shape) -> Result<ArrayD<T>> {
-    let target_dims = ndarray::IxDyn(target_shape.dims());
+    let target_dims = scirs2_core::ndarray::IxDyn(target_shape.dims());
 
     // If shapes match, just clone
     if array.shape() == target_shape.dims() {
@@ -204,20 +204,34 @@ fn gpu_logical_op_dispatch(
     let gpu_a_u32 = convert_u8_to_u32_gpu_buffer(gpu_a)?;
     let gpu_b_u32 = convert_u8_to_u32_gpu_buffer(gpu_b)?;
 
-    // TODO: Implement GPU logical operations
-    // For now, fallback to CPU implementation
-    let _gpu_op = gpu_op; // Suppress unused warning
-    return Err(TensorError::unsupported_operation_simple(
-        "GPU logical operations not yet implemented".to_string(),
-    ));
+    // Map to GPU logical operation type
+    let logical_gpu_op = match gpu_op {
+        crate::gpu::ops::LogicalOp::And => crate::gpu::logical_ops::LogicalOp::And,
+        crate::gpu::ops::LogicalOp::Or => crate::gpu::logical_ops::LogicalOp::Or,
+        crate::gpu::ops::LogicalOp::Xor => crate::gpu::logical_ops::LogicalOp::Xor,
+        _ => {
+            return Err(TensorError::unsupported_operation_simple(format!(
+                "GPU logical operation {:?} not supported",
+                gpu_op
+            )))
+        }
+    };
 
-    // This code is unreachable due to the TODO above, but kept for future implementation
-    // // Convert u32 result back to u8
-    // let result_buffer = convert_u32_to_u8_gpu_buffer(result_buffer_u32)?;
-    // Ok(Tensor::from_gpu_buffer(
-    //     result_buffer,
-    //     broadcast_shape.clone(),
-    // ))
+    // Execute GPU logical operation
+    let result_buffer_u32 = crate::gpu::logical_ops::execute_logical_op(
+        &gpu_a_u32,
+        &gpu_b_u32,
+        logical_gpu_op,
+        output_len,
+    )?;
+
+    // Convert u32 result back to u8
+    let result_buffer = convert_u32_to_u8_gpu_buffer(result_buffer_u32)?;
+
+    Ok(Tensor::from_gpu_buffer(
+        result_buffer,
+        broadcast_shape.clone(),
+    ))
 }
 
 /// GPU unary logical operation dispatch
@@ -240,18 +254,18 @@ fn gpu_logical_unary_op_dispatch(
     // Convert u8 input to u32 for GPU operations (shader expects u32)
     let gpu_a_u32 = convert_u8_to_u32_gpu_buffer(gpu_a)?;
 
-    // TODO: Implement execute_unary_logical_op
-    let _gpu_op = gpu_op; // Suppress unused warning
-    let _gpu_a_u32 = gpu_a_u32; // Suppress unused warning
-    return Err(TensorError::unsupported_operation_simple(
-        "GPU unary logical operations not yet implemented".to_string(),
-    ));
-    #[allow(unreachable_code)]
-    let result_buffer_u32: crate::gpu::buffer::GpuBuffer<u32> =
-        crate::gpu::buffer::GpuBuffer::from_slice(
-            &vec![0u32; shape.size()],
-            &crate::Device::Gpu(0),
-        )?; // Dummy to satisfy type checker
+    // Map to GPU unary logical operation type
+    let unary_logical_gpu_op = match gpu_op {
+        crate::gpu::unary_ops::UnaryLogicalOp::Not => crate::gpu::logical_ops::UnaryLogicalOp::Not,
+    };
+
+    // Execute GPU unary logical operation
+    let output_len = shape.size();
+    let result_buffer_u32 = crate::gpu::logical_ops::execute_unary_logical_op(
+        &gpu_a_u32,
+        unary_logical_gpu_op,
+        output_len,
+    )?;
 
     // Convert u32 result back to u8
     let result_buffer = convert_u32_to_u8_gpu_buffer(result_buffer_u32)?;
@@ -260,6 +274,7 @@ fn gpu_logical_unary_op_dispatch(
 }
 
 #[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
 mod tests {
     use super::*;
 

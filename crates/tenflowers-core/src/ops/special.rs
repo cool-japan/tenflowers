@@ -1,6 +1,6 @@
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor};
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 
 /// Error function (erf)
 ///
@@ -747,7 +747,7 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::FromPrimitive,
+        + scirs2_core::num_traits::FromPrimitive,
 {
     let beta_t = T::from_f32(beta).unwrap_or_else(|| T::one());
 

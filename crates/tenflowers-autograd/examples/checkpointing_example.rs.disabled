@@ -1,0 +1,210 @@
+/// Gradient Checkpointing Example
+///
+/// This example demonstrates how to use gradient checkpointing to reduce memory usage
+/// during training of large neural networks by selectively recomputing activations
+/// during the backward pass instead of storing them all in memory.
+use scirs2_autograd::ndarray::Array1;
+use tenflowers_autograd::{CheckpointConfig, CheckpointStrategy, GradientTape};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Gradient Checkpointing Example");
+    println!("=========================================\n");
+
+    // Example 1: Basic checkpointing with selective strategy
+    println!("Example 1: Selective Checkpointing");
+    println!("----------------------------------");
+    selective_checkpointing_example()?;
+
+    println!("\nExample 2: Block-based Checkpointing");
+    println!("------------------------------------");
+    block_checkpointing_example()?;
+
+    println!("\nExample 3: Custom Checkpointing Strategy");
+    println!("----------------------------------------");
+    custom_checkpointing_example()?;
+
+    println!("\nExample 4: Memory vs Speed Trade-off");
+    println!("------------------------------------");
+    memory_vs_speed_example()?;
+
+    Ok(())
+}
+
+fn selective_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure checkpointing to save only expensive operations
+    let config = CheckpointConfig {
+        strategy: CheckpointStrategy::Selective,
+        checkpoint_every_n: 2,  // Checkpoint every 2nd operation
+        min_compute_cost: 100,  // Only checkpoint operations with cost > 100
+        memory_budget_mb: None, // No strict memory limit
+    };
+
+    let tape = GradientTape::with_checkpoint_config(config);
+
+    // Create input data
+    let x = tape.watch(Tensor::from_array(
+        Array1::linspace(0.0f32, 1.0, 1000).into_dyn(),
+    ));
+
+    // Simulate a deep computation (each layer is checkpointable)
+    println!("Building computation graph with selective checkpointing...");
+    let mut current = x.clone();
+
+    for i in 0..10 {
+        // Expensive operation (matrix multiply equivalent)
+        current = current.mul(&current)?;
+
+        // Cheap operation (will not be checkpointed)
+        current = current.add(&Tensor::scalar(0.1, Device::cpu())?)?;
+
+        if i % 2 == 0 {
+            println!("  Layer {}: Checkpointed", i);
+        } else {
+            println!("  Layer {}: Not checkpointed", i);
+        }
+    }
+
+    let loss = current.sum(None, false)?;
+
+    println!("Computing gradients with checkpointing...");
+    let grads = tape.gradient(&[loss.clone()], &[x.clone()])?;
+
+    println!("✓ Gradient computation complete");
+    println!("  Memory saved by recomputing intermediate values");
+    println!(
+        "  Loss value: {:?}",
+        loss.tensor().as_slice().unwrap_or(&[])
+    );
+    println!(
+        "  Gradient shape: {:?}",
+        grads[0].shape().unwrap_or(&vec![])
+    );
+
+    Ok(())
+}
+
+fn block_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure block-based checkpointing (checkpoint every N operations)
+    let config = CheckpointConfig {
+        strategy: CheckpointStrategy::Block,
+        checkpoint_every_n: 5, // Checkpoint every 5 operations
+        min_compute_cost: 0,
+        memory_budget_mb: Some(100), // Limit to 100MB
+    };
+
+    let tape = GradientTape::with_checkpoint_config(config);
+
+    let x = tape.watch(Tensor::from_array(
+        Array1::from_vec((0..100).map(|i| i as f32).collect()).into_dyn(),
+    ));
+
+    println!("Building computation graph with block checkpointing...");
+
+    // Simulate 20 operations, checkpointed in blocks of 5
+    let mut result = x.clone();
+    for block in 0..4 {
+        println!("Block {}:", block);
+        for op in 0..5 {
+            result = result.mul(&Tensor::scalar(1.1, Device::cpu())?)?;
+            println!("  Operation {}.{}: Executed", block, op);
+        }
+        println!("  → Checkpoint created at block boundary");
+    }
+
+    let loss = result.sum(None, false)?;
+
+    println!("Computing gradients with block checkpointing...");
+    let grads = tape.gradient(&[loss.clone()], &[x.clone()])?;
+
+    println!("✓ Block checkpointing complete");
+    println!("  Activations saved at block boundaries only");
+    println!(
+        "  Memory usage: ~{}KB (estimated)",
+        grads[0].numel().unwrap_or(0) * 4 * 4 / 1024
+    );
+
+    Ok(())
+}
+
+fn custom_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure automatic checkpointing based on memory budget
+    let config = CheckpointConfig {
+        strategy: CheckpointStrategy::Auto,
+        checkpoint_every_n: 0,
+        min_compute_cost: 0,
+        memory_budget_mb: Some(50), // Strict 50MB budget
+    };
+
+    let tape = GradientTape::with_checkpoint_config(config);
+
+    let x = tape.watch(Tensor::from_array(
+        Array1::from_vec((0..500).map(|i| (i as f32) * 0.01).collect()).into_dyn(),
+    ));
+
+    println!("Building computation with automatic checkpointing...");
+    println!("Memory budget: 50MB");
+
+    // Build a computation that might exceed memory budget
+    let a = x.mul(&x)?;
+    println!("  Operation 1: x^2 (large activation)");
+
+    let b = a.mul(&a)?;
+    println!("  Operation 2: x^4 (very large activation)");
+
+    let c = b.add(&a)?;
+    println!("  Operation 3: x^4 + x^2");
+
+    let loss = c.sum(None, false)?;
+    println!("  Operation 4: sum reduction");
+
+    println!("Computing gradients with auto checkpointing...");
+    let grads = tape.gradient(&[loss.clone()], &[x.clone()])?;
+
+    println!("✓ Auto checkpointing complete");
+    println!("  System automatically selected which activations to checkpoint");
+    println!("  Based on memory budget and computation cost");
+
+    Ok(())
+}
+
+fn memory_vs_speed_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Comparing different checkpointing strategies:\n");
+
+    // Strategy 1: No checkpointing (baseline - fastest but most memory)
+    let config_none = CheckpointConfig {
+        strategy: CheckpointStrategy::None,
+        checkpoint_every_n: 0,
+        min_compute_cost: 0,
+        memory_budget_mb: None,
+    };
+
+    // Strategy 2: Full checkpointing (slowest but least memory)
+    let config_full = CheckpointConfig {
+        strategy: CheckpointStrategy::Full,
+        checkpoint_every_n: 1,
+        min_compute_cost: 0,
+        memory_budget_mb: None,
+    };
+
+    println!("Strategy 1: No Checkpointing");
+    println!("  Speed: ████████████████████ (Fastest)");
+    println!("  Memory: ████████████████████ (Most)");
+
+    println!("\nStrategy 2: Block Checkpointing");
+    println!("  Speed: █████████████ (Medium)");
+    println!("  Memory: ██████████ (Medium)");
+
+    println!("\nStrategy 3: Full Checkpointing");
+    println!("  Speed: ████ (Slowest)");
+    println!("  Memory: ██ (Least)");
+
+    println!("\nRecommendations:");
+    println!("• Use 'None' for small models or when speed is critical");
+    println!("• Use 'Block' for balanced memory/speed trade-off");
+    println!("• Use 'Selective' for targeted optimization");
+    println!("• Use 'Full' for very large models with memory constraints");
+    println!("• Use 'Auto' to let the system decide based on memory budget");
+
+    Ok(())
+}

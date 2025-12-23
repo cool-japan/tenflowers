@@ -1,4 +1,4 @@
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::f64::consts::PI;
 use tenflowers_core::{Result, Tensor, TensorError};
 

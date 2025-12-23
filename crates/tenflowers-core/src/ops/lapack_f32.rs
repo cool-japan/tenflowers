@@ -6,7 +6,7 @@ use crate::{Result, Tensor, TensorError};
 #[cfg(feature = "blas")]
 use ndarray_linalg::{Cholesky, Determinant, Eig, Inverse, Solve, QR, SVD, UPLO};
 #[cfg(feature = "blas")]
-use scirs2_autograd::ndarray::Array2;
+use scirs2_core::ndarray::Array2;
 
 /// Matrix inverse for f32
 pub fn inverse_f32(input: &Tensor<f32>) -> Result<Tensor<f32>> {

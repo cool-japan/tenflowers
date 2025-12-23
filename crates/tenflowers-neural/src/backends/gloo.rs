@@ -152,11 +152,46 @@ impl GlooBackend {
         // For simulation, always use ring algorithm
         GlooAlgorithm::Ring
     }
+
+    /// Get recommended Gloo algorithm for given configuration
+    pub fn recommend_algorithm(
+        tensor_size: usize,
+        world_size: usize,
+        network_bandwidth: f64,
+    ) -> GlooAlgorithm {
+        // Algorithm selection heuristics based on Gloo paper and empirical results
+
+        if world_size <= 2 {
+            // For small groups, direct communication is optimal
+            return GlooAlgorithm::RecursiveDoubling;
+        }
+
+        // For large tensors or low bandwidth, ring is most efficient
+        // Check this before power-of-2 optimization
+        let threshold = if network_bandwidth > 10.0 {
+            // 10 GB/s
+            1024 * 1024 // 1M elements
+        } else {
+            256 * 1024 // 256K elements
+        };
+
+        if tensor_size >= threshold {
+            return GlooAlgorithm::Ring;
+        }
+
+        if world_size.is_power_of_two() && world_size <= 16 {
+            // Butterfly is optimal for power-of-2 groups up to 16 nodes with small tensors
+            return GlooAlgorithm::Butterfly;
+        }
+
+        // For small tensors with good connectivity
+        GlooAlgorithm::Tree
+    }
 }
 
 /// Gloo algorithms for collective operations
 #[derive(Debug, Clone)]
-enum GlooAlgorithm {
+pub enum GlooAlgorithm {
     /// Ring algorithm - good for large tensors
     Ring,
     /// Tree algorithm - good for small tensors
@@ -398,39 +433,6 @@ pub mod gloo_utils {
 
         Ok(results)
     }
-
-    /// Get recommended Gloo algorithm for given configuration
-    pub fn recommend_algorithm(
-        tensor_size: usize,
-        world_size: usize,
-        network_bandwidth: f64,
-    ) -> GlooAlgorithm {
-        // Algorithm selection heuristics based on Gloo paper and empirical results
-
-        if world_size <= 2 {
-            // For small groups, direct communication is optimal
-            return GlooAlgorithm::RecursiveDoubling;
-        }
-
-        if world_size.is_power_of_two() && world_size <= 16 {
-            // Butterfly is optimal for power-of-2 groups up to 16 nodes
-            return GlooAlgorithm::Butterfly;
-        }
-
-        // For large tensors or low bandwidth, ring is most efficient
-        let threshold = if network_bandwidth > 10.0 {
-            // 10 GB/s
-            1024 * 1024 // 1M elements
-        } else {
-            256 * 1024 // 256K elements
-        };
-
-        if tensor_size >= threshold {
-            GlooAlgorithm::Ring
-        } else {
-            GlooAlgorithm::Tree
-        }
-    }
 }
 
 #[cfg(test)]
@@ -541,29 +543,27 @@ mod tests {
 
     #[test]
     fn test_algorithm_selection() {
-        use gloo_utils::recommend_algorithm;
-
         // Small group should use recursive doubling
         assert!(matches!(
-            recommend_algorithm(1000, 2, 1.0),
+            GlooBackend::recommend_algorithm(1000, 2, 1.0),
             GlooAlgorithm::RecursiveDoubling
         ));
 
         // Power-of-2 group should use butterfly
         assert!(matches!(
-            recommend_algorithm(1000, 8, 1.0),
+            GlooBackend::recommend_algorithm(1000, 8, 1.0),
             GlooAlgorithm::Butterfly
         ));
 
         // Large tensor should use ring
         assert!(matches!(
-            recommend_algorithm(2_000_000, 16, 1.0),
+            GlooBackend::recommend_algorithm(2_000_000, 16, 1.0),
             GlooAlgorithm::Ring
         ));
 
-        // Small tensor with good bandwidth should use tree
+        // Small tensor with good bandwidth should use tree (non-power-of-2 world size)
         assert!(matches!(
-            recommend_algorithm(1000, 16, 15.0),
+            GlooBackend::recommend_algorithm(1000, 12, 15.0),
             GlooAlgorithm::Tree
         ));
     }

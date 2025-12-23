@@ -2,7 +2,7 @@
 
 use crate::layers::activation::utils::create_random_tensor;
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// SwiGLU (Swish-Gated Linear Unit) activation function
@@ -46,7 +46,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -148,7 +148,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -209,7 +209,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

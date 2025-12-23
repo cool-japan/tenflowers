@@ -30,7 +30,7 @@ pub struct SimdElementWise<T> {
 
 impl<T> SimdElementWise<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     /// Create a new SIMD element-wise transform
     pub fn new(operation: SimdOperation, value: T) -> Self {
@@ -76,7 +76,7 @@ where
     /// Scalar fallback for element-wise operations
     fn apply_scalar(&self, data: &mut [T], value: T)
     where
-        T: num_traits::Float,
+        T: scirs2_core::numeric::Float,
     {
         for element in data.iter_mut() {
             *element = match self.operation {
@@ -104,7 +104,7 @@ where
 
 impl<T> Transform<T> for SimdElementWise<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         let (features, labels) = sample;

@@ -18,7 +18,7 @@ where
 {
     // Convert axes to i32 for compatibility with execute_axis_reduction_op
     let axes_i32: Option<Vec<i32>> = axes.map(|a| a.iter().map(|&x| x as i32).collect());
-    let axes_ref = axes_i32.as_ref().map(|v| v.as_slice());
+    let axes_ref = axes_i32.as_deref();
 
     // Use shape from buffer or default to 1D shape
     let input_shape = &[input.len()];
@@ -90,12 +90,17 @@ where
         ReductionOp::Mean => "mean_reduction",
         ReductionOp::Max => "max_reduction",
         ReductionOp::Min => "min_reduction",
-        ReductionOp::Product => "product_reduction",
-        _ => {
-            return Err(crate::TensorError::unsupported_operation_simple(format!(
-                "Reduction operation {:?} not implemented for GPU",
-                op
-            )))
+        ReductionOp::Product | ReductionOp::Prod => "product_reduction",
+        ReductionOp::ArgMax => "argmax_reduction",
+        ReductionOp::ArgMin => "argmin_reduction",
+        ReductionOp::All => "all_reduction",
+        ReductionOp::Any => "any_reduction",
+        ReductionOp::InfNanDetection => "inf_nan_detection",
+        ReductionOp::Variance => "variance_reduction",
+        ReductionOp::TopK => {
+            return Err(crate::TensorError::unsupported_operation_simple(
+                "TopK reduction requires specialized implementation".to_string(),
+            ))
         }
     };
 

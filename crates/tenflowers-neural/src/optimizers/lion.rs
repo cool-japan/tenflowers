@@ -137,9 +137,9 @@ impl<T> Optimizer<T> for Lion<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Float
         + std::ops::Sub<Output = T>
         + std::ops::Mul<Output = T>
         + std::ops::Add<Output = T>
@@ -147,7 +147,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + PartialOrd
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -232,8 +232,8 @@ fn compute_sign<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + PartialOrd
         + std::ops::Neg<Output = T>,
 {

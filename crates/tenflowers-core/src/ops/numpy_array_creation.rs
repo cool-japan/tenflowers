@@ -4,7 +4,7 @@
 //! APIs and behaviors as NumPy.
 
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::ops::Range;
 
 /// Create an array of zeros with NumPy-compatible API

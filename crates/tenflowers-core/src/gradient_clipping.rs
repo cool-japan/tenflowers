@@ -15,7 +15,7 @@
 //! - **Warmup and Decay**: Gradually adjusts clipping behavior during training phases
 
 use crate::{Result, Tensor};
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::numeric::{Float, FromPrimitive};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -458,7 +458,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::Array1;
+    use scirs2_core::ndarray::Array1;
 
     #[test]
     fn test_gradient_clipping_basic() {

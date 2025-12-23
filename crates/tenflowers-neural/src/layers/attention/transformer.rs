@@ -4,7 +4,7 @@
 //! with attention, feed-forward networks, residual connections, and layer normalization.
 
 use crate::layers::{Dropout, Layer, LayerNorm};
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 use super::{FeedForwardNetwork, KVCache, MultiHeadAttention};
@@ -33,7 +33,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>
@@ -59,7 +59,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>
@@ -114,7 +114,8 @@ where
 
         // Create dropout layer
         let dropout = Dropout::new(
-            <T as num_traits::NumCast>::from(dropout_prob).unwrap_or_else(|| T::zero()),
+            <T as scirs2_core::num_traits::NumCast>::from(dropout_prob)
+                .unwrap_or_else(|| T::zero()),
         );
 
         Ok(Self {
@@ -147,8 +148,9 @@ where
             )));
         }
 
-        self.dropout =
-            Dropout::new(<T as num_traits::NumCast>::from(prob).unwrap_or_else(|| T::zero()));
+        self.dropout = Dropout::new(
+            <T as scirs2_core::num_traits::NumCast>::from(prob).unwrap_or_else(|| T::zero()),
+        );
         Ok(())
     }
 
@@ -214,7 +216,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>
@@ -277,7 +279,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>
@@ -305,7 +307,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>
@@ -377,7 +379,8 @@ where
 
         // Create dropout layer
         let dropout = Dropout::new(
-            <T as num_traits::NumCast>::from(dropout_prob).unwrap_or_else(|| T::zero()),
+            <T as scirs2_core::num_traits::NumCast>::from(dropout_prob)
+                .unwrap_or_else(|| T::zero()),
         );
 
         Ok(Self {
@@ -417,8 +420,9 @@ where
             )));
         }
 
-        self.dropout =
-            Dropout::new(<T as num_traits::NumCast>::from(prob).unwrap_or_else(|| T::zero()));
+        self.dropout = Dropout::new(
+            <T as scirs2_core::num_traits::NumCast>::from(prob).unwrap_or_else(|| T::zero()),
+        );
         Ok(())
     }
 
@@ -534,7 +538,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + From<f32>

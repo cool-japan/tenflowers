@@ -1,7 +1,7 @@
 //! SIMD-accelerated operations for ultra-gradient computation
 
 use crate::tape::{Operation, TapeNode};
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor};
 

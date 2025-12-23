@@ -425,8 +425,8 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::One
             + Send
             + Sync
             + 'static

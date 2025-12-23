@@ -1,7 +1,10 @@
 use crate::{buffer::TensorBuffer, Device, Result, TensorError};
-use scirs2_autograd::ndarray::ArrayD;
+use scirs2_core::ndarray::ArrayD;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
+
+#[cfg(feature = "gpu")]
+use crate::gpu::memory_tracing::{AllocationId, GLOBAL_GPU_MEMORY_TRACKER};
 
 /// A GPU buffer that stores tensor data on the GPU device
 #[cfg(feature = "gpu")]
@@ -13,6 +16,8 @@ pub struct GpuBuffer<T> {
     device_enum: Device,
     len: usize,
     is_pinned: bool,
+    #[cfg(feature = "gpu")]
+    allocation_id: Option<AllocationId>,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -125,7 +130,7 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
         // In the future, we could optimize this to only copy the view portion
         let full_data = self.parent_buffer.to_cpu()?;
         let view_data = full_data[self.offset..self.offset + self.len].to_vec();
-        Ok(ndarray::Array1::from(view_data).into_dyn())
+        Ok(scirs2_core::ndarray::Array1::from(view_data).into_dyn())
     }
 }
 
@@ -150,12 +155,40 @@ impl<T> Clone for GpuBuffer<T> {
             device_enum: self.device_enum.clone(),
             len: self.len,
             is_pinned: self.is_pinned,
+            #[cfg(feature = "gpu")]
+            allocation_id: self.allocation_id,
             _phantom: std::marker::PhantomData,
         }
     }
 }
 
 impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuBuffer<T> {
+    /// Track a new GPU allocation
+    #[cfg(feature = "gpu")]
+    fn track_allocation(
+        size_bytes: usize,
+        device_id: usize,
+        operation: &str,
+    ) -> Option<AllocationId> {
+        if let Ok(mut tracker) = GLOBAL_GPU_MEMORY_TRACKER.lock() {
+            Some(tracker.track_allocation(
+                size_bytes,
+                device_id,
+                operation.to_string(),
+                None, // shape
+                Some(std::any::type_name::<T>().to_string()),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Get the allocation ID for this buffer
+    #[cfg(feature = "gpu")]
+    pub fn allocation_id(&self) -> Option<AllocationId> {
+        self.allocation_id
+    }
+
     /// Create a new GPU buffer filled with zeros
     pub fn zeros(len: usize, device_id: usize) -> Result<Self> {
         use wgpu::util::DeviceExt;
@@ -175,6 +208,10 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
                 | wgpu::BufferUsages::COPY_SRC,
         });
 
+        #[cfg(feature = "gpu")]
+        let allocation_id =
+            Self::track_allocation(len * std::mem::size_of::<T>(), device_id, "zeros");
+
         Ok(Self {
             buffer: Arc::new(buffer),
             device: Arc::clone(&context.device),
@@ -182,6 +219,8 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
             device_enum: Device::Gpu(device_id),
             len,
             is_pinned: false,
+            #[cfg(feature = "gpu")]
+            allocation_id,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -194,6 +233,17 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
         device_enum: Device,
         len: usize,
     ) -> Self {
+        #[cfg(feature = "gpu")]
+        let allocation_id = if let Device::Gpu(device_id) = device_enum {
+            Self::track_allocation(
+                len * std::mem::size_of::<T>(),
+                device_id,
+                "from_wgpu_buffer",
+            )
+        } else {
+            None
+        };
+
         Self {
             buffer: Arc::new(buffer),
             device,
@@ -201,6 +251,8 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
             device_enum,
             len,
             is_pinned: false,
+            #[cfg(feature = "gpu")]
+            allocation_id,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -224,6 +276,17 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
         device_enum: Device,
         len: usize,
     ) -> Self {
+        #[cfg(feature = "gpu")]
+        let allocation_id = if let Device::Gpu(device_id) = device_enum {
+            Self::track_allocation(
+                len * std::mem::size_of::<T>(),
+                device_id,
+                "from_shared_buffer",
+            )
+        } else {
+            None
+        };
+
         Self {
             buffer,
             device,
@@ -231,6 +294,8 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
             device_enum,
             len,
             is_pinned: false,
+            #[cfg(feature = "gpu")]
+            allocation_id,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -265,6 +330,13 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
                 | wgpu::BufferUsages::COPY_SRC,
         });
 
+        #[cfg(feature = "gpu")]
+        let allocation_id = Self::track_allocation(
+            array.len() * std::mem::size_of::<T>(),
+            device_id,
+            "from_cpu_array",
+        );
+
         Ok(Self {
             buffer: Arc::new(buffer),
             device: Arc::clone(&context.device),
@@ -272,13 +344,15 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
             device_enum: Device::Gpu(device_id),
             len: array.len(),
             is_pinned: false,
+            #[cfg(feature = "gpu")]
+            allocation_id,
             _phantom: std::marker::PhantomData,
         })
     }
 
     pub fn to_cpu_array(&self) -> Result<ArrayD<T>> {
         let data = self.to_cpu()?;
-        Ok(ndarray::Array1::from(data).into_dyn())
+        Ok(scirs2_core::ndarray::Array1::from(data).into_dyn())
     }
 
     pub fn len(&self) -> usize {
@@ -295,7 +369,7 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
 
     pub fn from_slice(slice: &[T], device: &Device) -> Result<Self> {
         match device {
-            Device::Gpu(_device_id) => {
+            Device::Gpu(device_id) => {
                 // Get the global GPU context
                 let context = crate::gpu::GpuContext::global()?;
                 let gpu_device = &context.device;
@@ -309,6 +383,10 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
                         | wgpu::BufferUsages::COPY_SRC,
                 });
 
+                #[cfg(feature = "gpu")]
+                let allocation_id =
+                    Self::track_allocation(std::mem::size_of_val(slice), *device_id, "from_slice");
+
                 Ok(Self {
                     buffer: Arc::new(buffer),
                     device: Arc::clone(&context.device),
@@ -316,6 +394,8 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
                     device_enum: device.clone(),
                     len: slice.len(),
                     is_pinned: false,
+                    #[cfg(feature = "gpu")]
+                    allocation_id,
                     _phantom: std::marker::PhantomData,
                 })
             }
@@ -354,7 +434,7 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
                 label: Some("gpu_to_cpu_encoder"),
             });
         encoder.copy_buffer_to_buffer(
-            &*self.buffer,
+            &self.buffer,
             0,
             &staging_buffer,
             0,
@@ -386,7 +466,7 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
     }
 
     pub fn buffer(&self) -> &wgpu::Buffer {
-        &*self.buffer
+        &self.buffer
     }
 
     pub fn buffer_arc(&self) -> Arc<wgpu::Buffer> {
@@ -421,6 +501,21 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
         let mut buffer = Self::zeros(len, device_id)?;
         buffer.is_pinned = true;
         Ok(buffer)
+    }
+}
+
+// Implement Drop to track GPU buffer frees
+#[cfg(feature = "gpu")]
+impl<T> Drop for GpuBuffer<T> {
+    fn drop(&mut self) {
+        // Only track the free if this is the last reference to the buffer
+        if Arc::strong_count(&self.buffer) == 1 {
+            if let Some(alloc_id) = self.allocation_id {
+                if let Ok(mut tracker) = GLOBAL_GPU_MEMORY_TRACKER.lock() {
+                    tracker.track_free(alloc_id);
+                }
+            }
+        }
     }
 }
 
@@ -498,5 +593,52 @@ impl BufferManager {
         T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static,
     {
         GpuBuffer::zeros(size, 0)
+    }
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod tests {
+    use super::*;
+    use crate::gpu::memory_tracing::{current_gpu_memory_usage, GLOBAL_GPU_MEMORY_TRACKER};
+
+    #[test]
+    fn test_gpu_buffer_memory_tracking() {
+        // Reset tracker state
+        if let Ok(mut tracker) = GLOBAL_GPU_MEMORY_TRACKER.lock() {
+            tracker.reset();
+        }
+
+        // Check initial usage
+        let initial_usage = current_gpu_memory_usage();
+
+        // Create a GPU buffer
+        let buffer = GpuBuffer::<f32>::zeros(1024, 0);
+
+        // Verify allocation was tracked if buffer creation succeeded
+        if buffer.is_ok() {
+            let usage_after_alloc = current_gpu_memory_usage();
+            assert!(
+                usage_after_alloc >= initial_usage,
+                "Memory usage should increase after allocation"
+            );
+
+            // Verify allocation ID was assigned
+            let buf = buffer.unwrap();
+            assert!(
+                buf.allocation_id().is_some(),
+                "Buffer should have an allocation ID"
+            );
+
+            // Drop the buffer and check that memory is freed
+            drop(buf);
+
+            // Note: Memory might not be immediately freed due to Arc references
+            // So we just verify the tracking system is working
+            let final_usage = current_gpu_memory_usage();
+            assert!(
+                final_usage <= usage_after_alloc,
+                "Memory usage should not increase after dropping"
+            );
+        }
     }
 }

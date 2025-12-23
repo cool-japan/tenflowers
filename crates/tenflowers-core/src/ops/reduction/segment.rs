@@ -27,7 +27,7 @@ use rayon::prelude::*;
 /// * `num_segments` - Total number of segments (maximum segment_id + 1)
 ///
 /// # Returns
-/// A tensor of shape [num_segments] containing the sum for each segment
+/// A tensor of shape `[num_segments]` containing the sum for each segment
 pub fn segment_sum<T>(
     data: &Tensor<T>,
     segment_ids: &Tensor<i32>,
@@ -37,7 +37,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -138,7 +138,7 @@ where
 /// * `num_segments` - Total number of segments (maximum segment_id + 1)
 ///
 /// # Returns
-/// A tensor of shape [num_segments] containing the mean for each segment
+/// A tensor of shape `[num_segments]` containing the mean for each segment
 pub fn segment_mean<T>(
     data: &Tensor<T>,
     segment_ids: &Tensor<i32>,
@@ -149,8 +149,8 @@ where
         + Default
         + std::ops::Add<Output = T>
         + std::ops::Div<Output = T>
-        + num_traits::Zero
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -267,7 +267,7 @@ where
 /// * `num_segments` - Total number of segments (maximum segment_id + 1)
 ///
 /// # Returns
-/// A tensor of shape [num_segments] containing the max for each segment
+/// A tensor of shape `[num_segments]` containing the max for each segment
 pub fn segment_max<T>(
     data: &Tensor<T>,
     segment_ids: &Tensor<i32>,
@@ -277,7 +277,7 @@ where
     T: Clone
         + Default
         + PartialOrd
-        + num_traits::Bounded
+        + scirs2_core::num_traits::Bounded
         + Send
         + Sync
         + 'static
@@ -402,7 +402,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -435,10 +435,8 @@ where
             _padding: [0; 2],
         };
 
-        // Placeholder - gpu_context would be obtained from device
-        let gpu_context: &crate::gpu::GpuContext = return Err(
-            TensorError::unsupported_operation_simple("GPU context not available".to_string()),
-        )?;
+        // Get global GPU context
+        let gpu_context = crate::gpu::GpuContext::global()?;
 
         let params_buffer =
             gpu_context
@@ -600,8 +598,8 @@ where
         + Default
         + std::ops::Add<Output = T>
         + std::ops::Div<Output = T>
-        + num_traits::Zero
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -619,10 +617,8 @@ where
         // Create output buffer for sums initialized to zero
         let sum_buffer = crate::gpu::buffer::GpuBuffer::zeros(num_segments, 0)?;
 
-        // Placeholder - gpu_context would be obtained from device
-        let gpu_context: &crate::gpu::GpuContext = return Err(
-            TensorError::unsupported_operation_simple("GPU context not available".to_string()),
-        )?;
+        // Get global GPU context
+        let gpu_context = crate::gpu::GpuContext::global()?;
 
         // Create count buffer initialized to zero
         let count_buffer = gpu_context.device.create_buffer(&wgpu::BufferDescriptor {
@@ -657,10 +653,8 @@ where
             _padding: [0; 2],
         };
 
-        // Placeholder - gpu_context would be obtained from device
-        let gpu_context: &crate::gpu::GpuContext = return Err(
-            TensorError::unsupported_operation_simple("GPU context not available".to_string()),
-        )?;
+        // Get global GPU context
+        let gpu_context = crate::gpu::GpuContext::global()?;
 
         let params_buffer =
             gpu_context
@@ -860,7 +854,7 @@ where
     T: Clone
         + Default
         + PartialOrd
-        + num_traits::Bounded
+        + scirs2_core::num_traits::Bounded
         + Send
         + Sync
         + 'static
@@ -893,10 +887,8 @@ where
             _padding: [0; 2],
         };
 
-        // Placeholder - gpu_context would be obtained from device
-        let gpu_context: &crate::gpu::GpuContext = return Err(
-            TensorError::unsupported_operation_simple("GPU context not available".to_string()),
-        )?;
+        // Get global GPU context
+        let gpu_context = crate::gpu::GpuContext::global()?;
 
         let params_buffer =
             gpu_context
@@ -1044,4 +1036,203 @@ where
             crate::Shape::new(vec![num_segments]),
         ))
     } // end unreachable code block
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Tensor;
+
+    #[test]
+    fn test_segment_sum_basic() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[6]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 3).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 3);
+        assert!((result_data[0] - 3.0).abs() < 1e-6);
+        assert!((result_data[1] - 7.0).abs() < 1e-6);
+        assert!((result_data[2] - 11.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_sum_empty_segments() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0], &[2]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 2], &[2]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 4).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 4);
+        assert!((result_data[0] - 1.0).abs() < 1e-6);
+        assert!((result_data[1] - 0.0).abs() < 1e-6);
+        assert!((result_data[2] - 2.0).abs() < 1e-6);
+        assert!((result_data[3] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_sum_single_segment() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 0, 0], &[4]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 1).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 1);
+        assert!((result_data[0] - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_mean_basic() {
+        let data = Tensor::from_vec(vec![2.0_f32, 4.0, 6.0, 8.0, 10.0, 12.0], &[6]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6]).unwrap();
+
+        let result = segment_mean(&data, &segment_ids, 3).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 3);
+        assert!((result_data[0] - 3.0).abs() < 1e-6);
+        assert!((result_data[1] - 7.0).abs() < 1e-6);
+        assert!((result_data[2] - 11.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_mean_variable_length() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 0, 1, 1], &[5]).unwrap();
+
+        let result = segment_mean(&data, &segment_ids, 2).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 2);
+        assert!((result_data[0] - 2.0).abs() < 1e-6);
+        assert!((result_data[1] - 4.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_max_basic() {
+        let data = Tensor::from_vec(vec![1.0_f32, 5.0, 2.0, 8.0, 3.0, 6.0], &[6]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6]).unwrap();
+
+        let result = segment_max(&data, &segment_ids, 3).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 3);
+        assert!((result_data[0] - 5.0).abs() < 1e-6);
+        assert!((result_data[1] - 8.0).abs() < 1e-6);
+        assert!((result_data[2] - 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_max_negative_values() {
+        let data = Tensor::from_vec(vec![-5.0_f32, -2.0, -8.0, -1.0], &[4]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1], &[4]).unwrap();
+
+        let result = segment_max(&data, &segment_ids, 2).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 2);
+        assert!((result_data[0] - (-2.0)).abs() < 1e-6);
+        assert!((result_data[1] - (-1.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_sum_large_input() {
+        let size = 2000;
+        let num_segments = 10;
+
+        let data_vec: Vec<f32> = (0..size).map(|i| i as f32).collect();
+        let segment_ids_vec: Vec<i32> = (0..size).map(|i| (i % num_segments) as i32).collect();
+
+        let data = Tensor::from_vec(data_vec.clone(), &[size]).unwrap();
+        let segment_ids = Tensor::from_vec(segment_ids_vec.clone(), &[size]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, num_segments).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), num_segments);
+
+        let mut expected = vec![0.0_f32; num_segments];
+        for (i, &val) in data_vec.iter().enumerate() {
+            expected[segment_ids_vec[i] as usize] += val;
+        }
+
+        for i in 0..num_segments {
+            assert!(
+                (result_data[i] - expected[i]).abs() < 1e-3,
+                "Segment {} mismatch: got {}, expected {}",
+                i,
+                result_data[i],
+                expected[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_segment_operations_i32() {
+        let data = Tensor::from_vec(vec![1_i32, 2, 3, 4, 5, 6], &[6]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 3).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 3);
+        assert_eq!(result_data[0], 3);
+        assert_eq!(result_data[1], 7);
+        assert_eq!(result_data[2], 11);
+    }
+
+    #[test]
+    fn test_segment_operations_f64() {
+        let data = Tensor::from_vec(vec![1.5_f64, 2.5, 3.5, 4.5], &[4]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1], &[4]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 2).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 2);
+        assert!((result_data[0] - 4.0).abs() < 1e-10);
+        assert!((result_data[1] - 8.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_segment_sum_shape_mismatch() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0], &[3]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 1], &[2]).unwrap();
+
+        let result = segment_sum(&data, &segment_ids, 2);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_segment_operations_consistency() {
+        let data = Tensor::from_vec(vec![2.0_f32, 4.0, 6.0, 8.0], &[4]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1], &[4]).unwrap();
+
+        let sum_result = segment_sum(&data, &segment_ids, 2).unwrap();
+        let mean_result = segment_mean(&data, &segment_ids, 2).unwrap();
+
+        let sum_data = sum_result.to_vec().unwrap();
+        let mean_data = mean_result.to_vec().unwrap();
+
+        assert!((mean_data[0] - sum_data[0] / 2.0).abs() < 1e-6);
+        assert!((mean_data[1] - sum_data[1] / 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_segment_max_single_element_segments() {
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let segment_ids = Tensor::from_vec(vec![0_i32, 1, 2, 3], &[4]).unwrap();
+
+        let result = segment_max(&data, &segment_ids, 4).unwrap();
+        let result_data = result.to_vec().unwrap();
+
+        assert_eq!(result_data.len(), 4);
+        assert!((result_data[0] - 1.0).abs() < 1e-6);
+        assert!((result_data[1] - 2.0).abs() < 1e-6);
+        assert!((result_data[2] - 3.0).abs() < 1e-6);
+        assert!((result_data[3] - 4.0).abs() < 1e-6);
+    }
 }

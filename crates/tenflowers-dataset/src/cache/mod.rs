@@ -6,6 +6,7 @@
 pub mod dataset;
 pub mod extension;
 pub mod lru;
+pub mod telemetry;
 
 #[cfg(feature = "serialize")]
 pub mod persistent;
@@ -14,6 +15,11 @@ pub mod persistent;
 pub use dataset::{CacheStats, CachedDataset, WarmingStrategy};
 pub use extension::CacheExt;
 pub use lru::{LruCache, ThreadSafeLruCache};
+pub use telemetry::{
+    AggregatedStats, AlertSeverity, AlertThresholds, AlertType, CacheEvent, CacheEventType,
+    CacheTelemetryCollector, CacheTelemetryMetrics, EnhancedTelemetryCollector, MetricsSnapshot,
+    PerformanceAlert, PerformanceBaselines, TelemetryConfig,
+};
 
 #[cfg(feature = "serialize")]
 pub use persistent::{PersistentCache, PersistentlyCachedDataset, TensorPersistentCache};

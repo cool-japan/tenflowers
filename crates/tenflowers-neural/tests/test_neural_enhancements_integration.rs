@@ -7,7 +7,7 @@
 //!
 //! These tests validate the end-to-end functionality of the enhanced neural components.
 
-use scirs2_autograd::ndarray::array;
+use scirs2_core::ndarray::array;
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::layers::{
     attention::mixture_of_experts::MixtureOfExperts, rnn::vanilla_rnn::RNN, Layer,

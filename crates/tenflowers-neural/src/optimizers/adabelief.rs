@@ -62,7 +62,7 @@ pub struct AdaBeliefState<T> {
 
 impl<T> AdaBeliefState<T>
 where
-    T: Default + Clone + num_traits::Zero,
+    T: Default + Clone + scirs2_core::num_traits::Zero,
 {
     /// Create new state for a parameter tensor
     pub fn new(param: &Tensor<T>, amsgrad: bool) -> Result<Self> {
@@ -92,7 +92,7 @@ pub struct AdaBelief<T> {
 
 impl<T> AdaBelief<T>
 where
-    T: Default + Clone + num_traits::Zero,
+    T: Default + Clone + scirs2_core::num_traits::Zero,
 {
     /// Create a new AdaBelief optimizer
     pub fn new(config: AdaBeliefConfig) -> Self {
@@ -141,7 +141,7 @@ where
 
 impl<T> Default for AdaBelief<T>
 where
-    T: Default + Clone + num_traits::Zero,
+    T: Default + Clone + scirs2_core::num_traits::Zero,
 {
     fn default() -> Self {
         Self::new(AdaBeliefConfig::default())

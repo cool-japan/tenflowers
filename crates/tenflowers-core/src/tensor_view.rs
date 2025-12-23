@@ -4,6 +4,7 @@ use crate::memory::PooledBuffer;
 use crate::memory::{MemoryAliasDetector, StridedView};
 use crate::tensor::TensorStorage;
 use crate::{Device, Result, Shape, Tensor, TensorError};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 use std::sync::Arc;
 
 /// Enhanced tensor that supports zero-copy views and strided operations
@@ -27,7 +28,7 @@ pub struct TensorView<T> {
 #[derive(Debug, Clone)]
 pub enum ViewStorage<T> {
     /// Reference to CPU tensor storage
-    CpuRef(Arc<ndarray::ArrayD<T>>),
+    CpuRef(Arc<ArrayD<T>>),
     /// Reference to GPU pooled buffer
     #[cfg(feature = "gpu")]
     GpuPooled(Arc<PooledBuffer<'static>>),
@@ -320,9 +321,8 @@ impl<T: Clone + Default> TensorView<T> {
                 }
 
                 let _shape = Shape::new(self.view.shape.clone());
-                let new_array =
-                    ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&self.view.shape), new_data)
-                        .map_err(|e| TensorError::invalid_argument(e.to_string()))?;
+                let new_array = ArrayD::from_shape_vec(IxDyn(&self.view.shape), new_data)
+                    .map_err(|e| TensorError::invalid_argument(e.to_string()))?;
 
                 Ok(Tensor::from_array(new_array))
             }

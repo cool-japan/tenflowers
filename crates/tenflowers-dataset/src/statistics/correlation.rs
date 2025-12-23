@@ -17,8 +17,8 @@ impl CorrelationAnalyzer {
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::Float
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
             + std::fmt::Debug
             + Send
             + Sync
@@ -67,7 +67,7 @@ impl CorrelationAnalyzer {
         means: &[T],
     ) -> Result<T>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
         let _n = T::from(features.len()).unwrap();
         let mean_i = means[feature_i];

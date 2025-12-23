@@ -5,8 +5,8 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{Array2, ArrayD, IxDyn};
+use scirs2_core::ndarray::{Array2, ArrayD, IxDyn};
+use scirs2_core::numeric::Zero;
 
 use super::optimized::matmul_2d_optimized;
 use super::shapes::compute_broadcast_indices;
@@ -125,7 +125,7 @@ pub fn store_2d_slice<T: Clone>(arr: &mut ArrayD<T>, batch_indices: &[usize], ma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
 
     #[test]
     fn test_extract_2d_slice() {

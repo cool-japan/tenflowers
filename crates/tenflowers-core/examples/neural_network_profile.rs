@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::Array2;
+use scirs2_core::ndarray::Array2;
 use std::time::Instant;
 use tenflowers_core::Tensor;
 

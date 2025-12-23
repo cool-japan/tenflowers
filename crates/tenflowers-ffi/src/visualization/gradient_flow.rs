@@ -4,9 +4,9 @@
 //! analysis of gradient propagation through neural networks.
 
 use crate::tensor_ops::{PyTensor, PyTrackedTensor};
-use num_traits::ToPrimitive;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use scirs2_core::numeric::ScientificNumber;
 // use std::collections::HashMap; // Unused for now
 use tenflowers_autograd::{GradientFlowAnalysis, GradientFlowVisualizer, TrackedTensor};
 // use tenflowers_core::Tensor; // Unused for now
@@ -90,24 +90,14 @@ impl PyGradientFlowVisualizer {
         Ok(PyGradientFlowAnalysis::from_analysis(analysis))
     }
 
-    /// Export visualization to HTML format
+    /// Export visualization to HTML format with comprehensive gradient flow analysis
     pub fn export_html(
         &self,
-        _analysis: &PyGradientFlowAnalysis,
+        analysis: &PyGradientFlowAnalysis,
         output_path: &str,
     ) -> PyResult<()> {
-        // TODO: Implement generate_html_report in GradientFlowVisualizer
-        let html_content = r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Gradient Flow Report</title>
-</head>
-<body>
-    <h1>Gradient Flow Analysis Report</h1>
-    <p>HTML report generation not yet implemented.</p>
-    <p>This is a placeholder report.</p>
-</body>
-</html>"#;
+        // Generate HTML report using the dedicated HTML generator module
+        let html_content = super::html_generator::generate_html_report(analysis);
 
         std::fs::write(output_path, html_content).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
@@ -119,18 +109,10 @@ impl PyGradientFlowVisualizer {
         Ok(())
     }
 
-    /// Export visualization to SVG format
-    pub fn export_svg(
-        &self,
-        _analysis: &PyGradientFlowAnalysis,
-        output_path: &str,
-    ) -> PyResult<()> {
-        // TODO: Implement generate_svg_diagram in GradientFlowVisualizer
-        let svg_content = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-            <text x="50" y="50" text-anchor="middle" dominant-baseline="central">
-                SVG generation not yet implemented
-            </text>
-        </svg>"#;
+    /// Export visualization to SVG format with comprehensive gradient flow diagram
+    pub fn export_svg(&self, analysis: &PyGradientFlowAnalysis, output_path: &str) -> PyResult<()> {
+        // Generate SVG diagram using the dedicated SVG generator module
+        let svg_content = super::svg_generator::generate_svg_diagram(analysis);
 
         std::fs::write(output_path, svg_content).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to write SVG file: {}", e))

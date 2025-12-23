@@ -207,7 +207,7 @@ impl PyTrackedTensor {
             tenflowers_core::Device::Cpu => "cpu".to_string(),
             #[cfg(feature = "gpu")]
             tenflowers_core::Device::Gpu(id) => format!("gpu:{}", id),
-            #[cfg(feature = "rocm")]
+            #[cfg(feature = "gpu")]
             tenflowers_core::Device::Rocm(id) => format!("rocm:{}", id),
         }
     }

@@ -32,7 +32,7 @@ pub struct TensorView<T> {
 
 impl<T> TensorView<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a new tensor view from a source tensor
     pub fn new(
@@ -259,7 +259,7 @@ pub struct ZeroCopyDataset<T> {
 
 impl<T> ZeroCopyDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a new zero-copy dataset from features and labels tensors
     pub fn new(features: Tensor<T>, labels: Tensor<T>) -> Result<Self> {
@@ -358,7 +358,7 @@ impl<T> Dataset<T> for ZeroCopyDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static
@@ -398,7 +398,7 @@ pub struct MemoryMappedDataset<T> {
 
 impl<T> MemoryMappedDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a memory-mapped dataset from raw data
     /// Data layout: [sample0_features, sample0_labels, sample1_features, sample1_labels, ...]
@@ -451,7 +451,7 @@ where
 
 impl<T> Dataset<T> for MemoryMappedDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.num_samples
@@ -499,7 +499,7 @@ pub struct MemoryMappedFileDataset<T> {
 #[cfg(feature = "mmap")]
 impl<T> MemoryMappedFileDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a memory-mapped dataset directly from a file
     /// The file should contain binary data in the format:
@@ -651,7 +651,7 @@ where
 #[cfg(feature = "mmap")]
 impl<T> Dataset<T> for MemoryMappedFileDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + bytemuck::Pod + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + bytemuck::Pod + 'static,
 {
     fn len(&self) -> usize {
         self.num_samples

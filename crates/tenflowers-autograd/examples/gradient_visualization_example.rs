@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::Array1;
+use scirs2_core::ndarray::Array1;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use tenflowers_autograd::{

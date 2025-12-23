@@ -67,8 +67,7 @@ impl Device {
                 if s == "gpu" {
                     return Ok(Device::Gpu(0));
                 }
-                if s.starts_with("gpu:") {
-                    let id_str = &s[4..];
+                if let Some(id_str) = s.strip_prefix("gpu:") {
                     match id_str.parse::<usize>() {
                         Ok(id) => return Ok(Device::Gpu(id)),
                         Err(_) => return Err(format!("Invalid GPU ID: {}", id_str)),
@@ -83,15 +82,13 @@ impl Device {
                 if s == "rocm" || s == "amd" {
                     return Ok(Device::Rocm(0));
                 }
-                if s.starts_with("rocm:") {
-                    let id_str = &s[5..];
+                if let Some(id_str) = s.strip_prefix("rocm:") {
                     match id_str.parse::<usize>() {
                         Ok(id) => return Ok(Device::Rocm(id)),
                         Err(_) => return Err(format!("Invalid ROCm device ID: {}", id_str)),
                     }
                 }
-                if s.starts_with("amd:") {
-                    let id_str = &s[4..];
+                if let Some(id_str) = s.strip_prefix("amd:") {
                     match id_str.parse::<usize>() {
                         Ok(id) => return Ok(Device::Rocm(id)),
                         Err(_) => return Err(format!("Invalid AMD GPU ID: {}", id_str)),

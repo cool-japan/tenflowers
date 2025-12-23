@@ -66,7 +66,13 @@ impl<T: Clone> Sequential<T> {
     /// Set the model to training mode
     pub fn train(&mut self)
     where
-        T: num_traits::Zero + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::Zero
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         self.set_training(true);
     }
@@ -74,7 +80,13 @@ impl<T: Clone> Sequential<T> {
     /// Set the model to evaluation mode
     pub fn eval(&mut self)
     where
-        T: num_traits::Zero + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::Zero
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         self.set_training(false);
     }
@@ -82,7 +94,7 @@ impl<T: Clone> Sequential<T> {
 
 impl<
         T: Clone
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Default
             + Send
             + Sync

@@ -507,7 +507,7 @@ impl MetalDevice {
         let thread_groups = metal::MTLSize::new(
             ((output_height * output_width + 63) / 64) as u64,
             ((out_channels + 7) / 8) as u64,
-            ((batch_size + 0) / 1) as u64,
+            batch_size as u64,
         );
 
         encoder.dispatch_thread_groups(thread_groups, threads_per_group);
@@ -739,7 +739,7 @@ impl MetalDevice {
     where
         T: Clone + Default + Send + Sync + 'static,
     {
-        let size = data.len() * std::mem::size_of::<T>();
+        let size = std::mem::size_of_val(data);
         let buffer = self.device().new_buffer_with_data(
             data.as_ptr() as *const std::ffi::c_void,
             size as u64,

@@ -4,7 +4,7 @@
 //! focused on coordination and optimization without complex dynamic dispatch.
 
 use crate::layers::LayerType;
-// use num_traits::{Float, FromPrimitive, One, Zero};
+// use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, Tensor, TensorError};

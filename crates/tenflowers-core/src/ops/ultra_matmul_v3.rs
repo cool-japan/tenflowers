@@ -11,8 +11,8 @@
 //! - Maintain world-class performance while demonstrating true humility
 
 use crate::{Result, Tensor};
-use num_traits::Num;
 use scirs2_core::metrics::{Counter, Timer};
+use scirs2_core::numeric::Num;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;

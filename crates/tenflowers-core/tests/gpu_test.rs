@@ -1,7 +1,7 @@
 #[cfg(feature = "gpu")]
 #[cfg(test)]
 mod gpu_tests {
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
     use tenflowers_core::{Device, Tensor};
 
     #[test]

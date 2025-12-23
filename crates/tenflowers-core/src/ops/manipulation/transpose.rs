@@ -10,8 +10,8 @@
 use crate::gpu::buffer::GpuBuffer;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::Zero;
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
@@ -190,7 +190,7 @@ where
 
             // Flip along each specified axis
             for &axis in axes {
-                result.invert_axis(ndarray::Axis(axis));
+                result.invert_axis(scirs2_core::ndarray::Axis(axis));
             }
 
             Ok(Tensor::from_array(result))

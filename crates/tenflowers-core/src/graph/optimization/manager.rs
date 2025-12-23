@@ -6,7 +6,10 @@
 use super::fusion::OperationFusionPass;
 use super::memory::MemoryOptimizationPass;
 use super::passes::OptimizationPass;
-use super::passes::{CSEPass, ConstantFoldingPass, DeadCodeEliminationPass};
+use super::passes::{
+    AlgebraicSimplificationPass, CSEPass, ConstantFoldingPass, DeadCodeEliminationPass,
+    OperationSchedulingPass, StrengthReductionPass,
+};
 use super::placement::DevicePlacementOptimizationPass;
 use crate::graph::Graph;
 use crate::Result;
@@ -36,12 +39,16 @@ impl GraphOptimizer {
 
     /// Add default optimization passes
     pub fn add_default_passes(&mut self) {
-        self.add_pass(Box::new(DeadCodeEliminationPass::new()));
-        self.add_pass(Box::new(ConstantFoldingPass::new()));
-        self.add_pass(Box::new(CSEPass::new()));
+        // Add passes in priority order (highest priority first)
+        self.add_pass(Box::new(ConstantFoldingPass::new())); // Priority 200
+        self.add_pass(Box::new(AlgebraicSimplificationPass::new())); // Priority 180
+        self.add_pass(Box::new(CSEPass::new())); // Priority 150
+        self.add_pass(Box::new(StrengthReductionPass::new())); // Priority 140
+        self.add_pass(Box::new(OperationSchedulingPass::new())); // Priority 120
         self.add_pass(Box::new(OperationFusionPass::new()));
         self.add_pass(Box::new(MemoryOptimizationPass::new()));
         self.add_pass(Box::new(DevicePlacementOptimizationPass::new()));
+        self.add_pass(Box::new(DeadCodeEliminationPass::new())); // Priority 50 (run last)
     }
 
     /// Add an optimization pass
@@ -152,7 +159,7 @@ mod tests {
     #[test]
     fn test_graph_optimizer_creation() {
         let optimizer = GraphOptimizer::new();
-        assert_eq!(optimizer.passes.len(), 6); // All default passes
+        assert_eq!(optimizer.passes.len(), 9); // All default passes
 
         let empty_optimizer = GraphOptimizer::empty();
         assert_eq!(empty_optimizer.passes.len(), 0);

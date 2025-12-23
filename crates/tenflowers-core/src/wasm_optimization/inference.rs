@@ -279,7 +279,7 @@ impl WasmEdgeInference {
             WasmActivationType::Tanh => input.iter().map(|&x| x.tanh()).collect(),
             WasmActivationType::GELU => input
                 .iter()
-                .map(|&x| x * 0.5 * (1.0 + (x * 0.7978845608 * (1.0 + 0.044715 * x * x)).tanh()))
+                .map(|&x| x * 0.5 * (1.0 + (x * 0.797_884_6 * (1.0 + 0.044715 * x * x)).tanh()))
                 .collect(),
             WasmActivationType::Swish => input.iter().map(|&x| x / (1.0 + (-x).exp())).collect(),
         }

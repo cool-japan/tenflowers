@@ -583,9 +583,11 @@ mod tests {
 
     #[test]
     fn test_tape_optimization_config() {
-        let mut config = TapeOptimizationConfig::default();
-        config.max_tape_size = 5000;
-        config.enable_fusion = false;
+        let config = TapeOptimizationConfig {
+            max_tape_size: 5000,
+            enable_fusion: false,
+            ..Default::default()
+        };
 
         let optimizer = TapeOptimizer::with_config(config.clone());
         assert_eq!(optimizer.config.max_tape_size, 5000);

@@ -1,0 +1,75 @@
+[package]
+name = "tenflowers"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Pure Rust implementation of TensorFlow - A comprehensive deep learning framework"
+keywords = ["machine-learning", "neural-network", "tensor", "autograd", "gpu"]
+categories = ["science", "mathematics", "algorithms"]
+readme = "README.md"
+
+[dependencies]
+# Re-export all TenfloweRS subcrates
+tenflowers-core = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-core" }
+tenflowers-autograd = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-autograd" }
+tenflowers-neural = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-neural" }
+tenflowers-dataset = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-dataset" }
+
+# Optional Python bindings
+tenflowers-ffi = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-ffi", optional = true }
+
+[features]
+default = ["std", "parallel"]
+std = ["tenflowers-core/std"]
+parallel = ["tenflowers-core/parallel"]
+
+# GPU support
+gpu = ["tenflowers-core/gpu"]
+cuda = ["tenflowers-core/cuda"]
+cudnn = ["tenflowers-core/cudnn"]
+opencl = ["tenflowers-core/opencl"]
+metal = ["tenflowers-core/metal"]
+rocm = ["tenflowers-core/rocm"]
+nccl = ["tenflowers-core/nccl"]
+
+# BLAS acceleration
+blas = ["tenflowers-core/blas"]
+blas-openblas = ["tenflowers-core/blas-openblas"]
+blas-mkl = ["tenflowers-core/blas-mkl"]
+blas-accelerate = ["tenflowers-core/blas-accelerate"]
+
+# SIMD optimization
+simd = ["tenflowers-core/simd"]
+
+# Serialization
+serialize = ["tenflowers-core/serialize"]
+compression = ["tenflowers-core/compression"]
+
+# WASM support
+wasm = ["tenflowers-core/wasm"]
+
+# ONNX support
+onnx = ["tenflowers-core/onnx"]
+
+# Autograd
+autograd = ["tenflowers-core/autograd"]
+
+# Python bindings
+python = ["tenflowers-ffi"]
+
+# Benchmarking
+benchmark = ["tenflowers-core/benchmark"]
+
+# All features
+full = ["gpu", "blas-openblas", "simd", "serialize", "compression", "onnx", "autograd", "python"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

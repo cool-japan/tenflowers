@@ -8,7 +8,7 @@ use super::types::{
     GradientStats, IssueType, NodeType, Severity, ValueStats, VisualizationSettings,
 };
 use crate::tape::{GradientTape, Operation, TensorId, TrackedTensor};
-use num_traits::{Float, FromPrimitive, One, Signed, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Signed, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -700,11 +700,13 @@ mod tests {
 
     #[test]
     fn test_visualizer_with_settings() {
-        let mut settings = VisualizationSettings::default();
-        settings.show_gradient_flow = false;
+        let settings = VisualizationSettings {
+            show_gradient_flow: false,
+            ..Default::default()
+        };
 
         let visualizer = GradientFlowVisualizer::<f32>::with_settings(settings.clone());
-        assert_eq!(visualizer.settings().show_gradient_flow, false);
+        assert!(!visualizer.settings().show_gradient_flow);
     }
 
     #[test]

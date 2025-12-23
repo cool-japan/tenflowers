@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_invalid_mode() {
         LearningRateReduction::<f32>::new(
             "val_loss".to_string(),
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_invalid_factor_too_high() {
         LearningRateReduction::<f32>::new(
             "val_loss".to_string(),
@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_invalid_factor_zero() {
         LearningRateReduction::<f32>::new(
             "val_loss".to_string(),
@@ -478,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_zero_patience() {
         LearningRateReduction::<f32>::new(
             "val_loss".to_string(),

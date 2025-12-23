@@ -121,7 +121,13 @@ pub struct SequenceMetadata {
 
 impl<T> AttentionSequence<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new attention sequence
     pub fn new(
@@ -220,7 +226,11 @@ where
         max_length: usize,
     ) -> Result<AttentionSequence<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::One + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::One
+            + scirs2_core::numeric::Float,
     {
         let self_len = self.tokens.shape().size();
         let other_len = other.tokens.shape().size();
@@ -312,9 +322,9 @@ impl<T> AttentionOptimizedDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Float
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static,
@@ -711,7 +721,13 @@ pub struct AttentionOptimizedDatasetBuilder<T> {
 
 impl<T> AttentionOptimizedDatasetBuilder<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
+        + Send
+        + Sync
+        + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -758,7 +774,7 @@ where
 
     pub fn build(self) -> Result<AttentionOptimizedDataset<T>>
     where
-        T: num_traits::Float,
+        T: scirs2_core::numeric::Float,
     {
         AttentionOptimizedDataset::new(self.sequences, self.config)
     }
@@ -766,7 +782,13 @@ where
 
 impl<T> Default for AttentionOptimizedDatasetBuilder<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
+        + Send
+        + Sync
+        + 'static,
 {
     fn default() -> Self {
         Self::new()

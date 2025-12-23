@@ -7,7 +7,7 @@ use crate::{
     layers::{Conv2D, Dense, Layer},
     model::Model,
 };
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// EfficientNet configuration for different model variants

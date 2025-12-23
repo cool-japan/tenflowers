@@ -147,12 +147,12 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + PartialOrd
             + std::ops::Mul<Output = T>
-            + num_traits::Float,
+            + scirs2_core::num_traits::Float,
     {
         let group = if let Some(name) = group_name {
             self.get_group(name)
@@ -181,8 +181,8 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let group = if let Some(name) = group_name {
             self.get_group(name)
@@ -229,8 +229,8 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let group = if let Some(name) = group_name {
             self.get_group(name)
@@ -267,12 +267,12 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + PartialOrd
             + std::ops::Mul<Output = T>
-            + num_traits::Float,
+            + scirs2_core::num_traits::Float,
     {
         // Move tensor to CPU for reduction
         let cpu_tensor = tensor.to_cpu()?;
@@ -347,12 +347,12 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + PartialOrd
             + std::ops::Mul<Output = T>
-            + num_traits::Float,
+            + scirs2_core::num_traits::Float,
     {
         let group = if let Some(name) = group_name {
             self.get_group(name)
@@ -387,8 +387,8 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let _group = if let Some(name) = group_name {
             self.get_group(name)
@@ -422,12 +422,12 @@ impl CollectiveManager {
             + Sync
             + 'static
             + bytemuck::Pod
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + PartialOrd
             + std::ops::Mul<Output = T>
-            + num_traits::Float,
+            + scirs2_core::num_traits::Float,
     {
         let group = if let Some(name) = group_name {
             self.get_group(name)
@@ -511,12 +511,12 @@ where
         + Sync
         + 'static
         + bytemuck::Pod
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();
@@ -530,7 +530,14 @@ pub fn broadcast<T>(
     group_name: Option<&str>,
 ) -> Result<Vec<Tensor<T>>>
 where
-    T: Clone + Default + Send + Sync + 'static + bytemuck::Pod + num_traits::Zero + num_traits::One,
+    T: Clone
+        + Default
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();
@@ -540,7 +547,14 @@ where
 /// Gather tensors from all devices
 pub fn all_gather<T>(tensor: &Tensor<T>, group_name: Option<&str>) -> Result<Vec<Tensor<T>>>
 where
-    T: Clone + Default + Send + Sync + 'static + bytemuck::Pod + num_traits::Zero + num_traits::One,
+    T: Clone
+        + Default
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();
@@ -559,12 +573,12 @@ where
         + Sync
         + 'static
         + bytemuck::Pod
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();
@@ -578,7 +592,14 @@ pub fn sync_parameters<T>(
     group_name: Option<&str>,
 ) -> Result<Vec<Vec<Tensor<T>>>>
 where
-    T: Clone + Default + Send + Sync + 'static + bytemuck::Pod + num_traits::Zero + num_traits::One,
+    T: Clone
+        + Default
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();
@@ -594,12 +615,12 @@ where
         + Sync
         + 'static
         + bytemuck::Pod
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + PartialOrd
         + std::ops::Mul<Output = T>
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
     let mgr = manager.lock().unwrap();

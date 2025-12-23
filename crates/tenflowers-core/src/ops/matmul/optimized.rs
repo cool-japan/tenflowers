@@ -3,8 +3,8 @@
 //! This module contains various optimized CPU implementations including
 //! BLAS integration, blocked algorithms, and cache-friendly variants.
 
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{Array2, ArrayView2};
+use scirs2_core::ndarray::{Array2, ArrayView2};
+use scirs2_core::numeric::Zero;
 
 /// Optimized 2D matrix multiplication dispatcher
 pub fn matmul_2d_optimized<T>(a: ArrayView2<T>, b: ArrayView2<T>) -> Array2<T>
@@ -189,7 +189,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
 
     #[test]
     fn test_matmul_simple_optimized() {

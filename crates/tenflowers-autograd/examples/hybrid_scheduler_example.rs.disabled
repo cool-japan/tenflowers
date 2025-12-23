@@ -1,0 +1,243 @@
+/// Hybrid Scheduler Example
+///
+/// This example demonstrates the intelligent forward/reverse mode scheduler
+/// that automatically selects the most efficient differentiation strategy
+/// based on computation graph characteristics.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{
+    DifferentiationMode, GradientTape, HybridScheduler, SchedulerConfig, SchedulingDecision,
+    SchedulingStrategy,
+};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Hybrid Scheduler Example");
+    println!("===================================\n");
+
+    // Example 1: Automatic mode selection
+    println!("Example 1: Automatic Mode Selection");
+    println!("-----------------------------------");
+    automatic_mode_selection()?;
+
+    println!("\nExample 2: Forward Mode Use Case");
+    println!("--------------------------------");
+    forward_mode_use_case()?;
+
+    println!("\nExample 3: Reverse Mode Use Case");
+    println!("--------------------------------");
+    reverse_mode_use_case()?;
+
+    println!("\nExample 4: Mixed Mode Strategy");
+    println!("------------------------------");
+    mixed_mode_strategy()?;
+
+    Ok(())
+}
+
+fn automatic_mode_selection() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Testing automatic differentiation mode selection\n");
+
+    // Create scheduler with auto strategy
+    let scheduler_config = SchedulerConfig {
+        strategy: SchedulingStrategy::Auto,
+        forward_mode_threshold: 10.0, // Prefer forward if input_dim/output_dim < 10
+        reverse_mode_threshold: 0.1,  // Prefer reverse if input_dim/output_dim > 0.1
+        enable_mixed_mode: true,
+    };
+
+    let scheduler = HybridScheduler::new(scheduler_config);
+
+    // Case 1: Few inputs, many outputs -> Forward mode preferred
+    println!("Case 1: Computing Jacobian (1 input → 100 outputs)");
+    let decision1 = scheduler.recommend_mode(1, 100, 50)?;
+    println!("  Recommended mode: {:?}", decision1.mode);
+    println!("  Reason: {}", decision1.reasoning);
+
+    // Case 2: Many inputs, few outputs -> Reverse mode preferred
+    println!("\nCase 2: Computing gradient (100 inputs → 1 output)");
+    let decision2 = scheduler.recommend_mode(100, 1, 50)?;
+    println!("  Recommended mode: {:?}", decision2.mode);
+    println!("  Reason: {}", decision2.reasoning);
+
+    // Case 3: Balanced case -> Auto selects based on computation
+    println!("\nCase 3: Balanced case (50 inputs → 50 outputs)");
+    let decision3 = scheduler.recommend_mode(50, 50, 100)?;
+    println!("  Recommended mode: {:?}", decision3.mode);
+    println!("  Reason: {}", decision3.reasoning);
+
+    println!("\n✓ Scheduler automatically adapts to computation structure");
+
+    Ok(())
+}
+
+fn forward_mode_use_case() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Forward mode: Computing directional derivatives\n");
+
+    // Configure scheduler to prefer forward mode
+    let scheduler_config = SchedulerConfig {
+        strategy: SchedulingStrategy::ForwardOnly,
+        forward_mode_threshold: 1.0,
+        reverse_mode_threshold: 1000.0,
+        enable_mixed_mode: false,
+    };
+
+    let tape = GradientTape::with_scheduler_config(scheduler_config);
+
+    // Single input, multiple outputs scenario
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((1, 10), |(_, j)| j as f32 * 0.1).into_dyn(),
+    ));
+
+    println!("Computing function with 1 input → 100 outputs...");
+
+    // Create multiple output functions
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((10, 25), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    );
+    let out1 = x.matmul(&w1)?;
+    println!("  Output 1: shape [1, 25]");
+
+    let w2 = Tensor::from_array(
+        Array2::from_shape_fn((25, 50), |(i, j)| (i as f32 - j as f32) * 0.001).into_dyn(),
+    );
+    let out2 = out1.matmul(&w2)?;
+    println!("  Output 2: shape [1, 50]");
+
+    let w3 = Tensor::from_array(
+        Array2::from_shape_fn((50, 100), |(i, j)| ((i * j) as f32) * 0.0001).into_dyn(),
+    );
+    let final_output = out2.matmul(&w3)?;
+    println!("  Final output: shape [1, 100]");
+
+    let loss = final_output.sum(None, false)?;
+
+    println!("\nComputing Jacobian with forward mode...");
+    let grads = tape.gradient(&[loss.clone()], &[x.clone()])?;
+
+    println!("✓ Forward mode efficient for this computation");
+    println!("  Advantage: Single forward pass computes all derivatives");
+    println!("  Use case: Jacobian computation, sensitivity analysis");
+
+    Ok(())
+}
+
+fn reverse_mode_use_case() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Reverse mode: Computing gradients for optimization\n");
+
+    // Configure scheduler to prefer reverse mode
+    let scheduler_config = SchedulerConfig {
+        strategy: SchedulingStrategy::ReverseOnly,
+        forward_mode_threshold: 0.0,
+        reverse_mode_threshold: 0.0,
+        enable_mixed_mode: false,
+    };
+
+    let tape = GradientTape::with_scheduler_config(scheduler_config);
+
+    // Many inputs, single output scenario (typical neural network)
+    println!("Creating neural network with 100 parameters...");
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((8, 32), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    ));
+
+    let w1 = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((32, 16), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+    ));
+    println!("  Layer 1 weights: [32, 16] = 512 parameters");
+
+    let h1 = x.matmul(&w1)?;
+    let h1_act = h1.relu()?;
+
+    let w2 = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((16, 1), |(i, _)| i as f32 * 0.01).into_dyn(),
+    ));
+    println!("  Layer 2 weights: [16, 1] = 16 parameters");
+
+    let output = h1_act.matmul(&w2)?;
+
+    // Single scalar loss
+    let loss = output.sum(None, false)?;
+    println!("  Output: Single scalar loss");
+
+    println!("\nComputing gradients with reverse mode...");
+    let grads = tape.gradient(&[loss.clone()], &[w1.clone(), w2.clone()])?;
+
+    println!("✓ Reverse mode efficient for this computation");
+    println!("  Advantage: Single backward pass for all parameters");
+    println!("  Use case: Neural network training, optimization");
+    println!(
+        "  Efficiency: {} parameters computed in one backward pass",
+        512 + 16
+    );
+
+    Ok(())
+}
+
+fn mixed_mode_strategy() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Mixed mode: Combining forward and reverse\n");
+
+    // Enable mixed mode strategy
+    let scheduler_config = SchedulerConfig {
+        strategy: SchedulingStrategy::Mixed,
+        forward_mode_threshold: 5.0,
+        reverse_mode_threshold: 0.2,
+        enable_mixed_mode: true,
+    };
+
+    let scheduler = HybridScheduler::new(scheduler_config);
+    let tape = GradientTape::with_scheduler_config(scheduler_config);
+
+    println!("Complex computation with varied input/output dimensions\n");
+
+    // Part 1: Few inputs → Many intermediate (use forward)
+    let x1 = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((4, 8), |(i, j)| (i as f32 + j as f32) * 0.1).into_dyn(),
+    ));
+
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((8, 32), |(i, j)| ((i + j) as f32) * 0.01).into_dyn(),
+    );
+    let intermediate = x1.matmul(&w1)?;
+    println!("Part 1: [4,8] → [4,32]");
+
+    let decision1 = scheduler.recommend_mode(32, 128, 50)?;
+    println!("  Mode: {:?}", decision1.mode);
+    println!("  {}", decision1.reasoning);
+
+    // Part 2: Many intermediate → Few outputs (use reverse)
+    let w2 =
+        Tensor::from_array(Array2::from_shape_fn((32, 1), |(i, _)| i as f32 * 0.001).into_dyn());
+    let output = intermediate.matmul(&w2)?;
+    println!("\nPart 2: [4,32] → [4,1]");
+
+    let decision2 = scheduler.recommend_mode(128, 4, 50)?;
+    println!("  Mode: {:?}", decision2.mode);
+    println!("  {}", decision2.reasoning);
+
+    let loss = output.sum(None, false)?;
+
+    println!("\nComputing gradients with mixed strategy...");
+    let grads = tape.gradient(&[loss.clone()], &[x1.clone()])?;
+
+    println!("✓ Mixed mode adapts strategy for each computation stage");
+    println!("  Benefits:");
+    println!("  • Optimal efficiency for complex graphs");
+    println!("  • Automatic adaptation to graph structure");
+    println!("  • Reduced memory and compute time");
+
+    println!("\n📝 Mode Selection Guide:");
+    println!("  Forward Mode:");
+    println!("    • Best for: Jacobian, directional derivatives");
+    println!("    • When: #inputs << #outputs");
+    println!("    • Example: Sensitivity analysis (1 → 1000)");
+    println!("\n  Reverse Mode:");
+    println!("    • Best for: Gradient descent, optimization");
+    println!("    • When: #inputs >> #outputs");
+    println!("    • Example: Neural network training (1000 → 1)");
+    println!("\n  Mixed Mode:");
+    println!("    • Best for: Complex multi-stage computations");
+    println!("    • When: Varying input/output ratios");
+    println!("    • Example: Nested functions, composite models");
+
+    Ok(())
+}

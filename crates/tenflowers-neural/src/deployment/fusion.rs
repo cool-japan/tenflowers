@@ -1,6 +1,6 @@
 use crate::layers::Layer;
 use crate::model::Sequential;
-use num_traits;
+use scirs2_core::num_traits;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 /// Layer fusion optimizations for efficient inference.
@@ -234,7 +234,7 @@ impl LayerFusion {
         model: &Sequential<T>,
     ) -> Result<(Sequential<T>, FusionStats), TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
     {
         let mut stats = FusionStats::new();
         // Create a new empty model as placeholder since Sequential doesn't implement Clone
@@ -372,7 +372,7 @@ pub fn fuse_layers<T>(
     config: Option<FusionConfig>,
 ) -> Result<(Sequential<T>, FusionStats), TensorError>
 where
-    T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+    T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
 {
     let fusion_engine = LayerFusion::with_config(config.unwrap_or_default());
     fusion_engine.fuse_sequential(model)

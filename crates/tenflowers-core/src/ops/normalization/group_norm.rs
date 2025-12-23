@@ -6,11 +6,11 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::numeric::{Float, FromPrimitive};
 
 /// Group normalization
-/// Input shape: [batch, channels, height, width]
-/// Gamma/beta shapes: [channels]
+/// Input shape: `[batch, channels, height, width]`
+/// Gamma/beta shapes: `[channels]`
 pub fn group_norm<T>(
     input: &Tensor<T>,
     gamma: &Tensor<T>,

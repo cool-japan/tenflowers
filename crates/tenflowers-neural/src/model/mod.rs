@@ -73,7 +73,7 @@ pub trait ModelSerialization<T> {
 /// Zero the gradient of a tensor parameter
 pub(crate) fn zero_tensor_grad<T>(param: &mut Tensor<T>)
 where
-    T: num_traits::Zero
+    T: scirs2_core::num_traits::Zero
         + Clone
         + Default
         + Send
@@ -90,7 +90,7 @@ where
 
 fn create_zero_grad_for_device<T>(param: &Tensor<T>) -> Option<Tensor<T>>
 where
-    T: num_traits::Zero
+    T: scirs2_core::num_traits::Zero
         + Clone
         + Default
         + Send
@@ -102,9 +102,15 @@ where
     match param.device() {
         tenflowers_core::Device::Cpu => Some(Tensor::zeros(param.shape().dims())),
         #[cfg(feature = "gpu")]
-        device => {
+        tenflowers_core::Device::Gpu(_) => {
             let cpu_zeros = Tensor::zeros(param.shape().dims());
-            cpu_zeros.to(device.clone()).ok() // Fall back to no gradient if transfer fails
+            cpu_zeros.to(param.device().clone()).ok() // Fall back to no gradient if transfer fails
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            // Handle any other device variants from core (e.g. Rocm)
+            let cpu_zeros = Tensor::zeros(param.shape().dims());
+            cpu_zeros.to(param.device().clone()).ok() // Fall back to no gradient if transfer fails
         }
     }
 }

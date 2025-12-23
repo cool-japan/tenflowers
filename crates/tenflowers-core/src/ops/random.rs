@@ -1,5 +1,5 @@
 use crate::{Device, Result, Tensor, TensorError};
-use scirs2_core::random::distributions::{Distribution, Normal, Uniform as RandUniform};
+use scirs2_core::random::rand_distributions::{Distribution, Normal, Uniform as RandUniform};
 use scirs2_core::random::rand_prelude::*;
 
 #[cfg(feature = "gpu")]
@@ -50,9 +50,30 @@ pub fn random_normal_f32_device(
             Tensor::from_vec(data, shape)
         }
         #[cfg(feature = "gpu")]
-        Device::Gpu(_) => {
-            // TODO: Implement GPU random normal operation
-            todo!("GPU random normal not yet implemented")
+        Device::Gpu(device_id) => {
+            use crate::device::get_gpu_context;
+            use crate::gpu::random_ops;
+
+            // Get GPU context
+            let context = get_gpu_context(*device_id)?;
+
+            // Calculate output length
+            let output_len: usize = shape.iter().product();
+
+            // Execute GPU random normal operation
+            let gpu_buffer = random_ops::execute_random_normal::<f32>(
+                context.device,
+                context.queue,
+                *device,
+                output_len,
+                mean,
+                std,
+                seed,
+            )?;
+
+            // Create tensor from GPU buffer
+            let tensor_shape = crate::Shape::new(shape.to_vec());
+            Ok(Tensor::from_gpu_buffer(gpu_buffer, tensor_shape))
         }
         #[cfg(feature = "rocm")]
         Device::Rocm(_) => {
@@ -141,9 +162,30 @@ pub fn random_uniform_f32_device(
             Tensor::from_vec(data, shape)
         }
         #[cfg(feature = "gpu")]
-        Device::Gpu(_) => {
-            // TODO: Implement GPU random uniform operation
-            todo!("GPU random uniform not yet implemented")
+        Device::Gpu(device_id) => {
+            use crate::device::get_gpu_context;
+            use crate::gpu::random_ops;
+
+            // Get GPU context
+            let context = get_gpu_context(*device_id)?;
+
+            // Calculate output length
+            let output_len: usize = shape.iter().product();
+
+            // Execute GPU random uniform operation
+            let gpu_buffer = random_ops::execute_random_uniform::<f32>(
+                context.device,
+                context.queue,
+                *device,
+                output_len,
+                min,
+                max,
+                seed,
+            )?;
+
+            // Create tensor from GPU buffer
+            let tensor_shape = crate::Shape::new(shape.to_vec());
+            Ok(Tensor::from_gpu_buffer(gpu_buffer, tensor_shape))
         }
         #[cfg(feature = "rocm")]
         Device::Rocm(_) => {

@@ -14,7 +14,7 @@ impl SimdBenchmark {
     /// Benchmark SIMD vs scalar normalization performance
     pub fn benchmark_normalization<T>() -> Result<BenchmarkResult>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
     {
         use std::time::{Duration, Instant};
 

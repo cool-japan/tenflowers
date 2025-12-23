@@ -4,7 +4,7 @@
 //! different gradient computation operations, such as unbroadcasting
 //! and shape handling utilities.
 
-use num_traits::Zero;
+use scirs2_core::numeric::Zero;
 use tenflowers_core::{Result, Shape, Tensor, TensorError};
 
 /// Helper function to "unbroadcast" a gradient tensor
@@ -18,7 +18,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -159,7 +159,7 @@ where
 /// Helper function to create a ones tensor with the same device and dtype as reference
 pub fn ones_like<T>(reference: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::One,
+    T: Clone + Default + scirs2_core::num_traits::One,
 {
     Ok(Tensor::ones(reference.shape().dims()))
 }

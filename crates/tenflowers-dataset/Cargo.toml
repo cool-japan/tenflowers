@@ -15,11 +15,9 @@ description = "Data pipeline and dataset utilities for TenfloweRS"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.1" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.2" }
 scirs2-core = { workspace = true, features = ["random"] }
-ndarray = { workspace = true }
 numrs2 = { workspace = true }
-num-traits = { workspace = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -29,6 +27,7 @@ memmap2 = { workspace = true, optional = true }
 arrow = { workspace = true, optional = true }
 parquet = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 flate2 = { workspace = true, optional = true }
 crc32fast = { workspace = true, optional = true }
@@ -59,12 +58,13 @@ criterion = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-default = ["parallel", "images", "serialize", "mmap", "parquet", "regex", "tfrecord", "msgpack", "hdf5", "audio", "download", "webdataset", "numa"]
+default = ["parallel", "images", "serialize", "mmap", "parquet", "csv_format", "regex", "tfrecord", "msgpack", "hdf5", "audio", "download", "webdataset", "numa"]
 parallel = ["dep:rayon"]
 serialize = ["dep:serde", "dep:serde_json", "dep:bincode", "dep:serde_yaml"]
 images = ["dep:image"]
 mmap = ["dep:memmap2"]
 parquet = ["dep:arrow", "dep:parquet"]
+csv_format = ["dep:csv"]
 regex = ["dep:regex"]
 tfrecord = ["dep:flate2", "dep:crc32fast"]
 msgpack = ["dep:rmp-serde", "serialize"]

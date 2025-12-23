@@ -4,7 +4,7 @@
 //! This is used primarily for stabilizing GAN training by constraining the Lipschitz constant
 //! of the network, which helps prevent mode collapse and improves training stability.
 
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Spectral Normalization - normalizes weight matrices by their spectral norm

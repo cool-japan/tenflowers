@@ -6,7 +6,7 @@
 #[cfg(feature = "gpu")]
 use crate::Device;
 use crate::{Result, Tensor, TensorError};
-use num_traits;
+use scirs2_core::num_traits;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Global flag to enable/disable automatic fallback
@@ -91,7 +91,14 @@ pub fn execute_binary_op_with_fallback<T, F>(
     #[allow(unused_variables)] cpu_op: F,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static + bytemuck::Pod,
+    T: Clone
+        + Default
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod,
     F: Fn(&Tensor<T>, &Tensor<T>) -> Result<Tensor<T>>,
 {
     let config = get_fallback_config();
@@ -167,7 +174,14 @@ pub fn execute_unary_op_with_fallback<T, F>(
     #[allow(unused_variables)] cpu_op: F,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static + bytemuck::Pod,
+    T: Clone
+        + Default
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod,
     F: Fn(&Tensor<T>) -> Result<Tensor<T>>,
 {
     let config = get_fallback_config();

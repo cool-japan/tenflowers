@@ -5,7 +5,7 @@
 //! pointwise convolution for efficient parameter usage and computational performance.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Depthwise 2D convolution forward pass implementation
@@ -28,7 +28,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -333,7 +333,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

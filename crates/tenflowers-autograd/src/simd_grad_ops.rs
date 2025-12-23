@@ -3,7 +3,7 @@
 //! This module provides ultra-high-performance gradient operations using SciRS2-Core's
 //! SIMD capabilities for maximum computational efficiency in automatic differentiation.
 
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::sync::Arc;
 use tenflowers_core::{Result, Tensor, TensorError};
 

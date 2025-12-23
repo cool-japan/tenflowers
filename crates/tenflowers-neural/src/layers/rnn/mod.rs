@@ -3,7 +3,7 @@
 //! This module provides implementations of various RNN architectures including
 //! LSTM, GRU, and vanilla RNN layers, along with attention mechanisms.
 
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::Tensor;
 
 #[cfg(feature = "gpu")]

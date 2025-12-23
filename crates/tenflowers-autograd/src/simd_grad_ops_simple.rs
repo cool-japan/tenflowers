@@ -3,7 +3,7 @@
 //! This module provides simplified but ultra-high-performance gradient operations using
 //! SciRS2-Core's SIMD capabilities for maximum computational efficiency in automatic differentiation.
 
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::sync::Arc;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -987,12 +987,13 @@ mod tests {
 
     #[test]
     fn test_simd_performance_metrics() {
-        let mut metrics = SimdPerformanceMetrics::default();
-
-        metrics.total_operations = 100;
-        metrics.total_simd_time = std::time::Duration::from_millis(50);
-        metrics.vectorization_efficiency = 0.85;
-        metrics.memory_bandwidth_utilization = 0.75;
+        let metrics = SimdPerformanceMetrics {
+            total_operations: 100,
+            total_simd_time: std::time::Duration::from_millis(50),
+            vectorization_efficiency: 0.85,
+            memory_bandwidth_utilization: 0.75,
+            ..Default::default()
+        };
 
         assert_eq!(metrics.total_operations, 100);
         assert_eq!(

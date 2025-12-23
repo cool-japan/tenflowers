@@ -1,4 +1,4 @@
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Dice Loss for segmentation tasks

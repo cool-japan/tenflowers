@@ -4,8 +4,7 @@
 //! performance against TensorFlow targets and track progress towards goals.
 
 use crate::neural::layers::{PyDense, PySequential};
-// TODO: PyAdam optimizer not yet implemented
-// use crate::neural::optimizers::PyAdam;
+use crate::neural::optimizers::{PyAdam, PyAdamW, PyRMSprop, PySGD};
 use crate::tensor_ops::PyTensor;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -146,8 +145,7 @@ impl PyPerformanceBenchmark {
         let model_build_time = model_build_start.elapsed();
 
         // Create optimizer
-        // TODO: PyAdam not yet implemented
-        // let optimizer = PyAdam::new(Some(0.001));
+        let mut optimizer = PyAdam::new(Some(0.001));
 
         // Generate synthetic training data
         let data_gen_start = Instant::now();

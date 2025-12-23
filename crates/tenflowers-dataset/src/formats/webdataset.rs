@@ -94,7 +94,7 @@ pub struct WebDataset<T> {
 
 impl<T> WebDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a WebDataset from a TAR file
     pub fn from_tar<P: AsRef<Path>>(tar_path: P, config: WebDatasetConfig) -> Result<Self> {
@@ -201,7 +201,7 @@ where
     /// Convert WebDataset sample to tensor pair
     fn sample_to_tensors(&self, sample: &WebDatasetSample) -> Result<(Tensor<T>, Tensor<T>)>
     where
-        T: std::str::FromStr + num_traits::cast::FromPrimitive + Copy,
+        T: std::str::FromStr + scirs2_core::num_traits::cast::FromPrimitive + Copy,
         T::Err: std::fmt::Debug,
     {
         // Get image data
@@ -250,7 +250,7 @@ where
     #[cfg(feature = "images")]
     fn decode_image_tensor(&self, image_data: &[u8]) -> Result<Tensor<T>>
     where
-        T: num_traits::cast::FromPrimitive + Copy,
+        T: scirs2_core::num_traits::cast::FromPrimitive + Copy,
     {
         let img = image::load_from_memory(image_data)
             .map_err(|e| TensorError::invalid_argument(format!("Failed to decode image: {e}")))?;
@@ -278,7 +278,7 @@ where
     #[cfg(not(feature = "images"))]
     fn decode_image_tensor(&self, image_data: &[u8]) -> Result<Tensor<T>>
     where
-        T: num_traits::cast::FromPrimitive + Copy,
+        T: scirs2_core::num_traits::cast::FromPrimitive + Copy,
     {
         // Return raw bytes as tensor when image decoding is not available
         let bytes: Vec<T> = image_data
@@ -293,9 +293,9 @@ impl<T> Dataset<T> for WebDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + std::str::FromStr
-        + num_traits::cast::FromPrimitive
+        + scirs2_core::num_traits::cast::FromPrimitive
         + Copy
         + Send
         + Sync
@@ -371,7 +371,7 @@ impl WebDatasetBuilder {
     /// Build WebDataset from a single TAR file
     pub fn from_tar<T, P: AsRef<Path>>(self, tar_path: P) -> Result<WebDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         WebDataset::from_tar(tar_path, self.config)
     }
@@ -379,7 +379,7 @@ impl WebDatasetBuilder {
     /// Build WebDataset from multiple TAR files
     pub fn from_tar_files<T, P: AsRef<Path>>(self, tar_paths: Vec<P>) -> Result<WebDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         WebDataset::from_tar_files(tar_paths, self.config)
     }
@@ -403,7 +403,7 @@ pub struct StreamingWebDataset<T> {
 
 impl<T> StreamingWebDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a new streaming WebDataset
     pub fn new<P: AsRef<Path>>(tar_paths: Vec<P>, config: WebDatasetConfig) -> Self {
@@ -425,7 +425,7 @@ where
     /// Load the next tar file
     fn load_next_tar(&mut self) -> Result<bool>
     where
-        T: std::str::FromStr + num_traits::cast::FromPrimitive + Copy,
+        T: std::str::FromStr + scirs2_core::num_traits::cast::FromPrimitive + Copy,
         T::Err: std::fmt::Debug,
     {
         if self.current_tar_index >= self.tar_paths.len() {
@@ -447,9 +447,9 @@ impl<T> Iterator for StreamingWebDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + std::str::FromStr
-        + num_traits::cast::FromPrimitive
+        + scirs2_core::num_traits::cast::FromPrimitive
         + Copy
         + Send
         + Sync

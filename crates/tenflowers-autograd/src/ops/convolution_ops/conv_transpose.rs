@@ -2,7 +2,7 @@ use super::types::ConvTranspose2dBackwardResult;
 use super::utils::{
     compute_conv_transpose2d_input_gradient, compute_conv_transpose2d_weight_gradient,
 };
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Tensor, TensorError};
 
 /// Backward pass for 2D Transposed Convolution (Deconvolution)
@@ -31,8 +31,8 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Float
-        + num_traits::FromPrimitive,
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive,
 {
     let input_shape = input.shape().dims();
     let weight_shape = weight.shape().dims();

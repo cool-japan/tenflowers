@@ -69,9 +69,9 @@ impl<T> EnhancedGradientAccumulator<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Float
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
         + std::ops::Mul<Output = T>
@@ -79,7 +79,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod,
 {
     /// Create a new enhanced gradient accumulator
@@ -306,9 +306,9 @@ where
     O: Optimizer<T>,
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Float
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
         + std::ops::Mul<Output = T>
@@ -316,7 +316,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod,
 {
     /// Create a new enhanced optimizer with accumulation
@@ -405,9 +405,9 @@ where
     O: Optimizer<T>,
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Float
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
         + std::ops::Mul<Output = T>
@@ -415,7 +415,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod,
 {
     fn step(&mut self, model: &mut dyn Model<T>) -> Result<()> {

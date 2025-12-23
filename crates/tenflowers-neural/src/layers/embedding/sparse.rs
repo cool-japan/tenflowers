@@ -13,7 +13,7 @@
 //! - Any scenario where the embedding matrix is very large but sparsely accessed
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use std::collections::{HashMap, HashSet};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -263,7 +263,7 @@ where
     /// Tensor with shape [...indices.shape, embedding_dim]
     fn lookup_embeddings_sparse(&mut self, indices: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::ToPrimitive + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive + scirs2_core::num_traits::FromPrimitive,
     {
         // Clear previous sparse gradient tracking
         if let Some(ref mut sparse_grad) = self.sparse_grad {
@@ -564,8 +564,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::ToPrimitive
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::ToPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

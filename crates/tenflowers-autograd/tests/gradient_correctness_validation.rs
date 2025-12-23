@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::{Array1, Array2, Array3, Array4};
+use scirs2_core::ndarray::{Array1, Array2, Array3, Array4, ArrayD};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Command;
@@ -443,8 +443,8 @@ impl GradientCorrectnessTests {
 
         for (m, k, n) in configs {
             let tape = GradientTape::new();
-            let x_data = create_test_data(&vec![m, k], 0.1, 2.0);
-            let y_data = create_test_data(&vec![k, n], 0.1, 2.0);
+            let x_data = create_test_data(&[m, k], 0.1, 2.0);
+            let y_data = create_test_data(&[k, n], 0.1, 2.0);
 
             let x = tape.watch(Tensor::from_array(x_data.clone()));
             let y = tape.watch(Tensor::from_array(y_data.clone()));
@@ -456,7 +456,7 @@ impl GradientCorrectnessTests {
             let y_grad_tf = tensor_to_vec(grads[1].as_ref().unwrap())?;
 
             let (x_grad_pt, y_grad_pt) =
-                self.compute_pytorch_matmul_gradient(&vec![m, k], &x_data, &vec![k, n], &y_data)?;
+                self.compute_pytorch_matmul_gradient(&[m, k], &x_data, &[k, n], &y_data)?;
 
             let x_result = GradientComparisonResult::new(
                 format!("matmul_x_{}x{}x{}", m, k, n),
@@ -540,8 +540,8 @@ impl GradientCorrectnessTests {
     fn compute_pytorch_gradient_binary_op(
         &self,
         shape: &[usize],
-        x_data: &ndarray::ArrayD<f32>,
-        y_data: &ndarray::ArrayD<f32>,
+        x_data: &ArrayD<f32>,
+        y_data: &ArrayD<f32>,
         operation: &str,
     ) -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
         let script = format!(
@@ -618,7 +618,7 @@ print(json.dumps(result))
     fn compute_pytorch_gradient_unary_op(
         &self,
         shape: &[usize],
-        x_data: &ndarray::ArrayD<f32>,
+        x_data: &ArrayD<f32>,
         operation: &str,
         param: Option<f32>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -692,9 +692,9 @@ print(json.dumps(result))
     fn compute_pytorch_matmul_gradient(
         &self,
         x_shape: &[usize],
-        x_data: &ndarray::ArrayD<f32>,
+        x_data: &ArrayD<f32>,
         y_shape: &[usize],
-        y_data: &ndarray::ArrayD<f32>,
+        y_data: &ArrayD<f32>,
     ) -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
         let script = format!(
             r#"
@@ -814,7 +814,7 @@ print(json.dumps(result))
 }
 
 /// Helper function to create test data with specific range
-fn create_test_data(shape: &[usize], min: f32, max: f32) -> ndarray::ArrayD<f32> {
+fn create_test_data(shape: &[usize], min: f32, max: f32) -> ArrayD<f32> {
     let total_elements: usize = shape.iter().product();
     let mut data = Vec::with_capacity(total_elements);
 
@@ -824,11 +824,11 @@ fn create_test_data(shape: &[usize], min: f32, max: f32) -> ndarray::ArrayD<f32>
         data.push(value);
     }
 
-    ndarray::ArrayD::from_shape_vec(shape, data).unwrap()
+    ArrayD::from_shape_vec(shape, data).unwrap()
 }
 
 /// Convert ndarray to Vec<f32>
-fn array_to_vec(arr: &ndarray::ArrayD<f32>) -> Vec<f32> {
+fn array_to_vec(arr: &ArrayD<f32>) -> Vec<f32> {
     arr.iter().cloned().collect()
 }
 

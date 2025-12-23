@@ -1,5 +1,5 @@
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Fractional Max Pooling 2D - stochastic or deterministic fractional pooling

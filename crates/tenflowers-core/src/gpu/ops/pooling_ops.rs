@@ -174,7 +174,7 @@ where
                 let output_height = input_shape.len().saturating_sub(2).max(1);
                 let output_width = input_shape.len().saturating_sub(1).max(1);
                 let batch_channels =
-                    input_shape.get(0).unwrap_or(&1) * input_shape.get(1).unwrap_or(&1);
+                    input_shape.first().unwrap_or(&1) * input_shape.get(1).unwrap_or(&1);
 
                 let workgroups_x = (output_width + 7) / 8;
                 let workgroups_y = (output_height + 7) / 8;

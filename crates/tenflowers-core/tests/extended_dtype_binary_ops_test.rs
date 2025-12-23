@@ -1,3 +1,5 @@
+#![allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+
 use tenflowers_core::ops::binary::{add, div, mul, sub};
 use tenflowers_core::{Device, Tensor};
 

@@ -19,7 +19,7 @@ impl<T> CutMix<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -47,8 +47,8 @@ where
         let cut_w = (width as f32 * cut_ratio) as usize;
         let cut_h = (height as f32 * cut_ratio) as usize;
 
-        let cx = rng.gen_range(0..width);
-        let cy = rng.gen_range(0..height);
+        let cx = rng.random_range(0..width);
+        let cy = rng.random_range(0..height);
 
         let x1 = (cx.saturating_sub(cut_w / 2)).min(width);
         let y1 = (cy.saturating_sub(cut_h / 2)).min(height);
@@ -164,7 +164,7 @@ impl<T> Transform<T> for CutMix<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -190,7 +190,7 @@ impl<T> MixUp<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -275,7 +275,7 @@ impl<T> Transform<T> for MixUp<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -302,7 +302,7 @@ impl<T> Cutout<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -327,7 +327,7 @@ impl<T> Transform<T> for Cutout<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -366,8 +366,8 @@ where
         let mut cutout_data = data.to_vec();
 
         // Generate random cutout position
-        let cutout_x = rng.gen_range(0..width.saturating_sub(self.cutout_size));
-        let cutout_y = rng.gen_range(0..height.saturating_sub(self.cutout_size));
+        let cutout_x = rng.random_range(0..width.saturating_sub(self.cutout_size));
+        let cutout_y = rng.random_range(0..height.saturating_sub(self.cutout_size));
 
         // Apply cutout
         for h in cutout_y..(cutout_y + self.cutout_size).min(height) {
@@ -414,7 +414,7 @@ impl<T> RandomErasing<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -473,7 +473,7 @@ impl<T> Transform<T> for RandomErasing<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -515,16 +515,17 @@ where
 
         // Try multiple times to find valid rectangle
         for _ in 0..10 {
-            let area_ratio = rng.gen_range(self.area_ratio_range.0..=self.area_ratio_range.1);
+            let area_ratio = rng.random_range(self.area_ratio_range.0..=self.area_ratio_range.1);
             let erase_area = (total_area * area_ratio) as usize;
 
-            let aspect_ratio = rng.gen_range(self.aspect_ratio_range.0..=self.aspect_ratio_range.1);
+            let aspect_ratio =
+                rng.random_range(self.aspect_ratio_range.0..=self.aspect_ratio_range.1);
             let h = ((erase_area as f32 * aspect_ratio).sqrt()) as usize;
             let w = (erase_area / h.max(1)) as usize;
 
             if h < height && w < width {
-                let y = rng.gen_range(0..=(height - h));
-                let x = rng.gen_range(0..=(width - w));
+                let y = rng.random_range(0..=(height - h));
+                let x = rng.random_range(0..=(width - w));
 
                 let fill_value = self.get_fill_value(data);
 
@@ -591,7 +592,7 @@ impl<T> AutoAugment<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -630,7 +631,7 @@ where
 
     fn select_policy(&self) -> &AutoAugmentPolicy<T> {
         let mut rng = scirs2_core::random::rng();
-        let idx = rng.gen_range(0..self.policies.len());
+        let idx = rng.random_range(0..self.policies.len());
         &self.policies[idx]
     }
 
@@ -660,7 +661,7 @@ impl<T> Transform<T> for AutoAugment<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -697,7 +698,7 @@ impl<T> RandAugment<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -730,7 +731,7 @@ impl<T> Transform<T> for RandAugment<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -741,7 +742,7 @@ where
         let mut rng = scirs2_core::random::rng();
 
         for _ in 0..self.n_ops {
-            let op_idx = rng.gen_range(0..self.operations.len());
+            let op_idx = rng.random_range(0..self.operations.len());
             let op = &self.operations[op_idx];
 
             // Apply operation with fixed magnitude

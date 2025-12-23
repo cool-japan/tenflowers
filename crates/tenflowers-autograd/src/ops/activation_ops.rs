@@ -4,7 +4,7 @@
 //! ReLU, Sigmoid, Tanh, GELU, Swish/SiLU, LeakyReLU, Softmax, and others.
 
 use crate::tensor_ext::TensorAutograd;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Backward pass for ReLU activation
@@ -44,7 +44,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + PartialOrd
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -113,7 +113,7 @@ where
         + Default
         + Zero
         + One
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -176,7 +176,7 @@ where
         + Default
         + Zero
         + One
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -281,7 +281,7 @@ where
         + Default
         + Zero
         + One
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -317,7 +317,7 @@ where
         + Zero
         + One
         + PartialOrd
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static

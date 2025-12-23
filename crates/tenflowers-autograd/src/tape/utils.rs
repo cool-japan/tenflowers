@@ -186,7 +186,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -230,7 +230,7 @@ pub enum OptimizationLevel {
 /// Check if a tensor is effectively zero (for optimization)
 fn is_zero_tensor<T>(_tensor: &Tensor<T>) -> bool
 where
-    T: num_traits::Zero + PartialEq + Clone,
+    T: scirs2_core::num_traits::Zero + PartialEq + Clone,
 {
     // Simplified implementation - in practice would check actual values
     // This requires tensor data access which might not be available in this context
@@ -240,7 +240,7 @@ where
 /// Check if a tensor is sparse (for optimization)
 fn is_sparse_tensor<T>(_tensor: &Tensor<T>) -> bool
 where
-    T: num_traits::Zero + PartialEq + Clone,
+    T: scirs2_core::num_traits::Zero + PartialEq + Clone,
 {
     // Simplified implementation - would check sparsity ratio in practice
     false
@@ -355,7 +355,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -426,7 +426,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -450,8 +450,8 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + PartialEq
         + Send
         + Sync

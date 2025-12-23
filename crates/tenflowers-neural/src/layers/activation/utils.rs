@@ -1,13 +1,21 @@
 //! Utility functions for activation layers
 
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Create a random tensor with normal distribution for weight initialization
 /// Optimized with chunked processing for better memory performance
 pub(crate) fn create_random_tensor<T>(shape: &[usize], std_dev: T) -> Result<Tensor<T>>
 where
-    T: Float + Clone + Default + Zero + One + num_traits::FromPrimitive + Send + Sync + 'static,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + scirs2_core::num_traits::FromPrimitive
+        + Send
+        + Sync
+        + 'static,
 {
     let total_elements = shape.iter().product::<usize>();
     let std_dev_f64 = std_dev.to_f64().unwrap_or(0.01);

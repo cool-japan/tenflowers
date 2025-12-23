@@ -3,7 +3,7 @@
 //! This module provides operation implementations for TrackedTensor,
 //! enabling automatic differentiation for all supported tensor operations.
 
-use num_traits::{Float, One, Zero};
+use scirs2_core::numeric::{Float, One, Zero};
 use std::sync::Weak;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -118,7 +118,7 @@ where
     /// Element-wise power operation
     pub fn pow(&self, other: &TrackedTensor<T>) -> Result<TrackedTensor<T>>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         // Forward pass: compute the result
         let result = self.tensor.pow(&other.tensor)?;
@@ -224,7 +224,7 @@ where
     /// Softmax activation function
     pub fn softmax(&self, axis: Option<i32>) -> Result<TrackedTensor<T>>
     where
-        T: num_traits::Float
+        T: scirs2_core::num_traits::Float
             + std::ops::Sub<Output = T>
             + std::ops::Add<Output = T>
             + std::ops::Div<Output = T>
@@ -280,8 +280,8 @@ where
     where
         T: std::ops::Add<Output = T>
             + std::ops::Div<Output = T>
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + Default,
     {
         if let Some(tape) = self.tape.upgrade() {
@@ -442,7 +442,7 @@ where
         training: bool,
     ) -> Result<TrackedTensor<T>>
     where
-        T: Float + num_traits::FromPrimitive,
+        T: Float + scirs2_core::num_traits::FromPrimitive,
     {
         // Forward pass: compute batch normalization result
         let result = tenflowers_core::ops::batch_norm(
@@ -484,7 +484,7 @@ where
         epsilon: f32,
     ) -> Result<TrackedTensor<T>>
     where
-        T: Float + num_traits::FromPrimitive,
+        T: Float + scirs2_core::num_traits::FromPrimitive,
     {
         // Forward pass: compute layer normalization result
         let result = tenflowers_core::ops::layer_norm(

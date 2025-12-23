@@ -12,8 +12,8 @@
 use crate::gpu::buffer::GpuBuffer;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::{One, Zero};
 
 /// Identity operation - returns a copy of the input tensor
 ///
@@ -53,7 +53,7 @@ where
 /// * `tensor` - The input tensor to cast
 ///
 /// # Type Parameters
-/// * `T` - Source type (must implement Into<U>)
+/// * `T` - Source type (must implement `Into<U>`)
 /// * `U` - Target type
 ///
 /// # Returns

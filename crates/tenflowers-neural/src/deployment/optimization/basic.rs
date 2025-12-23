@@ -5,7 +5,7 @@
 
 use super::core::OptimizationStats;
 use crate::model::{Model, Sequential};
-use num_traits;
+use scirs2_core::num_traits;
 use tenflowers_core::TensorError;
 
 /// Basic optimization pass implementations
@@ -17,7 +17,7 @@ impl BasicOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Constant folding implementation
@@ -77,7 +77,7 @@ impl BasicOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Dead code elimination implementation
@@ -172,7 +172,7 @@ impl BasicOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Batch normalization folding implementation
@@ -218,7 +218,7 @@ impl BasicOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Operation simplification implementation
@@ -258,7 +258,7 @@ impl BasicOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Algebraic optimization implementation
@@ -328,8 +328,7 @@ mod tests {
 
         let stats = result.unwrap();
         assert!(stats.speedup_ratio >= 1.0);
-        assert!(stats.ops_removed >= 0);
-        assert!(stats.params_removed >= 0);
+        // ops_removed and params_removed are unsigned, so >= 0 is always true
     }
 
     #[test]
@@ -341,7 +340,7 @@ mod tests {
 
         let stats = result.unwrap();
         assert!(stats.speedup_ratio >= 1.0);
-        assert!(stats.ops_removed >= 0);
+        // ops_removed is unsigned, so >= 0 is always true
     }
 
     #[test]

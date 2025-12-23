@@ -58,7 +58,13 @@ impl DatasetConfig for MnistConfig {
 
 impl<T> RealMnistDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::FromPrimitive
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new MNIST dataset
     pub fn new(config: MnistConfig) -> Result<Self> {
@@ -223,9 +229,9 @@ where
 impl<
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::One
+            + scirs2_core::numeric::FromPrimitive
             + Pod
             + Zeroable
             + Send
@@ -299,7 +305,13 @@ impl DatasetConfig for Cifar10Config {
 
 impl<T> RealCifar10Dataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::FromPrimitive
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new CIFAR-10 dataset
     pub fn new(config: Cifar10Config) -> Result<Self> {
@@ -454,9 +466,9 @@ where
 impl<
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::One
+            + scirs2_core::numeric::FromPrimitive
             + Pod
             + Zeroable
             + Send
@@ -537,7 +549,13 @@ impl DatasetConfig for ImageNetConfig {
 
 impl<T> RealImageNetDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::FromPrimitive
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new ImageNet dataset (validation set only for now)
     pub fn new(config: ImageNetConfig) -> Result<Self> {
@@ -729,8 +747,15 @@ where
     }
 }
 
-impl<T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static>
-    Dataset<T> for RealImageNetDataset<T>
+impl<
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::FromPrimitive
+            + Send
+            + Sync
+            + 'static,
+    > Dataset<T> for RealImageNetDataset<T>
 {
     fn len(&self) -> usize {
         self.num_samples
@@ -783,7 +808,13 @@ impl RealMnistBuilder {
 
     pub fn build<T>(self) -> Result<RealMnistDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::FromPrimitive
+            + Send
+            + Sync
+            + 'static,
     {
         RealMnistDataset::new(self.config)
     }
@@ -823,7 +854,13 @@ impl RealCifar10Builder {
 
     pub fn build<T>(self) -> Result<RealCifar10Dataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::FromPrimitive
+            + Send
+            + Sync
+            + 'static,
     {
         RealCifar10Dataset::new(self.config)
     }
@@ -873,7 +910,13 @@ impl RealImageNetBuilder {
 
     pub fn build<T>(self) -> Result<RealImageNetDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::FromPrimitive + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::FromPrimitive
+            + Send
+            + Sync
+            + 'static,
     {
         RealImageNetDataset::new(self.config)
     }

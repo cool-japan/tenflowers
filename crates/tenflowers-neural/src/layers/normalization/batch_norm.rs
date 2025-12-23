@@ -5,7 +5,7 @@
 //! This helps stabilize and accelerate training of deep neural networks.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use std::cell::RefCell;
 use tenflowers_core::{Result, Tensor};
 

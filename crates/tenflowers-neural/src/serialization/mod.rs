@@ -12,14 +12,18 @@ use tenflowers_core::{Result, Tensor, TensorError};
 pub mod checkpoint;
 pub mod compression;
 pub mod migration;
+pub mod onnx;
 pub mod schema;
 pub mod versioned;
+pub mod weight_loader;
 
 pub use checkpoint::*;
 pub use compression::*;
 pub use migration::*;
+pub use onnx::*;
 pub use schema::*;
 pub use versioned::*;
+pub use weight_loader::*;
 
 /// Comprehensive model metadata
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]

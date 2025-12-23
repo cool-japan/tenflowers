@@ -389,6 +389,499 @@ impl DeadCodeEliminationPass {
     }
 }
 
+/// Algebraic simplification pass
+/// Simplifies algebraic expressions using mathematical identities
+pub struct AlgebraicSimplificationPass;
+
+impl OptimizationPass for AlgebraicSimplificationPass {
+    fn apply(&self, graph: &mut Graph) -> Result<bool> {
+        let mut changed = false;
+        let mut nodes_to_simplify = Vec::new();
+
+        // Find nodes that can be simplified
+        for node in graph.nodes() {
+            if let Some(simplification) = self.find_simplification(graph, node.id) {
+                nodes_to_simplify.push((node.id, simplification));
+                changed = true;
+            }
+        }
+
+        // Apply simplifications
+        for (node_id, simplification) in nodes_to_simplify {
+            self.apply_simplification(graph, node_id, simplification)?;
+        }
+
+        Ok(changed)
+    }
+
+    fn name(&self) -> &str {
+        "AlgebraicSimplification"
+    }
+
+    fn is_applicable(&self, graph: &Graph) -> bool {
+        graph.node_count() > 0
+    }
+
+    fn priority(&self) -> u32 {
+        180 // High priority, after constant folding
+    }
+}
+
+impl Default for AlgebraicSimplificationPass {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AlgebraicSimplificationPass {
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn find_simplification(&self, graph: &Graph, node_id: NodeId) -> Option<SimplificationType> {
+        let node = graph.get_node(node_id)?;
+
+        if let crate::graph::NodeType::Operation(op_name) = &node.op_type {
+            let inputs = get_node_inputs(graph, node_id);
+
+            match op_name.as_str() {
+                "Add" if inputs.len() == 2 => {
+                    // Check for x + 0 = x or 0 + x = x
+                    if self.is_zero_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithInput(0));
+                    }
+                    if self.is_zero_constant(graph, inputs[0]) {
+                        return Some(SimplificationType::ReplaceWithInput(1));
+                    }
+                    // Check for x + x = 2*x
+                    if inputs[0] == inputs[1] {
+                        return Some(SimplificationType::ConvertToMultiply(2.0));
+                    }
+                }
+                "Mul" if inputs.len() == 2 => {
+                    // Check for x * 1 = x or 1 * x = x
+                    if self.is_one_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithInput(0));
+                    }
+                    if self.is_one_constant(graph, inputs[0]) {
+                        return Some(SimplificationType::ReplaceWithInput(1));
+                    }
+                    // Check for x * 0 = 0 or 0 * x = 0
+                    if self.is_zero_constant(graph, inputs[0])
+                        || self.is_zero_constant(graph, inputs[1])
+                    {
+                        return Some(SimplificationType::ReplaceWithConstant(0.0));
+                    }
+                }
+                "Sub" if inputs.len() == 2 => {
+                    // Check for x - 0 = x
+                    if self.is_zero_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithInput(0));
+                    }
+                    // Check for x - x = 0
+                    if inputs[0] == inputs[1] {
+                        return Some(SimplificationType::ReplaceWithConstant(0.0));
+                    }
+                }
+                "Div" if inputs.len() == 2 => {
+                    // Check for x / 1 = x
+                    if self.is_one_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithInput(0));
+                    }
+                    // Check for x / x = 1
+                    if inputs[0] == inputs[1] {
+                        return Some(SimplificationType::ReplaceWithConstant(1.0));
+                    }
+                }
+                "Pow" if inputs.len() == 2 => {
+                    // Check for x^1 = x
+                    if self.is_one_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithInput(0));
+                    }
+                    // Check for x^0 = 1
+                    if self.is_zero_constant(graph, inputs[1]) {
+                        return Some(SimplificationType::ReplaceWithConstant(1.0));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    fn is_zero_constant(&self, graph: &Graph, node_id: NodeId) -> bool {
+        self.is_scalar_constant(graph, node_id, 0.0)
+    }
+
+    fn is_one_constant(&self, graph: &Graph, node_id: NodeId) -> bool {
+        self.is_scalar_constant(graph, node_id, 1.0)
+    }
+
+    fn is_scalar_constant(&self, graph: &Graph, node_id: NodeId, value: f32) -> bool {
+        if let Some(node) = graph.get_node(node_id) {
+            if let crate::graph::NodeType::Constant = &node.op_type {
+                if let Some(crate::graph::AttributeValue::Tensor(tensor)) =
+                    node.attributes.get("value")
+                {
+                    // Check if tensor is scalar with the expected value
+                    if tensor.shape().size() == 1 {
+                        if let Some(slice) = tensor.as_slice() {
+                            return (slice[0] - value).abs() < 1e-6;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn apply_simplification(
+        &self,
+        graph: &mut Graph,
+        node_id: NodeId,
+        simplification: SimplificationType,
+    ) -> Result<()> {
+        match simplification {
+            SimplificationType::ReplaceWithInput(input_idx) => {
+                let inputs = get_node_inputs(graph, node_id);
+                if input_idx < inputs.len() {
+                    graph.redirect_node_outputs(node_id, inputs[input_idx])?;
+                    graph.remove_node(node_id)?;
+                }
+            }
+            SimplificationType::ReplaceWithConstant(value) => {
+                let const_tensor = crate::tensor::Tensor::from_scalar(value);
+                graph.replace_with_constant(node_id, const_tensor)?;
+            }
+            SimplificationType::ConvertToMultiply(_scale) => {
+                // This would convert x + x to 2*x
+                // Implementation would require creating new nodes
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SimplificationType {
+    ReplaceWithInput(usize),
+    ReplaceWithConstant(f32),
+    ConvertToMultiply(f32),
+}
+
+/// Operation scheduling pass
+/// Reorders operations for better performance and parallelism
+pub struct OperationSchedulingPass {
+    prefer_memory_locality: bool,
+    enable_parallelization: bool,
+}
+
+impl OptimizationPass for OperationSchedulingPass {
+    fn apply(&self, graph: &mut Graph) -> Result<bool> {
+        let mut changed = false;
+
+        // Compute operation dependencies
+        let dependencies = self.compute_dependencies(graph);
+
+        // Find operations that can be reordered
+        let reorderable_ops = self.find_reorderable_operations(graph, &dependencies);
+
+        if !reorderable_ops.is_empty() {
+            // Apply scheduling heuristics
+            self.apply_scheduling_heuristics(graph, &reorderable_ops)?;
+            changed = true;
+        }
+
+        Ok(changed)
+    }
+
+    fn name(&self) -> &str {
+        "OperationScheduling"
+    }
+
+    fn is_applicable(&self, graph: &Graph) -> bool {
+        graph.node_count() > 2
+    }
+
+    fn priority(&self) -> u32 {
+        120 // Medium priority
+    }
+}
+
+impl Default for OperationSchedulingPass {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OperationSchedulingPass {
+    pub fn new() -> Self {
+        Self {
+            prefer_memory_locality: true,
+            enable_parallelization: true,
+        }
+    }
+
+    pub fn with_config(prefer_memory_locality: bool, enable_parallelization: bool) -> Self {
+        Self {
+            prefer_memory_locality,
+            enable_parallelization,
+        }
+    }
+
+    fn compute_dependencies(&self, graph: &Graph) -> HashMap<NodeId, Vec<NodeId>> {
+        let mut deps = HashMap::new();
+
+        for node in graph.nodes() {
+            let inputs = get_node_inputs(graph, node.id);
+            deps.insert(node.id, inputs);
+        }
+
+        deps
+    }
+
+    fn find_reorderable_operations(
+        &self,
+        graph: &Graph,
+        dependencies: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> Vec<(NodeId, NodeId)> {
+        let mut reorderable = Vec::new();
+
+        // Find pairs of operations that can be swapped
+        let nodes: Vec<_> = graph.nodes().collect();
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                let node_a = nodes[i].id;
+                let node_b = nodes[j].id;
+
+                if self.can_reorder(node_a, node_b, dependencies) {
+                    reorderable.push((node_a, node_b));
+                }
+            }
+        }
+
+        reorderable
+    }
+
+    fn can_reorder(
+        &self,
+        node_a: NodeId,
+        node_b: NodeId,
+        dependencies: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> bool {
+        // Check if nodes have no dependency relationship
+        let deps_a = dependencies
+            .get(&node_a)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let deps_b = dependencies
+            .get(&node_b)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+
+        // A and B can be reordered if neither depends on the other
+        !deps_a.contains(&node_b) && !deps_b.contains(&node_a)
+    }
+
+    fn apply_scheduling_heuristics(
+        &self,
+        _graph: &mut Graph,
+        _reorderable: &[(NodeId, NodeId)],
+    ) -> Result<()> {
+        // Apply heuristics like:
+        // 1. Group operations by device
+        // 2. Minimize memory transfers
+        // 3. Maximize parallelism
+        // For now, this is a placeholder
+        Ok(())
+    }
+}
+
+/// Strength reduction pass
+/// Replaces expensive operations with cheaper equivalents
+pub struct StrengthReductionPass;
+
+impl OptimizationPass for StrengthReductionPass {
+    fn apply(&self, graph: &mut Graph) -> Result<bool> {
+        let mut changed = false;
+        let mut reductions = Vec::new();
+
+        // Find operations that can be reduced
+        for node in graph.nodes() {
+            if let Some(reduction) = self.find_reduction(graph, node.id) {
+                reductions.push((node.id, reduction));
+                changed = true;
+            }
+        }
+
+        // Apply reductions
+        for (node_id, reduction) in reductions {
+            self.apply_reduction(graph, node_id, reduction)?;
+        }
+
+        Ok(changed)
+    }
+
+    fn name(&self) -> &str {
+        "StrengthReduction"
+    }
+
+    fn is_applicable(&self, graph: &Graph) -> bool {
+        graph.node_count() > 0
+    }
+
+    fn priority(&self) -> u32 {
+        140 // Medium-high priority
+    }
+}
+
+impl Default for StrengthReductionPass {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StrengthReductionPass {
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn find_reduction(&self, graph: &Graph, node_id: NodeId) -> Option<ReductionType> {
+        let node = graph.get_node(node_id)?;
+
+        if let crate::graph::NodeType::Operation(op_name) = &node.op_type {
+            let inputs = get_node_inputs(graph, node_id);
+
+            match op_name.as_str() {
+                "Pow" if inputs.len() == 2 => {
+                    // x^2 -> x * x (faster on some hardware)
+                    if self.is_constant_value(graph, inputs[1], 2.0) {
+                        return Some(ReductionType::Square);
+                    }
+                    // x^0.5 -> sqrt(x)
+                    if self.is_constant_value(graph, inputs[1], 0.5) {
+                        return Some(ReductionType::SquareRoot);
+                    }
+                }
+                "Div" if inputs.len() == 2 => {
+                    // x / constant -> x * (1/constant)
+                    if self.is_constant_node(graph, inputs[1]) {
+                        return Some(ReductionType::DivToMul);
+                    }
+                }
+                "Exp" if inputs.len() == 1 => {
+                    // exp(log(x)) -> x
+                    if self.is_log_operation(graph, inputs[0]) {
+                        return Some(ReductionType::ExpLogCancel);
+                    }
+                }
+                "Log" if inputs.len() == 1 => {
+                    // log(exp(x)) -> x
+                    if self.is_exp_operation(graph, inputs[0]) {
+                        return Some(ReductionType::LogExpCancel);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    fn is_constant_value(&self, graph: &Graph, node_id: NodeId, value: f32) -> bool {
+        if let Some(node) = graph.get_node(node_id) {
+            if let crate::graph::NodeType::Constant = &node.op_type {
+                if let Some(crate::graph::AttributeValue::Tensor(tensor)) =
+                    node.attributes.get("value")
+                {
+                    if tensor.shape().size() == 1 {
+                        if let Some(slice) = tensor.as_slice() {
+                            return (slice[0] - value).abs() < 1e-6;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn is_constant_node(&self, graph: &Graph, node_id: NodeId) -> bool {
+        if let Some(node) = graph.get_node(node_id) {
+            matches!(node.op_type, crate::graph::NodeType::Constant)
+        } else {
+            false
+        }
+    }
+
+    fn is_log_operation(&self, graph: &Graph, node_id: NodeId) -> bool {
+        if let Some(node) = graph.get_node(node_id) {
+            matches!(
+                node.op_type,
+                crate::graph::NodeType::Operation(ref op) if op == "Log"
+            )
+        } else {
+            false
+        }
+    }
+
+    fn is_exp_operation(&self, graph: &Graph, node_id: NodeId) -> bool {
+        if let Some(node) = graph.get_node(node_id) {
+            matches!(
+                node.op_type,
+                crate::graph::NodeType::Operation(ref op) if op == "Exp"
+            )
+        } else {
+            false
+        }
+    }
+
+    fn apply_reduction(
+        &self,
+        graph: &mut Graph,
+        node_id: NodeId,
+        reduction: ReductionType,
+    ) -> Result<()> {
+        match reduction {
+            ReductionType::Square => {
+                // Replace pow(x, 2) with mul(x, x)
+                // Would require creating a new Mul node and rewiring
+                // For now, just mark for future implementation
+            }
+            ReductionType::SquareRoot => {
+                // Replace pow(x, 0.5) with sqrt(x)
+                // Would require creating a new Sqrt node and rewiring
+                // For now, just mark for future implementation
+            }
+            ReductionType::DivToMul => {
+                // Replace div(x, c) with mul(x, 1/c)
+                // Would require computing reciprocal constant and creating new node
+            }
+            ReductionType::ExpLogCancel | ReductionType::LogExpCancel => {
+                // Replace exp(log(x)) or log(exp(x)) with x
+                let inputs = get_node_inputs(graph, node_id);
+                if !inputs.is_empty() {
+                    let inner_inputs = get_node_inputs(graph, inputs[0]);
+                    if !inner_inputs.is_empty() {
+                        graph.redirect_node_outputs(node_id, inner_inputs[0])?;
+                        graph.remove_node(node_id)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ReductionType {
+    Square,
+    SquareRoot,
+    DivToMul,
+    ExpLogCancel,
+    LogExpCancel,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +908,35 @@ mod tests {
         let pass = DeadCodeEliminationPass::new();
         assert_eq!(pass.name(), "DeadCodeElimination");
         assert_eq!(pass.priority(), 50);
+    }
+
+    #[test]
+    fn test_algebraic_simplification_pass() {
+        let pass = AlgebraicSimplificationPass::new();
+        assert_eq!(pass.name(), "AlgebraicSimplification");
+        assert_eq!(pass.priority(), 180);
+    }
+
+    #[test]
+    fn test_operation_scheduling_pass() {
+        let pass = OperationSchedulingPass::new();
+        assert_eq!(pass.name(), "OperationScheduling");
+        assert_eq!(pass.priority(), 120);
+        assert!(pass.prefer_memory_locality);
+        assert!(pass.enable_parallelization);
+    }
+
+    #[test]
+    fn test_strength_reduction_pass() {
+        let pass = StrengthReductionPass::new();
+        assert_eq!(pass.name(), "StrengthReduction");
+        assert_eq!(pass.priority(), 140);
+    }
+
+    #[test]
+    fn test_operation_scheduling_with_config() {
+        let pass = OperationSchedulingPass::with_config(false, true);
+        assert!(!pass.prefer_memory_locality);
+        assert!(pass.enable_parallelization);
     }
 }

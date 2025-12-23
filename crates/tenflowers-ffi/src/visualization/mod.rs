@@ -4,6 +4,8 @@
 //! focused sub-modules for better maintainability and clarity.
 
 pub mod gradient_flow;
+pub mod html_generator;
+pub mod svg_generator;
 pub mod tensor_analysis;
 pub mod training_progress;
 

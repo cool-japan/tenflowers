@@ -88,7 +88,7 @@ impl AsyncBinaryOperationExecutor {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Send
             + Sync
             + 'static
@@ -170,7 +170,7 @@ impl AsyncBinaryOperationExecutor {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Send
             + Sync
             + 'static
@@ -245,7 +245,7 @@ impl AsyncBinaryOperationExecutor {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Send
             + Sync
             + 'static
@@ -328,7 +328,7 @@ pub async fn add_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Add<Output = T>
         + Send
         + Sync
@@ -344,7 +344,7 @@ pub async fn sub_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Sub<Output = T>
         + Send
         + Sync
@@ -360,7 +360,7 @@ pub async fn mul_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Mul<Output = T>
         + Send
         + Sync
@@ -376,7 +376,7 @@ pub async fn div_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Div<Output = T>
         + Send
         + Sync
@@ -392,8 +392,8 @@ pub async fn pow_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -408,8 +408,8 @@ pub async fn prelu_async<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::Float
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::Float
         + PartialOrd
         + std::ops::Mul<Output = T>
         + Send
@@ -430,7 +430,7 @@ pub async fn add_async_priority<T>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Add<Output = T>
         + Send
         + Sync
@@ -452,7 +452,7 @@ pub async fn mul_async_priority<T>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Mul<Output = T>
         + Send
         + Sync
@@ -470,7 +470,7 @@ pub async fn batch_add_async<T>(operations: Vec<(&Tensor<T>, &Tensor<T>)>) -> Re
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Add<Output = T>
         + Send
         + Sync
@@ -487,7 +487,7 @@ pub async fn batch_mul_async<T>(operations: Vec<(&Tensor<T>, &Tensor<T>)>) -> Re
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + std::ops::Mul<Output = T>
         + Send
         + Sync
@@ -510,6 +510,7 @@ pub fn is_async_operations_idle() -> bool {
 }
 
 #[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
 mod tests {
     use super::*;
     use crate::Tensor;

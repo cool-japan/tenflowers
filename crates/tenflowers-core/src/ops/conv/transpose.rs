@@ -7,7 +7,7 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
@@ -189,7 +189,7 @@ where
     }
 
     // Create output tensor using SciRS2's ndarray
-    use scirs2_autograd::ndarray::Array;
+    use scirs2_core::ndarray::Array;
     let output_array = Array::from_vec(output_data)
         .to_shape((batch_size, out_channels, output_height, output_width))
         .map_err(|e| TensorError::InvalidShape {

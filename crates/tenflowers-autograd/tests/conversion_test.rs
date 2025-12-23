@@ -1,5 +1,5 @@
 use scirs2_autograd as ag;
-use scirs2_autograd::ndarray::array;
+use scirs2_core::ndarray::array;
 use tenflowers_autograd::AutogradContext;
 use tenflowers_core::Tensor;
 

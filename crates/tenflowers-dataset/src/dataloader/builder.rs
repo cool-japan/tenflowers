@@ -21,7 +21,7 @@ impl<T, D: Dataset<T>> DataLoaderBuilder<T, D>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static

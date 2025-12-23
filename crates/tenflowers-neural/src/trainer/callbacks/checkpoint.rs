@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_invalid_mode() {
         ModelCheckpoint::<f32>::new(
             "model.pth".to_string(),

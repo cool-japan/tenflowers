@@ -1,5 +1,5 @@
 use crate::model::{Model, Sequential};
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 /// Mobile backend support for CoreML and TensorFlow Lite export.
@@ -42,23 +42,18 @@ pub struct MobileExportConfig {
 }
 
 /// Optimization levels for mobile deployment
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptimizationLevel {
     /// No optimization - preserve full precision and functionality
     None,
     /// Basic optimization - safe optimizations that don't affect accuracy
+    #[default]
     Basic,
     /// Aggressive optimization - may trade some accuracy for performance
     Aggressive,
     /// Ultra optimization - maximum performance optimizations
     Ultra,
-}
-
-impl Default for OptimizationLevel {
-    fn default() -> Self {
-        Self::Basic
-    }
 }
 
 /// Metadata for mobile model deployment

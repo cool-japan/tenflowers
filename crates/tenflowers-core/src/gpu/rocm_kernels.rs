@@ -295,7 +295,7 @@ impl RocmDevice {
                 output_data.as_mut_ptr() as *mut std::ffi::c_void,
                 input_data.as_ptr() as *const std::ffi::c_void,
                 data_size * std::mem::size_of::<T>(),
-                hipMemcpyHostToDevice,
+                HIP_MEMCPY_HOST_TO_DEVICE,
             )?;
 
             hip_device_synchronize()?;
@@ -389,43 +389,22 @@ impl RocmDevice {
 
         // Copy input data to GPU
         unsafe {
+            let a_slice = a.as_slice().ok_or_else(|| {
+                TensorError::invalid_operation_simple("Failed to access tensor data".to_string())
+            })?;
+            let b_slice = b.as_slice().ok_or_else(|| {
+                TensorError::invalid_operation_simple("Failed to access tensor data".to_string())
+            })?;
+
             hip_memcpy_htod(
                 device_a,
-                a.as_slice()
-                    .ok_or_else(|| {
-                        TensorError::invalid_operation_simple(
-                            "Failed to access tensor data".to_string(),
-                        )
-                    })?
-                    .as_ptr()
-                    .cast(),
-                a.as_slice()
-                    .ok_or_else(|| {
-                        TensorError::invalid_operation_simple(
-                            "Failed to access tensor data".to_string(),
-                        )
-                    })?
-                    .len()
-                    * std::mem::size_of::<T>(),
+                a_slice.as_ptr().cast(),
+                std::mem::size_of_val(a_slice),
             )?;
             hip_memcpy_htod(
                 device_b,
-                b.as_slice()
-                    .ok_or_else(|| {
-                        TensorError::invalid_operation_simple(
-                            "Failed to access tensor data".to_string(),
-                        )
-                    })?
-                    .as_ptr()
-                    .cast(),
-                b.as_slice()
-                    .ok_or_else(|| {
-                        TensorError::invalid_operation_simple(
-                            "Failed to access tensor data".to_string(),
-                        )
-                    })?
-                    .len()
-                    * std::mem::size_of::<T>(),
+                b_slice.as_ptr().cast(),
+                std::mem::size_of_val(b_slice),
             )?;
         }
 
@@ -496,13 +475,13 @@ impl RocmDevice {
         let output_height = (input_height + 2 * padding[0] - kernel_height) / stride[0] + 1;
         let output_width = (input_width + 2 * padding[1] - kernel_width) / stride[1] + 1;
 
-        let output_shape = vec![batch_size, out_channels, output_height, output_width];
+        let output_shape = [batch_size, out_channels, output_height, output_width];
         let output_size = output_shape.iter().product::<usize>();
         let output_data = vec![T::default(); output_size];
 
         // In a real implementation, this would use MIOpen convolution descriptors
         // For now, use a simplified custom kernel
-        self.launch_conv2d_kernel(input, weights, &output_shape.to_vec(), stride, padding)
+        self.launch_conv2d_kernel(input, weights, output_shape.as_ref(), stride, padding)
     }
 
     fn execute_optimized_sum<T>(
@@ -607,7 +586,7 @@ impl RocmDevice {
                 hip_memcpy_htod(
                     device_ptr,
                     buffer.as_ptr().cast(),
-                    buffer.len() * std::mem::size_of::<T>(),
+                    std::mem::size_of_val(*buffer),
                 )?;
             }
             device_ptrs.push(device_ptr);
@@ -726,7 +705,7 @@ impl RocmDevice {
 
     fn allocate_device_memory<T>(&self, data: &[T]) -> Result<*mut std::ffi::c_void> {
         unsafe {
-            let size = data.len() * std::mem::size_of::<T>();
+            let size = std::mem::size_of_val(data);
             let mut ptr = std::ptr::null_mut();
             hip_malloc(&mut ptr, size)?;
             Ok(ptr)
@@ -1046,9 +1025,9 @@ unsafe fn hip_device_synchronize() -> Result<()> {
 
 // HIP memory copy constants
 #[cfg(feature = "rocm")]
-const hipMemcpyHostToDevice: u32 = 1;
+const HIP_MEMCPY_HOST_TO_DEVICE: u32 = 1;
 #[cfg(feature = "rocm")]
-const hipMemcpyDeviceToHost: u32 = 2;
+const HIP_MEMCPY_DEVICE_TO_HOST: u32 = 2;
 
 /// Stub implementation for non-ROCm platforms
 #[cfg(not(feature = "rocm"))]

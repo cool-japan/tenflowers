@@ -58,6 +58,7 @@ impl<T: ag::Float + Default> AutogradContext<T> {
     ) -> Result<ag::Tensor<'a, T>> {
         use tenflowers_core::tensor::TensorStorage;
 
+        #[allow(unreachable_patterns)] // GPU pattern unreachable when gpu feature is disabled
         match &tensor.storage {
             TensorStorage::Cpu(array) => {
                 // Convert to ag::Tensor using the context
@@ -68,6 +69,8 @@ impl<T: ag::Float + Default> AutogradContext<T> {
             TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
                 "GPU tensors not yet supported for autograd conversion".to_string(),
             )),
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 

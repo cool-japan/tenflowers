@@ -10,8 +10,8 @@
 use crate::gpu::buffer::GpuBuffer;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::IxDyn;
+use scirs2_core::ndarray::IxDyn;
+use scirs2_core::numeric::Zero;
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 

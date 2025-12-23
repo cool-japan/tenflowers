@@ -18,10 +18,10 @@
 //! variants, providing optimal performance across different hardware configurations.
 //!
 //! # Modules
-//! - [`batch_norm`] - Standard batch normalization operations
-//! - [`layer_norm`] - Layer normalization for sequence models
-//! - [`group_norm`] - Group normalization for stable training
-//! - [`sync_batch_norm`] - Synchronized batch normalization for distributed training
+//! - [`mod@batch_norm`] - Standard batch normalization operations
+//! - [`mod@layer_norm`] - Layer normalization for sequence models
+//! - [`mod@group_norm`] - Group normalization for stable training
+//! - [`mod@sync_batch_norm`] - Synchronized batch normalization for distributed training
 
 // Re-export specialized modules
 pub mod batch_norm;

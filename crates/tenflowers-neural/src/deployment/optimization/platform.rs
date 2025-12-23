@@ -5,7 +5,7 @@
 
 use super::hardware::HardwareArchitecture;
 use crate::model::{Model, Sequential};
-use num_traits;
+use scirs2_core::num_traits;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -190,7 +190,7 @@ impl PlatformOptimizations {
         config: &AutoTuningConfig,
     ) -> Result<ProfileResults, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
     {
         println!(
             "Auto-tuning kernels for target architecture: {:?}",
@@ -271,7 +271,7 @@ impl PlatformOptimizations {
         config: &MixedPrecisionConfig,
     ) -> Result<ProfileResults, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
     {
         println!("Applying mixed precision optimization...");
 
@@ -332,7 +332,7 @@ impl PlatformOptimizations {
         config: &ProfileGuidedConfig,
     ) -> Result<ProfileResults, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
     {
         println!("Applying profile-guided optimization...");
 
@@ -383,7 +383,7 @@ impl PlatformOptimizations {
         config: &ProfileGuidedConfig,
     ) -> Result<ProfileResults, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         let mut results = ProfileResults::new();
@@ -434,7 +434,7 @@ impl PlatformOptimizations {
         max_accuracy_drop: f32,
     ) -> Result<HashMap<String, f32>, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
     {
         println!(
             "Validating model accuracy with {} calibration samples",

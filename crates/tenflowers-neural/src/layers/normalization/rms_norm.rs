@@ -9,7 +9,7 @@
 //! Reference: "Root Mean Square Layer Normalization" (Zhang & Sennrich, 2019)
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// RMS Normalization - A simpler and more efficient alternative to LayerNorm

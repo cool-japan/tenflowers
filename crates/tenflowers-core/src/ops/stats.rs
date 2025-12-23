@@ -13,7 +13,7 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, ToPrimitive};
+use scirs2_core::numeric::{Float, ToPrimitive};
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
@@ -124,8 +124,8 @@ lazy_static::lazy_static! {
 ///
 /// # Returns
 /// A tuple of (counts, bin_edges) where:
-/// - counts: tensor of shape [bins] containing the count in each bin
-/// - bin_edges: tensor of shape [bins+1] containing the bin edges
+/// - counts: tensor of shape `[bins]` containing the count in each bin
+/// - bin_edges: tensor of shape `[bins+1]` containing the bin edges
 ///
 /// # Performance Features
 /// - SIMD-accelerated range finding and bin counting
@@ -556,7 +556,7 @@ where
                 }
 
                 // Create output tensor with new shape
-                let result_array = ndarray::Array1::from_vec(result_data)
+                let result_array = scirs2_core::ndarray::Array1::from_vec(result_data)
                     .into_shape_with_order(output_shape)
                     .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
@@ -674,9 +674,9 @@ where
 
 /// SIMD-accelerated mean computation
 fn ultra_fast_means_simd<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     n_samples: usize,
     n_features: usize,
@@ -707,9 +707,9 @@ where
 
 /// Parallel mean computation for large feature sets
 fn ultra_fast_means_parallel<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     n_samples: usize,
     n_features: usize,
@@ -736,9 +736,9 @@ where
 
 /// Sequential mean computation (optimized baseline)
 fn ultra_fast_means_sequential<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     n_samples: usize,
     n_features: usize,
@@ -765,9 +765,9 @@ where
 
 /// SIMD-accelerated covariance computation
 fn ultra_fast_covariance_simd<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     means: &[T],
     n_samples: usize,
@@ -809,9 +809,9 @@ where
 
 /// Parallel covariance computation for large feature sets
 fn ultra_fast_covariance_parallel<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     means: &[T],
     n_samples: usize,
@@ -853,9 +853,9 @@ where
 
 /// Sequential covariance computation (optimized baseline)
 fn ultra_fast_covariance_sequential<T>(
-    arr: &scirs2_autograd::ndarray::ArrayBase<
-        scirs2_autograd::ndarray::OwnedRepr<T>,
-        scirs2_autograd::ndarray::Dim<scirs2_autograd::ndarray::IxDynImpl>,
+    arr: &scirs2_core::ndarray::ArrayBase<
+        scirs2_core::ndarray::OwnedRepr<T>,
+        scirs2_core::ndarray::Dim<scirs2_core::ndarray::IxDynImpl>,
     >,
     means: &[T],
     n_samples: usize,

@@ -26,8 +26,8 @@ impl<T> MixedPrecisionTrainer<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -39,8 +39,8 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -669,7 +669,7 @@ where
     /// Calculate accuracy across multiple batches (same as regular trainer)
     fn calculate_accuracy(&self, predictions: &[Tensor<T>], targets: &[Tensor<T>]) -> Result<T>
     where
-        T: num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive,
     {
         let mut correct = 0;
         let mut total = 0;
@@ -706,7 +706,7 @@ where
         k: usize,
     ) -> Result<T>
     where
-        T: num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive,
     {
         let mut correct = 0;
         let mut total = 0;
@@ -750,7 +750,7 @@ where
     /// Helper method to compute argmax along the last dimension
     fn argmax_last_dim(&self, tensor: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive,
     {
         // Same implementation as regular trainer
         if let Some(data) = tensor.as_slice() {
@@ -799,7 +799,7 @@ where
     /// Helper method to get top-k indices from a vector
     fn top_k_indices(&self, values: &[T], k: usize) -> Vec<usize>
     where
-        T: num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive,
     {
         let mut indexed_values: Vec<(usize, f32)> = values
             .iter()
@@ -831,8 +831,8 @@ impl<T> Default for MixedPrecisionTrainer<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -844,8 +844,8 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

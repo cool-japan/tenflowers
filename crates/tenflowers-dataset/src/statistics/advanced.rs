@@ -24,7 +24,7 @@ impl AdvancedStatistics {
     where
         T: Clone
             + Default
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + Send
             + Sync
             + bytemuck::Pod
@@ -84,7 +84,7 @@ impl AdvancedStatistics {
         n_samples: usize,
     ) -> Result<Vec<Vec<T>>>
     where
-        T: Clone + Default + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Float,
     {
         // Compute means for each feature
         let mut means = vec![T::zero(); n_features];
@@ -126,7 +126,7 @@ impl AdvancedStatistics {
     /// Compute eigenvalues using simplified power iteration method
     fn compute_eigenvalues<T>(matrix: &[Vec<T>]) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Float,
     {
         let n = matrix.len();
         let mut eigenvalues = Vec::new();
@@ -143,7 +143,7 @@ impl AdvancedStatistics {
     /// Compute skewness for each feature using SciRS2
     fn compute_skewness<T>(data: &[T], n_features: usize, n_samples: usize) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Float,
     {
         let mut skewness_values = vec![T::zero(); n_features];
 
@@ -192,7 +192,7 @@ impl AdvancedStatistics {
     /// Compute kurtosis for each feature using SciRS2
     fn compute_kurtosis<T>(data: &[T], n_features: usize, n_samples: usize) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Float,
     {
         let mut kurtosis_values = vec![T::zero(); n_features];
 
@@ -245,7 +245,7 @@ impl AdvancedStatistics {
     where
         T: Clone
             + Default
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + Send
             + Sync
             + bytemuck::Pod
@@ -292,7 +292,7 @@ impl AdvancedStatistics {
     /// Compute explained variance ratio
     fn compute_explained_variance<T>(eigenvalues: &[T]) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Float,
     {
         let total_variance = eigenvalues.iter().fold(T::zero(), |acc, &x| acc + x);
 
@@ -342,7 +342,7 @@ impl<T, D> AdvancedStatisticsExt<T> for D
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + bytemuck::Pod

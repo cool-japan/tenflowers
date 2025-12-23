@@ -6,7 +6,7 @@
 //! - GeGLU with GELU activation and gating
 
 use crate::layers::{Dropout, Layer};
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Complete feed-forward network implementations
@@ -21,7 +21,10 @@ use tenflowers_core::{Result, Tensor};
 #[derive(Debug)]
 pub struct FeedForwardNetwork<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable + std::fmt::Debug,
+    T: scirs2_core::num_traits::FromPrimitive
+        + bytemuck::Pod
+        + bytemuck::Zeroable
+        + std::fmt::Debug,
 {
     linear1: Tensor<T>,
     bias1: Option<Tensor<T>>,
@@ -40,7 +43,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -67,7 +70,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -99,7 +102,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -176,7 +179,10 @@ where
 #[derive(Debug)]
 pub struct SwiGLU<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable + std::fmt::Debug,
+    T: scirs2_core::num_traits::FromPrimitive
+        + bytemuck::Pod
+        + bytemuck::Zeroable
+        + std::fmt::Debug,
 {
     gate_linear: Tensor<T>,
     gate_bias: Option<Tensor<T>>,
@@ -197,7 +203,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -226,7 +232,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -261,7 +267,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -357,7 +363,10 @@ where
 #[derive(Debug)]
 pub struct GeGLU<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable + std::fmt::Debug,
+    T: scirs2_core::num_traits::FromPrimitive
+        + bytemuck::Pod
+        + bytemuck::Zeroable
+        + std::fmt::Debug,
 {
     gate_linear: Tensor<T>,
     gate_bias: Option<Tensor<T>>,
@@ -378,7 +387,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -407,7 +416,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -442,7 +451,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,

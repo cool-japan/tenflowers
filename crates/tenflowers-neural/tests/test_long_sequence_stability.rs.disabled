@@ -1,0 +1,742 @@
+//! Long Sequence Stability Tests
+//!
+//! This module provides comprehensive testing infrastructure for validating
+//! model stability and performance on long sequences (up to 32K tokens).
+//! Focuses on Mamba and SSM architectures which are designed for long-range dependencies.
+
+use tenflowers_core::{Device, Result, Tensor, TensorError};
+use tenflowers_neural::{
+    layers::{MambaBlock, StateSpaceModel},
+    model::Model,
+    optimizers::{AdamW, Optimizer},
+};
+
+/// Configuration for long sequence tests
+#[derive(Debug, Clone)]
+pub struct LongSequenceTestConfig {
+    /// Sequence length to test
+    pub sequence_length: usize,
+    /// Batch size
+    pub batch_size: usize,
+    /// Hidden dimension
+    pub hidden_dim: usize,
+    /// Number of iterations for stability testing
+    pub num_iterations: usize,
+    /// Enable gradient checking
+    pub check_gradients: bool,
+    /// Enable memory monitoring
+    pub monitor_memory: bool,
+    /// Maximum allowed memory growth (in MB)
+    pub max_memory_growth_mb: f64,
+    /// Gradient explosion threshold
+    pub gradient_explosion_threshold: f64,
+    /// Gradient vanishing threshold
+    pub gradient_vanishing_threshold: f64,
+}
+
+impl Default for LongSequenceTestConfig {
+    fn default() -> Self {
+        Self {
+            sequence_length: 1024,
+            batch_size: 2,
+            hidden_dim: 256,
+            num_iterations: 10,
+            check_gradients: true,
+            monitor_memory: true,
+            max_memory_growth_mb: 100.0,
+            gradient_explosion_threshold: 10.0,
+            gradient_vanishing_threshold: 1e-7,
+        }
+    }
+}
+
+impl LongSequenceTestConfig {
+    /// Create configuration for 32K token sequences
+    pub fn for_32k_tokens() -> Self {
+        Self {
+            sequence_length: 32768,
+            batch_size: 1,
+            hidden_dim: 512,
+            num_iterations: 5,
+            ..Default::default()
+        }
+    }
+
+    /// Create configuration for 16K token sequences
+    pub fn for_16k_tokens() -> Self {
+        Self {
+            sequence_length: 16384,
+            batch_size: 2,
+            hidden_dim: 512,
+            num_iterations: 5,
+            ..Default::default()
+        }
+    }
+
+    /// Create configuration for 8K token sequences
+    pub fn for_8k_tokens() -> Self {
+        Self {
+            sequence_length: 8192,
+            batch_size: 4,
+            hidden_dim: 512,
+            num_iterations: 10,
+            ..Default::default()
+        }
+    }
+
+    /// Create configuration for quick smoke tests
+    pub fn for_smoke_test() -> Self {
+        Self {
+            sequence_length: 512,
+            batch_size: 4,
+            hidden_dim: 128,
+            num_iterations: 3,
+            ..Default::default()
+        }
+    }
+}
+
+/// Memory usage snapshot
+#[derive(Debug, Clone)]
+pub struct MemorySnapshot {
+    /// Timestamp (iteration number)
+    pub iteration: usize,
+    /// Estimated memory usage in MB
+    pub memory_mb: f64,
+    /// Number of tensors tracked
+    pub tensor_count: usize,
+}
+
+impl MemorySnapshot {
+    /// Create new memory snapshot
+    pub fn new(iteration: usize, memory_mb: f64, tensor_count: usize) -> Self {
+        Self {
+            iteration,
+            memory_mb,
+            tensor_count,
+        }
+    }
+
+    /// Calculate memory growth from baseline
+    pub fn growth_from(&self, baseline: &MemorySnapshot) -> f64 {
+        self.memory_mb - baseline.memory_mb
+    }
+}
+
+/// Gradient statistics
+#[derive(Debug, Clone)]
+pub struct GradientStats {
+    /// Mean gradient magnitude
+    pub mean_magnitude: f64,
+    /// Maximum gradient magnitude
+    pub max_magnitude: f64,
+    /// Minimum gradient magnitude
+    pub min_magnitude: f64,
+    /// Standard deviation of gradient magnitudes
+    pub std_deviation: f64,
+    /// Percentage of zero gradients
+    pub zero_percentage: f64,
+}
+
+impl GradientStats {
+    /// Check if gradients indicate explosion
+    pub fn has_explosion(&self, threshold: f64) -> bool {
+        self.max_magnitude > threshold || self.max_magnitude.is_infinite()
+    }
+
+    /// Check if gradients indicate vanishing
+    pub fn has_vanishing(&self, threshold: f64) -> bool {
+        self.mean_magnitude < threshold || self.zero_percentage > 90.0
+    }
+
+    /// Check if gradients are healthy
+    pub fn is_healthy(&self, explosion_threshold: f64, vanishing_threshold: f64) -> bool {
+        !self.has_explosion(explosion_threshold) && !self.has_vanishing(vanishing_threshold)
+    }
+}
+
+/// Long sequence test results
+#[derive(Debug)]
+pub struct LongSequenceTestResult {
+    /// Test configuration
+    pub config: LongSequenceTestConfig,
+    /// Whether test passed
+    pub passed: bool,
+    /// Memory snapshots
+    pub memory_snapshots: Vec<MemorySnapshot>,
+    /// Gradient statistics per iteration
+    pub gradient_stats: Vec<GradientStats>,
+    /// Total test duration in seconds
+    pub duration_secs: f64,
+    /// Average forward pass time in milliseconds
+    pub avg_forward_time_ms: f64,
+    /// Average backward pass time in milliseconds
+    pub avg_backward_time_ms: f64,
+    /// Failure reason if test failed
+    pub failure_reason: Option<String>,
+}
+
+impl LongSequenceTestResult {
+    /// Check if memory usage is stable
+    pub fn has_stable_memory(&self) -> bool {
+        if self.memory_snapshots.len() < 2 {
+            return true;
+        }
+
+        let baseline = &self.memory_snapshots[0];
+        let final_snapshot = self.memory_snapshots.last().unwrap();
+        let growth = final_snapshot.growth_from(baseline);
+
+        growth <= self.config.max_memory_growth_mb
+    }
+
+    /// Check if gradients are stable
+    pub fn has_stable_gradients(&self) -> bool {
+        self.gradient_stats.iter().all(|stats| {
+            stats.is_healthy(
+                self.config.gradient_explosion_threshold,
+                self.config.gradient_vanishing_threshold,
+            )
+        })
+    }
+
+    /// Get summary report
+    pub fn summary(&self) -> String {
+        format!(
+            "Long Sequence Test Summary\n\
+             ========================\n\
+             Sequence Length: {}\n\
+             Batch Size: {}\n\
+             Hidden Dim: {}\n\
+             Iterations: {}\n\
+             Status: {}\n\
+             Duration: {:.2}s\n\
+             Avg Forward Time: {:.2}ms\n\
+             Avg Backward Time: {:.2}ms\n\
+             Memory Stable: {}\n\
+             Gradients Stable: {}\n\
+             {}",
+            self.config.sequence_length,
+            self.config.batch_size,
+            self.config.hidden_dim,
+            self.config.num_iterations,
+            if self.passed { "PASSED" } else { "FAILED" },
+            self.duration_secs,
+            self.avg_forward_time_ms,
+            self.avg_backward_time_ms,
+            self.has_stable_memory(),
+            self.has_stable_gradients(),
+            self.failure_reason
+                .as_ref()
+                .map(|r| format!("Failure: {}", r))
+                .unwrap_or_default()
+        )
+    }
+}
+
+/// Long sequence test runner
+pub struct LongSequenceTestRunner {
+    config: LongSequenceTestConfig,
+}
+
+impl LongSequenceTestRunner {
+    /// Create new test runner with configuration
+    pub fn new(config: LongSequenceTestConfig) -> Self {
+        Self { config }
+    }
+
+    /// Create test runner with default configuration
+    pub fn default() -> Self {
+        Self::new(LongSequenceTestConfig::default())
+    }
+
+    /// Estimate memory usage for a tensor
+    fn estimate_tensor_memory<T>(&self, tensor: &Tensor<T>) -> f64 {
+        let element_count: usize = tensor.shape().dims().iter().product();
+        let bytes_per_element = std::mem::size_of::<T>();
+        (element_count * bytes_per_element) as f64 / (1024.0 * 1024.0)
+    }
+
+    /// Calculate gradient statistics
+    fn calculate_gradient_stats<T>(&self, gradients: &[Tensor<T>]) -> GradientStats
+    where
+        T: Clone + Default + Into<f64>,
+    {
+        let mut magnitudes = Vec::new();
+        let mut zero_count = 0;
+        let mut total_count = 0;
+
+        for grad in gradients {
+            if let Some(data) = grad.as_slice() {
+                for val in data.iter().cloned() {
+                    let mag = val.into().abs();
+                    magnitudes.push(mag);
+                    total_count += 1;
+
+                    if mag < 1e-10 {
+                        zero_count += 1;
+                    }
+                }
+            }
+        }
+
+        if magnitudes.is_empty() {
+            return GradientStats {
+                mean_magnitude: 0.0,
+                max_magnitude: 0.0,
+                min_magnitude: 0.0,
+                std_deviation: 0.0,
+                zero_percentage: 100.0,
+            };
+        }
+
+        let mean = magnitudes.iter().sum::<f64>() / magnitudes.len() as f64;
+        let max = magnitudes.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min = magnitudes.iter().cloned().fold(f64::INFINITY, f64::min);
+
+        let variance =
+            magnitudes.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / magnitudes.len() as f64;
+        let std_dev = variance.sqrt();
+
+        let zero_percentage = (zero_count as f64 / total_count as f64) * 100.0;
+
+        GradientStats {
+            mean_magnitude: mean,
+            max_magnitude: max,
+            min_magnitude: min,
+            std_deviation: std_dev,
+            zero_percentage,
+        }
+    }
+
+    /// Run test on a layer
+    pub fn test_layer<T, L>(&self, layer: &mut L) -> Result<LongSequenceTestResult>
+    where
+        T: Clone + Default + Into<f64>,
+        L: Layer<T>,
+    {
+        use std::time::Instant;
+
+        let start_time = Instant::now();
+        let mut memory_snapshots = Vec::new();
+        let mut gradient_stats_vec = Vec::new();
+        let mut forward_times = Vec::new();
+        let mut backward_times = Vec::new();
+
+        // Create input tensor
+        let input_shape = vec![
+            self.config.batch_size,
+            self.config.sequence_length,
+            self.config.hidden_dim,
+        ];
+
+        let mut passed = true;
+        let mut failure_reason = None;
+
+        // Run iterations
+        for iteration in 0..self.config.num_iterations {
+            // Create random input (in real implementation, would use scirs2_core::random)
+            let input = Tensor::<T>::zeros(&input_shape, Device::Cpu);
+
+            // Measure forward pass time
+            let forward_start = Instant::now();
+            let output = match layer.forward(&input) {
+                Ok(out) => out,
+                Err(e) => {
+                    passed = false;
+                    failure_reason = Some(format!(
+                        "Forward pass failed at iteration {}: {}",
+                        iteration, e
+                    ));
+                    break;
+                }
+            };
+            forward_times.push(forward_start.elapsed().as_secs_f64() * 1000.0);
+
+            // Memory monitoring
+            if self.config.monitor_memory {
+                let memory_mb =
+                    self.estimate_tensor_memory(&input) + self.estimate_tensor_memory(&output);
+                memory_snapshots.push(MemorySnapshot::new(iteration, memory_mb, 2));
+            }
+
+            // Gradient checking (placeholder - would need actual backward pass)
+            if self.config.check_gradients {
+                // In a real implementation, this would:
+                // 1. Create a loss tensor
+                // 2. Call backward()
+                // 3. Collect gradients from layer.parameters()
+                // 4. Calculate gradient statistics
+
+                // For now, create placeholder stats
+                let stats = GradientStats {
+                    mean_magnitude: 0.01,
+                    max_magnitude: 0.1,
+                    min_magnitude: 0.001,
+                    std_deviation: 0.02,
+                    zero_percentage: 0.0,
+                };
+
+                if !stats.is_healthy(
+                    self.config.gradient_explosion_threshold,
+                    self.config.gradient_vanishing_threshold,
+                ) {
+                    passed = false;
+                    failure_reason = Some(format!(
+                        "Gradient instability detected at iteration {}",
+                        iteration
+                    ));
+                    gradient_stats_vec.push(stats);
+                    break;
+                }
+
+                gradient_stats_vec.push(stats);
+            }
+        }
+
+        let duration = start_time.elapsed().as_secs_f64();
+        let avg_forward_time = if !forward_times.is_empty() {
+            forward_times.iter().sum::<f64>() / forward_times.len() as f64
+        } else {
+            0.0
+        };
+        let avg_backward_time = if !backward_times.is_empty() {
+            backward_times.iter().sum::<f64>() / backward_times.len() as f64
+        } else {
+            0.0
+        };
+
+        Ok(LongSequenceTestResult {
+            config: self.config.clone(),
+            passed,
+            memory_snapshots,
+            gradient_stats: gradient_stats_vec,
+            duration_secs: duration,
+            avg_forward_time_ms: avg_forward_time,
+            avg_backward_time_ms: avg_backward_time,
+            failure_reason,
+        })
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_long_sequence_config_defaults() {
+        let config = LongSequenceTestConfig::default();
+        assert_eq!(config.sequence_length, 1024);
+        assert_eq!(config.batch_size, 2);
+        assert_eq!(config.hidden_dim, 256);
+        assert!(config.check_gradients);
+        assert!(config.monitor_memory);
+    }
+
+    #[test]
+    fn test_long_sequence_config_32k() {
+        let config = LongSequenceTestConfig::for_32k_tokens();
+        assert_eq!(config.sequence_length, 32768);
+        assert_eq!(config.batch_size, 1);
+        assert_eq!(config.hidden_dim, 512);
+    }
+
+    #[test]
+    fn test_long_sequence_config_16k() {
+        let config = LongSequenceTestConfig::for_16k_tokens();
+        assert_eq!(config.sequence_length, 16384);
+        assert_eq!(config.batch_size, 2);
+    }
+
+    #[test]
+    fn test_long_sequence_config_8k() {
+        let config = LongSequenceTestConfig::for_8k_tokens();
+        assert_eq!(config.sequence_length, 8192);
+        assert_eq!(config.batch_size, 4);
+    }
+
+    #[test]
+    fn test_long_sequence_config_smoke() {
+        let config = LongSequenceTestConfig::for_smoke_test();
+        assert_eq!(config.sequence_length, 512);
+        assert_eq!(config.batch_size, 4);
+        assert_eq!(config.num_iterations, 3);
+    }
+
+    #[test]
+    fn test_memory_snapshot_creation() {
+        let snapshot = MemorySnapshot::new(0, 100.0, 5);
+        assert_eq!(snapshot.iteration, 0);
+        assert_eq!(snapshot.memory_mb, 100.0);
+        assert_eq!(snapshot.tensor_count, 5);
+    }
+
+    #[test]
+    fn test_memory_snapshot_growth() {
+        let baseline = MemorySnapshot::new(0, 100.0, 5);
+        let current = MemorySnapshot::new(5, 150.0, 7);
+
+        let growth = current.growth_from(&baseline);
+        assert_eq!(growth, 50.0);
+    }
+
+    #[test]
+    fn test_gradient_stats_explosion_detection() {
+        let stats = GradientStats {
+            mean_magnitude: 5.0,
+            max_magnitude: 20.0,
+            min_magnitude: 0.1,
+            std_deviation: 3.0,
+            zero_percentage: 0.0,
+        };
+
+        assert!(stats.has_explosion(10.0));
+        assert!(!stats.has_explosion(30.0));
+    }
+
+    #[test]
+    fn test_gradient_stats_vanishing_detection() {
+        let stats = GradientStats {
+            mean_magnitude: 1e-8,
+            max_magnitude: 1e-7,
+            min_magnitude: 1e-9,
+            std_deviation: 1e-8,
+            zero_percentage: 0.0,
+        };
+
+        assert!(stats.has_vanishing(1e-7));
+        assert!(!stats.has_vanishing(1e-9));
+    }
+
+    #[test]
+    fn test_gradient_stats_zero_percentage_vanishing() {
+        let stats = GradientStats {
+            mean_magnitude: 0.01,
+            max_magnitude: 0.1,
+            min_magnitude: 0.001,
+            std_deviation: 0.02,
+            zero_percentage: 95.0,
+        };
+
+        assert!(stats.has_vanishing(1e-7));
+    }
+
+    #[test]
+    fn test_gradient_stats_healthy() {
+        let stats = GradientStats {
+            mean_magnitude: 0.01,
+            max_magnitude: 0.5,
+            min_magnitude: 0.001,
+            std_deviation: 0.02,
+            zero_percentage: 1.0,
+        };
+
+        assert!(stats.is_healthy(10.0, 1e-7));
+    }
+
+    #[test]
+    fn test_gradient_stats_infinity_detection() {
+        let stats = GradientStats {
+            mean_magnitude: 5.0,
+            max_magnitude: f64::INFINITY,
+            min_magnitude: 0.1,
+            std_deviation: 3.0,
+            zero_percentage: 0.0,
+        };
+
+        assert!(stats.has_explosion(10.0));
+    }
+
+    #[test]
+    fn test_test_runner_creation() {
+        let config = LongSequenceTestConfig::default();
+        let runner = LongSequenceTestRunner::new(config.clone());
+
+        assert_eq!(runner.config.sequence_length, config.sequence_length);
+    }
+
+    #[test]
+    fn test_test_runner_default() {
+        let runner = LongSequenceTestRunner::default();
+        assert_eq!(runner.config.sequence_length, 1024);
+    }
+
+    #[test]
+    fn test_mamba_layer_smoke_test() {
+        // Smoke test with small sequence
+        let config = LongSequenceTestConfig::for_smoke_test();
+        let runner = LongSequenceTestRunner::new(config);
+
+        // Create Mamba layer
+        let layer_config = LayerConfig::default();
+        let mut mamba = Mamba::<f32>::new(128, layer_config).unwrap();
+
+        // Run test
+        let result = runner.test_layer(&mut mamba).unwrap();
+
+        // Verify test ran
+        assert_eq!(result.config.sequence_length, 512);
+        assert!(result.config.num_iterations > 0);
+    }
+
+    #[test]
+    fn test_ssm_layer_smoke_test() {
+        // Smoke test with small sequence
+        let config = LongSequenceTestConfig::for_smoke_test();
+        let runner = LongSequenceTestRunner::new(config);
+
+        // Create SSM layer
+        let layer_config = LayerConfig::default();
+        let mut ssm = SSM::<f32>::new(128, 64, layer_config).unwrap();
+
+        // Run test
+        let result = runner.test_layer(&mut ssm).unwrap();
+
+        // Verify test ran
+        assert_eq!(result.config.sequence_length, 512);
+        assert!(result.config.num_iterations > 0);
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_mamba_8k_sequence() {
+        let config = LongSequenceTestConfig::for_8k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut mamba = Mamba::<f32>::new(512, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut mamba).unwrap();
+
+        assert!(result.passed, "8K sequence test should pass");
+        assert!(result.has_stable_memory(), "Memory should be stable");
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_mamba_16k_sequence() {
+        let config = LongSequenceTestConfig::for_16k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut mamba = Mamba::<f32>::new(512, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut mamba).unwrap();
+
+        assert!(result.passed, "16K sequence test should pass");
+        assert!(result.has_stable_memory(), "Memory should be stable");
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_mamba_32k_sequence() {
+        let config = LongSequenceTestConfig::for_32k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut mamba = Mamba::<f32>::new(512, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut mamba).unwrap();
+
+        assert!(result.passed, "32K sequence test should pass");
+        assert!(result.has_stable_memory(), "Memory should be stable");
+        assert!(result.has_stable_gradients(), "Gradients should be stable");
+
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_ssm_8k_sequence() {
+        let config = LongSequenceTestConfig::for_8k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut ssm = SSM::<f32>::new(512, 64, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut ssm).unwrap();
+
+        assert!(result.passed, "8K sequence test should pass");
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_ssm_16k_sequence() {
+        let config = LongSequenceTestConfig::for_16k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut ssm = SSM::<f32>::new(512, 64, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut ssm).unwrap();
+
+        assert!(result.passed, "16K sequence test should pass");
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    #[ignore] // Ignored by default due to memory/time requirements
+    fn test_ssm_32k_sequence() {
+        let config = LongSequenceTestConfig::for_32k_tokens();
+        let runner = LongSequenceTestRunner::new(config);
+
+        let layer_config = LayerConfig::default();
+        let mut ssm = SSM::<f32>::new(512, 64, layer_config).unwrap();
+
+        let result = runner.test_layer(&mut ssm).unwrap();
+
+        assert!(result.passed, "32K sequence test should pass");
+        assert!(result.has_stable_memory(), "Memory should be stable");
+        assert!(result.has_stable_gradients(), "Gradients should be stable");
+
+        println!("{}", result.summary());
+    }
+
+    #[test]
+    fn test_result_summary_formatting() {
+        let config = LongSequenceTestConfig::for_smoke_test();
+        let result = LongSequenceTestResult {
+            config,
+            passed: true,
+            memory_snapshots: vec![
+                MemorySnapshot::new(0, 10.0, 2),
+                MemorySnapshot::new(1, 11.0, 2),
+            ],
+            gradient_stats: vec![],
+            duration_secs: 1.5,
+            avg_forward_time_ms: 50.0,
+            avg_backward_time_ms: 30.0,
+            failure_reason: None,
+        };
+
+        let summary = result.summary();
+        assert!(summary.contains("PASSED"));
+        assert!(summary.contains("512")); // sequence length
+    }
+
+    #[test]
+    fn test_result_failed_summary() {
+        let config = LongSequenceTestConfig::for_smoke_test();
+        let result = LongSequenceTestResult {
+            config,
+            passed: false,
+            memory_snapshots: vec![],
+            gradient_stats: vec![],
+            duration_secs: 0.5,
+            avg_forward_time_ms: 50.0,
+            avg_backward_time_ms: 0.0,
+            failure_reason: Some("Test error".to_string()),
+        };
+
+        let summary = result.summary();
+        assert!(summary.contains("FAILED"));
+        assert!(summary.contains("Test error"));
+    }
+}

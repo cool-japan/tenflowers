@@ -6,7 +6,7 @@
 //! applications.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Depthwise 2D Convolutional layer for mobile-optimized convolutions
@@ -134,7 +134,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -205,7 +205,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

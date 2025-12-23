@@ -4,8 +4,8 @@
 //! directly to save memory during computation.
 
 use crate::{Result, Tensor};
-use num_traits::{Float, FromPrimitive, Signed};
 use rustfft::num_complex::Complex;
+use scirs2_core::numeric::{Float, FromPrimitive, Signed};
 use std::fmt::Debug;
 
 /// In-place 1D FFT along the last axis

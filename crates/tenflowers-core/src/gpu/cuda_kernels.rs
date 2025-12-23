@@ -4,14 +4,17 @@
 //! complementing the higher-level cuDNN operations with direct kernel launches
 //! for custom operations and maximum performance control.
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 use crate::{DType, Device, Result, Tensor, TensorError};
+#[cfg(cuda_available)]
 use std::collections::HashMap;
+#[cfg(cuda_available)]
 use std::ffi::{CStr, CString};
+#[cfg(cuda_available)]
 use std::sync::Arc;
 
 /// CUDA device context for managing CUDA runtime and driver
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[derive(Debug)]
 pub struct CudaDevice {
     /// CUDA device ID
@@ -29,7 +32,7 @@ pub struct CudaDevice {
 }
 
 /// CUDA kernel launch configuration
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[derive(Debug, Clone)]
 pub struct CudaKernelConfig {
     /// Grid dimensions (number of blocks)
@@ -43,7 +46,7 @@ pub struct CudaKernelConfig {
 }
 
 /// CUDA memory management and allocation
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[derive(Debug)]
 pub struct CudaMemoryPool {
     /// Available memory chunks organized by size
@@ -55,7 +58,7 @@ pub struct CudaMemoryPool {
 }
 
 /// High-performance tensor operations using direct CUDA kernel launches
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 impl CudaDevice {
     /// Create a new CUDA device instance
     pub fn new(device_id: i32) -> Result<Self> {
@@ -133,14 +136,14 @@ impl CudaDevice {
         // Allocate device memory for arguments
         let mut device_ptrs = Vec::new();
         for arg in args {
-            let device_ptr = self.allocate_device_memory(arg.len() * std::mem::size_of::<T>())?;
+            let device_ptr = self.allocate_device_memory(std::mem::size_of_val(*arg))?;
 
             // Copy data to device
             unsafe {
                 cuda_memcpy_htod(
                     device_ptr,
                     arg.as_ptr() as *const std::ffi::c_void,
-                    arg.len() * std::mem::size_of::<T>(),
+                    std::mem::size_of_val(*arg),
                 )?;
             }
 
@@ -149,7 +152,7 @@ impl CudaDevice {
 
         // Allocate output buffer (assume same size as first input for now)
         let output_size = if !args.is_empty() {
-            args[0].len() * std::mem::size_of::<T>()
+            std::mem::size_of_val(args[0])
         } else {
             std::mem::size_of::<T>()
         };
@@ -157,10 +160,7 @@ impl CudaDevice {
         device_ptrs.push(output_ptr);
 
         // Prepare kernel arguments
-        let mut kernel_args: Vec<*mut std::ffi::c_void> = device_ptrs
-            .iter()
-            .map(|&ptr| ptr as *mut std::ffi::c_void)
-            .collect();
+        let mut kernel_args: Vec<*mut std::ffi::c_void> = device_ptrs.to_vec();
 
         // Launch kernel
         unsafe {
@@ -430,7 +430,7 @@ impl CudaDevice {
 }
 
 /// Element-wise operation types
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[derive(Debug, Clone, Copy)]
 pub enum ElementwiseOp {
     Add,
@@ -440,7 +440,7 @@ pub enum ElementwiseOp {
 }
 
 /// CUDA device properties
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[derive(Debug, Clone)]
 pub struct CudaDeviceProperties {
     pub name: String,
@@ -456,7 +456,7 @@ pub struct CudaDeviceProperties {
     pub memory_bus_width: i32,
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 impl CudaDeviceProperties {
     fn query(device_id: i32) -> Result<Self> {
         unsafe {
@@ -498,7 +498,7 @@ impl CudaDeviceProperties {
 }
 
 // CUDA FFI types and functions
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 #[repr(C)]
 struct CudaDeviceProp {
     name: [i8; 256],
@@ -516,25 +516,26 @@ struct CudaDeviceProp {
 }
 
 #[derive(Debug)]
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 struct CudaContext {
     device_id: i32,
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 impl CudaContext {
     fn new(device_id: i32) -> Result<Self> {
         Ok(Self { device_id })
     }
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+/// CUDA stream for asynchronous operations
+#[cfg(cuda_available)]
 #[derive(Debug, Clone)]
-struct CudaStream {
+pub struct CudaStream {
     handle: *mut std::ffi::c_void,
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 impl CudaStream {
     fn new() -> Result<Self> {
         unsafe {
@@ -546,12 +547,12 @@ impl CudaStream {
 }
 
 #[derive(Debug)]
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 struct CudaModule {
     handle: *mut std::ffi::c_void,
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 impl CudaModule {
     fn get_function(&self, name: &str) -> Result<CudaKernel> {
         let c_name = CString::new(name).unwrap();
@@ -564,19 +565,19 @@ impl CudaModule {
 }
 
 #[derive(Debug)]
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 struct CudaKernel {
     function: *mut std::ffi::c_void,
 }
 
 // CUDA FFI error handling
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 type CudaResult = i32;
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 const CUDA_SUCCESS: CudaResult = 0;
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 fn check_cuda_error(result: CudaResult, operation: &str) -> Result<()> {
     if result != CUDA_SUCCESS {
         return Err(TensorError::DeviceError {
@@ -590,7 +591,9 @@ fn check_cuda_error(result: CudaResult, operation: &str) -> Result<()> {
 }
 
 // CUDA FFI bindings to actual CUDA runtime and driver
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+// Note: This block only compiles when CUDA libraries are actually available on the system
+// (determined at build time by build.rs)
+#[cfg(cuda_available)]
 extern "C" {
     // CUDA Runtime API
     fn cudaSetDevice(device: i32) -> CudaResult;
@@ -640,23 +643,24 @@ extern "C" {
 }
 
 // CUDA memory copy kinds
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 const CUDA_MEMCPY_HOST_TO_DEVICE: u32 = 1;
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 const CUDA_MEMCPY_DEVICE_TO_HOST: u32 = 2;
 
 // CUDA FFI wrapper functions with proper error handling
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+// These require actual CUDA libraries to be present at compile time
+#[cfg(cuda_available)]
 unsafe fn cuda_init(flags: u32) -> Result<()> {
     check_cuda_error(cuInit(flags), "cuInit")
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_set_device(device_id: i32) -> Result<()> {
     check_cuda_error(cudaSetDevice(device_id), "cudaSetDevice")
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_get_device_properties(props: *mut CudaDeviceProp, device: i32) -> Result<()> {
     check_cuda_error(
         cudaGetDeviceProperties(props, device),
@@ -664,17 +668,17 @@ unsafe fn cuda_get_device_properties(props: *mut CudaDeviceProp, device: i32) ->
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_malloc(ptr: *mut *mut std::ffi::c_void, size: usize) -> Result<()> {
     check_cuda_error(cudaMalloc(ptr, size), "cudaMalloc")
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_free(ptr: *mut std::ffi::c_void) -> Result<()> {
     check_cuda_error(cudaFree(ptr), "cudaFree")
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_memcpy_htod(
     dst: *mut std::ffi::c_void,
     src: *const std::ffi::c_void,
@@ -686,7 +690,7 @@ unsafe fn cuda_memcpy_htod(
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_memcpy_dtoh(
     dst: *mut std::ffi::c_void,
     src: *const std::ffi::c_void,
@@ -698,12 +702,12 @@ unsafe fn cuda_memcpy_dtoh(
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_stream_create(stream: *mut *mut std::ffi::c_void) -> Result<()> {
     check_cuda_error(cudaStreamCreate(stream), "cudaStreamCreate")
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_module_load_data_ex(
     module: *mut *mut std::ffi::c_void,
     image: *const std::ffi::c_void,
@@ -717,7 +721,7 @@ unsafe fn cuda_module_load_data_ex(
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_module_get_function(
     function: *mut *mut std::ffi::c_void,
     module: *mut std::ffi::c_void,
@@ -729,7 +733,7 @@ unsafe fn cuda_module_get_function(
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_launch_kernel(
     function: *mut std::ffi::c_void,
     grid_dim: (u32, u32, u32),
@@ -756,13 +760,28 @@ unsafe fn cuda_launch_kernel(
     )
 }
 
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 unsafe fn cuda_device_synchronize() -> Result<()> {
     check_cuda_error(cudaDeviceSynchronize(), "cudaDeviceSynchronize")
 }
 
-/// Stub implementation for non-CUDA platforms
-#[cfg(not(all(feature = "cuda", any(target_os = "linux", target_os = "windows"))))]
+/// Check if CUDA support is compiled in
+///
+/// Note: This returns true if CUDA feature is enabled, but actual
+/// CUDA availability is checked at runtime when creating a CudaDevice.
+#[cfg(cuda_available)]
+pub fn is_cuda_available() -> bool {
+    // Return true if CUDA feature is compiled in
+    // Actual runtime availability is checked when creating devices
+    true
+}
+
+#[cfg(not(cuda_available))]
+pub fn is_cuda_available() -> bool {
+    false
+}
+
+#[cfg(not(cuda_available))]
 pub mod cuda_stub {
     //! Stub implementation for platforms without CUDA support
     use crate::{Result, TensorError};
@@ -775,7 +794,7 @@ pub mod cuda_stub {
 }
 
 /// CUDA kernel performance benchmarking
-#[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+#[cfg(cuda_available)]
 pub mod benchmarks {
     use super::*;
     use std::time::{Duration, Instant};
@@ -867,7 +886,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+    #[cfg(cuda_available)]
     fn test_cuda_device_creation() {
         let result = CudaDevice::new(0);
         // Test should pass on systems with CUDA support
@@ -875,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(all(feature = "cuda", any(target_os = "linux", target_os = "windows"))))]
+    #[cfg(not(cuda_available))]
     fn test_cuda_not_available() {
         let result = cuda_stub::cuda_not_available();
         assert!(result.is_err());
@@ -886,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
+    #[cfg(cuda_available)]
     fn test_kernel_config_calculation() {
         if let Ok(device) = CudaDevice::new(0) {
             let config = device.calculate_gemm_config(1024, 1024, 1024);

@@ -1,7 +1,129 @@
-//! Learning Rate Scheduling for optimizers
+//! Learning Rate Scheduling for optimizers.
 //!
 //! This module provides various learning rate scheduling strategies commonly used
-//! in deep learning training, such as step decay, exponential decay, cosine annealing, etc.
+//! in deep learning training. Learning rate scheduling is crucial for achieving
+//! good convergence and final performance.
+//!
+//! # Available Schedulers
+//!
+//! - [`ConstantLR`]: No scheduling, constant learning rate
+//! - [`StepLR`]: Multiply learning rate by gamma every N steps
+//! - [`ExponentialLR`]: Exponentially decay learning rate
+//! - [`CosineAnnealingLR`]: Cosine annealing with optional warm restarts
+//! - [`WarmupCosineDecayLR`]: Linear warmup followed by cosine decay
+//! - [`PolynomialLR`]: Polynomial decay schedule
+//! - [`ReduceLROnPlateau`]: Reduce learning rate when metric plateaus
+//!
+//! # Usage Examples
+//!
+//! ## Basic Step Decay
+//!
+//! ```rust
+//! use tenflowers_neural::scheduler::{StepLR, LearningRateScheduler};
+//!
+//! let scheduler = StepLR::new(0.1, 30, 0.1);
+//! // LR = 0.1 for epochs 0-29
+//! // LR = 0.01 for epochs 30-59
+//! // LR = 0.001 for epochs 60+
+//!
+//! for epoch in 0..100 {
+//!     let lr = scheduler.get_lr(epoch);
+//!     // Set optimizer learning rate
+//! }
+//! ```
+//!
+//! ## Cosine Annealing
+//!
+//! ```rust
+//! use tenflowers_neural::scheduler::{CosineAnnealingLR, LearningRateScheduler};
+//!
+//! let scheduler = CosineAnnealingLR::new(0.1, 100)
+//!     .with_min_lr(0.0001);
+//!
+//! for epoch in 0..100 {
+//!     let lr = scheduler.get_lr(epoch);
+//!     // LR smoothly decreases from 0.1 to 0.0001
+//! }
+//! ```
+//!
+//! ## Warmup with Cosine Decay
+//!
+//! ```rust
+//! use tenflowers_neural::scheduler::{WarmupCosineDecayLR, LearningRateScheduler};
+//!
+//! let scheduler = WarmupCosineDecayLR::new(
+//!     0.001,  // peak_lr
+//!     10,     // warmup_steps
+//!     100,    // total_steps
+//! ).with_min_lr(0.00001);
+//!
+//! for step in 0..100 {
+//!     let lr = scheduler.get_lr(step);
+//!     // LR increases linearly 0 -> 0.001 (steps 0-10)
+//!     // LR decreases with cosine 0.001 -> 0.00001 (steps 10-100)
+//! }
+//! ```
+//!
+//! ## Using with Optimizer
+//!
+//! ```rust,no_run
+//! use tenflowers_neural::{Adam, Sequential};
+//! use tenflowers_neural::scheduler::{StepLR, LearningRateScheduler};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut model = Sequential::new();
+//! let mut optimizer = Adam::new(0.1);
+//! let scheduler = StepLR::new(0.1, 30, 0.1);
+//!
+//! for epoch in 0..100 {
+//!     // Update learning rate
+//!     let lr = scheduler.get_lr(epoch);
+//!     optimizer.set_learning_rate(lr);
+//!
+//!     // Training loop
+//!     // ...
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Reduce on Plateau
+//!
+//! ```rust
+//! use tenflowers_neural::scheduler::ReduceLROnPlateau;
+//!
+//! let mut scheduler = ReduceLROnPlateau::new(0.1)
+//!     .with_patience(10)
+//!     .with_factor(0.5)
+//!     .with_min_lr(1e-6);
+//!
+//! for epoch in 0..100 {
+//!     let val_loss = 0.5; // From validation
+//!
+//!     // Returns new learning rate if it should be reduced
+//!     if let Some(new_lr) = scheduler.step(val_loss) {
+//!         println!("Reducing LR to {}", new_lr);
+//!     }
+//! }
+//! ```
+//!
+//! # Scheduler Selection Guide
+//!
+//! ## Computer Vision (CNNs)
+//! - **StepLR**: Traditional choice, decay at specific epochs (e.g., 30, 60, 90)
+//! - **CosineAnnealingLR**: Smoother decay, often better performance
+//!
+//! ## Natural Language Processing (Transformers)
+//! - **WarmupCosineDecayLR**: Standard for transformer training
+//! - Linear warmup prevents instability in early training
+//!
+//! ## Fine-Tuning
+//! - **ExponentialLR**: Gentle decay for fine-tuning
+//! - **ReduceLROnPlateau**: Adaptive based on validation performance
+//!
+//! ## Research/Experimentation
+//! - **PolynomialLR**: Flexible power parameter
+//! - **ConstantLR**: Baseline, no scheduling
 
 use std::f32::consts::PI;
 

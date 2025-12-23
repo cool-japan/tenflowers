@@ -71,11 +71,8 @@ impl MetalDevice {
         kernel_name: &str,
     ) -> Result<&metal::ComputePipelineState> {
         if !self.pipeline_cache.contains_key(kernel_name) {
-            let function = self.library.get_function(kernel_name, None).or_else(|_| {
-                Err(TensorError::device_error_simple(format!(
-                    "Kernel '{}' not found",
-                    kernel_name
-                )))
+            let function = self.library.get_function(kernel_name, None).map_err(|_| {
+                TensorError::device_error_simple(format!("Kernel '{}' not found", kernel_name))
             })?;
 
             let pipeline_state = self

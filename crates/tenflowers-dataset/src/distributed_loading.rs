@@ -304,7 +304,7 @@ impl EnhancedDistributedSampler {
             + bytemuck::Zeroable
             + serde::Serialize
             + for<'de> serde::Deserialize<'de>
-            + num_traits::Zero,
+            + scirs2_core::numeric::Zero,
         D: Dataset<T> + Send + Sync,
     {
         let mut local_indices = Vec::new();
@@ -589,7 +589,7 @@ impl EnhancedDistributedSampler {
             + bytemuck::Zeroable
             + serde::Serialize
             + for<'de> serde::Deserialize<'de>
-            + num_traits::Zero,
+            + scirs2_core::numeric::Zero,
     {
         // Check cache first
         let cached_data = self.check_cache::<T>(indices);
@@ -954,7 +954,7 @@ pub fn create_distributed_dataloader<T, D>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static

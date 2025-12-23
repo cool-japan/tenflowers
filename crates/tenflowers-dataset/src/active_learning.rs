@@ -245,9 +245,12 @@ impl ActiveLearningSampler {
         let mut centroids = Vec::with_capacity(k);
 
         // Initialize centroids randomly from data points
+        use scirs2_core::random::rand_prelude::*;
         let mut rng = scirs2_core::random::rng();
         for _ in 0..k {
-            let idx = rng.gen_range(0..features.len());
+            let random_val: f64 = rng.random();
+            let idx = (random_val * features.len() as f64) as usize;
+            let idx = idx.min(features.len() - 1);
             centroids.push(features[idx].clone());
         }
 

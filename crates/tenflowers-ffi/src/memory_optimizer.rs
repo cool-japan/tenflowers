@@ -798,8 +798,8 @@ mod tests {
     #[test]
     fn test_memory_pool_optimization() {
         let mut pool = MemoryPool::new(1024 * 1024); // 1MB pool
-        let savings = pool.optimize_pools();
-        assert!(savings >= 0); // Should not fail
+        let _savings = pool.optimize_pools();
+        // Savings is always non-negative (usize), so no need to check >= 0
     }
 
     #[test]

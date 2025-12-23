@@ -17,7 +17,7 @@ pub use advanced::SwiGLU;
 pub use parametric::{PReLU, ParametricSoftplus};
 
 use crate::layers::Layer;
-use num_traits::{Float, Zero};
+use scirs2_core::num_traits::{Float, Zero};
 use tenflowers_core::{ops::manipulation::where_op, Result, Tensor};
 
 /// Basic activation functions enum for common non-parametric activations

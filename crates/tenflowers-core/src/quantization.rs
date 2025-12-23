@@ -4,7 +4,8 @@
 //! to enable efficient inference and reduced memory usage.
 
 use crate::{DType, Result, Tensor, TensorError};
-use num_traits::{cast::cast, Float};
+use scirs2_core::num_traits::cast::cast;
+use scirs2_core::numeric::Float;
 
 #[cfg(feature = "gpu")]
 use crate::device::context::get_gpu_context;
@@ -13,7 +14,7 @@ use crate::gpu::buffer::GpuBuffer;
 #[cfg(feature = "gpu")]
 use bytemuck;
 #[cfg(feature = "gpu")]
-use scirs2_autograd::ndarray::Array1;
+use scirs2_core::ndarray::Array1;
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
@@ -578,7 +579,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     // For simplicity, fall back to CPU implementation for now
     // A full implementation would use the dynamic_quantize shader
@@ -732,7 +733,7 @@ where
     drop(data);
     staging_buffer.unmap();
 
-    let result_array = ndarray::Array::from_shape_vec(shape.dims(), result_vec)
+    let result_array = scirs2_core::ndarray::Array::from_shape_vec(shape.dims(), result_vec)
         .map_err(|e| TensorError::invalid_argument(format!("Shape mismatch: {:?}", e)))?
         .into_dyn();
     let result_buffer = GpuBuffer::from_cpu_array(&result_array, device_id)?;
@@ -752,7 +753,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     // For simplicity, fall back to CPU implementation for now
     // A full implementation would use the per_channel_quantize shader
@@ -764,7 +765,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::Array;
+    use scirs2_core::ndarray::Array;
 
     #[test]
     fn test_symmetric_quantization() {

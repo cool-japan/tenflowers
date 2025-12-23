@@ -8,7 +8,7 @@ use super::types::{
     OutputFormat, VisualizationSettings,
 };
 use crate::tape::TensorId;
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::collections::HashMap;
 use std::fmt::Write;
 use tenflowers_core::{Result, TensorError};

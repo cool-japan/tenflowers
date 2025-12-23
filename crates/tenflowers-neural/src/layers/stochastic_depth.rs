@@ -1,5 +1,5 @@
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Stochastic Depth layer wrapper for regularization
@@ -91,7 +91,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -107,7 +107,7 @@ where
             input.add(&scaled_output)
         } else {
             // During training, randomly skip the layer
-            let mut rng = scirs2_core::random::rng();
+            let mut rng = scirs2_core::random::thread_rng();
             let random_val: f64 = rng.gen_range(0.0..1.0);
             let random_t = T::from(random_val).unwrap();
 
@@ -226,7 +226,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -239,7 +239,7 @@ where
             layer_output.mul(&survival_tensor)
         } else {
             // During training, randomly skip the layer
-            let mut rng = scirs2_core::random::rng();
+            let mut rng = scirs2_core::random::thread_rng();
             let random_val: f64 = rng.gen_range(0.0..1.0);
             let random_t = T::from(random_val).unwrap();
 

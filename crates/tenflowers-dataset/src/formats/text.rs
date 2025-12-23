@@ -321,9 +321,9 @@ impl<T> TextDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::ToPrimitive
-        + num_traits::NumCast
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::ToPrimitive
+        + scirs2_core::numeric::NumCast
         + Send
         + Sync
         + 'static,
@@ -466,14 +466,14 @@ where
     fn ids_to_tensor(ids: &[usize]) -> Result<Tensor<T>> {
         let data: Vec<T> = ids
             .iter()
-            .map(|&id| num_traits::cast(id).unwrap_or_else(T::default))
+            .map(|&id| scirs2_core::num_traits::NumCast::from(id).unwrap_or_else(T::default))
             .collect();
         Tensor::from_vec(data, &[ids.len()])
     }
 
     /// Convert scalar to tensor
     fn scalar_to_tensor(value: usize) -> Result<Tensor<T>> {
-        let tensor_val = num_traits::cast(value).unwrap_or_else(T::default);
+        let tensor_val = scirs2_core::num_traits::NumCast::from(value).unwrap_or_else(T::default);
         Ok(Tensor::from_scalar(tensor_val))
     }
 
@@ -506,7 +506,7 @@ where
 
 impl<T> Dataset<T> for TextDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.samples.len()
@@ -609,9 +609,9 @@ impl TextDatasetBuilder {
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::ToPrimitive
-            + num_traits::NumCast
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::ToPrimitive
+            + scirs2_core::numeric::NumCast
             + Send
             + Sync
             + 'static,

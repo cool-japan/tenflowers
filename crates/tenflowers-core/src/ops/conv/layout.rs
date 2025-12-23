@@ -7,7 +7,7 @@
 
 use crate::layout::{convert_layout, DataLayout, LayoutOptimizer, OperationType};
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 
 /// Layout-aware 2D convolution with automatic layout optimization

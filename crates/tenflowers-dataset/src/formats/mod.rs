@@ -16,6 +16,10 @@
 //! - `tfrecord`: TensorFlow TFRecord format support for ML training data
 //! - `common`: Shared types and utilities used across formats
 
+#[cfg(feature = "parquet")]
+pub mod arrow;
+#[cfg(feature = "parquet")]
+pub mod arrow_advanced;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod common;
@@ -27,14 +31,26 @@ pub mod image;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod registry;
 pub mod text;
 #[cfg(feature = "tfrecord")]
 pub mod tfrecord;
+pub mod unified_reader;
 #[cfg(feature = "webdataset")]
 pub mod webdataset;
 pub mod zarr;
 
 // Re-export public types with disambiguation for FeatureType conflicts
+#[cfg(feature = "parquet")]
+pub use arrow::{
+    ArrowArrayExt, ArrowConfig, ArrowDataset, ArrowDatasetBuilder, ArrowFormatFactory,
+    ArrowFormatReader, ArrowTensorView,
+};
+#[cfg(feature = "parquet")]
+pub use arrow_advanced::{
+    ArrowBuffer, ArrowPredicate, ArrowStatistics, ArrowValue, StreamingArrowConfig,
+    StreamingArrowReader,
+};
 #[cfg(feature = "audio")]
 pub use audio::{AudioConfig, AudioDataset, AudioLabelStrategy, FeatureType as AudioFeatureType};
 pub use common::*;
@@ -46,9 +62,15 @@ pub use image::*;
 pub use json::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+pub use registry::{global, register_format_factory, FormatInfo, GlobalFormatRegistry};
 pub use text::*;
 #[cfg(feature = "tfrecord")]
 pub use tfrecord::{Feature, FeatureType as TFRecordFeatureType, TFRecordConfig, TFRecordDataset};
+pub use unified_reader::{
+    detect_format_from_extension, read_magic_bytes, DataType as UnifiedDataType, DetectionMethod,
+    FieldInfo, FormatDetection, FormatFactory, FormatMetadata, FormatReader, FormatReaderBuilder,
+    FormatRegistry, FormatSample,
+};
 #[cfg(feature = "webdataset")]
 pub use webdataset::*;
 pub use zarr::*;

@@ -56,13 +56,13 @@ pub struct SyntheticDataset<T> {
     labels: Tensor<T>,
 }
 
-impl<T: Clone + Default + num_traits::Zero + Send + Sync + 'static> SyntheticDataset<T> {
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> SyntheticDataset<T> {
     pub fn new(features: Tensor<T>, labels: Tensor<T>) -> Self {
         Self { features, labels }
     }
 }
 
-impl<T: Clone + Default + num_traits::Zero + Send + Sync + 'static> Dataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
     for SyntheticDataset<T>
 {
     fn len(&self) -> usize {

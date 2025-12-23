@@ -7,8 +7,8 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::{One, Zero};
 
 /// Performs 1D convolution operation
 /// Input shape: [batch, in_channels, length] (NCL format)
@@ -197,7 +197,7 @@ where
             TensorStorage::Gpu(bias_gpu) => {
                 // Convert GPU bias to CPU for this CPU convolution
                 let bias_cpu = bias_gpu.to_cpu()?;
-                let bias_arr = scirs2_autograd::ndarray::Array1::from_vec(bias_cpu).into_dyn();
+                let bias_arr = scirs2_core::ndarray::Array1::from_vec(bias_cpu).into_dyn();
 
                 if bias_arr.shape() != [out_channels] {
                     return Err(TensorError::shape_mismatch(

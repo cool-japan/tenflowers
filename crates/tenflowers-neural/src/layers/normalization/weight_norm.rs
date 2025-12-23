@@ -6,7 +6,7 @@
 //! accelerate convergence in neural networks.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Weight Normalization - reparameterizes weight vectors to decouple magnitude and direction

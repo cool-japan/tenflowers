@@ -1,4 +1,4 @@
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use std::fmt::Debug;
 use tenflowers_core::{ops::*, Result, Tensor};
 

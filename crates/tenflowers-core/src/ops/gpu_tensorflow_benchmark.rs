@@ -730,10 +730,12 @@ pub fn run_quick_gpu_tensorflow_benchmark() -> Result<Vec<GpuBenchmarkResult>> {
     let config = GpuBenchmarkConfig::default();
 
     // Mock GPU optimizer for now - in real use this would be properly initialized
+    #[allow(invalid_value)]
     let gpu_capabilities = crate::gpu::performance_optimizer::detect_gpu_capabilities(
         &unsafe { std::mem::zeroed() }, // Mock device - unsafe but for testing
     );
 
+    #[allow(invalid_value)]
     let gpu_optimizer = Arc::new(GpuPerformanceOptimizer::new(
         Arc::new(unsafe { std::mem::zeroed() }), // Mock device
         Arc::new(unsafe { std::mem::zeroed() }), // Mock queue
@@ -759,8 +761,11 @@ mod tests {
 
     #[test]
     #[ignore = "Requires valid WGPU device - panics with zero-initialized device"]
+    #[allow(invalid_value)]
     fn test_tensorflow_script_generation() {
         let config = GpuBenchmarkConfig::default();
+        // SAFETY: This test is ignored and only serves as documentation.
+        // Real implementation would use proper GPU device initialization.
         let gpu_capabilities =
             crate::gpu::performance_optimizer::detect_gpu_capabilities(&unsafe {
                 std::mem::zeroed()
@@ -785,8 +790,11 @@ mod tests {
 
     #[test]
     #[ignore = "Requires valid WGPU device - panics with zero-initialized device"]
+    #[allow(invalid_value)]
     fn test_pytorch_script_generation() {
         let config = GpuBenchmarkConfig::default();
+        // SAFETY: This test is ignored and only serves as documentation.
+        // Real implementation would use proper GPU device initialization.
         let gpu_capabilities =
             crate::gpu::performance_optimizer::detect_gpu_capabilities(&unsafe {
                 std::mem::zeroed()

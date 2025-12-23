@@ -8,11 +8,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### In Progress
-- GPU kernel implementations for core operations
-- Shape inference system completion
-- Graph mode execution engine
+- Additional GPU kernel implementations for advanced operations
+- Complete shape inference system
+- Graph mode execution engine enhancements
 - Python bindings expansion
 - ONNX import/export support
+
+## [0.1.0-alpha.2] - 2025-12-23
+
+### Added
+
+#### Documentation Improvements
+- **Comprehensive Crate Documentation**: Added extensive crate-level documentation to all crates
+  - `tenflowers-core`: Complete API overview with examples for tensor operations, GPU acceleration, mixed precision, and performance monitoring
+  - `tenflowers-dataset`: Full guide to data loading, transformations, and advanced features
+  - `tenflowers-ffi`: Python bindings documentation with NumPy integration examples
+  - All crates now include Quick Start guides and architecture overviews
+- **Enhanced README**: Updated with alpha.2 information and current capabilities
+- **API Documentation**: Improved rustdoc comments throughout the codebase
+
+#### Performance Features
+- **CUDA Support**: Enhanced GPU backend with CUDA optimization paths
+- **Memory Optimization**: Improved memory management and buffer pooling
+- **SIMD Enhancements**: Additional SIMD-accelerated operations
+- **Profiling Tools**: Built-in performance benchmarking and monitoring utilities
+
+#### Core Enhancements
+- **Deterministic Execution**: Added deterministic mode for reproducible results
+- **Quantization**: Expanded quantization support for model deployment
+- **Mixed Precision**: Improved mixed precision training capabilities
+- **Checkpointing**: Enhanced model checkpointing and restoration
+- **Error Handling**: Improved error messages and shape validation
+
+#### Neural Network Module
+- **Layer Expansion**: Additional neural network layer implementations
+- **Optimizer Improvements**: Enhanced optimizer implementations
+- **Training Utilities**: Improved training loop abstractions
+
+#### Dataset Module
+- **Data Quality Tools**: Built-in data quality analysis and drift detection
+- **Advanced Sampling**: Stratified and importance sampling strategies
+- **Performance**: NUMA-aware scheduling and zero-copy operations
+- **Distributed Loading**: Distributed and sharded data loading support
+
+### Improved
+- **SciRS2 Integration**: Complete migration to SciRS2 ecosystem primitives
+  - All operations now use `scirs2_core::ndarray` instead of direct `ndarray`
+  - Random number generation via `scirs2_core::random`
+  - Numeric traits via `scirs2_core::num_traits`
+- **Type System**: Enhanced data type support (f16, bf16, etc.)
+- **Shape Inference**: Improved shape validation and broadcasting
+- **GPU Memory**: Better GPU memory management and metrics
+- **Documentation**: Comprehensive rustdoc throughout all modules
+
+### Fixed
+- **Compilation Issues**: Resolved various compilation warnings and errors
+- **Type Safety**: Fixed trait bound issues across generic implementations
+- **Memory Leaks**: Fixed memory management issues in GPU operations
+- **API Consistency**: Standardized API patterns across crates
+
+### Changed
+- **Version**: Updated to 0.1.0-alpha.2 across all crates
+- **Build System**: Improved workspace configuration
+- **Testing**: Enhanced test coverage and infrastructure
 
 ## [0.1.0-alpha.1] - 2025-09-27
 
@@ -109,4 +167,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.1.0-alpha.2 | 2025-12-23 | Documentation overhaul, CUDA enhancements, SciRS2 integration complete |
 | 0.1.0-alpha.1 | 2025-09-27 | Initial alpha release with core infrastructure |

@@ -1,5 +1,5 @@
 use crate::layers::{Dense, Layer, LayerType};
-use num_traits::Float;
+use scirs2_core::num_traits::Float;
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor};
 

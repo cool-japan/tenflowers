@@ -53,7 +53,13 @@ pub struct Episode<T> {
 
 impl<T> FewShotDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new few-shot learning dataset
     ///
@@ -148,7 +154,13 @@ pub struct ContrastiveLearningDataset<T> {
 
 impl<T> ContrastiveLearningDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new contrastive learning dataset
     ///
@@ -218,7 +230,13 @@ pub struct SelfSupervisedDataset<T> {
 
 impl<T> SelfSupervisedDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new self-supervised learning dataset
     ///
@@ -305,7 +323,13 @@ pub struct TaskDataset<T> {
 
 impl<T> MetaLearningDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create a new meta-learning dataset
     ///
@@ -382,7 +406,13 @@ where
 /// Generate a random vector with specified dimensions
 fn generate_random_vector<T, R>(rng: &mut R, dim: usize, scale: T) -> Tensor<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     R: Rng,
 {
     let data: Vec<T> = (0..dim)
@@ -398,7 +428,13 @@ where
 /// Add noise to a vector
 fn add_noise_to_vector<T, R>(vector: &Tensor<T>, rng: &mut R, noise_level: f32) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     R: Rng,
 {
     let data = vector.as_slice().ok_or_else(|| {
@@ -419,7 +455,13 @@ where
 /// Apply augmentation (rotation, scaling, noise)
 fn apply_augmentation<T, R>(vector: &Tensor<T>, rng: &mut R, aug_strength: f32) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     R: Rng,
 {
     let data = vector.as_slice().ok_or_else(|| {
@@ -449,7 +491,13 @@ fn compute_synthetic_label<T>(
     bias: f32,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     let feat_data = features.as_slice().ok_or_else(|| {
         TensorError::invalid_operation_simple("Cannot access features tensor data".to_string())

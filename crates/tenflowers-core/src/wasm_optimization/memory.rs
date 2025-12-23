@@ -141,7 +141,7 @@ impl WasmMemoryManager {
         let mut total_pooled = 0;
         let mut pool_count = 0;
 
-        for (_, chunks) in &self.memory_pools {
+        for chunks in self.memory_pools.values() {
             total_pooled += chunks.len() * std::mem::size_of::<WasmMemoryChunk>();
             pool_count += chunks.len();
         }

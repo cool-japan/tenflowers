@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 /// Basic Tensor Operations Demo using TenfloweRS
 /// Simple demonstration of tensor creation and basic operations
 use tenflowers_core::{DType, Device, Tensor};

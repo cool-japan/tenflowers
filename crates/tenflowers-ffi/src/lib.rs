@@ -1,4 +1,205 @@
-//! Python bindings for TenfloweRS machine learning framework
+//! # TenfloweRS Python Bindings (FFI)
+//!
+//! Python bindings for the TenfloweRS machine learning framework, providing a Pythonic interface
+//! to TenfloweRS's high-performance Rust implementation. This crate enables seamless integration
+//! between Python ML workflows and TenfloweRS's native performance.
+//!
+//! ## Features
+//!
+//! - **Pythonic API**: Natural Python interface following PyTorch/TensorFlow conventions
+//! - **Zero-Copy Interop**: Efficient data transfer between Python and Rust
+//! - **NumPy Integration**: Direct conversion between NumPy arrays and TenfloweRS tensors
+//! - **Complete Bindings**: Access to all TenfloweRS functionality from Python
+//! - **Performance**: Near-native Rust performance from Python
+//! - **Type Safety**: Strong typing with Python type hints
+//!
+//! ## Installation
+//!
+//! Install from PyPI (when published):
+//!
+//! ```bash
+//! pip install tenflowers
+//! ```
+//!
+//! Or build from source:
+//!
+//! ```bash
+//! cd tenflowers/crates/tenflowers-ffi
+//! maturin develop --release
+//! ```
+//!
+//! ## Quick Start (Python)
+//!
+//! ### Basic Tensor Operations
+//!
+//! ```python
+//! import tenflowers as tf
+//! import numpy as np
+//!
+//! # Create tensors
+//! a = tf.tensor([[1.0, 2.0], [3.0, 4.0]])
+//! b = tf.ones((2, 2))
+//!
+//! # Operations
+//! c = a + b
+//! d = a @ b  # Matrix multiplication
+//!
+//! # Convert to NumPy
+//! numpy_array = c.numpy()
+//! ```
+//!
+//! ### Neural Network Training
+//!
+//! ```python
+//! import tenflowers as tf
+//! from tenflowers.neural import Sequential, Dense
+//! from tenflowers.optimizers import Adam
+//!
+//! # Build model
+//! model = Sequential([
+//!     Dense(128, activation='relu'),
+//!     Dense(10, activation='softmax')
+//! ])
+//!
+//! # Compile
+//! model.compile(
+//!     optimizer=Adam(lr=0.001),
+//!     loss='categorical_crossentropy',
+//!     metrics=['accuracy']
+//! )
+//!
+//! # Train
+//! model.fit(x_train, y_train, epochs=10, batch_size=32)
+//! ```
+//!
+//! ### GPU Acceleration
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Enable GPU
+//! tf.set_default_device('gpu:0')
+//!
+//! # Tensors automatically use GPU
+//! a = tf.ones((1000, 1000))  # Created on GPU
+//! b = tf.matmul(a, a)  # Computed on GPU
+//! ```
+//!
+//! ## Architecture
+//!
+//! This crate provides Python bindings through PyO3:
+//!
+//! - [`tensor_ops`]: Tensor operations and manipulation
+//! - [`math_ops`]: Mathematical operations (arithmetic, linear algebra)
+//! - [`neural`]: Neural network layers and models
+//! - [`metrics`]: Model evaluation metrics
+//! - [`utils`]: Utility functions and helpers
+//! - [`serialization`]: Model serialization and checkpointing
+//! - [`visualization`]: Training visualization and monitoring
+//!
+//! ## NumPy Interoperability
+//!
+//! TenfloweRS tensors support zero-copy conversion to/from NumPy arrays when possible:
+//!
+//! ```python
+//! import numpy as np
+//! import tenflowers as tf
+//!
+//! # NumPy to TenfloweRS (zero-copy when possible)
+//! numpy_array = np.array([[1.0, 2.0], [3.0, 4.0]])
+//! tensor = tf.from_numpy(numpy_array)
+//!
+//! # TenfloweRS to NumPy (zero-copy when possible)
+//! back_to_numpy = tensor.numpy()
+//! ```
+//!
+//! ## Type System
+//!
+//! TenfloweRS supports various data types:
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Float types
+//! f32_tensor = tf.tensor([1.0, 2.0], dtype=tf.float32)
+//! f16_tensor = tf.tensor([1.0, 2.0], dtype=tf.float16)  # Half precision
+//! bf16_tensor = tf.tensor([1.0, 2.0], dtype=tf.bfloat16)
+//!
+//! # Integer types
+//! i32_tensor = tf.tensor([1, 2, 3], dtype=tf.int32)
+//! i64_tensor = tf.tensor([1, 2, 3], dtype=tf.int64)
+//! ```
+//!
+//! ## Performance Monitoring
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Enable memory profiling
+//! tf.enable_memory_profiling()
+//!
+//! # Run operations
+//! a = tf.ones((1000, 1000))
+//! b = tf.matmul(a, a)
+//!
+//! # Get memory statistics
+//! stats = tf.get_memory_stats()
+//! print(f"Peak memory: {stats.peak_memory_mb} MB")
+//! ```
+//!
+//! ## Error Handling
+//!
+//! TenfloweRS provides clear error messages and Python exceptions:
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! try:
+//!     # Shape mismatch
+//!     a = tf.ones((2, 3))
+//!     b = tf.ones((4, 5))
+//!     c = tf.matmul(a, b)  # Raises TensorError
+//! except tf.TensorError as e:
+//!     print(f"Error: {e}")
+//! ```
+//!
+//! ## Integration with Python Ecosystem
+//!
+//! TenfloweRS integrates with:
+//! - **NumPy**: Zero-copy array conversion
+//! - **PyTorch**: Model conversion utilities (planned)
+//! - **TensorFlow**: ONNX-based model exchange
+//! - **Pandas**: DataFrame integration for datasets
+//! - **Matplotlib**: Visualization integration
+//!
+//! ## Development
+//!
+//! Building the Python bindings:
+//!
+//! ```bash
+//! # Install maturin
+//! pip install maturin
+//!
+//! # Development build
+//! maturin develop
+//!
+//! # Release build
+//! maturin build --release
+//!
+//! # Build wheel
+//! maturin build --release --out dist/
+//! ```
+//!
+//! ## Testing
+//!
+//! ```bash
+//! # Run Python tests
+//! pytest tests/
+//!
+//! # Run Rust tests
+//! cargo test
+//! ```
+
 #![deny(unsafe_code)]
 #![allow(unsafe_code)] // Allow unsafe code for C FFI
 #![allow(clippy::too_many_arguments)] // Common in ML APIs
@@ -17,10 +218,14 @@
 // Module declarations - organize functionality into logical groups
 pub mod benchmarks;
 pub mod bottleneck_detection;
+pub mod dtype; // Data type abstraction for f16/bf16/etc support
 pub mod dtype_promotion;
 pub mod eager_execution_optimizer;
+pub mod error_mapping; // Error mapping and exception handling
 pub mod large_model_support;
 pub mod memory_optimizer;
+pub mod metrics; // Model evaluation metrics
+pub mod serialization; // Model serialization and checkpointing
 pub mod test_module;
 
 // Refactored modular structures
@@ -30,6 +235,7 @@ pub mod visualization; // New modular visualization
 // Core FFI modules
 pub mod math_ops;
 pub mod tensor_ops;
+pub mod utils; // Utility functions for common operations
 
 use pyo3::prelude::*;
 use std::sync::{OnceLock, RwLock};
@@ -62,6 +268,8 @@ fn get_default_device() -> String {
         Device::Cpu => "cpu".to_string(),
         #[cfg(feature = "gpu")]
         Device::Gpu(id) => format!("gpu:{}", id),
+        #[cfg(feature = "gpu")]
+        Device::Rocm(id) => format!("rocm:{}", id),
     }
 }
 
@@ -131,7 +339,7 @@ fn set_grad_enabled(enabled: bool) {
 /// Utility functions for working with Python objects
 #[pyfunction]
 fn tensor_from_numpy(py: Python, array: Bound<'_, PyAny>) -> PyResult<tensor_ops::PyTensor> {
-    use numpy::PyReadonlyArrayDyn;
+    use scirs2_numpy::PyReadonlyArrayDyn;
 
     // Convert numpy array to PyReadonlyArrayDyn<f32>
     let np_array: PyReadonlyArrayDyn<f32> = array.extract()?;
@@ -164,8 +372,8 @@ fn tensor_to_numpy(py: Python, tensor: &tensor_ops::PyTensor) -> PyResult<PyObje
     })?;
 
     // Create multi-dimensional numpy array from tensor data and shape
-    use numpy::ndarray::{ArrayD, IxDyn};
-    use numpy::{PyArray1, PyArrayDyn};
+    use scirs2_core::ndarray::{ArrayD, IxDyn};
+    use scirs2_numpy::{PyArray1, PyArrayDyn};
 
     // First create an ndarray from the data and shape
     let ndarray = ArrayD::from_shape_vec(IxDyn(&shape), data).map_err(|e| {
@@ -326,8 +534,32 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.setattr("__version__", "0.1.0-alpha.1")?;
     m.setattr("__author__", "TenfloweRS Team")?;
 
+    // Register custom exceptions
+    error_mapping::register_exceptions(py, m)?;
+
     // Register core tensor class
     m.add_class::<tensor_ops::PyTensor>()?;
+
+    // Register dtype system
+    m.add_class::<dtype::PyDType>()?;
+    m.add_function(wrap_pyfunction!(dtype::is_safe_cast_py, py)?)?;
+    m.add_function(wrap_pyfunction!(dtype::result_type, py)?)?;
+    m.add_function(wrap_pyfunction!(dtype::promote_types, py)?)?;
+
+    // Add dtype constants for convenience
+    m.setattr("float32", dtype::dtypes::FLOAT32)?;
+    m.setattr("float64", dtype::dtypes::FLOAT64)?;
+    m.setattr("float16", dtype::dtypes::FLOAT16)?;
+    m.setattr("bfloat16", dtype::dtypes::BFLOAT16)?;
+    m.setattr("int8", dtype::dtypes::INT8)?;
+    m.setattr("int16", dtype::dtypes::INT16)?;
+    m.setattr("int32", dtype::dtypes::INT32)?;
+    m.setattr("int64", dtype::dtypes::INT64)?;
+    m.setattr("uint8", dtype::dtypes::UINT8)?;
+    m.setattr("uint16", dtype::dtypes::UINT16)?;
+    m.setattr("uint32", dtype::dtypes::UINT32)?;
+    m.setattr("uint64", dtype::dtypes::UINT64)?;
+    m.setattr("bool", dtype::dtypes::BOOL)?;
 
     // Register neural network functions using new modular structure
     neural::register_neural_functions(py, m)?;
@@ -404,6 +636,30 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tensor_from_numpy, py)?)?;
     m.add_function(wrap_pyfunction!(tensor_to_numpy, py)?)?;
 
+    // Register utility functions for tensor inspection and manipulation
+    m.add_function(wrap_pyfunction!(utils::tensor_info, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::same_shape, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::is_scalar, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::is_vector, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::is_matrix, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::numel, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::validate_shapes, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::tensor_summary, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::all_same_shape, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::broadcast_shape, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::is_broadcastable, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::tensor_memory_bytes, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::tensor_memory_str, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::format_bytes, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::print_tensor_info, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::validate_dimension, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::normalize_dimension, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::arange, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::linspace, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::get_device_info, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::is_gpu_available, py)?)?;
+    m.add_function(wrap_pyfunction!(utils::version, py)?)?;
+
     // Add submodules for specialized functionality
     let benchmarks_module = PyModule::new(py, "benchmarks")?;
     benchmarks::register_benchmark_functions(py, &benchmarks_module)?;
@@ -417,6 +673,23 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let memory_module = PyModule::new(py, "memory")?;
     memory_optimizer::register_memory_functions(py, &memory_module)?;
     m.add_submodule(&memory_module)?;
+
+    // Register serialization functions
+    m.add_class::<serialization::PyCheckpointManager>()?;
+    m.add_function(wrap_pyfunction!(serialization::save_tensor, py)?)?;
+    m.add_function(wrap_pyfunction!(serialization::load_tensor, py)?)?;
+    m.add_function(wrap_pyfunction!(serialization::save_state_dict, py)?)?;
+    m.add_function(wrap_pyfunction!(serialization::load_state_dict, py)?)?;
+
+    // Register evaluation metrics
+    m.add_function(wrap_pyfunction!(metrics::accuracy, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::precision_recall_f1, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::mean_squared_error, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::mean_absolute_error, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::r2_score, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::top_k_accuracy, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::auc_roc, py)?)?;
+    m.add_function(wrap_pyfunction!(metrics::confusion_matrix, py)?)?;
 
     // Create a torch-compatible namespace for PyTorch users with version handling
     let torch_module = PyModule::new(py, "torch")?;

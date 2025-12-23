@@ -1,5 +1,5 @@
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{ops::manipulation::broadcast_to, Result, Tensor};
 
 /// Global Max Pooling - reduces spatial dimensions to 1x1 by taking maximum
@@ -373,9 +373,9 @@ where
         }
 
         // Take max over spatial dimensions (depth, height, width)
-        // TODO: Implement proper max pooling when tensor.max() method trait bounds are resolved
-        // For now, return input as placeholder to achieve compilation success
-        Ok(input.clone())
+        // For [batch, channels, depth, height, width], reduce over axes [2, 3, 4]
+        let axes = vec![2i32, 3i32, 4i32];
+        tenflowers_core::ops::reduction::statistical::max(input, Some(&axes), self.keepdims)
     }
 
     fn parameters(&self) -> Vec<&Tensor<T>> {

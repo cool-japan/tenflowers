@@ -24,7 +24,7 @@ pub struct SimdNormalize<T> {
 
 impl<T> SimdNormalize<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     /// Create a new SIMD-accelerated normalization transform
     pub fn new(mean: Vec<T>, std: Vec<T>) -> Self {
@@ -85,7 +85,7 @@ where
     /// Scalar fallback for normalization
     fn normalize_scalar(&self, data: &mut [T], mean: T, std: T)
     where
-        T: num_traits::Float,
+        T: scirs2_core::numeric::Float,
     {
         for value in data.iter_mut() {
             *value = (*value - mean) / std;
@@ -103,7 +103,7 @@ where
 
 impl<T> Transform<T> for SimdNormalize<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         let (features, labels) = sample;
@@ -209,7 +209,7 @@ where
 
 impl<T> Transform<T> for SimdNormalizeScalarOnly<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         let (features, labels) = sample;

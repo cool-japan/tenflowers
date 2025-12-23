@@ -5,7 +5,7 @@
 //! channel in each sample, making it particularly useful for style transfer tasks.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Instance Normalization - normalizes each sample and channel independently

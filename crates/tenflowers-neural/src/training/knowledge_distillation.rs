@@ -1,7 +1,7 @@
 use crate::loss::{advanced_knowledge_distillation_loss, knowledge_distillation_loss};
 use crate::optimizers::Optimizer;
 use crate::Model;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Configuration for knowledge distillation training

@@ -4,7 +4,7 @@
 //! typically used for video/volumetric data processing in neural networks.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// 3D Convolutional layer for video/volumetric data processing
@@ -138,7 +138,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         // Input shape: [batch_size, in_channels, depth, height, width]
@@ -205,7 +205,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let input_shape = input.shape().dims();
     let weight_shape = weight.shape().dims();

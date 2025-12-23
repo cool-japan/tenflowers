@@ -5,9 +5,9 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Signed, Zero};
 use rustfft::{num_complex::Complex, FftPlanner};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::{Float, FromPrimitive, Signed, Zero};
 use std::fmt::Debug;
 
 use super::fft1d::fft;

@@ -1,3 +1,147 @@
+//! Neural network layer implementations.
+//!
+//! This module provides a comprehensive collection of neural network layers that can be
+//! composed to build complex models. All layers implement the [`Layer`] trait, providing
+//! a consistent interface for forward and backward propagation.
+//!
+//! # Layer Categories
+//!
+//! ## Core Layers
+//!
+//! - [`Dense`]: Fully-connected (linear) layer with optional bias
+//! - [`Conv1D`], [`Conv2D`], [`Conv3D`]: Convolutional layers for 1D, 2D, and 3D data
+//! - [`ConvTranspose2D`]: Transposed convolution for upsampling
+//!
+//! ## Activation Layers
+//!
+//! - [`Activation`]: Standard activation functions (ReLU, Tanh, Sigmoid, etc.)
+//! - [`PReLU`]: Parametric ReLU with learnable parameters
+//! - [`SwiGLU`], [`GeGLU`]: Gated linear units for transformers
+//!
+//! ## Attention Mechanisms
+//!
+//! - [`MultiHeadAttention`]: Standard multi-head attention with Flash Attention support
+//! - [`MultiQueryAttention`]: Efficient multi-query attention
+//! - [`TransformerEncoder`], [`TransformerDecoder`]: Complete transformer blocks
+//! - [`FeedForwardNetwork`]: Position-wise feed-forward network
+//!
+//! ## Normalization
+//!
+//! - [`BatchNorm`]: Batch normalization with running statistics
+//! - [`LayerNorm`]: Layer normalization for transformers
+//! - [`RMSNorm`]: Root mean square normalization (LLaMA style)
+//! - [`GroupNorm`]: Group normalization for small batches
+//! - [`InstanceNorm`]: Instance normalization for style transfer
+//!
+//! ## Recurrent Layers
+//!
+//! - [`RNN`]: Basic recurrent neural network
+//! - [`LSTM`]: Long short-term memory with forget gates
+//! - [`GRU`]: Gated recurrent unit
+//!
+//! ## Regularization
+//!
+//! - [`Dropout`]: Standard dropout for regularization
+//! - [`SpatialDropout2D`]: Spatial dropout for convolutional layers
+//! - [`StochasticDepth`]: Stochastic depth (drop path)
+//!
+//! ## Pooling Operations
+//!
+//! - [`MaxPool2D`], [`AvgPool2D`]: Standard 2D pooling
+//! - [`GlobalMaxPool2D`], [`GlobalAvgPool2D`]: Global pooling
+//! - [`AdaptiveAvgPool2D`]: Adaptive pooling to target size
+//!
+//! ## Embeddings
+//!
+//! - [`Embedding`]: Token embedding layer
+//! - [`SinusoidalPositionalEncoding`]: Fixed positional encodings (Transformer)
+//! - [`LearnedPositionalEncoding`]: Learnable positional encodings
+//! - [`RotaryPositionalEmbedding`]: Rotary position embeddings (RoPE)
+//!
+//! ## Advanced Architectures
+//!
+//! - [`MambaBlock`]: Mamba state-space model block
+//! - [`StateSpaceModel`]: Generic state-space model (S4, S5)
+//! - [`MixtureOfExperts`]: Sparse mixture of experts layer
+//! - [`GraphConv`]: Graph convolution for graph neural networks
+//!
+//! # Usage Examples
+//!
+//! ## Building a Simple Network
+//!
+//! ```rust,no_run
+//! use tenflowers_neural::layers::{Dense, Activation};
+//! use tenflowers_neural::ActivationFunction;
+//! use tenflowers_core::Tensor;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let layer1 = Dense::new(784, 128)?;
+//! let activation = Activation::new(ActivationFunction::ReLU);
+//! let layer2 = Dense::new(128, 10)?;
+//!
+//! let input = Tensor::zeros(&[32, 784]);
+//! let hidden = layer1.forward(&input)?;
+//! let activated = activation.forward(&hidden)?;
+//! let output = layer2.forward(&activated)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Convolutional Network
+//!
+//! ```rust,no_run
+//! use tenflowers_neural::layers::{Conv2D, BatchNorm, MaxPool2D};
+//! use tenflowers_core::Tensor;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let conv = Conv2D::new(3, 64, 3, 1, 1)?;  // in_channels, out_channels, kernel, stride, padding
+//! let bn = BatchNorm::new(64)?;
+//! let pool = MaxPool2D::new(2, 2, 0)?;      // kernel_size, stride, padding
+//!
+//! let input = Tensor::zeros(&[32, 3, 224, 224]); // NCHW format
+//! let features = conv.forward(&input)?;
+//! let normalized = bn.forward(&features, true)?; // training mode
+//! let pooled = pool.forward(&normalized)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Transformer Block
+//!
+//! ```rust,no_run
+//! use tenflowers_neural::layers::{MultiHeadAttention, LayerNorm, FeedForwardNetwork};
+//! use tenflowers_core::Tensor;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let attention = MultiHeadAttention::new(512, 8, 0.1)?; // d_model, n_heads, dropout
+//! let norm1 = LayerNorm::new(512, 1e-5)?;
+//! let ffn = FeedForwardNetwork::new(512, 2048, 0.1)?;
+//! let norm2 = LayerNorm::new(512, 1e-5)?;
+//!
+//! let x = Tensor::zeros(&[32, 128, 512]); // batch, seq_len, d_model
+//! let attn_out = attention.forward(&x, &x, &x, None)?;
+//! let x = norm1.forward(&(x.clone() + attn_out))?;
+//! let ffn_out = ffn.forward(&x)?;
+//! let output = norm2.forward(&(x + ffn_out))?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## State-Space Model (Mamba)
+//!
+//! ```rust,no_run
+//! use tenflowers_neural::layers::MambaBlock;
+//! use tenflowers_core::Tensor;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mamba = MambaBlock::new(512, 16)?; // d_model, d_state
+//!
+//! let input = Tensor::zeros(&[32, 1024, 512]); // batch, seq_len, d_model
+//! let output = mamba.forward(&input)?;
+//! # Ok(())
+//! # }
+//! ```
+
 pub mod activation;
 pub mod attention;
 pub mod augmentation;
@@ -21,8 +165,10 @@ pub use activation::{
     ParametricSoftplus, SwiGLU as SwiGLUActivation,
 };
 pub use attention::{
-    FeedForwardNetwork, GeGLU, KVCache, MultiHeadAttention, MultiQueryAttention, SwiGLU,
-    TransformerDecoder, TransformerEncoder,
+    analyze_attention_patterns, apply_attention_mask, apply_rotary_position_embedding,
+    create_causal_mask, create_padding_mask, scaled_dot_product_attention,
+    sinusoidal_positional_encoding, AttentionStats, FeedForwardNetwork, GeGLU, KVCache,
+    MultiHeadAttention, MultiQueryAttention, SwiGLU, TransformerDecoder, TransformerEncoder,
 };
 pub use augmentation::{CutMix, LabelSmoothing, Mixup};
 pub use conv::{Conv1D, Conv2D, Conv3D, ConvTranspose2D, DepthwiseConv2D, SeparableConv2D};
@@ -42,7 +188,10 @@ pub use pooling::{
     FractionalMaxPool2D, GlobalAvgPool2D, GlobalAvgPool3D, GlobalMaxPool2D, GlobalMaxPool3D,
     MaxPool2D, MaxPool3D, ROIAlign2D, ROIPool2D,
 };
-pub use rnn::{ResetGateVariation, GRU, LSTM, RNN};
+pub use rnn::{
+    BahdanauAttention, HierarchicalAttention, LuongAttention, LuongAttentionType,
+    ResetGateVariation, GRU, LSTM, RNN,
+};
 pub use state_space::{MambaBlock, StateSpaceModel};
 pub use stochastic_depth::{StochasticDepth, StochasticDepthNoResidual};
 pub use ultra_conv_simple::{ultra_conv2d, ConvPerformanceMetrics, UltraConv2D, UltraConvConfig};

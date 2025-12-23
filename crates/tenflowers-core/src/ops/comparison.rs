@@ -1,7 +1,7 @@
 use crate::tensor::TensorStorage;
 use crate::{Result, Shape, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{ArrayD, Zip};
+use scirs2_core::ndarray::{ArrayD, Zip};
+use scirs2_core::numeric::Zero;
 
 #[cfg(feature = "gpu")]
 use crate::gpu::gpu_comparison_op_dispatch;
@@ -133,7 +133,7 @@ where
 
 /// Broadcast an array to a target shape
 fn broadcast_array<T: Clone>(array: &ArrayD<T>, target_shape: &Shape) -> Result<ArrayD<T>> {
-    let target_dims = ndarray::IxDyn(target_shape.dims());
+    let target_dims = scirs2_core::ndarray::IxDyn(target_shape.dims());
 
     // If shapes match, just clone
     if array.shape() == target_shape.dims() {
@@ -296,9 +296,16 @@ where
         let result_buffer_u32 = if gpu_a.len() == gpu_b.len() && gpu_a.len() == output_len {
             crate::gpu::ops::execute_comparison_op(gpu_a_f32, gpu_b_f32, gpu_op, output_len)?
         } else {
-            // TODO: Implement comparison op with broadcasting
-            // For now, fall back to regular comparison op
-            crate::gpu::ops::execute_comparison_op(gpu_a_f32, gpu_b_f32, gpu_op, output_len)?
+            // Use broadcasting version
+            crate::gpu::ops::execute_comparison_op_with_broadcasting(
+                gpu_a_f32,
+                gpu_b_f32,
+                gpu_op,
+                shape_a.dims(),
+                shape_b.dims(),
+                broadcast_shape.dims(),
+                output_len,
+            )?
         };
 
         // Convert u32 result to u8
@@ -328,9 +335,16 @@ where
         let result_buffer_u32 = if gpu_a.len() == gpu_b.len() && gpu_a.len() == output_len {
             crate::gpu::ops::execute_comparison_op(gpu_a_i32, gpu_b_i32, gpu_op, output_len)?
         } else {
-            // TODO: Implement comparison op with broadcasting
-            // For now, fall back to regular comparison op
-            crate::gpu::ops::execute_comparison_op(gpu_a_i32, gpu_b_i32, gpu_op, output_len)?
+            // Use broadcasting version
+            crate::gpu::ops::execute_comparison_op_with_broadcasting(
+                gpu_a_i32,
+                gpu_b_i32,
+                gpu_op,
+                shape_a.dims(),
+                shape_b.dims(),
+                broadcast_shape.dims(),
+                output_len,
+            )?
         };
 
         // Convert u32 result to u8
@@ -389,9 +403,16 @@ where
         let result_buffer_u32 = if gpu_a.len() == gpu_b.len() && gpu_a.len() == output_len {
             crate::gpu::ops::execute_comparison_op(gpu_a_f64, gpu_b_f64, gpu_op, output_len)?
         } else {
-            // TODO: Implement comparison op with broadcasting
-            // For now, fall back to regular comparison op
-            crate::gpu::ops::execute_comparison_op(gpu_a_f64, gpu_b_f64, gpu_op, output_len)?
+            // Use broadcasting version
+            crate::gpu::ops::execute_comparison_op_with_broadcasting(
+                gpu_a_f64,
+                gpu_b_f64,
+                gpu_op,
+                shape_a.dims(),
+                shape_b.dims(),
+                broadcast_shape.dims(),
+                output_len,
+            )?
         };
 
         let result_buffer = convert_u32_to_u8_gpu_buffer(result_buffer_u32)?;
@@ -546,6 +567,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
 mod tests {
     use super::*;
 

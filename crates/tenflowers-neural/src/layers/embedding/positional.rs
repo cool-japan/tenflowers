@@ -10,7 +10,7 @@
 //! in transformer and other sequence-to-sequence architectures.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use scirs2_core::random::rand_prelude::*;
 use tenflowers_core::{ops::concat, Result, Tensor, TensorError};
 
@@ -41,7 +41,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -109,13 +109,13 @@ where
     /// Apply dropout to positional encodings during training
     fn apply_dropout(&self, input: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         let dropout_rate = self._dropout;
         let keep_prob = 1.0 - dropout_rate;
 
         // Simple dropout implementation
-        let mut rng = scirs2_core::random::rng();
+        let mut rng = scirs2_core::random::thread_rng();
         let shape = input.shape().dims();
         let total_elements = shape.iter().product::<usize>();
 
@@ -209,7 +209,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -263,7 +263,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -299,13 +299,13 @@ where
     /// Apply dropout to positional encodings during training
     fn apply_dropout(&self, input: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         let dropout_rate = self._dropout;
         let keep_prob = 1.0 - dropout_rate;
 
         // Simple dropout implementation
-        let mut rng = scirs2_core::random::rng();
+        let mut rng = scirs2_core::random::thread_rng();
         let shape = input.shape().dims();
         let total_elements = shape.iter().product::<usize>();
 
@@ -399,7 +399,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

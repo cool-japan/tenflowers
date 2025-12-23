@@ -19,6 +19,10 @@ pub mod argops;
 pub mod boolean;
 pub mod common;
 pub mod cumulative;
+#[cfg(feature = "gpu")]
+pub mod gpu_execution;
+#[cfg(feature = "gpu")]
+pub mod gpu_kernels;
 pub mod segment;
 pub mod statistical;
 

@@ -11,8 +11,8 @@ impl<T> Tensor<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -43,7 +43,7 @@ where
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a
@@ -86,8 +86,8 @@ where
                     TensorStorage::Gpu(ref gpu_buf) => {
                         // For GPU, we need to convert u8 to bool
                         let cpu_result = gpu_buf.to_cpu()?;
-                        let arr = scirs2_autograd::ndarray::ArrayD::from_shape_vec(
-                            scirs2_autograd::ndarray::IxDyn(result.shape().dims()),
+                        let arr = scirs2_core::ndarray::ArrayD::from_shape_vec(
+                            scirs2_core::ndarray::IxDyn(result.shape().dims()),
                             cpu_result,
                         )
                         .map_err(|e| crate::TensorError::invalid_shape_simple(e.to_string()))?;
@@ -124,8 +124,8 @@ where
                     TensorStorage::Gpu(ref gpu_buf) => {
                         // For GPU, we need to convert u8 to bool
                         let cpu_result = gpu_buf.to_cpu()?;
-                        let arr = scirs2_autograd::ndarray::ArrayD::from_shape_vec(
-                            scirs2_autograd::ndarray::IxDyn(result.shape().dims()),
+                        let arr = scirs2_core::ndarray::ArrayD::from_shape_vec(
+                            scirs2_core::ndarray::IxDyn(result.shape().dims()),
                             cpu_result,
                         )
                         .map_err(|e| crate::TensorError::invalid_shape_simple(e.to_string()))?;
@@ -161,7 +161,7 @@ where
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a
@@ -204,8 +204,8 @@ where
                     TensorStorage::Gpu(ref gpu_buf) => {
                         // For GPU, we need to convert u8 to bool
                         let cpu_result = gpu_buf.to_cpu()?;
-                        let arr = scirs2_autograd::ndarray::ArrayD::from_shape_vec(
-                            scirs2_autograd::ndarray::IxDyn(result.shape().dims()),
+                        let arr = scirs2_core::ndarray::ArrayD::from_shape_vec(
+                            scirs2_core::ndarray::IxDyn(result.shape().dims()),
                             cpu_result,
                         )
                         .map_err(|e| crate::TensorError::invalid_shape_simple(e.to_string()))?;
@@ -241,7 +241,7 @@ where
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a
@@ -284,8 +284,8 @@ where
                     TensorStorage::Gpu(ref gpu_buf) => {
                         // For GPU, we need to convert u8 to bool
                         let cpu_result = gpu_buf.to_cpu()?;
-                        let arr = scirs2_autograd::ndarray::ArrayD::from_shape_vec(
-                            scirs2_autograd::ndarray::IxDyn(result.shape().dims()),
+                        let arr = scirs2_core::ndarray::ArrayD::from_shape_vec(
+                            scirs2_core::ndarray::IxDyn(result.shape().dims()),
                             cpu_result,
                         )
                         .map_err(|e| crate::TensorError::invalid_shape_simple(e.to_string()))?;
@@ -353,7 +353,7 @@ impl Tensor<bool> {
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a
@@ -418,7 +418,7 @@ impl Tensor<bool> {
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a
@@ -504,7 +504,7 @@ impl Tensor<bool> {
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-                use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+                use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
 
                 let a_broadcast =
                     arr_a

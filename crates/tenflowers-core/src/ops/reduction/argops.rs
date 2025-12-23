@@ -7,7 +7,7 @@
 use super::common::normalize_axis;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use scirs2_autograd::ndarray::{ArrayD, Axis};
+use scirs2_core::ndarray::{ArrayD, Axis};
 
 /// Compute argmax along axes
 pub fn argmax<T>(x: &Tensor<T>, axis: Option<i32>, keepdims: bool) -> Result<Tensor<usize>>
@@ -68,12 +68,10 @@ where
                     shape.remove(normalized_axis);
                 }
                 shape
+            } else if keepdims {
+                vec![1; x.shape().rank()]
             } else {
-                if keepdims {
-                    vec![1; x.shape().rank()]
-                } else {
-                    vec![]
-                }
+                vec![]
             };
 
             let output_len = if result_shape.is_empty() {
@@ -118,7 +116,7 @@ where
                                 .iter()
                                 .map(|&f| {
                                     // Safe conversion from f32 to usize for indices
-                                    if let Some(f_val) = bytemuck::try_cast::<T, f32>(f).ok() {
+                                    if let Ok(f_val) = bytemuck::try_cast::<T, f32>(f) {
                                         f_val as usize
                                     } else {
                                         0 // fallback value
@@ -196,12 +194,10 @@ where
                     shape.remove(normalized_axis);
                 }
                 shape
+            } else if keepdims {
+                vec![1; x.shape().rank()]
             } else {
-                if keepdims {
-                    vec![1; x.shape().rank()]
-                } else {
-                    vec![]
-                }
+                vec![]
             };
 
             let output_len = if result_shape.is_empty() {
@@ -246,7 +242,7 @@ where
                                 .iter()
                                 .map(|&f| {
                                     // Safe conversion from f32 to usize for indices
-                                    if let Some(f_val) = bytemuck::try_cast::<T, f32>(f).ok() {
+                                    if let Ok(f_val) = bytemuck::try_cast::<T, f32>(f) {
                                         f_val as usize
                                     } else {
                                         0 // fallback value
@@ -381,18 +377,10 @@ where
                         &crate::gpu::buffer::GpuBuffer<f32>,
                     >(gpu_buffer)
                 };
-                let (values_f32, indices_u32) =
-                    // TODO: Implement GPU topk operation
-                    return Err(TensorError::unsupported_operation_simple(
-                        "GPU topk operation not yet implemented".to_string()
-                    ))?;
-                let values_t = unsafe {
-                    std::mem::transmute::<
-                        crate::gpu::buffer::GpuBuffer<f32>,
-                        crate::gpu::buffer::GpuBuffer<T>,
-                    >(values_f32)
-                };
-                (values_t, indices_u32)
+                // TODO: Implement GPU topk operation
+                return Err(TensorError::unsupported_operation_simple(
+                    "GPU topk operation not yet implemented".to_string(),
+                ));
             } else {
                 return Err(TensorError::unsupported_operation_simple(format!(
                     "GPU topk only supports f32 currently, got {}",
@@ -400,6 +388,7 @@ where
                 )));
             };
 
+            #[allow(unreachable_code)]
             // Create output tensors
             // Compute output shape: same as input but axis dimension becomes k
             let mut values_shape = shape.dims().to_vec();

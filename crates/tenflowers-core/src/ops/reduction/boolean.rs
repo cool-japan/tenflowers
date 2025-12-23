@@ -6,7 +6,7 @@
 use super::common::normalize_axis;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use scirs2_autograd::ndarray::{ArrayD, Axis};
+use scirs2_core::ndarray::{ArrayD, Axis};
 
 /// Check if all elements are true along specified axes.
 ///

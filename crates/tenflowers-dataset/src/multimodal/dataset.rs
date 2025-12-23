@@ -179,7 +179,13 @@ where
 
 impl<T> Dataset<T> for MultimodalDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     fn len(&self) -> usize {
         self.samples.len()
@@ -197,7 +203,13 @@ where
 
 impl<T> MultimodalDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     /// Fuse modalities according to the configured strategy
     pub fn fuse_modalities(&self, sample: &MultimodalSample<T>) -> Result<Tensor<T>> {

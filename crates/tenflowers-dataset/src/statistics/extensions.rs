@@ -22,8 +22,8 @@ impl<T, D> DatasetStatisticsExt<T> for D
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::Float
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
         + std::fmt::Debug
         + Send
         + Sync

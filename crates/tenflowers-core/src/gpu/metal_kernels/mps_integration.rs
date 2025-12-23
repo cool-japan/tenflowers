@@ -66,7 +66,7 @@ impl MPSNeuralOps {
         let command_queue = self.command_queue.clone();
         let command_buffer = command_queue.new_command_buffer();
 
-        for (_layer_idx, layer) in layers.iter().enumerate() {
+        for layer in layers.iter() {
             match &layer.layer_type {
                 LayerType::Dense => {
                     // Execute dense layer using optimized matrix multiplication
@@ -304,7 +304,7 @@ impl MPSNeuralOps {
                         let weight_grad_data = vec![0.0f32; weights.len()];
                         let weight_gradient = Tensor::from_vec(
                             weight_grad_data,
-                            &vec![
+                            &[
                                 weights.len()
                                     / prev_activation.shape()[prev_activation.shape().len() - 1],
                                 prev_activation.shape()[prev_activation.shape().len() - 1],
@@ -325,7 +325,7 @@ impl MPSNeuralOps {
                         ];
                         let bias_gradient = Tensor::from_vec(
                             bias_grad_data,
-                            &vec![current_gradient.shape()[current_gradient.shape().len() - 1]],
+                            &[current_gradient.shape()[current_gradient.shape().len() - 1]],
                         )
                         .map_err(|e| {
                             TensorError::invalid_operation_simple(format!(
@@ -356,7 +356,7 @@ impl MPSNeuralOps {
                         let weight_grad_data = vec![0.0f32; weights.len()];
                         let weight_gradient = Tensor::from_vec(
                             weight_grad_data,
-                            &vec![weights.len() / 64, 8, 8], // Simplified shape
+                            &[weights.len() / 64, 8, 8], // Simplified shape
                         )
                         .map_err(|e| {
                             TensorError::invalid_operation_simple(format!(
@@ -387,7 +387,7 @@ impl MPSNeuralOps {
                     ) {
                         // Scale gradients
                         let scale_grad_data = vec![0.0f32; scale.len()];
-                        let scale_gradient = Tensor::from_vec(scale_grad_data, &vec![scale.len()])
+                        let scale_gradient = Tensor::from_vec(scale_grad_data, &[scale.len()])
                             .map_err(|e| {
                                 TensorError::invalid_operation_simple(format!(
                                     "Failed to create scale gradient: {}",
@@ -397,15 +397,13 @@ impl MPSNeuralOps {
 
                         // Offset gradients
                         let offset_grad_data = vec![0.0f32; scale.len()];
-                        let offset_gradient =
-                            Tensor::from_vec(offset_grad_data, &vec![scale.len()]).map_err(
-                                |e| {
-                                    TensorError::invalid_operation_simple(format!(
-                                        "Failed to create offset gradient: {}",
-                                        e
-                                    ))
-                                },
-                            )?;
+                        let offset_gradient = Tensor::from_vec(offset_grad_data, &[scale.len()])
+                            .map_err(|e| {
+                                TensorError::invalid_operation_simple(format!(
+                                    "Failed to create offset gradient: {}",
+                                    e
+                                ))
+                            })?;
 
                         layer_gradients.push(scale_gradient);
                         layer_gradients.push(offset_gradient);
@@ -418,7 +416,7 @@ impl MPSNeuralOps {
                     {
                         // Gamma gradients
                         let gamma_grad_data = vec![0.0f32; gamma.len()];
-                        let gamma_gradient = Tensor::from_vec(gamma_grad_data, &vec![gamma.len()])
+                        let gamma_gradient = Tensor::from_vec(gamma_grad_data, &[gamma.len()])
                             .map_err(|e| {
                                 TensorError::invalid_operation_simple(format!(
                                     "Failed to create gamma gradient: {}",
@@ -428,7 +426,7 @@ impl MPSNeuralOps {
 
                         // Beta gradients
                         let beta_grad_data = vec![0.0f32; gamma.len()];
-                        let beta_gradient = Tensor::from_vec(beta_grad_data, &vec![gamma.len()])
+                        let beta_gradient = Tensor::from_vec(beta_grad_data, &[gamma.len()])
                             .map_err(|e| {
                                 TensorError::invalid_operation_simple(format!(
                                     "Failed to create beta gradient: {}",

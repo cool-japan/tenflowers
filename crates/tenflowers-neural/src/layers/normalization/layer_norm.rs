@@ -5,7 +5,7 @@
 //! making it suitable for variable-length sequences and recurrent networks.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Layer Normalization - normalizes inputs across the feature dimension
@@ -27,7 +27,7 @@ where
         + Default
         + Zero
         + One
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

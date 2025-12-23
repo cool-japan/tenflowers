@@ -139,8 +139,8 @@ pub struct ZarrDatasetBuilder<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
@@ -154,13 +154,13 @@ impl<T> ZarrDatasetBuilder<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
         + 'static
-        + num_traits::cast::NumCast,
+        + scirs2_core::num_traits::cast::NumCast,
 {
     /// Create a new Zarr dataset builder
     pub fn new() -> Self {
@@ -253,13 +253,13 @@ impl<T> Default for ZarrDatasetBuilder<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
         + 'static
-        + num_traits::cast::NumCast,
+        + scirs2_core::num_traits::cast::NumCast,
 {
     fn default() -> Self {
         Self::new()
@@ -270,7 +270,7 @@ where
 #[derive(Debug, Clone)]
 pub struct ZarrDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     config: ZarrConfig,
     array_info: ZarrArrayInfo,
@@ -283,13 +283,13 @@ impl<T> ZarrDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
         + 'static
-        + num_traits::cast::NumCast,
+        + scirs2_core::num_traits::cast::NumCast,
 {
     /// Create a new Zarr dataset from configuration
     pub fn from_config(config: ZarrConfig) -> Result<Self> {
@@ -584,10 +584,13 @@ where
             };
 
             // Convert to target type T using num_traits for safe conversion
-            let converted = num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
-                eprintln!("Warning: Failed to convert f32 {_value} to target type, using default");
-                T::default()
-            });
+            let converted =
+                scirs2_core::num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
+                    eprintln!(
+                        "Warning: Failed to convert f32 {_value} to target type, using default"
+                    );
+                    T::default()
+                });
             data.push(converted);
         }
 
@@ -633,10 +636,13 @@ where
             };
 
             // Convert to target type T using num_traits for safe conversion
-            let converted = num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
-                eprintln!("Warning: Failed to convert f64 {_value} to target type, using default");
-                T::default()
-            });
+            let converted =
+                scirs2_core::num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
+                    eprintln!(
+                        "Warning: Failed to convert f64 {_value} to target type, using default"
+                    );
+                    T::default()
+                });
             data.push(converted);
         }
 
@@ -664,10 +670,13 @@ where
             };
 
             // Convert to target type T using num_traits for safe conversion
-            let converted = num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
-                eprintln!("Warning: Failed to convert i32 {_value} to target type, using default");
-                T::default()
-            });
+            let converted =
+                scirs2_core::num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
+                    eprintln!(
+                        "Warning: Failed to convert i32 {_value} to target type, using default"
+                    );
+                    T::default()
+                });
             data.push(converted);
         }
 
@@ -713,10 +722,13 @@ where
             };
 
             // Convert to target type T using num_traits for safe conversion
-            let converted = num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
-                eprintln!("Warning: Failed to convert i64 {_value} to target type, using default");
-                T::default()
-            });
+            let converted =
+                scirs2_core::num_traits::cast::NumCast::from(_value).unwrap_or_else(|| {
+                    eprintln!(
+                        "Warning: Failed to convert i64 {_value} to target type, using default"
+                    );
+                    T::default()
+                });
             data.push(converted);
         }
 
@@ -729,10 +741,13 @@ where
 
         for &_byte in bytes {
             // Convert to target type T using num_traits for safe conversion
-            let converted = num_traits::cast::NumCast::from(_byte).unwrap_or_else(|| {
-                eprintln!("Warning: Failed to convert u8 {_byte} to target type, using default");
-                T::default()
-            });
+            let converted =
+                scirs2_core::num_traits::cast::NumCast::from(_byte).unwrap_or_else(|| {
+                    eprintln!(
+                        "Warning: Failed to convert u8 {_byte} to target type, using default"
+                    );
+                    T::default()
+                });
             data.push(converted);
         }
 
@@ -828,13 +843,13 @@ impl<T> Dataset<T> for ZarrDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
         + 'static
-        + num_traits::cast::NumCast,
+        + scirs2_core::num_traits::cast::NumCast,
 {
     fn len(&self) -> usize {
         self.array_info.shape[0]
@@ -872,8 +887,8 @@ pub trait ZarrDatasetExt<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
@@ -893,13 +908,13 @@ impl<T> ZarrDatasetExt<T> for ZarrDataset<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::One
         + std::str::FromStr
         + Send
         + Sync
         + 'static
-        + num_traits::cast::NumCast,
+        + scirs2_core::num_traits::cast::NumCast,
 {
     fn from_zarr_path<P: AsRef<Path>>(path: P) -> Result<ZarrDataset<T>> {
         ZarrDatasetBuilder::new().array_path(path).build()

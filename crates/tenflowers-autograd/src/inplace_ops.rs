@@ -3,7 +3,7 @@ use crate::tape::{GradientTape, Operation, TensorId, TrackedTensor};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use tenflowers_core::{Result, Tensor};
-// use num_traits::{Zero, One};
+// use scirs2_core::num_traits::{Zero, One};
 
 /// In-place operation tracker
 ///
@@ -87,8 +87,8 @@ where
     where
         T: std::ops::Add<Output = T>
             + std::ops::AddAssign
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -125,8 +125,8 @@ where
     where
         T: std::ops::Mul<Output = T>
             + std::ops::MulAssign
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -157,8 +157,8 @@ where
     where
         T: std::ops::Sub<Output = T>
             + std::ops::SubAssign
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -187,7 +187,11 @@ where
     /// In-place ReLU: self = relu(self)
     pub fn relu_inplace(&mut self) -> Result<()>
     where
-        T: PartialOrd + num_traits::Zero + num_traits::One + bytemuck::Pod + bytemuck::Zeroable,
+        T: PartialOrd
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         if let Some(tape_arc) = self.tape.upgrade() {
             let tape = GradientTape::from_inner(tape_arc);
@@ -209,8 +213,8 @@ where
     pub fn neg_inplace(&mut self) -> Result<()>
     where
         T: std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -235,8 +239,8 @@ where
     where
         T: std::ops::Add<Output = T>
             + std::ops::AddAssign
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -260,8 +264,8 @@ where
     where
         T: std::ops::Mul<Output = T>
             + std::ops::MulAssign
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -375,7 +379,7 @@ pub mod utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::Array1;
+    use scirs2_core::ndarray::Array1;
     use tenflowers_core::Tensor;
 
     #[test]
@@ -392,12 +396,11 @@ mod tests {
         x.add_inplace(&y).unwrap();
 
         // Check the result
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage {
-            assert!((array[[0]] - 4.0).abs() < 1e-6);
-            assert!((array[[1]] - 6.0).abs() < 1e-6);
-        } else {
-            panic!("Expected CPU storage");
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 4.0).abs() < 1e-6);
+        assert!((array[[1]] - 6.0).abs() < 1e-6);
     }
 
     #[test]
@@ -414,12 +417,11 @@ mod tests {
         x.mul_inplace(&y).unwrap();
 
         // Check the result
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage {
-            assert!((array[[0]] - 8.0).abs() < 1e-6);
-            assert!((array[[1]] - 15.0).abs() < 1e-6);
-        } else {
-            panic!("Expected CPU storage");
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 8.0).abs() < 1e-6);
+        assert!((array[[1]] - 15.0).abs() < 1e-6);
     }
 
     #[test]
@@ -451,12 +453,11 @@ mod tests {
         // Test scalar addition
         x.add_scalar_inplace(5.0).unwrap();
 
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage {
-            assert!((array[[0]] - 6.0).abs() < 1e-6);
-            assert!((array[[1]] - 7.0).abs() < 1e-6);
-        } else {
-            panic!("Expected CPU storage");
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 6.0).abs() < 1e-6);
+        assert!((array[[1]] - 7.0).abs() < 1e-6);
     }
 
     #[test]

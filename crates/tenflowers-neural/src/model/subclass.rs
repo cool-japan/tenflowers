@@ -72,7 +72,7 @@ impl<T> ModelBase<T> {
     /// Zero gradients for a collection of parameters
     pub fn zero_gradients(&self, params: &mut [&mut Tensor<T>])
     where
-        T: num_traits::Zero
+        T: scirs2_core::num_traits::Zero
             + Clone
             + Default
             + Send
@@ -240,7 +240,13 @@ pub trait ModelExt<T>: Model<T> {
     /// Count total number of parameters  
     fn parameter_count(&self) -> usize
     where
-        T: Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         self.parameters().iter().map(|p| p.size()).sum()
     }
@@ -248,7 +254,13 @@ pub trait ModelExt<T>: Model<T> {
     /// Count trainable parameters
     fn trainable_parameter_count(&self) -> usize
     where
-        T: Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         self.parameters()
             .iter()
@@ -390,7 +402,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -429,7 +441,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -491,15 +503,15 @@ pub mod helpers {
     /// Create a tensor with random normal distribution
     fn create_random_normal_tensor<T>(shape: &[usize], mean: T, std_dev: T) -> Result<Tensor<T>>
     where
-        T: num_traits::Float
+        T: scirs2_core::num_traits::Float
             + Copy
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + Default
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         // For now, create a simple implementation using available random operations
         // In practice, this would use proper random tensor generation
@@ -512,8 +524,8 @@ pub mod helpers {
             let random_data = (0..total_elements)
                 .map(|_| {
                     // Simple Box-Muller transform for normal distribution
-                    let u1: f32 = rand::random::<f32>().max(1e-10);
-                    let u2: f32 = rand::random::<f32>();
+                    let u1: f32 = scirs2_core::random::quick::random_f32().max(1e-10);
+                    let u2: f32 = scirs2_core::random::quick::random_f32();
                     let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
                     let std_dev_f32 = std_dev.to_f32().unwrap_or(0.01);
                     let mean_f32 = mean.to_f32().unwrap_or(0.0);
@@ -533,15 +545,15 @@ pub mod helpers {
     /// Initializes weights with variance = 2/(fan_in + fan_out)
     pub fn xavier_init<T>(model: &mut dyn Model<T>)
     where
-        T: num_traits::Float
+        T: scirs2_core::num_traits::Float
             + Copy
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + Default
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         for param in model.parameters_mut() {
             let shape = param.shape().dims();
@@ -565,15 +577,15 @@ pub mod helpers {
     /// Initializes weights with variance = 2/fan_in (designed for ReLU activations)
     pub fn he_init<T>(model: &mut dyn Model<T>)
     where
-        T: num_traits::Float
+        T: scirs2_core::num_traits::Float
             + Copy
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + Default
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         for param in model.parameters_mut() {
             let shape = param.shape().dims();
@@ -610,7 +622,13 @@ pub mod helpers {
     /// Get model info as a structured format
     pub fn model_info<T>(model: &dyn Model<T>) -> HashMap<String, String>
     where
-        T: Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let mut info = HashMap::new();
         let params = model.parameters();

@@ -3,7 +3,7 @@
 //! This module provides utility functions for FFT operations including
 //! twiddle factor generation, bit reversal tables, and helper functions.
 
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::numeric::{Float, FromPrimitive};
 
 /// Generate twiddle factors for FFT computation
 pub fn generate_twiddle_factors<T>(n: usize) -> Vec<T>

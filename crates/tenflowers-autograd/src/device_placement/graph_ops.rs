@@ -38,11 +38,14 @@ impl<T> GraphOperation<T> {
 
 /// Helper function to get device name for display
 pub(crate) fn device_name(device: &Device) -> &str {
+    #[allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
     match device {
         Device::Cpu => "CPU",
         #[cfg(feature = "gpu")]
         Device::Gpu(_) => "GPU",
         #[cfg(feature = "rocm")]
         Device::Rocm(_) => "ROCM",
+        #[cfg(not(any(feature = "gpu", feature = "rocm")))]
+        _ => unreachable!("GPU/ROCM variants should not exist without features"),
     }
 }

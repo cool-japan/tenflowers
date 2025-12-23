@@ -107,7 +107,9 @@ fn test_softmax_operation() {
     assert!(result_data[1] < result_data[2]);
 
     // Test gradient computation
-    let gradients = tape.gradient(&[y.clone()], &[x_tracked]).unwrap();
+    let gradients = tape
+        .gradient(std::slice::from_ref(&y), &[x_tracked])
+        .unwrap();
 
     let grad_x = gradients[0].as_ref().unwrap();
 

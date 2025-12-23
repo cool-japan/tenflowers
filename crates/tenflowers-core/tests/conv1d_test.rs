@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::{Array1, Array2, Array3};
+use scirs2_core::ndarray::{Array1, Array2, Array3};
 use tenflowers_core::{ops::conv1d, Device, Tensor};
 
 #[test]

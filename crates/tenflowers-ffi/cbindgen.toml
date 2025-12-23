@@ -1,0 +1,80 @@
+# Configuration for cbindgen - C header generation
+# See: https://github.com/mozilla/cbindgen/blob/master/docs.md
+
+language = "C"
+cpp_compat = true
+
+# Header content
+header = """
+/**
+ * TenfloweRS C API
+ *
+ * A pure Rust machine learning framework with C bindings.
+ *
+ * This header provides C bindings for the TenfloweRS library,
+ * enabling integration with C/C++ projects.
+ *
+ * @file tenflowers.h
+ * @version 0.1.0-alpha.2
+ * @license Apache-2.0 OR MIT
+ */
+"""
+
+include_guard = "TENFLOWERS_H"
+autogen_warning = "/* Warning: This file is auto-generated. Do not edit manually! */"
+pragma_once = true
+
+# Namespace configuration
+namespaces = []
+
+# Include directives
+sys_includes = ["stdint.h", "stdbool.h", "stddef.h"]
+includes = []
+
+# Renaming rules
+[parse]
+parse_deps = false
+include = []
+exclude = []
+
+# Renaming and prefixing
+[export]
+prefix = "TF_"
+item_types = ["globals", "enums", "structs", "unions", "typedefs", "opaque", "functions", "constants"]
+renaming_overrides_prefixing = false
+
+# Export configuration
+[export.rename]
+"PyTensor" = "Tensor"
+"PyGradientTape" = "GradientTape"
+
+# Layout configuration
+[layout]
+packed = false
+aligned_n = false
+
+# Enum configuration
+[enum]
+rename_variants = "ScreamingSnakeCase"
+add_sentinel = false
+prefix_with_name = true
+
+# Struct configuration
+[struct]
+rename_fields = "ScreamingSnakeCase"
+derive_eq = false
+derive_neq = false
+
+# Function configuration
+[fn]
+rename_args = "snake_case"
+args = "Auto"
+sort_by = "None"
+
+# Macro configuration
+[macro_expansion]
+bitflags = true
+
+# Documentation configuration
+[documentation]
+style = "doxy"

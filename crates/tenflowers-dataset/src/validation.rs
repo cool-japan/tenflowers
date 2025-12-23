@@ -140,7 +140,7 @@ where
         + PartialEq
         + PartialOrd
         + std::fmt::Display
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static,
@@ -425,7 +425,7 @@ where
         + PartialEq
         + PartialOrd
         + std::fmt::Display
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static,

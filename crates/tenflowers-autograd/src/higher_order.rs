@@ -20,17 +20,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -68,17 +68,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -143,17 +143,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -199,17 +199,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -243,17 +243,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -298,17 +298,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -379,17 +379,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -451,17 +451,17 @@ impl GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {

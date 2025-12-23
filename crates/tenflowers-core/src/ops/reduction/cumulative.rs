@@ -12,6 +12,7 @@
 //! GPU implementations are available when the "gpu" feature is enabled, providing
 //! highly optimized compute shader-based implementations for large arrays.
 
+use crate::shape_error_taxonomy::{validate_reduction_axis, ShapeErrorUtils};
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
 use std::sync::Arc;
@@ -41,7 +42,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -49,23 +50,12 @@ where
         + bytemuck::Zeroable,
 {
     let shape = x.shape().dims();
-    let ndim = shape.len();
 
     // Default to last axis if not specified
-    let axis = axis.unwrap_or(-1);
+    let axis_raw = axis.unwrap_or(-1);
 
-    // Normalize axis
-    let axis = if axis < 0 {
-        (ndim as i32 + axis) as usize
-    } else {
-        axis as usize
-    };
-
-    if axis >= ndim {
-        return Err(TensorError::invalid_shape_simple(format!(
-            "axis {axis} is out of bounds for array of dimension {ndim}"
-        )));
-    }
+    // Validate and normalize axis using standardized validation
+    let axis = validate_reduction_axis("cumsum", axis_raw as isize, x.shape())?;
 
     match &x.storage {
         TensorStorage::Cpu(array) => {
@@ -136,7 +126,7 @@ where
     T: Clone
         + Default
         + std::ops::Mul<Output = T>
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -144,23 +134,12 @@ where
         + bytemuck::Zeroable,
 {
     let shape = x.shape().dims();
-    let ndim = shape.len();
 
     // Default to last axis if not specified
-    let axis = axis.unwrap_or(-1);
+    let axis_raw = axis.unwrap_or(-1);
 
-    // Normalize axis
-    let axis = if axis < 0 {
-        (ndim as i32 + axis) as usize
-    } else {
-        axis as usize
-    };
-
-    if axis >= ndim {
-        return Err(TensorError::invalid_shape_simple(format!(
-            "axis {axis} is out of bounds for array of dimension {ndim}"
-        )));
-    }
+    // Validate and normalize axis using standardized validation
+    let axis = validate_reduction_axis("cumprod", axis_raw as isize, x.shape())?;
 
     match &x.storage {
         TensorStorage::Cpu(array) => {
@@ -217,7 +196,7 @@ where
     T: Clone
         + Default
         + std::ops::Add<Output = T>
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + Send
         + Sync
         + 'static
@@ -447,7 +426,7 @@ where
     T: Clone
         + Default
         + std::ops::Mul<Output = T>
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static

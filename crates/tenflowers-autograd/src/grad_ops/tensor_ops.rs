@@ -3,7 +3,7 @@
 //! This module provides gradient computation functions for tensor manipulation
 //! operations like slicing, concatenation, stacking, transposition, and reshaping.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::concat;
 use tenflowers_core::ops::einsum::einsum;
 use tenflowers_core::ops::manipulation::{slice, squeeze, transpose_axes};
@@ -487,8 +487,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -532,8 +532,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

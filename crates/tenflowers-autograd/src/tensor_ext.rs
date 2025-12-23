@@ -1,4 +1,4 @@
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Extension trait for Tensor to support autograd operations

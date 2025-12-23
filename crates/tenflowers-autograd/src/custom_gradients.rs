@@ -1,5 +1,5 @@
 use crate::tape::{GradientTape, TrackedTensor};
-use num_traits::Zero;
+use scirs2_core::numeric::Zero;
 use std::sync::Arc;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -150,7 +150,7 @@ where
         + Default
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -192,7 +192,7 @@ where
         + Default
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -236,7 +236,7 @@ where
     T: Clone
         + Default
         + std::ops::Mul<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static

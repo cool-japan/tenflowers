@@ -3,7 +3,7 @@
 //! This module provides memory-efficient implementations of gradient computation
 //! techniques including gradient checkpointing, memory pooling, and lazy evaluation.
 
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -17,7 +17,7 @@ pub struct GradientMemoryPool<T> {
 
 impl<T> GradientMemoryPool<T>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Zero,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Zero,
 {
     /// Create a new gradient memory pool
     pub fn new(max_pool_size: usize) -> Self {
@@ -382,7 +382,7 @@ pub struct GradientMemoryManager<T> {
 
 impl<T> GradientMemoryManager<T>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Zero,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Zero,
 {
     /// Create a new gradient memory manager
     pub fn new(memory_limit: usize, pool_size: usize) -> Self {

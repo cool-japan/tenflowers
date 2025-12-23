@@ -1,7 +1,7 @@
 //! Utility functions for RNN layers
 
 use super::PackedSequence;
-use num_traits::Float;
+use scirs2_core::num_traits::Float;
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Pack sequences of different lengths into a PackedSequence
@@ -27,8 +27,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -122,8 +122,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

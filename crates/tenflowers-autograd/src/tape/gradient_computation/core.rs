@@ -4,7 +4,7 @@
 //! the recorded computation graph using reverse-mode automatic differentiation.
 
 use crate::grad_ops;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor};
 
@@ -33,8 +33,8 @@ impl GradientTape {
             + std::ops::Mul<Output = T>
             + std::ops::Sub<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -76,8 +76,8 @@ impl GradientTape {
             + std::ops::Mul<Output = T>
             + std::ops::Sub<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -115,8 +115,8 @@ impl GradientTape {
             + std::ops::Mul<Output = T>
             + std::ops::Sub<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {

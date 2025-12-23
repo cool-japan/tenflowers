@@ -7,9 +7,8 @@
 //! Reference: "Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning" (Liu et al., 2022)
 
 use super::{PEFTAdapter, PEFTMethod};
-use num_traits::{Float, FromPrimitive, One, Zero};
-use scirs2_core::random::distributions::{Distribution, Normal};
-use scirs2_core::random::rng;
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::random::Random;
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -207,16 +206,17 @@ where
                 vec![value; dimension]
             }
             IA3InitStrategy::RandomNear1 => {
-                let mut rng = rng();
-                let normal = Normal::new(1.0, 0.02).map_err(|_| {
-                    TensorError::invalid_argument(
-                        "Invalid normal distribution parameters".to_string(),
-                    )
-                })?;
+                let mut rng = Random::default();
+                let mean = 1.0;
+                let std_dev = 0.02;
 
                 let mut data = Vec::with_capacity(dimension);
                 for _ in 0..dimension {
-                    let random_val = normal.sample(&mut rng);
+                    // Box-Muller transform for normal distribution
+                    let u1 = rng.random_f64();
+                    let u2 = rng.random_f64();
+                    let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                    let random_val = mean + std_dev * z;
                     let tensor_val = T::from_f64(random_val).unwrap_or_else(|| T::one());
                     data.push(tensor_val);
                 }
@@ -224,16 +224,16 @@ where
             }
             IA3InitStrategy::Xavier => {
                 let std_dev = (2.0 / dimension as f64).sqrt();
-                let mut rng = rng();
-                let normal = Normal::new(1.0, std_dev).map_err(|_| {
-                    TensorError::invalid_argument(
-                        "Invalid normal distribution parameters".to_string(),
-                    )
-                })?;
+                let mut rng = Random::default();
+                let mean = 1.0;
 
                 let mut data = Vec::with_capacity(dimension);
                 for _ in 0..dimension {
-                    let random_val = normal.sample(&mut rng);
+                    // Box-Muller transform for normal distribution
+                    let u1 = rng.random_f64();
+                    let u2 = rng.random_f64();
+                    let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                    let random_val = mean + std_dev * z;
                     let tensor_val = T::from_f64(random_val).unwrap_or_else(|| T::one());
                     data.push(tensor_val);
                 }

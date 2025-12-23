@@ -9,7 +9,7 @@ use crate::Result;
 // use crate::simd::{global_simd_engine, ElementWiseOp};
 // use crate::memory::{global_unified_optimizer, global_ultra_cache_optimizer};
 // use crate::monitoring::global_performance_monitor;
-use scirs2_autograd::ndarray::{Array1, Array2};
+use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;
 // use std::sync::Arc;
 use std::time::{Duration, Instant};

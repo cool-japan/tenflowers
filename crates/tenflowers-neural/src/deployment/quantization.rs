@@ -1,10 +1,12 @@
+#![allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
+
 use crate::layers::Layer;
 use crate::model::{Model, Sequential};
 /// Model quantization techniques for mobile deployment.
 ///
 /// This module provides various quantization methods to reduce model size and improve
 /// inference speed on mobile and edge devices with limited computational resources.
-use num_traits;
+use scirs2_core::num_traits;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use tenflowers_core::{DType, Tensor, TensorError};
@@ -194,7 +196,11 @@ pub struct FakeQuantization<T> {
 
 impl<T> FakeQuantization<T>
 where
-    T: Clone + Default + 'static + num_traits::Float + num_traits::FromPrimitive,
+    T: Clone
+        + Default
+        + 'static
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive,
 {
     /// Create a new fake quantization layer.
     pub fn new(params: QuantizationParams) -> Self {
@@ -251,7 +257,11 @@ where
 
 impl<T> Layer<T> for FakeQuantization<T>
 where
-    T: Clone + Default + 'static + num_traits::Float + num_traits::FromPrimitive,
+    T: Clone
+        + Default
+        + 'static
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive,
 {
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>, TensorError> {
         if !self.enabled {
@@ -411,10 +421,10 @@ where
     T: Clone
         + Default
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + bytemuck::Pod
@@ -457,11 +467,12 @@ where
             }
             #[cfg(feature = "gpu")]
             TensorStorage::Gpu(_) => {
-                // For GPU tensors, we'd use specialized quantization kernels
-                // For now, fallback to CPU computation
+                // For GPU tensors, fallback to CPU computation
                 let cpu_tensor = tensor.to_cpu()?;
                 Self::quantize_tensor(&cpu_tensor, params)
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 
@@ -489,6 +500,8 @@ where
                 let cpu_tensor = tensor.to_cpu()?;
                 Self::dequantize_tensor(&cpu_tensor, params)
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 }
@@ -498,10 +511,10 @@ where
     T: Clone
         + Default
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + bytemuck::Pod
@@ -579,7 +592,7 @@ impl ModelQuantizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -706,7 +719,7 @@ impl ModelQuantizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -723,7 +736,7 @@ impl ModelQuantizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -782,7 +795,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -857,7 +870,11 @@ pub fn prepare_model_for_qat<T>(
     config: Option<QuantizationConfig>,
 ) -> Result<(), TensorError>
 where
-    T: Clone + Default + 'static + num_traits::Float + num_traits::FromPrimitive,
+    T: Clone
+        + Default
+        + 'static
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive,
 {
     let config = config.unwrap_or_else(qat_config);
 
@@ -882,7 +899,11 @@ pub fn finalize_qat_model<T>(
     calibration_data: Option<&[Tensor<T>]>,
 ) -> Result<QuantizationStats, TensorError>
 where
-    T: Clone + Default + 'static + num_traits::Float + num_traits::FromPrimitive,
+    T: Clone
+        + Default
+        + 'static
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive,
 {
     // In a real implementation, this would:
     // 1. Collect final statistics from observers

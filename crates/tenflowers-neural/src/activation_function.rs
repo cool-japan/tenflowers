@@ -1,4 +1,4 @@
-use num_traits::Float;
+use scirs2_core::num_traits::Float;
 use tenflowers_core::{Result, Tensor};
 
 /// Type-safe activation function enum for compile-time dispatch

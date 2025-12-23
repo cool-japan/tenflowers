@@ -4,7 +4,7 @@
 //! implementation, including tensor value retrieval, gradient accumulation,
 //! and numerical gradient checking utilities.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -123,7 +123,7 @@ where
         + One
         + std::ops::Add<Output = T>
         + std::ops::Sub<Output = T>
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
     F: Fn(&[Tensor<T>]) -> Result<Tensor<T>>,
 {
     let input = &inputs[input_index];
@@ -186,7 +186,7 @@ where
         + PartialOrd
         + std::ops::Sub<Output = T>
         + std::ops::Div<Output = T>
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let analytical_data = analytical
         .as_slice()

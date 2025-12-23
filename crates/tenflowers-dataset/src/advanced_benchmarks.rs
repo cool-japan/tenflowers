@@ -195,7 +195,7 @@ impl AdvancedBenchmarkSuite {
     /// Benchmark dataset loading performance
     pub fn benchmark_dataset_loading<T, D>(&mut self, dataset: D, name: &str) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
         D: Dataset<T> + Clone + Send + Sync + 'static,
     {
         for &sample_size in &self.config.sample_sizes {
@@ -249,7 +249,13 @@ impl AdvancedBenchmarkSuite {
     /// Benchmark transform performance
     pub fn benchmark_transform<T, Tr>(&mut self, transform: Tr, name: &str) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
+            + Send
+            + Sync
+            + 'static,
         Tr: Transform<T> + Clone,
     {
         for &sample_size in &self.config.sample_sizes {
@@ -306,7 +312,7 @@ impl AdvancedBenchmarkSuite {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static

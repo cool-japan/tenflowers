@@ -3,7 +3,7 @@
 //! This module contains common helper functions used throughout the gradient operations,
 //! including broadcasting utilities, index normalization, and tensor manipulation helpers.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::broadcast_to;
 use tenflowers_core::{Result, Shape, Tensor, TensorError};
 
@@ -18,7 +18,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

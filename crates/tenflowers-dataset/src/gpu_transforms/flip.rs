@@ -158,8 +158,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
 
         // Check if we should flip
+        use scirs2_core::random::rand_prelude::*;
         let mut rng = scirs2_core::random::rng();
-        let should_flip = rng.gen_range(0.0..1.0) < self.probability;
+        let random_val: f32 = rng.random();
+        let should_flip = random_val < self.probability;
 
         if !should_flip {
             return Ok(input.clone());

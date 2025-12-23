@@ -10,7 +10,7 @@
 ))]
 use crate::{tensor::TensorStorage, TensorError};
 use crate::{Result, Tensor};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 
 // BLAS optimizations for einsum operations
 #[cfg(all(
@@ -21,7 +21,7 @@ use num_traits::{One, Zero};
     ),
     feature = "std"
 ))]
-use scirs2_autograd::ndarray::{s, Array2};
+use scirs2_core::ndarray::{s, Array2};
 
 /// Try BLAS-optimized patterns for CPU tensors
 #[cfg(any(
@@ -160,7 +160,7 @@ where
             if a_shape[1] != b_shape[0] {
                 return Err(TensorError::ShapeMismatch {
                     operation: "einsum_gemm".to_string(),
-                    expected: format!("(M, K) and (K, N)"),
+                    expected: "(M, K) and (K, N)".to_string(),
                     got: format!(
                         "({}, {}) and ({}, {})",
                         a_shape[0], a_shape[1], b_shape[0], b_shape[1]
@@ -172,14 +172,14 @@ where
             // Convert to 2D arrays for BLAS operation
             let a_2d = a_array
                 .clone()
-                .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+                .into_dimensionality::<scirs2_core::ndarray::Ix2>()
                 .map_err(|e| {
                     TensorError::invalid_argument(format!("Failed to convert tensor to 2D: {}", e))
                 })?;
 
             let b_2d = b_array
                 .clone()
-                .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+                .into_dimensionality::<scirs2_core::ndarray::Ix2>()
                 .map_err(|e| {
                     TensorError::invalid_argument(format!("Failed to convert tensor to 2D: {}", e))
                 })?;
@@ -337,7 +337,7 @@ where
     if a_shape[0] != b_shape[0] {
         return Err(TensorError::ShapeMismatch {
             operation: "einsum_dot".to_string(),
-            expected: format!("equal vector lengths"),
+            expected: "equal vector lengths".to_string(),
             got: format!("lengths {} and {}", a_shape[0], b_shape[0]),
             context: None,
         });

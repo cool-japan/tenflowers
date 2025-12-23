@@ -1,5 +1,5 @@
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, Zero};
 use std::time::Instant;
 
 use super::core::get_activation_registry;
@@ -301,7 +301,7 @@ where
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
-            use scirs2_autograd::ndarray::Axis;
+            use scirs2_core::ndarray::Axis;
 
             // Default to last axis if not specified
             let ndim = arr.ndim();
@@ -420,7 +420,7 @@ pub fn gelu_f32(x: &Tensor<f32>) -> Result<Tensor<f32>> {
                             match simd::simd_gelu_f32(input_slice, &mut output_data) {
                                 Ok(()) => {
                                     registry.record_simd();
-                                    scirs2_autograd::ndarray::ArrayD::from_shape_vec(
+                                    scirs2_core::ndarray::ArrayD::from_shape_vec(
                                         arr.raw_dim(),
                                         output_data,
                                     )
@@ -662,7 +662,7 @@ where
 
                 let mut result = x_arr.clone();
                 for (mut slice, &alpha_val) in result
-                    .axis_iter_mut(scirs2_autograd::ndarray::Axis(1))
+                    .axis_iter_mut(scirs2_core::ndarray::Axis(1))
                     .zip(alpha_arr.iter())
                 {
                     slice.mapv_inplace(|x| if x <= zero { alpha_val * x } else { x });
@@ -783,7 +783,7 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     // log_softmax(x) = x - log(sum(exp(x)))
     // This is numerically stable implementation

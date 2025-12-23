@@ -5,7 +5,7 @@
 
 use super::core::{OptimizationConfig, OptimizationStats};
 use crate::model::{Model, Sequential};
-use num_traits;
+use scirs2_core::num_traits;
 use tenflowers_core::{DType, TensorError};
 
 /// Advanced optimization pass implementations
@@ -17,7 +17,7 @@ impl AdvancedOptimizations {
         model: &mut Sequential<T>,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Layer fusion implementation
@@ -83,7 +83,7 @@ impl AdvancedOptimizations {
         config: &OptimizationConfig,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Advanced kernel fusion implementation inspired by TensorRT
@@ -194,7 +194,7 @@ impl AdvancedOptimizations {
         config: &OptimizationConfig,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Memory layout optimization for optimal cache usage and memory bandwidth
@@ -342,7 +342,7 @@ impl AdvancedOptimizations {
         config: &OptimizationConfig,
     ) -> Result<OptimizationStats, TensorError>
     where
-        T: Clone + Default + Send + Sync + num_traits::Zero + 'static,
+        T: Clone + Default + Send + Sync + scirs2_core::num_traits::Zero + 'static,
         Sequential<T>: Model<T>,
     {
         // Dynamic batching optimization for variable batch sizes
@@ -467,7 +467,7 @@ mod tests {
 
         let stats = result.unwrap();
         assert!(stats.speedup_ratio >= 1.0);
-        assert!(stats.ops_removed >= 0);
+        // ops_removed is unsigned, so >= 0 is always true
     }
 
     #[test]

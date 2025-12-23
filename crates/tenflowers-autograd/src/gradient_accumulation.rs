@@ -53,14 +53,14 @@ impl GradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -105,12 +105,12 @@ impl GradientAccumulator {
         T: Clone
             + Default
             + std::ops::Div<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -146,12 +146,12 @@ impl GradientAccumulator {
         T: Clone
             + Default
             + std::ops::Div<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod,
     {
         let mut results = Vec::new();
@@ -217,14 +217,14 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
-        + num_traits::Float
-        + num_traits::Signed
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::Signed
         + PartialOrd
         + bytemuck::Pod,
     F: FnMut(&[T]) -> Result<TrackedTensor<T>>,
@@ -324,14 +324,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -365,14 +365,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod,
     {
@@ -393,14 +393,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -448,14 +448,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -499,14 +499,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -546,14 +546,14 @@ impl DistributedGradientAccumulator {
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + PartialOrd
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -644,14 +644,14 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
-        + num_traits::Float
-        + num_traits::Signed
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::Signed
         + PartialOrd
         + bytemuck::Pod,
     F: FnMut(&[T]) -> Result<TrackedTensor<T>>,
@@ -672,7 +672,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::Array1;
+    use scirs2_core::ndarray::Array1;
     use tenflowers_core::{tensor::TensorStorage, Tensor};
 
     #[test]
@@ -681,8 +681,8 @@ mod tests {
         let accumulator = GradientAccumulator::new(false);
 
         // Create test tensors
-        let x_data = ndarray::Array1::from_vec(vec![1.0f32, 2.0f32]).into_dyn();
-        let y_data = ndarray::Array1::from_vec(vec![3.0f32, 4.0f32]).into_dyn();
+        let x_data = Array1::from_vec(vec![1.0f32, 2.0f32]).into_dyn();
+        let y_data = Array1::from_vec(vec![3.0f32, 4.0f32]).into_dyn();
         let x = tape.watch(Tensor::from_array(x_data));
         let y = tape.watch(Tensor::from_array(y_data));
 
@@ -732,12 +732,11 @@ mod tests {
 
         // The gradient should be averaged - for add operation, gradient is [1.0, 1.0] + [1.0, 1.0] = [2.0, 2.0]
         // Since we accumulated twice and average, we should get [2.0, 2.0]
-        if let TensorStorage::Cpu(ref array) = grad_x.storage {
-            assert!((array[[0]] - 2.0).abs() < 1e-6);
-            assert!((array[[1]] - 2.0).abs() < 1e-6);
-        } else {
-            panic!("Expected CPU storage");
-        }
+        let TensorStorage::Cpu(ref array) = grad_x.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 2.0).abs() < 1e-6);
+        assert!((array[[1]] - 2.0).abs() < 1e-6);
     }
 
     #[cfg(feature = "parallel")]
@@ -805,10 +804,11 @@ mod tests {
         assert_eq!(aggregated_grads.len(), 1);
 
         // Check that the gradient was scaled by world size (simulation)
-        if let TensorStorage::Cpu(ref array) = aggregated_grads[0].storage {
-            assert!((array[[0]] - 1.0).abs() < 1e-6); // 2.0 / 2 = 1.0
-            assert!((array[[1]] - 2.0).abs() < 1e-6); // 4.0 / 2 = 2.0
-        }
+        let TensorStorage::Cpu(ref array) = aggregated_grads[0].storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 1.0).abs() < 1e-6); // 2.0 / 2 = 1.0
+        assert!((array[[1]] - 2.0).abs() < 1e-6); // 4.0 / 2 = 2.0
     }
 
     #[cfg(feature = "parallel")]
@@ -867,10 +867,11 @@ mod tests {
         assert_eq!(aggregated_grads.len(), 1);
 
         // In parameter server mode, gradients should be unmodified for simulation
-        if let TensorStorage::Cpu(ref array) = aggregated_grads[0].storage {
-            assert!((array[[0]] - 2.0).abs() < 1e-6);
-            assert!((array[[1]] - 4.0).abs() < 1e-6);
-        }
+        let TensorStorage::Cpu(ref array) = aggregated_grads[0].storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert!((array[[0]] - 2.0).abs() < 1e-6);
+        assert!((array[[1]] - 4.0).abs() < 1e-6);
     }
 
     #[cfg(feature = "parallel")]

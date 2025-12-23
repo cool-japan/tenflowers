@@ -195,8 +195,8 @@ fn permute_tensor<T>(input: &Tensor<T>, axes: &[usize]) -> Result<Tensor<T>>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -236,8 +236,8 @@ fn gpu_permute_tensor<T>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -268,8 +268,8 @@ pub fn convert_layout<T>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -417,8 +417,8 @@ impl AutoLayoutOptimizer {
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static

@@ -1,4 +1,280 @@
+//! # TenfloweRS Dataset
+//!
+//! Efficient data loading, preprocessing, and augmentation for machine learning in TenfloweRS.
+//! This crate provides high-performance data pipelines with support for various formats, transformations,
+//! and distributed loading strategies.
+//!
+//! ## Features
+//!
+//! - **Multiple Data Formats**: CSV, image folders, HDF5, Arrow/Parquet, JSON, and custom formats
+//! - **Efficient Data Loading**: Multi-threaded prefetching, NUMA-aware scheduling, zero-copy operations
+//! - **Rich Transformations**: SIMD-accelerated transforms, GPU preprocessing, composition
+//! - **Advanced Sampling**: Stratified, importance, and distributed sampling strategies
+//! - **Data Quality**: Built-in quality analysis, outlier detection, and drift monitoring
+//! - **Production Features**: Checkpointing, versioning, reproducibility, and debugging tools
+//! - **Streaming Support**: Large dataset streaming with predictive prefetching
+//!
+//! ## Quick Start
+//!
+//! ### Loading Data from CSV
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{CsvDataset, CsvDatasetBuilder};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load CSV data
+//! let dataset = CsvDatasetBuilder::new("data.csv")
+//!     .has_header(true)
+//!     .delimiter(b',')
+//!     .build()?;
+//!
+//! println!("Dataset has {} samples", dataset.len());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Image Folder Dataset
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{ImageFolderDataset, ImageFolderDatasetBuilder};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load images from directory structure:
+//! // train/
+//! //   cat/
+//! //     img1.jpg
+//! //     img2.jpg
+//! //   dog/
+//! //     img3.jpg
+//! let dataset = ImageFolderDatasetBuilder::new("train/")
+//!     .image_size((224, 224))
+//!     .build()?;
+//!
+//! println!("Found {} images in {} classes", dataset.len(), dataset.num_classes());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Data Loader with Batching
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{DataLoader, DataLoaderBuilder};
+//! use tenflowers_dataset::{CsvDataset, RandomSampler};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dataset = CsvDataset::new("data.csv")?;
+//! // Create a data loader
+//! let loader = DataLoaderBuilder::new(dataset)
+//!     .batch_size(32)
+//!     .shuffle(true)
+//!     .num_workers(4)
+//!     .prefetch(2)
+//!     .build()?;
+//!
+//! // Iterate through batches
+//! for batch in loader.iter() {
+//!     let (features, labels) = batch?;
+//!     // Training step...
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Data Transformations
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::transforms::{Compose, Normalize, RandomCrop, ToTensor};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Compose multiple transformations
+//! let transform = Compose::new(vec![
+//!     Box::new(RandomCrop::new((224, 224))),
+//!     Box::new(ToTensor),
+//!     Box::new(Normalize::new(vec![0.485, 0.456, 0.406], vec![0.229, 0.224, 0.225])),
+//! ]);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Advanced Features
+//!
+//! ### Distributed Data Loading
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{DataLoaderBuilder, DistributedSampler};
+//! use tenflowers_dataset::CsvDataset;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dataset = CsvDataset::new("data.csv")?;
+//! // Split dataset across multiple workers
+//! let sampler = DistributedSampler::new(dataset.len(), 4, 0); // 4 workers, rank 0
+//!
+//! let loader = DataLoaderBuilder::new(dataset)
+//!     .sampler(Box::new(sampler))
+//!     .batch_size(32)
+//!     .build()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Data Quality Analysis
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{DataQualityAnalyzer, QualityAnalysisConfig};
+//! use tenflowers_dataset::CsvDataset;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dataset = CsvDataset::new("data.csv")?;
+//! // Analyze data quality
+//! let analyzer = DataQualityAnalyzer::new(QualityAnalysisConfig::default());
+//! let report = analyzer.analyze(&dataset)?;
+//!
+//! println!("Data quality score: {:.2}", report.overall_score());
+//! println!("Issues found: {}", report.num_issues());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Caching and Prefetching
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{EnhancedDataLoaderBuilder, CsvDataset};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dataset = CsvDataset::new("data.csv")?;
+//! // Use enhanced data loader with smart caching
+//! let loader = EnhancedDataLoaderBuilder::new(dataset)
+//!     .batch_size(64)
+//!     .num_workers(8)
+//!     .enable_caching(true)
+//!     .cache_size_mb(512)
+//!     .adaptive_prefetch(true)
+//!     .build()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Custom Dataset
+//!
+//! ```rust,no_run
+//! use tenflowers_core::{Tensor, Result};
+//! use std::marker::PhantomData;
+//!
+//! struct MyDataset<T> {
+//!     data: Vec<Vec<T>>,
+//!     _phantom: PhantomData<T>,
+//! }
+//!
+//! impl<T: Clone> MyDataset<T> {
+//!     fn len(&self) -> usize {
+//!         self.data.len()
+//!     }
+//!
+//!     fn get(&self, index: usize) -> Option<&Vec<T>> {
+//!         self.data.get(index)
+//!     }
+//! }
+//! ```
+//!
+//! ## Architecture Overview
+//!
+//! The crate is organized into the following modules:
+//!
+//! - [`formats`]: Data format readers (CSV, image, HDF5, Arrow, Parquet)
+//! - [`dataloader`]: Multi-threaded data loading with batching and sampling
+//! - [`transforms`]: Data transformation and augmentation operations
+//! - [`cache`]: Caching strategies for frequently accessed data
+//! - [`distributed_loading`]: Distributed and sharded data loading
+//! - [`data_quality`]: Data quality analysis and validation
+//! - [`statistics`]: Dataset statistics computation
+//! - [`visualization`]: Dataset visualization utilities
+//! - [`reproducibility`]: Reproducibility and versioning support
+//! - [`debug_tools`]: Profiling and debugging utilities
+//!
+//! ## Performance Optimization
+//!
+//! ### SIMD Transformations
+//!
+//! Many transformations use SIMD instructions for maximum performance:
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::simd_transforms::{SimdNormalize, SimdResize};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // SIMD-accelerated normalization
+//! let normalize = SimdNormalize::new(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5]);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### GPU Preprocessing
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::gpu_transforms::{GpuResize, GpuNormalize};
+//! use tenflowers_core::Device;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # #[cfg(feature = "gpu")]
+//! # {
+//! // Run transformations on GPU
+//! let device = Device::gpu(0)?;
+//! let resize = GpuResize::new((224, 224), &device)?;
+//! # }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Zero-Copy Operations
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::zero_copy::{ZeroCopyLoader, MmapDataset};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Memory-mapped dataset for large files
+//! let dataset = MmapDataset::new("large_dataset.bin")?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Integration with TenfloweRS Ecosystem
+//!
+//! This crate integrates seamlessly with:
+//! - `tenflowers-core`: Tensor operations and device management
+//! - `tenflowers-neural`: Neural network training pipelines
+//! - `tenflowers-autograd`: Gradient-based transformations
+//! - `scirs2-core`: Scientific computing utilities
+//!
+//! ## Supported Data Formats
+//!
+//! - **CSV**: Comma-separated values with customizable delimiters
+//! - **Images**: JPEG, PNG, BMP, TIFF via image folder structure
+//! - **HDF5**: Hierarchical data format for scientific data
+//! - **Arrow/Parquet**: Columnar data formats for analytics
+//! - **JSON**: Structured JSON data
+//! - **Custom**: Extensible format registry for custom formats
+//!
+//! ## Debugging and Profiling
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::{DatasetDebugger, PipelineProfiler};
+//! use tenflowers_dataset::CsvDataset;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dataset = CsvDataset::new("data.csv")?;
+//! // Profile data loading pipeline
+//! let profiler = PipelineProfiler::new();
+//! profiler.start();
+//!
+//! // ... load data ...
+//!
+//! let report = profiler.generate_report();
+//! println!("Bottlenecks: {:?}", report.bottlenecks());
+//! # Ok(())
+//! # }
+//! ```
+
 #![warn(unsafe_code)]
+#![allow(unexpected_cfgs)]
 #![allow(clippy::result_large_err)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::let_and_return)]
@@ -18,14 +294,20 @@
 #![allow(clippy::derivable_impls)]
 
 pub mod active_learning;
+pub mod adaptive_prefetch;
 pub mod advanced_benchmarks;
+pub mod advanced_sampling;
 pub mod attention_optimized;
 pub mod benchmarks;
 pub mod cache;
 pub mod config;
+pub mod data_quality;
 pub mod dataloader;
+pub mod debug_tools;
 pub mod distributed_loading;
+pub mod distributed_sharding;
 pub mod enhanced_dataloader;
+pub mod error_taxonomy;
 pub mod federated;
 pub mod formats;
 pub mod gpu_transforms;
@@ -37,12 +319,14 @@ pub mod predictive_prefetch;
 #[cfg(feature = "download")]
 pub mod real_datasets;
 pub mod reproducibility;
+pub mod schema_inference;
 pub mod simd_transforms;
 pub mod smart_cache;
 pub mod statistics;
 pub mod stream_prefetch_optimizer;
 pub mod streaming_optimized;
 pub mod synthetic;
+pub mod throughput_benchmark;
 pub mod transforms;
 pub mod validation;
 pub mod versioning;
@@ -50,25 +334,43 @@ pub mod visualization;
 pub mod work_stealing;
 pub mod zero_copy;
 
+use scirs2_core::num_traits;
 use scirs2_core::random::rng;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tenflowers_core::ops::slice;
 use tenflowers_core::{Result, Tensor, TensorError};
 
+pub use data_quality::{
+    DataQualityAnalyzer, DataQualityExt, DataQualityIssue, DataQualityMetrics,
+    DriftDetectionConfig, DriftDetectionResult, DriftType, IssueCategory, IssueSeverity,
+    OutlierDetectionMethod, QualityAnalysisConfig, StatisticalTest,
+};
 pub use dataloader::{
     BatchResult, BucketCollate, CollateFn, DataLoader, DataLoaderBuilder, DataLoaderConfig,
     DefaultCollate, DistributedSampler, ImportanceSampler, PaddingCollate, PaddingStrategy,
     RandomSampler, Sampler, SequentialSampler, StratifiedSampler,
 };
+pub use debug_tools::{
+    Bottleneck, BottleneckCategory, ConsistencyReport, DatasetDebugger, EventType,
+    PipelineProfiler, ProfileEvent, ProfileReport, ProfilerConfig, SampleInfo as DebugSampleInfo,
+    Severity, StageStatistics, StageTimer,
+};
 pub use enhanced_dataloader::{
     EnhancedDataLoader, EnhancedDataLoaderBuilder, LoaderStats, WorkerStats,
+};
+pub use error_taxonomy::{
+    classification, helpers as error_helpers, DatasetErrorBuilder, DatasetErrorCategory,
+    DatasetErrorContext,
 };
 pub use formats::common::{MissingValueStrategy, NamingPattern};
 pub use formats::csv::{ChunkedCsvDataset, CsvChunk, CsvDataset, CsvDatasetBuilder};
 pub use formats::image::{
     image_folder_dataset_with_transform, ImageFolderConfig, ImageFolderDataset,
     ImageFolderDatasetBuilder,
+};
+pub use formats::registry::{
+    global as format_registry, register_format_factory, FormatInfo, GlobalFormatRegistry,
 };
 pub use transforms::{
     AddNoise, BackgroundNoise, DatasetExt, GaussianNoise, GlobalNormalize, MinMaxScale, NoiseType,
@@ -88,19 +390,21 @@ pub use formats::text::{
 };
 // #[cfg(feature = "parquet")]
 // pub use formats::streaming::StreamingCheckpoint;
-#[cfg(feature = "parquet")]
-pub use formats::parquet::{
-    ParquetConfig, ParquetDataset, ParquetDatasetBuilder, ParquetDatasetInfo,
-};
-// #[cfg(feature = "parquet")]
-// pub use formats::arrow::{ArrowDataset, ArrowConfig, ArrowDatasetBuilder};
 pub use active_learning::{
     ActiveLearningDataset, ActiveLearningSampler, DiversityStrategy, LabeledSubset,
     UncertaintyStrategy, UnlabeledSubset,
 };
+pub use adaptive_prefetch::{
+    AdaptationStrategy, AdaptivePrefetchPolicy, AdaptivePrefetchTuner,
+    PrefetchMetrics as AdaptivePrefetchMetrics, TuningDecision,
+};
 pub use advanced_benchmarks::{
     AdvancedBenchmarkSuite, BenchmarkConfig, BenchmarkResult, CpuStats, GpuStats, MemoryStats,
     MemoryTracker as BenchmarkMemoryTracker, SystemInfo, ThroughputStats, TimingStats,
+};
+pub use advanced_sampling::{
+    AdvancedImportanceSampler, BalancingStrategy, ClassBalancedSampler, CurriculumScheduler,
+    CurriculumStrategy, HardNegativeMiner, MiningStrategy,
 };
 pub use attention_optimized::{
     AttentionOptimizedConfig, AttentionOptimizedDataset, AttentionOptimizedDatasetBuilder,
@@ -108,7 +412,10 @@ pub use attention_optimized::{
 };
 pub use benchmarks::{BenchmarkDatasets, CifarDataset, DatasetInfo, IrisDataset, MnistDataset};
 pub use cache::{
-    CacheExt, CacheStats, CachedDataset, LruCache, ThreadSafeLruCache, WarmingStrategy,
+    AggregatedStats, AlertSeverity, AlertThresholds, AlertType, CacheEvent, CacheEventType,
+    CacheExt, CacheStats, CacheTelemetryCollector, CacheTelemetryMetrics, CachedDataset,
+    EnhancedTelemetryCollector, LruCache, MetricsSnapshot, PerformanceAlert, PerformanceBaselines,
+    TelemetryConfig, ThreadSafeLruCache, WarmingStrategy,
 };
 #[cfg(feature = "serialize")]
 pub use cache::{PersistentCache, PersistentlyCachedDataset, TensorPersistentCache};
@@ -117,11 +424,20 @@ pub use distributed_loading::{
     DistributedLoadingConfig, DistributedLoadingStats, DistributedMessage,
     EnhancedDistributedSampler, NodeInfo,
 };
+pub use distributed_sharding::{
+    DatasetShardingExt, ShardConfig, ShardStatistics, ShardStrategy, ShardableDataset,
+    ShardedDataset,
+};
 pub use federated::{
     AggregationStrategy, ClientConfig, ClientId, ClientIndexedDataset, ClientStats,
     DataDistribution, FederatedAggregator, FederatedClientDataset, FederatedDatasetExt,
     FederatedFeatureStats, FederatedPartitioner, NoiseMechanism, PartitioningStrategy,
     PrivacyConfig, PrivacyManager, PrivateStats, QualityMetrics,
+};
+#[cfg(feature = "parquet")]
+pub use formats::arrow::{
+    ArrowArrayExt, ArrowConfig, ArrowDataset, ArrowDatasetBuilder, ArrowFormatFactory,
+    ArrowFormatReader, ArrowTensorView,
 };
 #[cfg(feature = "audio")]
 pub use formats::audio::{
@@ -130,6 +446,10 @@ pub use formats::audio::{
 };
 #[cfg(feature = "hdf5")]
 pub use formats::hdf5::{HDF5Config, HDF5Dataset, HDF5DatasetBuilder, HDF5DatasetInfo};
+#[cfg(feature = "parquet")]
+pub use formats::parquet::{
+    ParquetConfig, ParquetDataset, ParquetDatasetBuilder, ParquetDatasetInfo,
+};
 #[cfg(feature = "tfrecord")]
 pub use formats::tfrecord::{
     Feature, FeatureInfo, FeatureType, TFRecord, TFRecordConfig, TFRecordDataset,
@@ -176,6 +496,10 @@ pub use reproducibility::{
     ExperimentConfig, ExperimentTracker, OperationRecord, OrderingStrategy, ReproducibilityExt,
     SamplingConfig, SeedInfo, SeedManager, TransformConfig,
 };
+pub use schema_inference::{
+    FieldStatistics, InferenceConfig, InferredDataType, InferredField, InferredSchema,
+    SchemaInferenceEngine,
+};
 pub use simd_transforms::{
     BenchmarkResult as SimdBenchmarkResult, SimdBenchmark, SimdColorConvert, SimdConvolution,
     SimdElementWise, SimdHistogram, SimdHistogramTransform, SimdMatrixOps, SimdNormalize,
@@ -205,6 +529,10 @@ pub use synthetic::{
     MetaLearningDataset, ModernMLConfig, NoiseDistribution, SelfSupervisedDataset,
     StripeOrientation, SyntheticConfig, SyntheticDataset, SyntheticTextCorpus, TaskDataset,
     TextCorpusConfig, TextSynthesisTask, TimeSeriesPattern,
+};
+pub use throughput_benchmark::{
+    MemoryStats as ThroughputMemoryStats, ThreadStats as ThroughputThreadStats,
+    ThroughputBenchmarkConfig, ThroughputBenchmarkHarness, ThroughputBenchmarkResult,
 };
 pub use validation::{
     DataValidator, DatasetValidationExt, RangeConstraint, SchemaInfo, ValidationConfig,
@@ -294,18 +622,22 @@ pub trait DatasetUtilsExt<T>: Dataset<T> {
 
     /// Get a random sample from the dataset
     fn get_random(&self) -> Result<(Tensor<T>, Tensor<T>)> {
+        use scirs2_core::random::rand_prelude::*;
         if self.is_empty() {
             return Err(TensorError::invalid_argument(
                 "Cannot get random sample from empty dataset".to_string(),
             ));
         }
         let mut rng = rng();
-        let index = rng.gen_range(0..self.len());
+        let random_val: f64 = rng.random();
+        let index = (random_val * self.len() as f64) as usize;
+        let index = index.min(self.len() - 1); // Clamp to valid range
         self.get(index)
     }
 
     /// Get multiple random samples from the dataset (with replacement)
     fn get_random_samples(&self, count: usize) -> Result<Vec<(Tensor<T>, Tensor<T>)>> {
+        use scirs2_core::random::rand_prelude::*;
         if self.is_empty() {
             return Err(TensorError::invalid_argument(
                 "Cannot get random samples from empty dataset".to_string(),
@@ -315,7 +647,9 @@ pub trait DatasetUtilsExt<T>: Dataset<T> {
         let mut rng = rng();
         let mut samples = Vec::with_capacity(count);
         for _ in 0..count {
-            let index = rng.gen_range(0..self.len());
+            let random_val: f64 = rng.random();
+            let index = (random_val * self.len() as f64) as usize;
+            let index = index.min(self.len() - 1); // Clamp to valid range
             samples.push(self.get(index)?);
         }
         Ok(samples)
@@ -332,13 +666,13 @@ pub struct TensorDataset<T> {
     labels: Tensor<T>,
 }
 
-impl<T: Clone + Default + num_traits::Zero + Send + Sync + 'static> TensorDataset<T> {
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> TensorDataset<T> {
     pub fn new(features: Tensor<T>, labels: Tensor<T>) -> Self {
         Self { features, labels }
     }
 }
 
-impl<T: Clone + Default + num_traits::Zero + Send + Sync + 'static> Dataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
     for TensorDataset<T>
 {
     fn len(&self) -> usize {
@@ -385,7 +719,7 @@ impl<T: Clone + Default + num_traits::Zero + Send + Sync + 'static> Dataset<T>
 /// Helper function to squeeze the first dimension of a tensor
 fn squeeze_first_dim<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     let shape = tensor.shape();
     if shape.rank() == 0 {
@@ -694,7 +1028,13 @@ impl<T, D1: Dataset<T>, D2: Dataset<T>> MergedDataset<T, D1, D2> {
     /// Merge two tensors based on the merge strategy
     fn merge_tensors(&self, tensor1: &Tensor<T>, tensor2: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
+            + Send
+            + Sync
+            + 'static,
     {
         match self.merge_strategy {
             MergeStrategy::FeatureConcatenation => {
@@ -756,7 +1096,13 @@ impl<T, D1: Dataset<T>, D2: Dataset<T>> MergedDataset<T, D1, D2> {
 
 impl<T, D1: Dataset<T>, D2: Dataset<T>> Dataset<T> for MergedDataset<T, D1, D2>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     fn len(&self) -> usize {
         self.dataset1.len()

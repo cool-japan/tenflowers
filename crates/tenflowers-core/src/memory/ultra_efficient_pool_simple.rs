@@ -4,7 +4,7 @@
 //! with advanced pooling, SIMD acceleration, and performance monitoring capabilities.
 
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 

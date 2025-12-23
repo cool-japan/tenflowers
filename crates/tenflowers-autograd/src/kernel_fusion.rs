@@ -218,9 +218,9 @@ impl KernelFusionOptimizer {
             + std::ops::Sub<Output = T>
             + std::ops::Div<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::iter::Sum
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -255,9 +255,9 @@ impl KernelFusionOptimizer {
             + std::ops::Sub<Output = T>
             + std::ops::Div<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::iter::Sum
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -480,9 +480,9 @@ impl KernelFusionOptimizer {
             + std::ops::Sub<Output = T>
             + std::ops::Div<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::iter::Sum
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -541,9 +541,9 @@ impl KernelFusionOptimizer {
             + std::ops::Sub<Output = T>
             + std::ops::Div<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::iter::Sum
             + bytemuck::Pod
             + bytemuck::Zeroable,

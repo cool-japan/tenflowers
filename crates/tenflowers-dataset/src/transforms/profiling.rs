@@ -456,7 +456,7 @@ impl SampleGenerator {
         label_shape: &[usize],
     ) -> impl Fn() -> Result<(Tensor<T>, Tensor<T>)>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
     {
         let f_shape = feature_shape.to_vec();
         let l_shape = label_shape.to_vec();
@@ -471,7 +471,7 @@ impl SampleGenerator {
     /// Generate samples with specific size for memory testing
     pub fn sized_samples<T>(total_elements: usize) -> impl Fn() -> Result<(Tensor<T>, Tensor<T>)>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
     {
         move || {
             let feature_size = total_elements / 2;

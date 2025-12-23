@@ -25,7 +25,7 @@ pub struct SimdConvolution<T> {
 
 impl<T> SimdConvolution<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     /// Create a new SIMD-accelerated convolution operation
     ///
@@ -128,7 +128,7 @@ impl<T> Transform<T> for SimdConvolution<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + bytemuck::Pod

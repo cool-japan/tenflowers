@@ -4,12 +4,13 @@
 //! providing exceptional performance through SIMD vectorization, cache-oblivious
 //! algorithms, and real-time adaptive tuning.
 
+use crate::shape_error_taxonomy::{validate_matmul_shapes, ShapeErrorUtils};
 use crate::tensor::TensorStorage;
 use crate::ultra_performance_profiler::record_matmul_performance;
-use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
-use scirs2_autograd::ndarray::{Array2, ArrayD, ArrayView2};
+use crate::{Result, Shape, Tensor, TensorError};
 use scirs2_core::metrics::Timer;
+use scirs2_core::ndarray::{Array2, ArrayD, ArrayView2};
+use scirs2_core::numeric::{One, Zero};
 use std::time::{Duration, Instant};
 
 /// Matrix offsets for cache-oblivious operations
@@ -64,30 +65,37 @@ where
         ));
     }
 
-    let a_shape = a.shape().dims();
-    let b_shape = b.shape().dims();
+    // Validate shapes using standardized error messages
+    let a_shape_obj = a.shape();
+    let b_shape_obj = b.shape();
 
-    if a_shape.len() < 2 || b_shape.len() < 2 {
-        return Err(TensorError::invalid_shape_simple(
-            "Ultra matrix multiplication requires at least 2D tensors".to_string(),
+    // Check minimum rank requirement
+    if a_shape_obj.rank() < 2 {
+        return Err(ShapeErrorUtils::rank_mismatch(
+            "ultra_matmul",
+            2,
+            a_shape_obj,
+        ));
+    }
+    if b_shape_obj.rank() < 2 {
+        return Err(ShapeErrorUtils::rank_mismatch(
+            "ultra_matmul",
+            2,
+            b_shape_obj,
         ));
     }
 
-    // Get matrix dimensions
+    // Validate matrix multiplication compatibility and get result shape
+    let result_shape_obj =
+        validate_matmul_shapes("ultra_matmul", a_shape_obj, b_shape_obj, false, false)?;
+    let result_shape = result_shape_obj.dims().to_vec();
+
+    // Get matrix dimensions (still needed for performance optimization selection)
+    let a_shape = a_shape_obj.dims();
+    let b_shape = b_shape_obj.dims();
     let m = a_shape[a_shape.len() - 2];
     let k1 = a_shape[a_shape.len() - 1];
-    let k2 = b_shape[b_shape.len() - 2];
     let n = b_shape[b_shape.len() - 1];
-
-    if k1 != k2 {
-        return Err(TensorError::shape_mismatch(
-            "ultra_matmul",
-            "inner dimensions to match",
-            &format!("{k1} vs {k2}"),
-        ));
-    }
-
-    let result_shape = compute_matmul_shape(a_shape, b_shape)?;
 
     match (&a.storage, &b.storage) {
         (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
@@ -141,11 +149,11 @@ where
 {
     let a_2d = a
         .view()
-        .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
     let b_2d = b
         .view()
-        .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
     // Performance-driven optimization selection
@@ -459,7 +467,7 @@ fn determine_optimal_cutoff() -> usize {
 fn cache_oblivious_multiply<T>(
     a: &ArrayView2<T>,
     b: &ArrayView2<T>,
-    c: &mut scirs2_autograd::ndarray::ArrayViewMut2<T>,
+    c: &mut scirs2_core::ndarray::ArrayViewMut2<T>,
     a_row_start: usize,
     a_col_start: usize,
     b_row_start: usize,
@@ -615,7 +623,7 @@ fn cache_oblivious_multiply<T>(
 fn cache_oblivious_base_case<T>(
     a: &ArrayView2<T>,
     b: &ArrayView2<T>,
-    c: &mut scirs2_autograd::ndarray::ArrayViewMut2<T>,
+    c: &mut scirs2_core::ndarray::ArrayViewMut2<T>,
     a_row_start: usize,
     a_col_start: usize,
     b_row_start: usize,
@@ -798,7 +806,7 @@ where
     let n = b_shape[b_ndim - 1];
 
     // Create result array
-    let mut result = ArrayD::zeros(scirs2_autograd::ndarray::IxDyn(result_shape));
+    let mut result = ArrayD::zeros(scirs2_core::ndarray::IxDyn(result_shape));
 
     // Get number of batch elements
     let batch_size: usize = result_shape[..result_shape.len() - 2].iter().product();

@@ -26,6 +26,10 @@ pub struct ImageFolderConfig {
     pub sort_files: bool,
     /// Maximum number of images to load (None for all)
     pub max_images: Option<usize>,
+    /// Resize images to (height, width) if specified
+    pub resize: Option<(usize, usize)>,
+    /// Whether to normalize pixel values to [0, 1] range (default: true)
+    pub normalize: Option<bool>,
 }
 
 impl Default for ImageFolderConfig {
@@ -45,6 +49,8 @@ impl Default for ImageFolderConfig {
             naming_pattern: NamingPattern::default(),
             sort_files: true,
             max_images: None,
+            resize: None,
+            normalize: Some(true),
         }
     }
 }
@@ -376,37 +382,116 @@ impl<T> ImageFolderDataset<T> {
         }
     }
 
-    /// Load an image from a file path (placeholder implementation)
+    /// Load an image from a file path
+    #[cfg(feature = "images")]
     fn load_image(&self, path: &Path) -> Result<Tensor<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::ScientificNumber
+            + Send
+            + Sync
+            + 'static,
     {
-        // This is a placeholder implementation
-        // In a real implementation, you would use an image loading library like `image`
-        // For now, we'll create a dummy tensor
-        match self.config.missing_strategy {
-            MissingValueStrategy::SkipRow => {
-                if !path.exists() {
+        use image::GenericImageView;
+
+        // Check if file exists
+        if !path.exists() {
+            match self.config.missing_strategy {
+                MissingValueStrategy::SkipRow => {
                     return Err(TensorError::invalid_argument(format!(
                         "Image file not found: {}",
                         path.display()
                     )));
                 }
-            }
-            _ => {
-                // Handle other strategies as needed
+                _ => {
+                    // Return a zero tensor if using fill strategies
+                    let shape = match self.config.resize {
+                        Some((h, w)) => vec![3, h, w],
+                        None => vec![3, 224, 224], // Default size
+                    };
+                    let size: usize = shape.iter().product();
+                    return Tensor::from_vec(vec![T::default(); size], &shape);
+                }
             }
         }
 
-        // Placeholder: create a small dummy image tensor (3x32x32 RGB)
-        let dummy_data = vec![T::default(); 3 * 32 * 32];
-        Tensor::from_vec(dummy_data, &[3, 32, 32])
+        // Load the image
+        let img = image::open(path).map_err(|e| {
+            TensorError::invalid_argument(format!("Failed to load image {}: {}", path.display(), e))
+        })?;
+
+        // Convert to RGB8 first
+        let rgb_img = img.to_rgb8();
+
+        // Resize if requested
+        let rgb_img = if let Some((height, width)) = self.config.resize {
+            image::imageops::resize(
+                &rgb_img,
+                width as u32,
+                height as u32,
+                image::imageops::FilterType::Lanczos3,
+            )
+        } else {
+            rgb_img
+        };
+        let (width, height) = rgb_img.dimensions();
+
+        // Convert image data to tensor
+        // Image data is in format [height, width, channels]
+        // We want [channels, height, width] (CHW format)
+        let mut data: Vec<T> = Vec::with_capacity((3 * width * height) as usize);
+
+        // Normalize to [0, 1] range by default
+        let normalize = self.config.normalize.unwrap_or(true);
+
+        for c in 0..3 {
+            for y in 0..height {
+                for x in 0..width {
+                    let pixel = rgb_img.get_pixel(x, y);
+                    let value = pixel[c as usize];
+                    let normalized_value = if normalize {
+                        value as f64 / 255.0
+                    } else {
+                        value as f64
+                    };
+                    use scirs2_core::numeric::ScientificNumber;
+                    let value_t = T::from_f64(normalized_value).ok_or_else(|| {
+                        TensorError::invalid_argument(
+                            "Failed to convert image data to target type".to_string(),
+                        )
+                    })?;
+                    data.push(value_t);
+                }
+            }
+        }
+
+        Tensor::from_vec(data, &[3, height as usize, width as usize])
+    }
+
+    #[cfg(not(feature = "images"))]
+    fn load_image(&self, _path: &Path) -> Result<Tensor<T>>
+    where
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    {
+        Err(TensorError::InvalidOperation {
+            operation: "load_image".to_string(),
+            reason: "Image loading requires 'images' feature to be enabled".to_string(),
+            context: None,
+        })
     }
 }
 
 impl<T> Dataset<T> for ImageFolderDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::NumCast,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::numeric::ScientificNumber,
 {
     fn len(&self) -> usize {
         self.image_paths.len()
@@ -427,7 +512,8 @@ where
         let image = self.load_image(image_path)?;
 
         // Create class label tensor
-        let label_data = if let Some(class_val) = num_traits::cast(*class_idx) {
+        let label_data = if let Some(class_val) = scirs2_core::num_traits::NumCast::from(*class_idx)
+        {
             vec![class_val]
         } else {
             vec![T::default()]
@@ -526,7 +612,13 @@ pub fn image_folder_dataset_with_transform<T, Tr>(
     transform: Tr,
 ) -> Result<TransformedDataset<T, ImageFolderDataset<T>, Tr>>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::NumCast,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::numeric::ScientificNumber,
     Tr: Transform<T> + 'static,
 {
     let dataset = ImageFolderDataset::new(root_path)?;

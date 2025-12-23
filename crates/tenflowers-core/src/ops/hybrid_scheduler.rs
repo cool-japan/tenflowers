@@ -159,7 +159,7 @@ impl HybridWorkScheduler {
     }
 
     /// Submit work to the scheduler
-    pub fn submit_work(&self, work: WorkItem) -> HybridWorkFuture {
+    pub fn submit_work(&self, work: WorkItem) -> HybridWorkFuture<'_> {
         let work_id = work.id;
 
         // Add work to queue

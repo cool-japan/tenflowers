@@ -1,4 +1,5 @@
 pub mod activation;
+pub mod advanced_math;
 pub mod async_binary;
 pub mod basic;
 pub mod benchmark;
@@ -8,6 +9,7 @@ pub mod conv;
 pub mod einsum;
 pub mod fft;
 pub mod framework_comparison;
+pub mod fusion;
 #[cfg(feature = "gpu")]
 pub mod gpu_tensorflow_benchmark;
 #[cfg(feature = "gpu")]
@@ -31,12 +33,15 @@ pub mod pooling;
 pub mod random;
 pub mod reduction;
 pub mod registry;
+pub mod registry_extensions;
 pub mod shape_inference;
+pub mod shape_inference_registry;
 pub mod special;
 pub mod stats;
 pub mod ultra_matmul_v3;
 pub mod ultra_performance_matmul;
 pub mod unary;
+pub mod unified_dispatch;
 
 #[cfg(all(test, feature = "gpu"))]
 mod cpu_gpu_overlap_test;
@@ -44,6 +49,9 @@ mod cpu_gpu_overlap_test;
 pub use activation::{
     elu, gelu, hard_swish, hardswish, leaky_relu, log_softmax, mish, prelu, relu, relu6, sigmoid,
     softmax, swish, tanh,
+};
+pub use advanced_math::{
+    expit, gelu_tanh, hard_sigmoid, log_sigmoid, logit, selu, softplus, softsign,
 };
 pub use async_binary::{
     add_async, add_async_priority, batch_add_async, batch_mul_async, div_async,
@@ -63,6 +71,10 @@ pub use fft::{
 pub use framework_comparison::{
     print_framework_comparison_results, run_framework_comparison_benchmark,
     FrameworkBenchmarkConfig, FrameworkComparisonResult,
+};
+pub use fusion::{
+    execute_fused_graph, get_fusion_stats, print_fusion_report, record_fusion_opportunity,
+    reset_fusion_stats, ElementwiseOpType, FusionGraph, FusionNode, FusionPassBuilder, FusionStats,
 };
 #[cfg(feature = "gpu")]
 pub use gpu_tensorflow_benchmark::{
@@ -133,6 +145,12 @@ pub use random::{
     random_uniform_f64, random_uniform_int,
 };
 pub use reduction::{argmax, argmin, cumprod, cumsum, max, mean, min, sum, topk};
+pub use shape_inference::{
+    infer_binary_elementwise, infer_binary_elementwise_validated, infer_concat, infer_conv2d,
+    infer_matmul, infer_reduction, infer_reshape, BroadcastableConstraint, ExactShapeConstraint,
+    MatMulCompatibleConstraint, MinRankConstraint, RankConstraint, ShapeConstraint, ShapeContext,
+    ShapeValidator,
+};
 pub use special::{
     bessel_j0, bessel_j1, bessel_y0, bessel_y1, digamma, erf, erfc, gamma, lgamma, smooth_l1_loss,
 };

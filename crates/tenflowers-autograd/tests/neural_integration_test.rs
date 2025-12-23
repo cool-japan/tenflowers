@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::Array1;
+use scirs2_core::ndarray::Array1;
 use std::sync::{Arc, Mutex};
 use tenflowers_autograd::neural_integration::NeuralLayer;
 use tenflowers_autograd::{
@@ -174,7 +174,7 @@ fn test_autograd_optimizer_adam() {
     for _ in 0..3 {
         let mut param_array = [param.clone()];
         optimizer
-            .apply_gradients(&mut param_array, &[grad.clone()])
+            .apply_gradients(&mut param_array, std::slice::from_ref(&grad))
             .unwrap();
         param = param_array.into_iter().next().unwrap(); // Get the updated param back
     }
@@ -264,7 +264,7 @@ fn test_autograd_trainer_basic() {
     // Compute gradient dy/dx = 2x
     let gradient = tape_simple.gradient(&[y], &[x_tracked]).unwrap();
 
-    if let Some(grad) = gradient.get(0) {
+    if let Some(grad) = gradient.first() {
         let grad_val: f32 = grad.as_ref().unwrap().get(&[]).unwrap_or(0.0);
         println!("dy/dx = {} (expected: 4.0)", grad_val);
 
@@ -366,7 +366,7 @@ fn test_autograd_trainer_basic() {
 #[test]
 fn test_utils_create_feedforward_network() {
     let tape = Arc::new(Mutex::new(GradientTape::new()));
-    let layer_sizes = vec![10, 5, 2];
+    let layer_sizes = [10, 5, 2];
 
     // Create simple feedforward network manually
     let layer1 = MockDenseLayer::new(10, 5, true);

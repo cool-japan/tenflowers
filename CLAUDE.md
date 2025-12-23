@@ -77,8 +77,8 @@ cargo test --workspace --exclude tenflowers-ffi
 ## Critical Dependencies
 
 TenfloweRS **must** use SciRS2 as its foundation (see SCIRS2_INTEGRATION_POLICY.md):
-- `scirs2-core` - Core scientific primitives (required) - **replaces direct rand and ndarray usage**
-- `scirs2-autograd` - Automatic differentiation (required) - **primary source for ndarray types with array! macro**
+- `scirs2-core` - Core scientific primitives (required) - **provides ndarray, random, num_traits**
+- `scirs2-autograd` - Automatic differentiation (required)
 - `scirs2-neural` - Neural network abstractions (required)
 - `optirs` - Advanced optimizers from OptiRS project (required)
 - Additional SciRS2 crates added based on compilation evidence
@@ -103,16 +103,14 @@ TenfloweRS must make **FULL USE** of scirs2-core's extensive capabilities:
 
 #### Core Array Operations (replaces ndarray)
 ```rust
-// PRIMARY: Use scirs2-autograd's ndarray re-exports (includes array! macro)
-use scirs2_autograd::ndarray::{Array, ArrayView, ArrayViewMut, Axis, Ix1, Ix2, IxDyn};
-use scirs2_autograd::ndarray::{array, Array1, Array2, Array3, Array4};
+// PRIMARY: Use scirs2-core's ndarray re-exports (full functionality)
+use scirs2_core::ndarray::{Array, ArrayView, ArrayViewMut, Axis, Ix1, Ix2, IxDyn};
+use scirs2_core::ndarray::{array, Array1, Array2, Array3, Array4};
 
-// ALTERNATIVE: scirs2_core::ndarray_ext is available but lacks array! macro
-use scirs2_core::ndarray_ext::{Array, ArrayView, ArrayViewMut};  // Basic types only
+// ALTERNATIVE: scirs2_core::ndarray_ext provides additional extensions
 use scirs2_core::ndarray_ext::stats;         // Statistical functions
 use scirs2_core::ndarray_ext::matrix;        // Matrix operations
 use scirs2_core::ndarray_ext::manipulation;  // Array manipulation
-// Note: For array! macro, must use scirs2_autograd::ndarray
 ```
 
 #### Random Number Generation (replaces rand)
@@ -171,9 +169,9 @@ use scirs2_core::observability::{audit, tracing};
 
 ### Mandatory Usage Guidelines
 
-1. **NEVER** import `ndarray` directly - use `scirs2_autograd::ndarray` for full functionality or `scirs2_core::ndarray_ext` for basic types
+1. **NEVER** import `ndarray` directly - use `scirs2_core::ndarray` for full functionality
 2. **NEVER** import `rand` directly - use `scirs2_core::random`
-3. **ALWAYS** use `scirs2_autograd::ndarray` when you need the `array!` macro
+3. **NEVER** import `num_traits` directly - use `scirs2_core::num_traits`
 4. **ALWAYS** use scirs2-core's SIMD operations for performance-critical code (if available)
 5. **ALWAYS** use scirs2-core's GPU abstractions for hardware acceleration (if available)
 6. **ALWAYS** use scirs2-core's memory management for large data operations (if available)
@@ -208,27 +206,24 @@ use scirs2_core::observability::{audit, tracing};
 ## Key Implementation Patterns
 
 1. **Error Handling**: Use `scirs2_core::error::CoreError` and `scirs2_core::Result` when available
-2. **Array Operations**: Use `scirs2_autograd::ndarray` for full functionality (with array! macro), or `scirs2_core::ndarray_ext` for basic types only
+2. **Array Operations**: Use `scirs2_core::ndarray` for all ndarray functionality
 3. **Random Numbers**: Use `scirs2_core::random` exclusively
-4. **Parallelization**: Use `scirs2_core::parallel` and `parallel_ops`
-5. **SIMD Optimization**: Use `scirs2_core::simd` and `simd_ops`
-6. **Memory Efficiency**: Use `scirs2_core::memory_efficient` for large data
-7. **Profiling**: Use `scirs2_core::profiling` and `benchmarking`
-8. **Metrics**: Use `scirs2_core::metrics` for monitoring
+4. **Numeric Traits**: Use `scirs2_core::num_traits` exclusively
+5. **Parallelization**: Use `scirs2_core::parallel` and `parallel_ops`
+6. **SIMD Optimization**: Use `scirs2_core::simd` and `simd_ops`
+7. **Memory Efficiency**: Use `scirs2_core::memory_efficient` for large data
+8. **Profiling**: Use `scirs2_core::profiling` and `benchmarking`
+9. **Metrics**: Use `scirs2_core::metrics` for monitoring
 
 ## Common Workflows
 
 ### Importing Core Types - FULL SciRS2 Usage
 ```rust
-// OPTION 1: When you need full ndarray functionality including array! macro:
-use scirs2_autograd::ndarray::{Array, Array1, Array2, ArrayView, Ix1, Ix2, IxDyn, array};
+// PRIMARY: Use scirs2_core::ndarray for all array operations
+use scirs2_core::ndarray::{Array, Array1, Array2, ArrayView, Ix1, Ix2, IxDyn, array};
 
-// OPTION 2: When you only need basic array types (no array! macro):
-use scirs2_core::ndarray_ext::{Array, ArrayView, ArrayViewMut};
+// Additional array extensions
 use scirs2_core::ndarray_ext::{stats, matrix, manipulation};
-
-// For array! macro in tests
-use scirs2_autograd::ndarray::array;
 
 // Random number generation
 use scirs2_core::random::{Random, rng, DistributionExt};
@@ -248,14 +243,14 @@ use scirs2_core::metrics::{Counter, Timer};
 ### Creating Tensors with SciRS2
 ```rust
 use tenflowers_core::{Tensor, Device};
-use scirs2_autograd::ndarray::{Array2, ArrayView2, array};
+use scirs2_core::ndarray::{Array2, ArrayView2, array};
 use scirs2_core::random::Random;
 
 // Create tensor from array
 let array = Array2::zeros((3, 3));
 let tensor = Tensor::from_array(array, Device::cpu());
 
-// Using array! macro (requires scirs2_autograd::ndarray)
+// Using array! macro (from scirs2_core::ndarray)
 let data = array![[1.0, 2.0], [3.0, 4.0]];
 let tensor = Tensor::from_array(data, Device::cpu());
 
@@ -290,9 +285,8 @@ When reviewing or writing TenfloweRS code, verify:
 ### ✅ Arrays and Numerical Operations
 - [ ] NO direct `use ndarray::{...}`
 - [ ] NO direct `Array`, `Array1`, `Array2` from ndarray
-- [ ] YES `use scirs2_autograd::ndarray::{Array, Array1, Array2, ...}` for full functionality with array! macro
-- [ ] YES `use scirs2_core::ndarray_ext::{Array, ArrayView, ...}` for basic types without array! macro
-- [ ] Choose based on whether you need array! macro
+- [ ] YES `use scirs2_core::ndarray::{Array, Array1, Array2, array, ...}` for all ndarray functionality
+- [ ] YES `use scirs2_core::ndarray_ext::{stats, matrix, manipulation}` for additional extensions
 
 ### ✅ Random Number Generation
 - [ ] NO direct `use rand::{...}`
@@ -318,20 +312,19 @@ When reviewing or writing TenfloweRS code, verify:
 use ndarray::{Array2, array};
 use rand::Rng;
 use rand_distr::Normal;
+use num_traits::Float;
 
-// ✅ CORRECT - Full SciRS2 usage (Option 1: with array! macro)
-use scirs2_autograd::ndarray::{Array2, array};
-use scirs2_core::random::{Random, rng};
+// ✅ CORRECT - Full SciRS2 usage
+use scirs2_core::ndarray::{Array2, array};
+use scirs2_core::random::{Random, Rng};
 use scirs2_core::random::distributions::Normal;
-
-// ✅ ALSO CORRECT - Alternative (Option 2: without array! macro)
-use scirs2_core::ndarray_ext::Array2;  // Basic type only
-use scirs2_core::random::Random;
+use scirs2_core::num_traits::Float;
 
 // Key Points:
-// - scirs2_autograd::ndarray - Full ndarray re-export WITH array! macro
-// - scirs2_core::ndarray_ext - Basic types and operations, NO array! macro
-// - Choose based on your needs
+// - scirs2_core::ndarray - Full ndarray re-export WITH array! macro
+// - scirs2_core::num_traits - All numeric traits
+// - scirs2_core::random - All random number generation
+// - Use scirs2_core for ALL scientific computing primitives
 ```
 
 ## Current Focus Areas
@@ -351,21 +344,25 @@ See TODO.md for detailed task list and priorities.
 ### Correct Import Patterns Summary
 
 ```rust
-// OPTION 1: When you need full ndarray functionality including array! macro:
-use scirs2_autograd::ndarray::{Array, Array1, Array2, array};
+// PRIMARY: Use scirs2_core for all scientific computing
+use scirs2_core::ndarray::{Array, Array1, Array2, array};
+use scirs2_core::num_traits::{Float, Zero, One};
+use scirs2_core::random::{Random, Rng};
 
-// OPTION 2: When you only need basic array types (no array! macro):
-use scirs2_core::ndarray_ext::{Array, ArrayView, ArrayViewMut};
+// Additional extensions available
 use scirs2_core::ndarray_ext::{stats, matrix, manipulation};
 
-// NEVER use ndarray directly:
-// use ndarray::{...}  // ❌ Violates SciRS2 policy
+// NEVER use direct dependencies:
+// use ndarray::{...}     // ❌ Violates SciRS2 policy
+// use num_traits::{...}  // ❌ Violates SciRS2 policy
+// use rand::{...}        // ❌ Violates SciRS2 policy
 ```
 
 **Key Points**:
-- `scirs2_autograd::ndarray` - Full ndarray re-export with array! macro
-- `scirs2_core::ndarray_ext` - Basic types and operations, NO array! macro
-- Choose based on your needs (array! macro requirement)
+- `scirs2_core::ndarray` - Full ndarray re-export with array! macro
+- `scirs2_core::num_traits` - All numeric traits
+- `scirs2_core::random` - All random number generation
+- ALL scientific computing primitives come from scirs2_core
 
 ## SciRS2 Migration Status
 
@@ -377,19 +374,22 @@ use scirs2_core::ndarray_ext::{stats, matrix, manipulation};
 |-----------|--------|-------|
 | **Direct ndarray imports** | ✅ **ELIMINATED** | 0 remaining |
 | **Direct rand imports** | ✅ **ELIMINATED** | 0 remaining |
-| **SciRS2 imports total** | ✅ **ACTIVE** | 117 files using SciRS2 |
-| **scirs2_autograd::ndarray** | ✅ **WIDESPREAD** | 71 files (with array! macro) |
-| **scirs2_core usage** | ✅ **COMPREHENSIVE** | 42 files using core features |
+| **Direct num_traits imports** | ✅ **ELIMINATED** | 0 remaining |
+| **SciRS2 imports total** | ✅ **ACTIVE** | All files use SciRS2 |
+| **scirs2_core::ndarray** | ✅ **WIDESPREAD** | Full ndarray functionality |
+| **scirs2_core::num_traits** | ✅ **COMPREHENSIVE** | All numeric operations |
+| **scirs2_core::random** | ✅ **COMPREHENSIVE** | All RNG operations |
 
 ### Key Achievements
 
-1. **Complete API Migration**: All direct usage of `ndarray` and `rand` eliminated
-2. **Comprehensive Coverage**: 117 total SciRS2 imports across the workspace
+1. **Complete API Migration**: All direct usage of `ndarray`, `rand`, and `num_traits` eliminated
+2. **Comprehensive Coverage**: All scientific computing through scirs2_core
 3. **Proper Architecture**: Full adherence to the architectural hierarchy
 4. **Random Number Generation**: Complete migration to `scirs2_core::random`
-5. **Array Operations**: Using `scirs2_autograd::ndarray` with array! macro support
-6. **Performance Features**: Access to SIMD, GPU, and parallel optimizations via SciRS2
-7. **Policy Compliance**: 100% adherence to SCIRS2_INTEGRATION_POLICY.md
+5. **Array Operations**: Using `scirs2_core::ndarray` with array! macro support
+6. **Numeric Traits**: Using `scirs2_core::num_traits` for all numeric operations
+7. **Performance Features**: Access to SIMD, GPU, and parallel optimizations via SciRS2
+8. **Policy Compliance**: 100% adherence to SCIRS2_INTEGRATION_POLICY.md
 
 ### Validation Metrics
 

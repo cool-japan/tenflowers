@@ -3,7 +3,7 @@
 //! This profiler targets the goal of achieving sub-millisecond overhead for eager execution
 //! as mentioned in the TODO.md files, aiming for < 1000 microseconds overhead per operation.
 
-use scirs2_autograd::ndarray::{Array1, Array2};
+use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;
 use std::time::Instant;
 use tenflowers_core::{DType, Device, Tensor};

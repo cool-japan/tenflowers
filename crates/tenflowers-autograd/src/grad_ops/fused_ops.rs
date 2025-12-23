@@ -5,7 +5,7 @@
 //! and computational efficiency by reusing intermediate values.
 
 use crate::tensor_ext::TensorAutograd;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::activation::tanh;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -36,7 +36,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -64,7 +64,7 @@ where
         + Default
         + Zero
         + One
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -134,7 +134,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -206,7 +206,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + PartialOrd
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -241,7 +241,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + PartialOrd
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -311,8 +311,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -398,8 +398,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -462,7 +462,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

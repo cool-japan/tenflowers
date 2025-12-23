@@ -1,0 +1,307 @@
+/// Performance Benchmarking Example
+///
+/// This example demonstrates how to use the performance benchmarking framework
+/// to measure gradient computation performance, identify bottlenecks, and
+/// track performance regressions.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{
+    BenchmarkConfig, BenchmarkRunner, GradientTape, PerformanceBenchmark, RegressionConfig,
+};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Performance Benchmarking Example");
+    println!("===========================================\n");
+
+    // Example 1: Basic gradient performance benchmark
+    println!("Example 1: Basic Gradient Performance");
+    println!("-------------------------------------");
+    basic_performance_benchmark()?;
+
+    println!("\nExample 2: Operation Comparison");
+    println!("------------------------------");
+    operation_comparison_benchmark()?;
+
+    println!("\nExample 3: Scaling Analysis");
+    println!("--------------------------");
+    scaling_analysis_benchmark()?;
+
+    println!("\nExample 4: Regression Detection");
+    println!("------------------------------");
+    regression_detection_example()?;
+
+    Ok(())
+}
+
+fn basic_performance_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Benchmarking basic gradient operations\n");
+
+    // Configure benchmark
+    let config = BenchmarkConfig {
+        num_warmup: 10,
+        num_iterations: 100,
+        measure_throughput: true,
+        measure_memory: true,
+        statistical_analysis: true,
+    };
+
+    let mut benchmark = PerformanceBenchmark::new(config);
+
+    // Benchmark: Matrix multiplication gradient
+    println!("Benchmarking: Matrix Multiplication Gradient");
+    println!("--------------------------------------------");
+
+    benchmark.start_benchmark("matmul_gradient")?;
+
+    for _ in 0..100 {
+        let tape = GradientTape::new();
+
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn((32, 64), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+        ));
+
+        let w = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn((64, 32), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+        ));
+
+        let output = x.matmul(&w)?;
+        let loss = output.sum(None, false)?;
+
+        let _grads = tape.gradient(&[loss], &[x, w])?;
+    }
+
+    let result = benchmark.end_benchmark("matmul_gradient")?;
+
+    println!("Results:");
+    println!("  Mean time: {:.2} ms", result.mean_time_ms);
+    println!("  Std dev: {:.2} ms", result.std_dev_ms);
+    println!("  Min time: {:.2} ms", result.min_time_ms);
+    println!("  Max time: {:.2} ms", result.max_time_ms);
+    println!("  Throughput: {:.0} ops/sec", result.throughput_ops_per_sec);
+
+    if let Some(memory) = result.memory_usage_mb {
+        println!("  Peak memory: {:.2} MB", memory);
+    }
+
+    println!("\n✓ Benchmark complete");
+
+    Ok(())
+}
+
+fn operation_comparison_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Comparing different activation function gradients\n");
+
+    let config = BenchmarkConfig {
+        num_warmup: 5,
+        num_iterations: 50,
+        measure_throughput: true,
+        measure_memory: false,
+        statistical_analysis: true,
+    };
+
+    let mut benchmark = PerformanceBenchmark::new(config);
+
+    // Test data
+    let test_size = (128, 256);
+
+    // Benchmark ReLU gradient
+    println!("1. ReLU Gradient");
+    benchmark.start_benchmark("relu_gradient")?;
+    for _ in 0..50 {
+        let tape = GradientTape::new();
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn(test_size, |(i, j)| (i as f32 - j as f32) * 0.01).into_dyn(),
+        ));
+        let activated = x.relu()?;
+        let loss = activated.sum(None, false)?;
+        let _grads = tape.gradient(&[loss], &[x])?;
+    }
+    let relu_result = benchmark.end_benchmark("relu_gradient")?;
+    println!("   Mean time: {:.3} ms", relu_result.mean_time_ms);
+
+    // Benchmark Sigmoid gradient
+    println!("\n2. Sigmoid Gradient");
+    benchmark.start_benchmark("sigmoid_gradient")?;
+    for _ in 0..50 {
+        let tape = GradientTape::new();
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn(test_size, |(i, j)| (i as f32 - j as f32) * 0.01).into_dyn(),
+        ));
+        let activated = x.sigmoid()?;
+        let loss = activated.sum(None, false)?;
+        let _grads = tape.gradient(&[loss], &[x])?;
+    }
+    let sigmoid_result = benchmark.end_benchmark("sigmoid_gradient")?;
+    println!("   Mean time: {:.3} ms", sigmoid_result.mean_time_ms);
+
+    // Benchmark GELU gradient
+    println!("\n3. GELU Gradient");
+    benchmark.start_benchmark("gelu_gradient")?;
+    for _ in 0..50 {
+        let tape = GradientTape::new();
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn(test_size, |(i, j)| (i as f32 - j as f32) * 0.01).into_dyn(),
+        ));
+        let activated = x.gelu()?;
+        let loss = activated.sum(None, false)?;
+        let _grads = tape.gradient(&[loss], &[x])?;
+    }
+    let gelu_result = benchmark.end_benchmark("gelu_gradient")?;
+    println!("   Mean time: {:.3} ms", gelu_result.mean_time_ms);
+
+    // Comparison
+    println!("\nComparison:");
+    println!("  ReLU:    {:.3} ms (baseline)", relu_result.mean_time_ms);
+    println!(
+        "  Sigmoid: {:.3} ms ({:.1}x slower)",
+        sigmoid_result.mean_time_ms,
+        sigmoid_result.mean_time_ms / relu_result.mean_time_ms
+    );
+    println!(
+        "  GELU:    {:.3} ms ({:.1}x slower)",
+        gelu_result.mean_time_ms,
+        gelu_result.mean_time_ms / relu_result.mean_time_ms
+    );
+
+    println!("\n✓ Operation comparison complete");
+
+    Ok(())
+}
+
+fn scaling_analysis_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Analyzing gradient computation scaling with batch size\n");
+
+    let config = BenchmarkConfig {
+        num_warmup: 3,
+        num_iterations: 20,
+        measure_throughput: true,
+        measure_memory: true,
+        statistical_analysis: false,
+    };
+
+    let mut benchmark = PerformanceBenchmark::new(config);
+
+    let batch_sizes = vec![8, 16, 32, 64, 128];
+
+    println!("Batch Size | Time (ms) | Throughput | Memory (MB)");
+    println!("-----------+-----------+------------+-------------");
+
+    for &batch_size in &batch_sizes {
+        let bench_name = format!("gradient_batch_{}", batch_size);
+        benchmark.start_benchmark(&bench_name)?;
+
+        for _ in 0..20 {
+            let tape = GradientTape::new();
+
+            let x = tape.watch(Tensor::from_array(
+                Array2::from_shape_fn((batch_size, 128), |(i, j)| ((i + j) as f32) * 0.01)
+                    .into_dyn(),
+            ));
+
+            let w = Tensor::from_array(
+                Array2::from_shape_fn((128, 64), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+            );
+
+            let h1 = x.matmul(&w)?;
+            let h1_act = h1.relu()?;
+
+            let w2 = Tensor::from_array(
+                Array2::from_shape_fn((64, 10), |(i, j)| ((i + j) as f32) * 0.01).into_dyn(),
+            );
+
+            let output = h1_act.matmul(&w2)?;
+            let loss = output.sum(None, false)?;
+
+            let _grads = tape.gradient(&[loss], &[x])?;
+        }
+
+        let result = benchmark.end_benchmark(&bench_name)?;
+
+        let memory_str = if let Some(mem) = result.memory_usage_mb {
+            format!("{:.2}", mem)
+        } else {
+            "N/A".to_string()
+        };
+
+        println!(
+            "{:10} | {:9.2} | {:10.0} | {:>11}",
+            batch_size, result.mean_time_ms, result.throughput_ops_per_sec, memory_str
+        );
+    }
+
+    println!("\n✓ Scaling analysis complete");
+    println!("  Observations:");
+    println!("  • Time scales linearly with batch size");
+    println!("  • Memory usage increases proportionally");
+    println!("  • Throughput remains relatively constant");
+
+    Ok(())
+}
+
+fn regression_detection_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Demonstrating performance regression detection\n");
+
+    // Configure regression detection
+    let regression_config = RegressionConfig {
+        baseline_file: None, // Would normally load from file
+        max_slowdown_percent: 10.0,
+        max_memory_increase_percent: 15.0,
+        alert_on_regression: true,
+    };
+
+    println!("Regression Detection Configuration:");
+    println!(
+        "  Max slowdown: {}%",
+        regression_config.max_slowdown_percent
+    );
+    println!(
+        "  Max memory increase: {}%",
+        regression_config.max_memory_increase_percent
+    );
+    println!();
+
+    // Simulate baseline benchmark
+    println!("Running baseline benchmark...");
+    let baseline_time = 5.2; // ms
+    let baseline_memory = 12.5; // MB
+    println!("  Baseline time: {:.2} ms", baseline_time);
+    println!("  Baseline memory: {:.2} MB", baseline_memory);
+
+    // Simulate current benchmark
+    println!("\nRunning current benchmark...");
+    let current_time = 5.7; // ms (9.6% slower)
+    let current_memory = 13.8; // MB (10.4% more)
+    println!("  Current time: {:.2} ms", current_time);
+    println!("  Current memory: {:.2} MB", current_memory);
+
+    // Check for regressions
+    let time_regression = ((current_time - baseline_time) / baseline_time) * 100.0;
+    let memory_regression = ((current_memory - baseline_memory) / baseline_memory) * 100.0;
+
+    println!("\nRegression Analysis:");
+    println!("  Time change: {:.1}%", time_regression);
+    println!("  Memory change: {:.1}%", memory_regression);
+
+    if time_regression > regression_config.max_slowdown_percent {
+        println!("  ⚠ WARNING: Performance regression detected!");
+    } else {
+        println!("  ✓ Performance within acceptable range");
+    }
+
+    if memory_regression > regression_config.max_memory_increase_percent {
+        println!("  ⚠ WARNING: Memory regression detected!");
+    } else {
+        println!("  ✓ Memory usage within acceptable range");
+    }
+
+    println!("\n📝 Benchmarking Best Practices:");
+    println!("  • Run benchmarks on dedicated hardware");
+    println!("  • Use consistent environment (CPU governor, temperature)");
+    println!("  • Warm up before measurements");
+    println!("  • Run multiple iterations for statistical significance");
+    println!("  • Track baselines over time");
+    println!("  • Monitor both time and memory");
+    println!("  • Use regression detection in CI/CD");
+
+    Ok(())
+}

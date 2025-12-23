@@ -8,14 +8,14 @@ use super::core::{Tensor, TensorStorage};
 #[cfg(feature = "gpu")]
 use crate::Device;
 use crate::{Result, TensorError};
-use num_traits::Zero;
+use scirs2_core::numeric::Zero;
 
 // Impl block for methods that need Clone (includes gradient operations)
 impl<T: Clone> Tensor<T> {
     /// Perform backward pass for gradient computation
     pub fn backward(&self) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::One,
+        T: Clone + Default + scirs2_core::num_traits::Zero + scirs2_core::num_traits::One,
     {
         if !self.requires_grad() {
             return Err(TensorError::GradientNotEnabled {
@@ -55,7 +55,7 @@ impl<T: Clone> Tensor<T> {
     /// Enhanced backward pass with additional autograd options
     pub fn backward_with_options(&self, retain_graph: bool, create_graph: bool) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::One,
+        T: Clone + Default + scirs2_core::num_traits::Zero + scirs2_core::num_traits::One,
     {
         if !self.requires_grad() {
             return Err(TensorError::GradientNotEnabled {
@@ -100,7 +100,7 @@ impl<T: Clone> Tensor<T> {
     /// Initialize gradient for this tensor with ones (for scalar) or appropriate shape
     fn init_gradient(&self) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::One,
+        T: Clone + Default + scirs2_core::num_traits::Zero + scirs2_core::num_traits::One,
     {
         // Only initialize if gradient doesn't already exist
         if self.grad().is_some() {
@@ -126,8 +126,8 @@ impl<T> Tensor<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -169,7 +169,7 @@ where
     /// Element-wise power operation
     pub fn pow(&self, other: &Self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         crate::ops::pow(self, other)
     }
@@ -177,7 +177,7 @@ where
     /// Element-wise natural logarithm
     pub fn log(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -192,7 +192,13 @@ where
     #[cfg(feature = "gpu")]
     fn log_gpu_impl(&self, buffer: &crate::gpu::buffer::GpuBuffer<T>) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static,
+        T: scirs2_core::num_traits::Float
+            + bytemuck::Pod
+            + bytemuck::Zeroable
+            + Clone
+            + Send
+            + Sync
+            + 'static,
     {
         use crate::gpu::ops::{execute_unary_op, UnaryOp};
         let result_buffer = execute_unary_op(buffer, UnaryOp::Log)?;
@@ -239,7 +245,7 @@ where
     /// ReLU activation function
     pub fn relu(&self) -> Result<Self>
     where
-        T: PartialOrd + num_traits::Zero + bytemuck::Pod + bytemuck::Zeroable,
+        T: PartialOrd + scirs2_core::num_traits::Zero + bytemuck::Pod + bytemuck::Zeroable,
     {
         crate::ops::activation::relu(self)
     }
@@ -247,7 +253,7 @@ where
     /// Sigmoid activation function
     pub fn sigmoid(&self) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::Float + bytemuck::Pod + bytemuck::Zeroable,
     {
         crate::ops::activation::sigmoid(self)
     }
@@ -255,7 +261,7 @@ where
     /// Hyperbolic tangent activation function
     pub fn tanh(&self) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::Float + bytemuck::Pod + bytemuck::Zeroable,
     {
         crate::ops::activation::tanh(self)
     }
@@ -263,7 +269,7 @@ where
     /// GELU activation function
     pub fn gelu(&self) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod,
+        T: scirs2_core::num_traits::Float + bytemuck::Pod,
     {
         crate::ops::activation::gelu(self)
     }
@@ -271,7 +277,7 @@ where
     /// Swish activation function
     pub fn swish(&self) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod,
+        T: scirs2_core::num_traits::Float + bytemuck::Pod,
     {
         crate::ops::activation::swish(self)
     }
@@ -279,7 +285,12 @@ where
     /// Mish activation function
     pub fn mish(&self) -> Result<Self>
     where
-        T: num_traits::Float + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::Float
+            + Send
+            + Sync
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         crate::ops::activation::mish(self)
     }
@@ -287,7 +298,7 @@ where
     /// Softmax activation function
     pub fn softmax(&self, axis: Option<i32>) -> Result<Self>
     where
-        T: num_traits::Float
+        T: scirs2_core::num_traits::Float
             + std::ops::Sub<Output = T>
             + std::ops::Add<Output = T>
             + std::ops::Div<Output = T>
@@ -302,7 +313,7 @@ where
     /// ELU activation function
     pub fn elu(&self, alpha: T) -> Result<Self>
     where
-        T: num_traits::Float + PartialOrd + bytemuck::Pod,
+        T: scirs2_core::num_traits::Float + PartialOrd + bytemuck::Pod,
     {
         crate::ops::activation::elu(self, alpha)
     }
@@ -310,7 +321,7 @@ where
     /// Leaky ReLU activation function
     pub fn leaky_relu(&self, alpha: T) -> Result<Self>
     where
-        T: num_traits::Float + PartialOrd + bytemuck::Pod,
+        T: scirs2_core::num_traits::Float + PartialOrd + bytemuck::Pod,
     {
         crate::ops::activation::leaky_relu(self, alpha)
     }
@@ -318,7 +329,7 @@ where
     /// Hard Swish activation function
     pub fn hard_swish(&self) -> Result<Self>
     where
-        T: num_traits::Float + PartialOrd,
+        T: scirs2_core::num_traits::Float + PartialOrd,
     {
         crate::ops::activation::hard_swish(self)
     }
@@ -326,7 +337,7 @@ where
     /// Parametric ReLU activation function
     pub fn prelu(&self, alpha: &Self) -> Result<Self>
     where
-        T: num_traits::Float + PartialOrd,
+        T: scirs2_core::num_traits::Float + PartialOrd,
     {
         crate::ops::activation::prelu(self, alpha)
     }
@@ -362,7 +373,7 @@ where
     /// Mean tensor along specified axes
     pub fn mean(&self, axes: Option<&[i32]>, keepdims: bool) -> Result<Self>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         crate::ops::mean(self, axes, keepdims)
     }
@@ -386,7 +397,7 @@ where
     /// Element-wise square root
     pub fn sqrt(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -401,7 +412,13 @@ where
     #[cfg(feature = "gpu")]
     fn sqrt_gpu_impl(&self, buffer: &crate::gpu::buffer::GpuBuffer<T>) -> Result<Self>
     where
-        T: num_traits::Float + bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static,
+        T: scirs2_core::num_traits::Float
+            + bytemuck::Pod
+            + bytemuck::Zeroable
+            + Clone
+            + Send
+            + Sync
+            + 'static,
     {
         use crate::gpu::ops::{execute_unary_op, UnaryOp};
         let result_buffer = execute_unary_op(buffer, UnaryOp::Sqrt)?;
@@ -411,7 +428,7 @@ where
     /// Element-wise absolute value
     pub fn abs(&self) -> Result<Self>
     where
-        T: num_traits::Signed,
+        T: scirs2_core::num_traits::Signed,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -430,7 +447,7 @@ where
     /// Element-wise exponential function
     pub fn exp(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -449,7 +466,7 @@ where
     /// Element-wise sine function
     pub fn sin(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -468,7 +485,7 @@ where
     /// Element-wise cosine function
     pub fn cos(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -487,7 +504,7 @@ where
     /// Element-wise tangent function
     pub fn tan(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -506,7 +523,7 @@ where
     /// Element-wise reciprocal function
     pub fn recip(&self) -> Result<Self>
     where
-        T: num_traits::Float,
+        T: scirs2_core::num_traits::Float,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -525,7 +542,7 @@ where
     /// Squeeze tensor - remove dimensions of size 1
     pub fn squeeze(&self, axes: Option<&[usize]>) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::squeeze(self, axes)
     }
@@ -533,7 +550,7 @@ where
     /// Unsqueeze tensor - add dimensions of size 1
     pub fn unsqueeze(&self, axes: &[usize]) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::unsqueeze(self, axes)
     }
@@ -560,7 +577,13 @@ where
     /// Convert tensor to vector
     pub fn to_vec(&self) -> Result<Vec<T>>
     where
-        T: Clone + Default + Send + Sync + 'static + num_traits::Zero + num_traits::One,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         match &self.storage {
             TensorStorage::Cpu(arr) => {
@@ -635,7 +658,7 @@ where
     /// Check if all elements are close to another tensor within tolerance
     pub fn allclose(&self, other: &Self, rtol: T, atol: T) -> Result<bool>
     where
-        T: num_traits::Float + Clone,
+        T: scirs2_core::num_traits::Float + Clone,
     {
         if self.shape() != other.shape() {
             return Ok(false);
@@ -643,7 +666,7 @@ where
 
         match (&self.storage, &other.storage) {
             (TensorStorage::Cpu(a), TensorStorage::Cpu(b)) => {
-                use scirs2_autograd::ndarray::Zip;
+                use scirs2_core::ndarray::Zip;
                 let mut all_close = true;
                 Zip::from(a).and(b).for_each(|&a_val, &b_val| {
                     let diff = (a_val - b_val).abs();
@@ -743,7 +766,7 @@ where
     /// ```
     pub fn flatten(&self) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::flatten(self)
     }
@@ -765,7 +788,13 @@ where
     /// ```
     pub fn cumsum(&self, axis: Option<i32>) -> Result<Self>
     where
-        T: Clone + Default + std::ops::Add<Output = T> + num_traits::Zero + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + std::ops::Add<Output = T>
+            + scirs2_core::num_traits::Zero
+            + Send
+            + Sync
+            + 'static,
     {
         crate::ops::cumsum(self, axis)
     }
@@ -787,7 +816,13 @@ where
     /// ```
     pub fn cumprod(&self, axis: Option<i32>) -> Result<Self>
     where
-        T: Clone + Default + std::ops::Mul<Output = T> + num_traits::One + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + std::ops::Mul<Output = T>
+            + scirs2_core::num_traits::One
+            + Send
+            + Sync
+            + 'static,
     {
         crate::ops::cumprod(self, axis)
     }
@@ -810,7 +845,7 @@ where
     /// ```
     pub fn tile(&self, multiples: &[usize]) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::tile(self, multiples)
     }
@@ -834,7 +869,7 @@ where
     /// ```
     pub fn repeat(&self, repeats: usize, axis: Option<usize>) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::repeat(self, repeats, axis)
     }
@@ -857,7 +892,7 @@ where
     /// ```
     pub fn broadcast_to(&self, target_shape: &[usize]) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::broadcast_to(self, target_shape)
     }
@@ -881,7 +916,7 @@ where
     /// ```
     pub fn expand_as(&self, target: &Self) -> Result<Self>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Zero + Send + Sync + 'static,
     {
         crate::ops::expand_as(self, target)
     }
@@ -914,8 +949,8 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + std::ops::Mul<Output = T>,
     {
@@ -927,8 +962,8 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + std::ops::Add<Output = T>
             + std::ops::Mul<Output = T>,
     {

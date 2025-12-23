@@ -7,7 +7,7 @@
 //! This is also known as additive attention or content-based attention.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use scirs2_core::random::Random;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -290,30 +290,64 @@ where
         let batch_size = shape[0];
         let attention_size = shape[1];
 
-        // Create repeated tensor (simplified implementation)
-        let mut result = Tensor::zeros(&[seq_len, batch_size, attention_size]);
+        // Get the data from decoder_projected
+        let decoder_data = decoder_projected.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access decoder data".to_string())
+        })?;
 
-        // In practice, this would use broadcasting operations
-        // For now, return zeros as placeholder
-        Ok(result)
+        // Repeat the data across the sequence dimension
+        let total_elements = seq_len * batch_size * attention_size;
+        let mut result_data = Vec::with_capacity(total_elements);
+
+        for _ in 0..seq_len {
+            result_data.extend_from_slice(decoder_data);
+        }
+
+        Tensor::from_data(result_data, &[seq_len, batch_size, attention_size])
     }
 
     /// Apply softmax over the sequence dimension
     fn softmax_over_sequence(scores: &Tensor<T>) -> Result<Tensor<T>> {
         // Apply softmax over the first dimension (sequence length)
-        // This is a simplified implementation
-        // In practice, would use proper softmax with numerical stability
-
-        // For now, create uniform weights as placeholder
+        // scores: [seq_len, batch_size]
         let shape = scores.shape().dims();
         let seq_len = shape[0];
         let batch_size = shape[1];
 
-        let uniform_weight = T::from(1.0 / seq_len as f64).unwrap();
-        let mut weights = Tensor::zeros(&[seq_len, batch_size]);
+        let scores_data = scores.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access scores data".to_string())
+        })?;
 
-        // Fill with uniform weights (placeholder)
-        Ok(weights)
+        let mut result_data = vec![T::zero(); seq_len * batch_size];
+
+        // Apply softmax for each batch
+        for b in 0..batch_size {
+            // Find max for numerical stability
+            let mut max_val = T::neg_infinity();
+            for s in 0..seq_len {
+                let idx = s * batch_size + b;
+                if scores_data[idx] > max_val {
+                    max_val = scores_data[idx];
+                }
+            }
+
+            // Compute exp and sum
+            let mut sum = T::zero();
+            for s in 0..seq_len {
+                let idx = s * batch_size + b;
+                let exp_val = (scores_data[idx] - max_val).exp();
+                result_data[idx] = exp_val;
+                sum = sum + exp_val;
+            }
+
+            // Normalize
+            for s in 0..seq_len {
+                let idx = s * batch_size + b;
+                result_data[idx] = result_data[idx] / sum;
+            }
+        }
+
+        Tensor::from_data(result_data, &[seq_len, batch_size])
     }
 
     /// Compute context vector as weighted sum of encoder outputs
@@ -326,11 +360,34 @@ where
         // output: [batch_size, encoder_hidden_size]
 
         let encoder_shape = encoder_outputs.shape().dims();
+        let seq_len = encoder_shape[0];
         let batch_size = encoder_shape[1];
         let encoder_dim = encoder_shape[2];
 
-        // Simplified implementation - return zeros for now
-        Ok(Tensor::zeros(&[batch_size, encoder_dim]))
+        let encoder_data = encoder_outputs.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access encoder data".to_string())
+        })?;
+
+        let weights_data = attention_weights.as_slice().ok_or_else(|| {
+            TensorError::device_error_simple("Cannot access weights data".to_string())
+        })?;
+
+        let mut context_data = vec![T::zero(); batch_size * encoder_dim];
+
+        // Compute weighted sum for each batch
+        for b in 0..batch_size {
+            for d in 0..encoder_dim {
+                let mut sum = T::zero();
+                for s in 0..seq_len {
+                    let encoder_idx = s * batch_size * encoder_dim + b * encoder_dim + d;
+                    let weight_idx = s * batch_size + b;
+                    sum = sum + encoder_data[encoder_idx] * weights_data[weight_idx];
+                }
+                context_data[b * encoder_dim + d] = sum;
+            }
+        }
+
+        Tensor::from_data(context_data, &[batch_size, encoder_dim])
     }
 }
 

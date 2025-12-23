@@ -404,9 +404,17 @@ impl AdvancedKernelManager {
                 ..
             } => self.compile_wavefront_matmul(a, b, *wavefront_size, *lds_optimization),
             KernelStrategy::StandardCompute => self.compile_standard_matmul(a, b),
-            KernelStrategy::IntelXe { .. } => {
-                todo!("Intel Xe GPU optimization not yet implemented")
-            }
+            KernelStrategy::IntelXe {
+                xe_thread_groups,
+                xmx_acceleration,
+                intel_gpu_gen,
+            } => self.compile_intel_xe_matmul(
+                a,
+                b,
+                *xe_thread_groups,
+                *xmx_acceleration,
+                intel_gpu_gen,
+            ),
         }
     }
 
@@ -857,17 +865,19 @@ impl AdvancedKernelManager {
             });
 
             // Load compute shader based on kernel handle
-            let shader_source = if let KernelHandle::WGPU { shader, .. } = &kernel.handle {
-                match shader.as_str() {
+            let shader_source = match &kernel.handle {
+                KernelHandle::WGPU { shader, .. } => match shader.as_str() {
                     "matmul_ops.wgsl" => include_str!("shaders/matmul_ops.wgsl"),
                     _ => include_str!("shaders/matmul_ops.wgsl"), // Fallback
+                },
+                #[cfg(any(feature = "cuda", feature = "metal", feature = "rocm"))]
+                _ => {
+                    return Err(TensorError::InvalidArgument {
+                        operation: "execute_wgpu_kernel".to_string(),
+                        reason: "Expected WGPU kernel handle".to_string(),
+                        context: None,
+                    })
                 }
-            } else {
-                return Err(TensorError::InvalidArgument {
-                    operation: "execute_wgpu_kernel".to_string(),
-                    reason: "Expected WGPU kernel handle".to_string(),
-                    context: None,
-                });
             };
 
             let shader_module = device_arc.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -955,10 +965,10 @@ impl AdvancedKernelManager {
                     push_constant_ranges: &[],
                 });
 
-            let entry_point = if let KernelHandle::WGPU { entry_point, .. } = &kernel.handle {
-                entry_point.as_str()
-            } else {
-                "matmul_kernel" // Fallback
+            let entry_point = match &kernel.handle {
+                KernelHandle::WGPU { entry_point, .. } => entry_point.as_str(),
+                #[cfg(any(feature = "cuda", feature = "metal", feature = "rocm"))]
+                _ => "matmul_kernel", // Fallback
             };
 
             let compute_pipeline =
@@ -1143,6 +1153,26 @@ impl AdvancedKernelManager {
         _wavefront_size: usize,
         _lds_optimization: bool,
     ) -> Result<CompiledKernel> {
+        self.compile_standard_matmul(a, b)
+    }
+
+    /// Compile Intel Xe optimized matrix multiplication
+    ///
+    /// Intel Arc GPUs feature Xe-Cores with XMX (Xe Matrix Extensions) for AI acceleration
+    /// Similar to NVIDIA Tensor Cores and AMD Matrix Cores
+    ///
+    /// Note: Intel Xe GPU optimizations not yet fully implemented. Falls back to standard WGPU.
+    /// Future implementation would use Intel oneAPI Level Zero or SYCL for XMX acceleration.
+    fn compile_intel_xe_matmul<T: 'static>(
+        &self,
+        a: &Tensor<T>,
+        b: &Tensor<T>,
+        _xe_thread_groups: usize,
+        _xmx_acceleration: bool,
+        _intel_gpu_gen: &IntelGpuGeneration,
+    ) -> Result<CompiledKernel> {
+        // TODO: Implement Intel Xe GPU optimizations with XMX matrix extensions
+        // For now, fallback to standard WGPU compute shader which works across all platforms
         self.compile_standard_matmul(a, b)
     }
 }

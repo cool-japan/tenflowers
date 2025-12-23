@@ -1,3 +1,5 @@
+#![allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
+
 use crate::layers::Layer;
 use crate::model::{Model, Sequential};
 /// Model pruning techniques for mobile deployment.
@@ -186,6 +188,8 @@ impl PruningMask {
                 let total_elements = self.mask.shape().dims().iter().product::<usize>();
                 ((1.0 - self.sparsity) * total_elements as f32) as usize
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 }
@@ -299,7 +303,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -737,7 +741,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -776,7 +780,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -813,7 +817,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -941,7 +945,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -983,7 +987,7 @@ impl ModelPruner {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -1004,16 +1008,13 @@ impl ModelPruner {
     }
 
     /// Compute importance scores for magnitude-based pruning.
-    pub fn compute_weight_importance<T>(
-        &self,
-        weights: &Tensor<T>,
-    ) -> Result<Tensor<T>, TensorError>
+    pub fn compute_weight_importance<T>(weights: &Tensor<T>) -> Result<Tensor<T>, TensorError>
     where
         T: Clone
             + Default
             + 'static
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable
             + Send
@@ -1034,22 +1035,21 @@ impl ModelPruner {
                 // For GPU tensors, we'd use abs() operation
                 // For now, fallback to CPU computation
                 let cpu_tensor = weights.to_cpu()?;
-                self.compute_weight_importance(&cpu_tensor)
+                Self::compute_weight_importance(&cpu_tensor)
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 
     /// Compute channel importance scores for structured pruning.
-    pub fn compute_channel_importance<T>(
-        &self,
-        weights: &Tensor<T>,
-    ) -> Result<Vec<f32>, TensorError>
+    pub fn compute_channel_importance<T>(weights: &Tensor<T>) -> Result<Vec<f32>, TensorError>
     where
         T: Clone
             + Default
             + 'static
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable
             + Send
@@ -1080,7 +1080,7 @@ impl ModelPruner {
                             + in_ch * elements_per_channel / shape[0];
                         for spatial_idx in 0..(elements_per_channel / shape[0]) {
                             let idx = base_idx + spatial_idx;
-                            if let Some(&weight) = arr.get(ndarray::IxDyn(&[idx])) {
+                            if let Some(&weight) = arr.get(scirs2_core::ndarray::IxDyn(&[idx])) {
                                 channel_norm += weight.abs().to_f32().unwrap_or(0.0);
                             }
                         }
@@ -1095,19 +1095,21 @@ impl ModelPruner {
             TensorStorage::Gpu(_) => {
                 // For GPU tensors, fallback to CPU computation
                 let cpu_tensor = weights.to_cpu()?;
-                self.compute_channel_importance(&cpu_tensor)
+                Self::compute_channel_importance(&cpu_tensor)
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 
     /// Compute neuron importance scores for dense layer pruning.
-    pub fn compute_neuron_importance<T>(&self, weights: &Tensor<T>) -> Result<Vec<f32>, TensorError>
+    pub fn compute_neuron_importance<T>(weights: &Tensor<T>) -> Result<Vec<f32>, TensorError>
     where
         T: Clone
             + Default
             + 'static
-            + num_traits::Float
-            + num_traits::Signed
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable
             + Send
@@ -1124,7 +1126,7 @@ impl ModelPruner {
         let num_neurons = shape[0]; // Output neurons
         let weights_per_neuron = if shape.len() > 1 { shape[1] } else { 1 };
 
-        match &weights.storage {
+        let neuron_importance = match &weights.storage {
             TensorStorage::Cpu(ref arr) => {
                 let mut neuron_importance = vec![0.0f32; num_neurons];
 
@@ -1134,7 +1136,7 @@ impl ModelPruner {
 
                     for weight_idx in 0..weights_per_neuron {
                         let linear_idx = neuron_idx * weights_per_neuron + weight_idx;
-                        if let Some(&weight) = arr.get(ndarray::IxDyn(&[linear_idx])) {
+                        if let Some(&weight) = arr.get(scirs2_core::ndarray::IxDyn(&[linear_idx])) {
                             neuron_norm += weight.abs().to_f32().unwrap_or(0.0);
                         }
                     }
@@ -1142,15 +1144,19 @@ impl ModelPruner {
                     neuron_importance[neuron_idx] = neuron_norm;
                 }
 
-                Ok(neuron_importance)
+                neuron_importance
             }
             #[cfg(feature = "gpu")]
             TensorStorage::Gpu(_) => {
                 // For GPU tensors, fallback to CPU computation
                 let cpu_tensor = weights.to_cpu()?;
-                self.compute_neuron_importance(&cpu_tensor)
+                return Self::compute_neuron_importance(&cpu_tensor);
             }
-        }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
+        };
+
+        Ok(neuron_importance)
     }
 }
 
@@ -1170,7 +1176,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,

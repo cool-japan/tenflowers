@@ -1,6 +1,6 @@
 use super::types::Conv3dBackwardResult;
 use super::utils::{compute_conv3d_input_gradient, compute_conv3d_weight_gradient};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Tensor, TensorError};
 
 /// Backward pass for 3D Convolution
@@ -26,8 +26,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

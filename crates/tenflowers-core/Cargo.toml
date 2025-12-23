@@ -15,27 +15,24 @@ description = "Core tensor operations and execution engine for TenfloweRS"
 workspace = true
 
 [dependencies]
+# SciRS2 ecosystem - provides ndarray, random, etc.
 scirs2-core = { workspace = true, features = ["random", "memory_management", "memory_efficient", "parallel", "simd", "profiling"] }
 scirs2-autograd = { workspace = true }
 scirs2-neural = { workspace = true }
+scirs2-linalg = { workspace = true }
 numrs2 = { workspace = true }
 optirs = { workspace = true }
-# NOTE: ndarray kept only for backward compatibility during SciRS2 migration
-# Use scirs2-autograd::ndarray or scirs2-core::ndarray_ext in new code
-ndarray = { workspace = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+rmp-serde = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 bytemuck = { workspace = true }
-num-traits = { workspace = true }
+ndarray-linalg = { workspace = true, optional = true }
 lazy_static = "1.5"
 sys-info = "0.9"
-# NOTE: rand kept only for backward compatibility during SciRS2 migration
-# Use scirs2-core::random in new code
-rand = { workspace = true }
-rand_distr = { workspace = true }
 rustfft = "6.4"
 num-complex = "0.4"
 bincode = { workspace = true }
@@ -52,13 +49,6 @@ pollster = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "macros", "sync"] }
 tokio-stream = { version = "0.1", optional = true, features = ["sync"] }
 async-trait = { workspace = true, optional = true }
-
-
-# Optional BLAS support - backends are mutually exclusive
-# Only one backend should be enabled at a time
-blas-src = { workspace = true, optional = true, default-features = false }
-lapack-src = { workspace = true, optional = true, default-features = false }
-ndarray-linalg = { workspace = true, optional = true }
 
 # Optional WASM support
 wasm-bindgen = { version = "0.2", optional = true }
@@ -99,14 +89,19 @@ opencl = ["gpu"]
 metal = ["gpu", "dep:metal"]
 rocm = ["gpu"]
 nccl = ["gpu", "cuda"]
-blas = ["ndarray-linalg", "blas-src", "lapack-src"]
-# BLAS backend selection flags (can be enabled simultaneously, build.rs handles priority)
-blas-openblas = ["blas"]
-blas-mkl = ["blas"]
+# BLAS support via ndarray-linalg
+blas = ["ndarray-linalg"]
+blas-openblas = ["blas", "ndarray-linalg/openblas-system"]
+blas-mkl = ["blas", "ndarray-linalg/intel-mkl-system"]
 blas-accelerate = ["blas"]
 simd = []
-serialize = ["serde", "serde_json"]
+serialize = ["serde", "serde_json", "rmp-serde"]
+compression = ["flate2"]
 benchmark = ["serialize"]
 wasm = ["wasm-bindgen", "js-sys", "web-sys"]
 onnx = ["prost", "prost-types"]
 autograd = []
+
+[[bench]]
+name = "dispatch_benchmarks"
+harness = false

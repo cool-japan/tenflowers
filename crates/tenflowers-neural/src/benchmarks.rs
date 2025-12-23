@@ -233,14 +233,14 @@ impl<T> ModelBenchmark<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
         + std::fmt::Debug
-        + num_traits::Zero
-        + num_traits::One,
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One,
 {
     /// Create a new benchmark instance
     pub fn new(config: BenchmarkConfig) -> Self {
@@ -315,7 +315,7 @@ where
 
     /// Generate synthetic data for benchmarking
     fn generate_synthetic_data(&self) -> Result<(Tensor<T>, Tensor<T>)> {
-        use rand_distr::{Distribution, StandardNormal};
+        use scirs2_core::random::{sampling::random_standard_normal, Random};
 
         // Create input tensor with batch dimension
         let mut input_shape = vec![self.config.batch_size];
@@ -323,11 +323,11 @@ where
 
         // Generate random normal data for input
         let total_elements: usize = input_shape.iter().product();
-        let mut rng = rand::rng();
+        let mut rng = Random::default();
         let mut input_data = Vec::with_capacity(total_elements);
 
         for _ in 0..total_elements {
-            let val: f64 = StandardNormal.sample(&mut rng);
+            let val: f64 = random_standard_normal(&mut rng);
             input_data.push(T::from(val).unwrap_or(T::zero()));
         }
 
@@ -448,12 +448,12 @@ where
     where
         M: Model<T>,
     {
-        use rand_distr::{Distribution, StandardNormal};
+        use scirs2_core::random::{sampling::random_standard_normal, Random};
 
         // Simplified gradient computation for benchmarking purposes
         // In a real implementation, this would use proper automatic differentiation
         let mut params = model.parameters_mut();
-        let mut rng = rand::rng();
+        let mut rng = Random::default();
 
         for param in params.iter_mut() {
             if param.requires_grad() {
@@ -463,7 +463,7 @@ where
                 let mut grad_data = Vec::with_capacity(total_elements);
 
                 for _ in 0..total_elements {
-                    let val: f64 = StandardNormal.sample(&mut rng);
+                    let val: f64 = random_standard_normal(&mut rng);
                     let scaled_val = val * 0.001f64;
                     grad_data.push(T::from(scaled_val).unwrap_or(T::zero()));
                 }
@@ -686,14 +686,14 @@ pub fn compare_models<T, M, O>(
 where
     T: Clone
         + Default
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
         + std::fmt::Debug
-        + num_traits::Zero
-        + num_traits::One,
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One,
     M: Model<T>,
     O: Optimizer<T>,
 {

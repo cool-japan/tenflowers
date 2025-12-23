@@ -4,6 +4,7 @@
 //! broadcasting, SIMD optimizations, and performance verification.
 
 #[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
 mod tests {
     use super::super::convenience::*;
     use crate::tensor::TensorStorage;

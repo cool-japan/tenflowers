@@ -20,7 +20,7 @@ impl<T> Resize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -86,7 +86,7 @@ impl<T> Transform<T> for Resize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -177,7 +177,7 @@ impl<T> RandomCropWithPadding<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -217,7 +217,7 @@ impl<T> Transform<T> for RandomCropWithPadding<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -281,12 +281,12 @@ where
         let max_crop_x = padded_width.saturating_sub(self.crop_width);
 
         let crop_y = if max_crop_y > 0 {
-            rng.gen_range(0..=max_crop_y)
+            rng.random_range(0..=max_crop_y)
         } else {
             0
         };
         let crop_x = if max_crop_x > 0 {
-            rng.gen_range(0..=max_crop_x)
+            rng.random_range(0..=max_crop_x)
         } else {
             0
         };
@@ -354,7 +354,7 @@ impl<T> Transform<T> for CenterCrop<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -456,7 +456,7 @@ impl<T> Transform<T> for RandomHorizontalFlip
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -537,7 +537,7 @@ impl<T> Transform<T> for RandomVerticalFlip
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -610,7 +610,7 @@ impl<T> ColorJitter<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -691,7 +691,7 @@ impl<T> Default for ColorJitter<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -707,7 +707,7 @@ impl<T> Transform<T> for ColorJitter<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -746,13 +746,13 @@ where
 
         // Generate random factors for this sample
         let brightness_factor = if let Some((min, max)) = self.brightness {
-            Some(rng.gen_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
+            Some(rng.random_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
         } else {
             None
         };
 
         let contrast_factor = if let Some((min, max)) = self.contrast {
-            Some(rng.gen_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
+            Some(rng.random_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
         } else {
             None
         };
@@ -819,7 +819,7 @@ impl<T> GridDistortion<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -851,7 +851,7 @@ impl<T> Transform<T> for GridDistortion<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static

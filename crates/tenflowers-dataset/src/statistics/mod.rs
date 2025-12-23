@@ -144,7 +144,7 @@ pub mod advanced_statistics_tests {
     impl<
             T: Clone
                 + Default
-                + num_traits::Float
+                + scirs2_core::numeric::Float
                 + Send
                 + Sync
                 + bytemuck::Pod
@@ -276,13 +276,15 @@ pub mod advanced_statistics_tests {
     #[test]
     fn test_advanced_statistics_with_random_data() {
         // Generate random dataset for robustness testing
+        use scirs2_core::random::rand_prelude::*;
         let mut rng = rng();
         let n_samples = 100;
         let n_features = 4;
 
         let mut feature_data = Vec::with_capacity(n_samples * n_features);
         for _ in 0..n_samples * n_features {
-            feature_data.push(rng.random_range(-5.0, 5.0));
+            let random_val: f32 = rng.random();
+            feature_data.push(random_val * 10.0 - 5.0); // Scale to [-5.0, 5.0]
         }
 
         let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, n_features]).unwrap();

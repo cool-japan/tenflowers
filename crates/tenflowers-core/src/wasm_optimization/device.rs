@@ -457,6 +457,8 @@ impl WasmDeviceProfiler {
         for i in 0..100_000 {
             sum += (i as f64).sin();
         }
+        // Prevent compiler from optimizing away the computation
+        std::hint::black_box(sum);
 
         let duration = start.elapsed().as_millis() as f64;
         let ops_per_sec = 100_000.0 / (duration / 1000.0);

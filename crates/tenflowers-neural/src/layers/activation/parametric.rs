@@ -1,7 +1,7 @@
 //! Parametric activation functions with learnable parameters
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{ops::manipulation::where_op, Result, Tensor};
 
 /// Parametric ReLU activation function: PReLU(x) = max(0, x) + a * min(0, x)
@@ -141,8 +141,8 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Sub<Output = T>
-        + num_traits::FromPrimitive
-        + num_traits::Signed
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Signed
         + Send
         + Sync
         + 'static

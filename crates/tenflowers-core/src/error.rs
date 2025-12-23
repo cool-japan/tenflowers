@@ -634,9 +634,9 @@ impl<T> ErrorRecovery<T> for Result<T> {
 
 pub type Result<T> = std::result::Result<T, TensorError>;
 
-/// Convert from ndarray::ShapeError to TensorError
-impl From<ndarray::ShapeError> for TensorError {
-    fn from(err: ndarray::ShapeError) -> Self {
+/// Convert from scirs2_core::ndarray::ShapeError to TensorError
+impl From<scirs2_core::ndarray::ShapeError> for TensorError {
+    fn from(err: scirs2_core::ndarray::ShapeError) -> Self {
         Self::InvalidShape {
             operation: "tensor_creation".to_string(),
             reason: format!("Shape error: {err}"),

@@ -6,7 +6,7 @@
 use super::utils::flat_to_multi_index;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 
 /// Execute a contraction path with cache-friendly optimizations
 pub fn execute_contraction_path<T>(
@@ -164,8 +164,8 @@ where
 
 /// Cache-friendly blocked multiplication for large tensors with parallel processing
 pub(super) fn cache_friendly_blocked_multiply<T>(
-    left_arr: &scirs2_autograd::ndarray::ArrayD<T>,
-    right_arr: &scirs2_autograd::ndarray::ArrayD<T>,
+    left_arr: &scirs2_core::ndarray::ArrayD<T>,
+    right_arr: &scirs2_core::ndarray::ArrayD<T>,
     shape: &[usize],
 ) -> Result<Tensor<T>>
 where
@@ -196,8 +196,8 @@ where
 
 /// Sequential blocked multiplication for smaller tensors
 pub(super) fn sequential_blocked_multiply<T>(
-    left_arr: &scirs2_autograd::ndarray::ArrayD<T>,
-    right_arr: &scirs2_autograd::ndarray::ArrayD<T>,
+    left_arr: &scirs2_core::ndarray::ArrayD<T>,
+    right_arr: &scirs2_core::ndarray::ArrayD<T>,
     shape: &[usize],
     block_size: usize,
 ) -> Result<Tensor<T>>
@@ -242,8 +242,8 @@ where
 
 /// Parallel blocked multiplication for large tensors
 pub(super) fn parallel_blocked_multiply<T>(
-    left_arr: &scirs2_autograd::ndarray::ArrayD<T>,
-    right_arr: &scirs2_autograd::ndarray::ArrayD<T>,
+    left_arr: &scirs2_core::ndarray::ArrayD<T>,
+    right_arr: &scirs2_core::ndarray::ArrayD<T>,
     shape: &[usize],
     block_size: usize,
 ) -> Result<Tensor<T>>

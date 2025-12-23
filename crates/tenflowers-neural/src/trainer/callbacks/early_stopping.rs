@@ -215,13 +215,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_invalid_mode() {
         EarlyStopping::new(5, 0.001, "val_loss".to_string(), "invalid".to_string());
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_zero_patience() {
         EarlyStopping::new(0, 0.001, "val_loss".to_string(), "min".to_string());
     }

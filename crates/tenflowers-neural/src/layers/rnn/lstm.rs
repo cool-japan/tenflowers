@@ -1,8 +1,8 @@
 //! LSTM (Long Short-Term Memory) layer implementation
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
-// use scirs2_autograd::ndarray::{Array1, Array2, Axis}; // Unused for now
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
+// use scirs2_core::ndarray::{Array1, Array2, Axis}; // Unused for now
 // use scirs2_core::random::{rng, Random}; // Unused for now
 use tenflowers_core::{Result, Tensor, TensorError};
 

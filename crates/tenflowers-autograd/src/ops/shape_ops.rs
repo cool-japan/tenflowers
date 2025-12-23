@@ -3,7 +3,7 @@
 //! This module contains gradient implementations for tensor shape manipulation operations
 //! including reshape, transpose, squeeze, slice, concat, and related operations.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::manipulation::transpose_axes;
 use tenflowers_core::{Result, Tensor, TensorError};
 

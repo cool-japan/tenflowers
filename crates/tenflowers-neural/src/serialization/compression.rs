@@ -1,4 +1,9 @@
 //! Compression utilities for model serialization
+//!
+//! Note: zstd, gzip, and lz4 features are optional and not currently enabled by default.
+//! They are scaffolded for future compression support.
+
+#![allow(unexpected_cfgs)]
 
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -7,22 +12,17 @@ use tenflowers_core::{Result, TensorError};
 
 /// Compression algorithms supported
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CompressionAlgorithm {
     /// No compression
     None,
     /// Zstandard compression (fast and good compression)
+    #[default]
     Zstd,
     /// Gzip compression (widely compatible)
     Gzip,
     /// LZ4 compression (very fast)
     Lz4,
-}
-
-impl Default for CompressionAlgorithm {
-    fn default() -> Self {
-        Self::Zstd
-    }
 }
 
 /// Compression metadata

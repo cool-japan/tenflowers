@@ -60,7 +60,13 @@ pub struct JsonDataset<T> {
 
 impl<T> JsonDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     T: serde::de::DeserializeOwned + std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
@@ -266,7 +272,7 @@ where
 
 impl<T> Dataset<T> for JsonDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.samples.len()
@@ -296,7 +302,13 @@ pub struct JsonLDataset<T> {
 
 impl<T> JsonLDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     T: serde::de::DeserializeOwned + std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
@@ -430,7 +442,13 @@ where
 
 impl<T> Dataset<T> for JsonLDataset<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
     T: serde::de::DeserializeOwned + std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
@@ -521,7 +539,13 @@ impl JsonDatasetBuilder {
     /// Build a JSON dataset
     pub fn build_json<T>(self) -> Result<JsonDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
+            + Send
+            + Sync
+            + 'static,
         T: serde::de::DeserializeOwned + std::str::FromStr,
         <T as std::str::FromStr>::Err: std::fmt::Debug,
     {
@@ -531,7 +555,13 @@ impl JsonDatasetBuilder {
     /// Build a JSON Lines dataset
     pub fn build_jsonl<T>(self) -> Result<JsonLDataset<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
+            + Send
+            + Sync
+            + 'static,
         T: serde::de::DeserializeOwned + std::str::FromStr,
         <T as std::str::FromStr>::Err: std::fmt::Debug,
     {

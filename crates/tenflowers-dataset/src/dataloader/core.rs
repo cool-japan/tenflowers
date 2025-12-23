@@ -79,7 +79,7 @@ impl<T, D: Dataset<T> + Send + Sync + 'static, S: Sampler + 'static> DataLoader<
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static
@@ -131,7 +131,7 @@ impl<T, D: Dataset<T> + Send + Sync + 'static, S: Sampler> DataLoaderIterator<T,
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static
@@ -363,7 +363,7 @@ impl<T, D: Dataset<T> + Send + Sync + 'static, S: Sampler> Iterator for DataLoad
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static

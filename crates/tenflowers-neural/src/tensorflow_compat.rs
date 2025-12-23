@@ -544,9 +544,8 @@ meta_graphs {
         let result = loader.convert_to_sequential(&saved_model);
         assert!(result.is_ok());
 
-        let model = result.unwrap();
-        // Model should have at least one layer (either converted or example)
-        assert!(model.parameters().len() >= 0);
+        let _model = result.unwrap();
+        // Model created successfully (parameters length is unsigned, so >= 0 is always true)
     }
 
     #[test]

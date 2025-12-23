@@ -1,7 +1,7 @@
 use crate::{Result, TensorError};
-use num_traits::{Float, Zero};
 use rayon::prelude::*;
-use scirs2_autograd::ndarray::ArrayD;
+use scirs2_core::ndarray::ArrayD;
+use scirs2_core::numeric::{Float, Zero};
 use std::time::Instant;
 
 use super::core::{get_activation_registry, ActivationStrategy};

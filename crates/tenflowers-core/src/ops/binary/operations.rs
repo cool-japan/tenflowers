@@ -6,8 +6,8 @@
 use super::core::{get_binary_op_registry, BinaryOp, OpComplexity};
 use super::simd::simd_f32_ops;
 use crate::{Result, TensorError};
-use num_traits::Zero;
 use rayon::prelude::*;
+use scirs2_core::numeric::Zero;
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
 /// Ultra-performance addition operation with SIMD and parallel support
@@ -264,7 +264,7 @@ impl<T: StdDiv<Output = T> + Clone + Send + Sync + 'static> BinaryOp<T> for DivO
 /// Power operation
 #[derive(Clone)]
 pub struct PowOp;
-impl<T: num_traits::Float> BinaryOp<T> for PowOp {
+impl<T: scirs2_core::num_traits::Float> BinaryOp<T> for PowOp {
     #[inline]
     fn apply(&self, a: T, b: T) -> T {
         a.powf(b)
@@ -355,7 +355,7 @@ impl<T: PartialOrd + Clone> BinaryOp<T> for MaxOp {
 pub struct PReLUOp;
 impl<T> BinaryOp<T> for PReLUOp
 where
-    T: num_traits::Float + PartialOrd + Zero + StdMul<Output = T>,
+    T: scirs2_core::num_traits::Float + PartialOrd + Zero + StdMul<Output = T>,
 {
     #[inline]
     fn apply(&self, x: T, alpha: T) -> T {

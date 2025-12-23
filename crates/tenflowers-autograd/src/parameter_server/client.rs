@@ -80,8 +80,10 @@ mod tests {
 
     #[test]
     fn test_gradient_submission() {
-        let mut config = ParameterServerConfig::default();
-        config.num_workers = 2;
+        let config = ParameterServerConfig {
+            num_workers: 2,
+            ..Default::default()
+        };
         let server = ParameterServer::new(config);
 
         let tape = GradientTape::new();
@@ -110,8 +112,10 @@ mod tests {
 
     #[test]
     fn test_parameter_server_client() {
-        let mut config = ParameterServerConfig::default();
-        config.num_workers = 2;
+        let config = ParameterServerConfig {
+            num_workers: 2,
+            ..Default::default()
+        };
         let server = ParameterServer::new(config);
         let client = ParameterServerClient::new(server.clone(), 0);
 
@@ -145,9 +149,11 @@ mod tests {
         ];
 
         for strategy in strategies {
-            let mut config = ParameterServerConfig::default();
-            config.load_balancing = strategy;
-            config.num_workers = 3;
+            let config = ParameterServerConfig {
+                load_balancing: strategy,
+                num_workers: 3,
+                ..Default::default()
+            };
 
             let server = ParameterServer::new(config);
             let tape = GradientTape::new();
@@ -160,8 +166,10 @@ mod tests {
 
     #[test]
     fn test_worker_capacity_update() {
-        let mut config = ParameterServerConfig::default();
-        config.num_workers = 2;
+        let config = ParameterServerConfig {
+            num_workers: 2,
+            ..Default::default()
+        };
         let server = ParameterServer::new(config);
 
         let result = server.update_worker_capacity(0, 1.5, 10.0);
@@ -181,8 +189,10 @@ mod tests {
         ];
 
         for mode in modes {
-            let mut config = ParameterServerConfig::default();
-            config.fault_tolerance = mode;
+            let config = ParameterServerConfig {
+                fault_tolerance: mode,
+                ..Default::default()
+            };
             let _server = ParameterServer::new(config);
             // Just ensure it creates successfully
         }

@@ -1,6 +1,6 @@
 use crate::device::context::GpuContextInfo;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
@@ -166,8 +166,8 @@ impl GpuAttentionOps {
             + Sync
             + 'static
             + Clone
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let query_shape = query.shape();
         let seq_len = query_shape.dims()[0];
@@ -367,8 +367,8 @@ impl GpuAttentionOps {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One,
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     >(
         &self,
         tensor: &Tensor<T>,

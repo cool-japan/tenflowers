@@ -109,7 +109,7 @@ pub use simd::simd_f32_ops;
 
 /// Broadcast an array to a target shape with memory optimization
 use crate::{Result, Shape, TensorError};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 
 #[allow(dead_code)]
 pub fn broadcast_array<T: Clone>(array: &ArrayD<T>, target_shape: &Shape) -> Result<ArrayD<T>> {

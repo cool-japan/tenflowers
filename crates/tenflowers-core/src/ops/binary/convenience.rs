@@ -7,7 +7,7 @@ use super::core::{get_binary_op_registry, BinaryOpAnalytics};
 use super::implementation::binary_op;
 use super::operations::{AddOp, DivOp, MaxOp, MinOp, MulOp, PowOp, SubOp};
 use crate::{Result, Tensor};
-use num_traits::Zero;
+use scirs2_core::numeric::Zero;
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
 /// Element-wise addition of two tensors
@@ -85,7 +85,7 @@ where
     T: Clone
         + Default
         + Zero
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static

@@ -18,6 +18,17 @@ pub struct CudnnHandle {
     device_id: usize,
 }
 
+// SAFETY: CudnnHandle is safe to send across threads because cuDNN handles
+// are thread-safe when proper synchronization is used. We protect access
+// to the global context with a Mutex to ensure thread-safe access.
+#[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
+unsafe impl Send for CudnnHandle {}
+
+// SAFETY: CudnnHandle is safe to share between threads when synchronized.
+// The cuDNN library is thread-safe, and we use a Mutex to synchronize access.
+#[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
+unsafe impl Sync for CudnnHandle {}
+
 /// cuDNN tensor descriptor for describing tensor layout
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 #[derive(Debug, Clone)]
@@ -599,19 +610,16 @@ impl Default for CudnnContext {
 
 /// Global cuDNN context instance
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
-static mut GLOBAL_CUDNN_CONTEXT: Option<CudnnContext> = None;
-#[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
-static CUDNN_INIT: std::sync::Once = std::sync::Once::new();
+static GLOBAL_CUDNN_CONTEXT: std::sync::OnceLock<std::sync::Mutex<CudnnContext>> =
+    std::sync::OnceLock::new();
 
 /// Get global cuDNN context
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
-pub fn global_cudnn_context() -> &'static mut CudnnContext {
-    unsafe {
-        CUDNN_INIT.call_once(|| {
-            GLOBAL_CUDNN_CONTEXT = Some(CudnnContext::new());
-        });
-        GLOBAL_CUDNN_CONTEXT.as_mut().unwrap()
-    }
+pub fn global_cudnn_context() -> std::sync::MutexGuard<'static, CudnnContext> {
+    GLOBAL_CUDNN_CONTEXT
+        .get_or_init(|| std::sync::Mutex::new(CudnnContext::new()))
+        .lock()
+        .expect("cuDNN context mutex poisoned")
 }
 
 /// Utility functions for cuDNN integration

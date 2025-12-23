@@ -7,7 +7,7 @@ use crate::{
     layers::{pooling::GlobalAvgPool2D, BatchNorm, Conv2D, Dense, DepthwiseConv2D, Layer},
     model::{Model, Sequential},
 };
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{
     ops::{activation::swish, relu, sigmoid},
     Result, Tensor,
@@ -25,7 +25,7 @@ where
 
 impl<T> ReLU<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
+    T: scirs2_core::num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
 {
     pub fn new() -> Self {
         Self {
@@ -37,7 +37,7 @@ where
 
 impl<T> Default for ReLU<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
+    T: scirs2_core::num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
 {
     fn default() -> Self {
         Self::new()
@@ -117,7 +117,7 @@ impl<
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     > Clone for BasicBlock<T>
@@ -311,7 +311,7 @@ impl<
             + Send
             + Sync
             + 'static
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
     > Clone for BottleneckBlock<T>
@@ -675,7 +675,7 @@ impl<
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive,
     > Clone for MBConvBlock<T>
 {
     fn clone(&self) -> Self {

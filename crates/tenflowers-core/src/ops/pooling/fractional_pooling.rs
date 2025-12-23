@@ -5,7 +5,8 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, Zero};
+use scirs2_core::random::{Random, Rng};
 
 /// Fractional max pooling 2D operation
 /// Uses stochastic or deterministic fractional scaling
@@ -268,7 +269,7 @@ fn generate_pooling_regions_random(
         let step = if min_step == max_step {
             min_step
         } else {
-            rng.gen_range(min_step..=max_step)
+            rng.random_range(min_step..=max_step)
         };
 
         row_splits.push(last_split + step);
@@ -296,7 +297,7 @@ fn generate_pooling_regions_random(
         let step = if min_step == max_step {
             min_step
         } else {
-            rng.gen_range(min_step..=max_step)
+            rng.random_range(min_step..=max_step)
         };
 
         col_splits.push(last_split + step);

@@ -8,6 +8,7 @@
 //! - **common**: Shared building blocks and activation functions used across models
 //! - **vision**: Computer vision models (ResNet, EfficientNet, Vision Transformer)
 //! - **nlp**: Natural language processing models (BERT, GPT)
+//! - **registry**: Model registry for managing and discovering pretrained models
 
 // Common building blocks and utilities
 pub mod common;
@@ -18,6 +19,9 @@ pub mod vision;
 // Natural language processing models
 pub mod nlp;
 
+// Model registry system
+pub mod registry;
+
 // Re-export common building blocks for backward compatibility
 pub use common::*;
 
@@ -26,3 +30,6 @@ pub use vision::*;
 
 // Re-export all NLP models for backward compatibility
 pub use nlp::*;
+
+// Re-export model registry for easy access
+pub use registry::{ModelArchitecture, ModelDomain, ModelMetadata, ModelRegistry};

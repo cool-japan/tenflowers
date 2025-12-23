@@ -346,3 +346,69 @@ fn fused_reduction_normalization_kernel(@builtin(global_invocation_id) global_id
         output[global_thread_id] = result;
     }
 }
+
+// Simple elementwise fusion kernel for MVP
+// Supports basic arithmetic operations and activations in a chain
+@compute @workgroup_size(256)
+fn simple_elementwise_fusion(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let gid = global_id.x;
+
+    if (gid >= arrayLength(&output)) {
+        return;
+    }
+
+    // Load inputs
+    let a = input_a[gid];
+    let b = input_b[gid];
+    let c = input_c[gid];
+
+    // Operation mask encoding:
+    // Bits 0-3: First operation (0=Add, 1=Mul, 2=Sub, 3=Div)
+    // Bits 4-7: Second operation
+    // Bits 8-11: Activation (0=None, 1=ReLU, 2=Tanh, 3=Sigmoid, 4=GELU)
+
+    let op1 = (fusion_params.operation_mask) & 0xFu;
+    let op2 = (fusion_params.operation_mask >> 4u) & 0xFu;
+    let activation = (fusion_params.operation_mask >> 8u) & 0xFu;
+
+    // Compute first operation: result = a op1 b
+    var result = a;
+    if (op1 == 0u) {
+        result = a + b; // Add
+    } else if (op1 == 1u) {
+        result = a * b; // Mul
+    } else if (op1 == 2u) {
+        result = a - b; // Sub
+    } else if (op1 == 3u) {
+        result = a / b; // Div
+    }
+
+    // Compute second operation: result = result op2 c
+    if (op2 == 0u) {
+        result = result + c; // Add
+    } else if (op2 == 1u) {
+        result = result * c; // Mul
+    } else if (op2 == 2u) {
+        result = result - c; // Sub
+    } else if (op2 == 3u) {
+        result = result / c; // Div
+    } else if (op2 == 15u) {
+        // Skip second operation
+    }
+
+    // Apply activation function
+    if (activation == 1u) {
+        result = max(0.0, result); // ReLU
+    } else if (activation == 2u) {
+        result = tanh(result); // Tanh
+    } else if (activation == 3u) {
+        result = 1.0 / (1.0 + exp(-result)); // Sigmoid
+    } else if (activation == 4u) {
+        // GELU approximation
+        let gelu_factor = 0.7978845608;
+        let cubic_term = 0.044715 * result * result * result;
+        result = 0.5 * result * (1.0 + tanh(gelu_factor * (result + cubic_term)));
+    }
+
+    output[gid] = result;
+}

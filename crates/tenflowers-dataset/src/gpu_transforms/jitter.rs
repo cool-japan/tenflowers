@@ -293,11 +293,19 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         })?;
 
         // Generate random jitter values
+        use scirs2_core::random::rand_prelude::*;
         let mut rng = scirs2_core::random::rng();
-        let brightness = rng.gen_range(self.brightness_range.0..self.brightness_range.1);
-        let contrast = rng.gen_range(self.contrast_range.0..self.contrast_range.1);
-        let saturation = rng.gen_range(self.saturation_range.0..self.saturation_range.1);
-        let hue = rng.gen_range(self.hue_range.0..self.hue_range.1);
+        let random_brightness: f32 = rng.random();
+        let brightness = self.brightness_range.0
+            + random_brightness * (self.brightness_range.1 - self.brightness_range.0);
+        let random_contrast: f32 = rng.random();
+        let contrast = self.contrast_range.0
+            + random_contrast * (self.contrast_range.1 - self.contrast_range.0);
+        let random_saturation: f32 = rng.random();
+        let saturation = self.saturation_range.0
+            + random_saturation * (self.saturation_range.1 - self.saturation_range.0);
+        let random_hue: f32 = rng.random();
+        let hue = self.hue_range.0 + random_hue * (self.hue_range.1 - self.hue_range.0);
 
         // Create buffers
         let input_buffer =

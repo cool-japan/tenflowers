@@ -14,7 +14,7 @@ pub trait DatasetVisualizationExt<T>: Dataset<T> + Sized {
     /// Create a sample preview
     fn sample_preview(&self, num_samples: usize) -> Result<SamplePreview>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         DatasetVisualizer::sample_preview(self, num_samples)
     }
@@ -22,7 +22,13 @@ pub trait DatasetVisualizationExt<T>: Dataset<T> + Sized {
     /// Get feature distribution information
     fn feature_distribution(&self, max_samples: Option<usize>) -> Result<DistributionInfo<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
     {
         DatasetVisualizer::feature_distribution(self, max_samples)
     }
@@ -30,7 +36,7 @@ pub trait DatasetVisualizationExt<T>: Dataset<T> + Sized {
     /// Get class distribution
     fn class_distribution(&self) -> Result<ClassDistribution>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         DatasetVisualizer::class_distribution(self)
     }
@@ -40,11 +46,11 @@ pub trait DatasetVisualizationExt<T>: Dataset<T> + Sized {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + PartialOrd,
     {
         DatasetVisualizer::feature_histogram(self, feature_index, bins)
@@ -59,11 +65,11 @@ pub trait DatasetVisualizationExt<T>: Dataset<T> + Sized {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + PartialOrd,
         Tr: Transform<T>,
     {

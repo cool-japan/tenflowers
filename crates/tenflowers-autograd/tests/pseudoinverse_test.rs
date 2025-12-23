@@ -40,7 +40,14 @@ fn test_pseudoinverse_gradient() {
 
     // Compute gradients
     let gradients = tape.gradient(&[loss], &[tracked_matrix]);
-    assert!(gradients.is_ok());
+    if let Err(ref e) = gradients {
+        eprintln!("Gradient computation error: {:?}", e);
+    }
+    assert!(
+        gradients.is_ok(),
+        "Gradient computation failed: {:?}",
+        gradients.err()
+    );
 
     let grad_result = gradients.unwrap();
     assert_eq!(grad_result.len(), 1);
@@ -128,5 +135,12 @@ fn test_pseudoinverse_singular_matrix() {
     // Test gradient computation works for singular case
     let loss = pinv_tensor.sum(None, false).unwrap();
     let gradients = tape.gradient(&[loss], &[tracked_matrix]);
-    assert!(gradients.is_ok());
+    if let Err(ref e) = gradients {
+        eprintln!("Gradient computation error for singular matrix: {:?}", e);
+    }
+    assert!(
+        gradients.is_ok(),
+        "Gradient computation failed for singular matrix: {:?}",
+        gradients.err()
+    );
 }

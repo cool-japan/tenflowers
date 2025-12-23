@@ -286,8 +286,7 @@ impl GpuProfiler {
             operations.iter().map(|op| op.occupancy).sum::<f32>() / operations.len() as f32;
 
         // Assume we're measuring over a 1-second window
-        let utilization = (total_time.as_secs_f32() * avg_occupancy / 100.0).min(1.0) * 100.0;
-        utilization
+        (total_time.as_secs_f32() * avg_occupancy / 100.0).min(1.0) * 100.0
     }
 
     fn estimate_memory_bandwidth_utilization(&self, operations: &[OperationProfile]) -> f32 {

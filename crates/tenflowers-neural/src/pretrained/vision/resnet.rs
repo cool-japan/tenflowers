@@ -11,7 +11,7 @@ use crate::{
     model::{Model, Sequential},
     pretrained::common::{BasicBlock, BottleneckBlock, ReLU},
 };
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// ResNet block type configuration

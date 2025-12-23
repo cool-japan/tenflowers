@@ -1,5 +1,5 @@
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 #[derive(Debug)]
@@ -255,8 +255,8 @@ where
         let random_data = (0..total_elements)
             .map(|_| {
                 // Box-Muller transform for normal distribution
-                let u1: f32 = rand::random::<f32>().max(1e-10);
-                let u2: f32 = rand::random::<f32>();
+                let u1: f32 = scirs2_core::random::quick::random_f32().max(1e-10);
+                let u2: f32 = scirs2_core::random::quick::random_f32();
                 let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
                 let value = mean + std_dev * z0;
                 T::from_f32(value).unwrap_or(T::zero())

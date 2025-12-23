@@ -420,8 +420,7 @@ mod tests {
         let result = Benchmarks::benchmark_add_performance(100, 10);
 
         // Basic sanity checks
-        assert!(result.optimized_time_ns >= 0); // Allow zero for very fast operations
-        assert!(result.standard_time_ns >= 0); // Allow zero for very fast operations
+        // Note: optimized_time_ns and standard_time_ns are unsigned, so >= 0 is always true
         assert!(result.speedup >= 0.0 || result.speedup.is_infinite() || result.speedup.is_nan());
         assert_eq!(result.size, 100);
         assert_eq!(result.iterations, 10);
@@ -438,9 +437,8 @@ mod tests {
         // Each result should be valid
         for (name, result) in &results {
             assert!(!name.is_empty());
-            assert!(result.optimized_time_ns >= 0); // Allow zero for very fast operations
-            assert!(result.standard_time_ns >= 0); // Allow zero for very fast operations
-                                                   // Speedup can be infinite, NaN, or positive depending on timing precision
+            // Note: optimized_time_ns and standard_time_ns are unsigned, so >= 0 is always true
+            // Speedup can be infinite, NaN, or positive depending on timing precision
             assert!(
                 result.speedup >= 0.0 || result.speedup.is_infinite() || result.speedup.is_nan()
             );

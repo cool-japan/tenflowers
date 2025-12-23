@@ -30,6 +30,7 @@ pub enum OnnxFormat {
     Json,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for OnnxFormat {
     fn default() -> Self {
         #[cfg(feature = "onnx")]

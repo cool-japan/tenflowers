@@ -15,8 +15,8 @@
 use super::common::normalize_axis;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Zero};
-use scirs2_autograd::ndarray::{ArrayD, Axis};
+use scirs2_core::ndarray::{ArrayD, Axis};
+use scirs2_core::numeric::{Float, FromPrimitive, Zero};
 // use scirs2_core::parallel_ops::{par_chunks, par_join};
 
 /// Sum reduction along specified axes
@@ -434,7 +434,7 @@ where
     T: Clone
         + Default
         + std::ops::Mul<Output = T>
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -514,7 +514,7 @@ where
 /// * `Result<Tensor<T>>` - Tensor with variance values
 ///
 /// # Type Requirements
-/// * `T` must implement `Clone + Default + Float + FromPrimitive + Send + Sync + 'static + ndarray::ScalarOperand`
+/// * `T` must implement `Clone + Default + Float + FromPrimitive + Send + Sync + 'static + scirs2_core::ndarray::ScalarOperand`
 pub fn variance<T>(
     x: &Tensor<T>,
     axes: Option<&[i32]>,
@@ -529,7 +529,7 @@ where
         + Send
         + Sync
         + 'static
-        + ndarray::ScalarOperand
+        + scirs2_core::ndarray::ScalarOperand
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -656,4 +656,77 @@ where
 
     // Simplified parallel approach - in practice would use proper parallel iterators
     Ok(arr.sum())
+}
+
+#[cfg(feature = "gpu")]
+/// CPU implementation of reduce along axis (used by GPU fallback)
+pub fn reduce_axis_cpu<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    op: super::gpu_kernels::ReductionOp,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + scirs2_core::num_traits::ops::mul_add::MulAdd
+        + scirs2_core::ndarray::ScalarOperand,
+{
+    // Simple wrapper that calls the appropriate reduction function
+    match op {
+        super::gpu_kernels::ReductionOp::Sum => sum(tensor, Some(&[axis as i32]), keep_dims),
+        super::gpu_kernels::ReductionOp::Mean => mean(tensor, Some(&[axis as i32]), keep_dims),
+        super::gpu_kernels::ReductionOp::Max => max(tensor, Some(&[axis as i32]), keep_dims),
+        super::gpu_kernels::ReductionOp::Min => min(tensor, Some(&[axis as i32]), keep_dims),
+        super::gpu_kernels::ReductionOp::Prod => prod(tensor, Some(&[axis as i32]), keep_dims),
+        super::gpu_kernels::ReductionOp::Variance => {
+            variance(tensor, Some(&[axis as i32]), keep_dims, 0)
+        }
+        _ => Err(TensorError::not_implemented_simple(format!(
+            "Reduction operation {:?} not implemented for CPU",
+            op
+        ))),
+    }
+}
+
+#[cfg(feature = "gpu")]
+/// CPU implementation of reduce all elements (used by GPU fallback)
+pub fn reduce_all_cpu<T>(tensor: &Tensor<T>, op: super::gpu_kernels::ReductionOp) -> Result<T>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + scirs2_core::num_traits::ops::mul_add::MulAdd
+        + scirs2_core::ndarray::ScalarOperand,
+{
+    let result = match op {
+        super::gpu_kernels::ReductionOp::Sum => sum(tensor, None, false)?,
+        super::gpu_kernels::ReductionOp::Mean => mean(tensor, None, false)?,
+        super::gpu_kernels::ReductionOp::Max => max(tensor, None, false)?,
+        super::gpu_kernels::ReductionOp::Min => min(tensor, None, false)?,
+        super::gpu_kernels::ReductionOp::Prod => prod(tensor, None, false)?,
+        _ => {
+            return Err(TensorError::not_implemented_simple(format!(
+                "Reduction operation {:?} not implemented for CPU",
+                op
+            )))
+        }
+    };
+
+    // Extract scalar value from result tensor
+    let data = result.data();
+    if data.is_empty() {
+        Ok(T::default())
+    } else {
+        Ok(data[0])
+    }
 }

@@ -1,7 +1,7 @@
 //! Vanilla RNN layer implementation
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use scirs2_core::random::Random;
 use tenflowers_core::{Result, Tensor, TensorError};
 

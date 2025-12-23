@@ -5,8 +5,8 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, Zero};
-use scirs2_autograd::ndarray::{Array2, ArrayD, ArrayView2, IxDyn};
+use scirs2_core::ndarray::{Array2, ArrayD, ArrayView2, IxDyn};
+use scirs2_core::numeric::{Float, Zero};
 
 /// Mixed precision matrix multiplication with automatic precision management
 pub fn matmul_mixed_precision<T>(
@@ -132,18 +132,18 @@ where
 
 /// High-precision matrix multiplication with extended precision accumulation
 fn matmul_high_precision<T>(
-    a: ndarray::ArrayView<T, IxDyn>,
-    b: ndarray::ArrayView<T, IxDyn>,
+    a: scirs2_core::ndarray::ArrayView<T, IxDyn>,
+    b: scirs2_core::ndarray::ArrayView<T, IxDyn>,
 ) -> Result<Tensor<T>>
 where
     T: Clone + Float + Default + Send + Sync + 'static,
 {
     // Convert to 2D views
     let a_2d = a
-        .into_dimensionality::<ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
     let b_2d = b
-        .into_dimensionality::<ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
     let (m, k) = a_2d.dim();
@@ -173,18 +173,18 @@ where
 
 /// Fast, lower precision matrix multiplication
 fn matmul_fast_precision<T>(
-    a: ndarray::ArrayView<T, IxDyn>,
-    b: ndarray::ArrayView<T, IxDyn>,
+    a: scirs2_core::ndarray::ArrayView<T, IxDyn>,
+    b: scirs2_core::ndarray::ArrayView<T, IxDyn>,
 ) -> Result<Tensor<T>>
 where
     T: Clone + Float + Default + Send + Sync + 'static,
 {
     // Use the standard optimized implementation for fast precision
     let a_2d = a
-        .into_dimensionality::<ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
     let b_2d = b
-        .into_dimensionality::<ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
     let result = super::optimized::matmul_simple_optimized(a_2d, b_2d);
@@ -203,10 +203,11 @@ pub enum MixedPrecisionMode {
 }
 
 #[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
 mod tests {
     use super::*;
     use crate::tensor::Tensor;
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
 
     #[test]
     fn test_outer_product() {
@@ -220,7 +221,7 @@ mod tests {
         if let TensorStorage::Cpu(result_arr) = &result.storage {
             let result_2d = result_arr
                 .view()
-                .into_dimensionality::<ndarray::Ix2>()
+                .into_dimensionality::<scirs2_core::ndarray::Ix2>()
                 .unwrap();
             assert_eq!(result_2d, expected_data);
         } else {

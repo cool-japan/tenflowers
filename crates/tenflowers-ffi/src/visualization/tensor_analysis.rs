@@ -3,7 +3,7 @@
 //! This module provides comprehensive tensor analysis capabilities including
 //! statistical analysis, distribution visualization, and property inspection.
 
-// use num_traits::ToPrimitive; // Unused for now
+// use scirs2_core::num_traits::ToPrimitive; // Unused for now
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;

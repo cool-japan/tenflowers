@@ -1,5 +1,5 @@
 use super::types::get_tensor_element_4d;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Helper function to compute Conv2D input gradient using transposed convolution
@@ -11,7 +11,7 @@ pub(crate) fn compute_conv2d_input_gradient<T>(
     _padding: &str,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + num_traits::Float,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + scirs2_core::num_traits::Float,
 {
     // This is a placeholder implementation for the input gradient computation
     // In a full implementation, this would compute the transposed convolution
@@ -31,7 +31,7 @@ pub(crate) fn compute_conv2d_weight_gradient<T>(
     _padding: &str,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + num_traits::Float,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + scirs2_core::num_traits::Float,
 {
     // This is a placeholder implementation for the weight gradient computation
     // In a full implementation, this would compute:
@@ -51,7 +51,7 @@ pub(crate) fn compute_conv3d_input_gradient<T>(
     _padding: &str,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + num_traits::Float,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + scirs2_core::num_traits::Float,
 {
     // This is a placeholder implementation for the 3D input gradient computation
     // For now, return a zero tensor with the same shape as input
@@ -68,7 +68,7 @@ pub(crate) fn compute_conv3d_weight_gradient<T>(
     _padding: &str,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + num_traits::Float,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + scirs2_core::num_traits::Float,
 {
     // This is a placeholder implementation for the 3D weight gradient computation
     // For now, return a zero tensor with the same shape as weight
@@ -93,7 +93,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -129,7 +129,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -198,7 +198,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod,
 {
     // Extract shapes
@@ -286,7 +286,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod,
 {
     // Extract shapes
@@ -381,8 +381,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

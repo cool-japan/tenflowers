@@ -155,8 +155,7 @@ impl MemoryPool {
         });
 
         // Initialize with single large free block
-        let mut blocks = Vec::new();
-        blocks.push(MemoryBlock::new_free(0, pool_size));
+        let blocks = vec![MemoryBlock::new_free(0, pool_size)];
 
         let mut free_blocks = VecDeque::new();
         free_blocks.push_back(0);
@@ -194,7 +193,7 @@ impl MemoryPool {
 
     /// Allocate memory from the pool
     #[cfg(feature = "gpu")]
-    pub fn allocate(&self, size: usize, alignment: usize) -> Result<PooledBuffer> {
+    pub fn allocate(&self, size: usize, alignment: usize) -> Result<PooledBuffer<'_>> {
         let aligned_size = align_size(size, alignment);
 
         let mut free_blocks = self.free_blocks.lock().unwrap();
@@ -290,9 +289,8 @@ impl MemoryPool {
 
         // Update allocation tracking with lifetime
         let mut history = self.allocation_history.lock().unwrap();
-        if let Some(mut tracker) = history.remove(&block_idx) {
-            tracker.lifetime_us = Some(tracker.timestamp.elapsed().as_micros() as u64);
-            // Could store this in a completed allocations log for further analysis
+        if let Some(_tracker) = history.remove(&block_idx) {
+            // Tracker removed from history - could store in a completed allocations log for further analysis
         }
 
         // Coalesce adjacent free blocks to reduce fragmentation
@@ -356,9 +354,8 @@ impl MemoryPool {
 
             // Update allocation tracking
             let mut history = self.allocation_history.lock().unwrap();
-            if let Some(mut tracker) = history.remove(&block_idx) {
-                tracker.deallocated_at = Some(Instant::now());
-                // Could store in a separate history if needed for analysis
+            if let Some(_tracker) = history.remove(&block_idx) {
+                // Tracker removed from history - could store in a separate history if needed for analysis
             }
 
             // Update statistics
@@ -392,7 +389,7 @@ impl MemoryPool {
 
     /// Coalesce adjacent free blocks to reduce fragmentation
     #[cfg(feature = "gpu")]
-    fn coalesce_blocks(&self, blocks: &mut Vec<MemoryBlock>, free_blocks: &mut VecDeque<usize>) {
+    fn coalesce_blocks(&self, blocks: &mut [MemoryBlock], free_blocks: &mut VecDeque<usize>) {
         // Sort free blocks by offset
         let mut free_indices: Vec<_> = free_blocks.iter().copied().collect();
         free_indices.sort_by_key(|&idx| blocks[idx].offset);

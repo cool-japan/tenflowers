@@ -103,7 +103,7 @@ impl JitGradientContext {
         output_shape: &[usize],
     ) -> Result<CompiledKernel>
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         if !self.config.enabled {
             return Err(tenflowers_core::TensorError::unsupported_operation_simple(
@@ -144,7 +144,7 @@ impl JitGradientContext {
         output_shape: &[usize],
     ) -> Result<KernelSignature>
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         let input_shapes: Vec<Vec<usize>> = inputs
             .iter()
@@ -168,7 +168,7 @@ impl JitGradientContext {
     /// Detect device features from input tensors
     fn detect_device_features<T>(&self, _inputs: &[&Tensor<T>]) -> Result<DeviceFeatures>
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         // For now, return default features
         // In a real implementation, this would query the actual device capabilities
@@ -184,7 +184,7 @@ impl JitGradientContext {
         compiled_kernel: &CompiledKernel,
     ) -> Result<Vec<Tensor<T>>>
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         let start_time = std::time::Instant::now();
 
@@ -214,7 +214,7 @@ impl JitGradientContext {
         _grad_output: &Tensor<T>,
     ) -> Result<Vec<Tensor<T>>>
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         // This would integrate with the existing gradient computation system
         // For now, return placeholder gradients
@@ -392,7 +392,7 @@ pub mod utils {
     ) -> Result<(f64, f64)>
     // (jit_time_us, regular_time_us)
     where
-        T: Clone + std::fmt::Debug + 'static + Default + num_traits::Zero,
+        T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
         let jit_context = create_jit_context();
 

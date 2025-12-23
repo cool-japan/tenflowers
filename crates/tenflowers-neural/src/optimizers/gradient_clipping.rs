@@ -1,5 +1,5 @@
 use crate::model::Model;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Gradient clipping by value - clips each gradient element to [-clip_value, clip_value]
@@ -18,10 +18,10 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Signed,
+        + scirs2_core::num_traits::Signed,
     M: Model<T>,
 {
     let clip_tensor = Tensor::from_scalar(clip_value);
@@ -64,7 +64,7 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + std::iter::Sum
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -122,7 +122,7 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + std::iter::Sum
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -180,7 +180,7 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + std::iter::Sum
         + bytemuck::Pod
         + bytemuck::Zeroable,

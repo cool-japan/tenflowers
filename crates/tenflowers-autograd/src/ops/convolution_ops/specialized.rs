@@ -1,7 +1,7 @@
 use super::conv2d::conv2d_backward;
 use super::types::Conv2dBackwardResult;
 use super::utils::slice_tensor_channels;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::concat;
 use tenflowers_core::{Shape, Tensor, TensorError};
 
@@ -28,7 +28,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -76,7 +76,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

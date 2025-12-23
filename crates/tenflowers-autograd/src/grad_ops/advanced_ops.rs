@@ -4,7 +4,7 @@
 //! eigendecomposition gradients, and comprehensive gradient validation utilities
 //! for debugging and testing gradient implementations.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// SVD backward pass with enhanced numerical stability
@@ -22,7 +22,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -175,7 +175,7 @@ pub mod validation {
         tolerance: T,
     ) -> Result<GradientValidationStats>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
         F: Fn(&[Tensor<T>]) -> Result<Vec<Tensor<T>>>,
     {
         if inputs.len() != computed_grads.len() {
@@ -279,7 +279,7 @@ pub mod validation {
         epsilon: T,
     ) -> Result<T>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
         F: Fn(&[Tensor<T>]) -> Result<Vec<Tensor<T>>>,
     {
         // Create perturbed inputs
@@ -322,7 +322,7 @@ pub mod validation {
         _delta: T,
     ) -> Result<()>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
     {
         // Note: This is a simplified implementation
         // In a full implementation, we would need proper tensor element access and modification
@@ -333,7 +333,7 @@ pub mod validation {
     /// Helper function to get tensor element at index
     fn get_tensor_element_at_index<T>(_tensor: &Tensor<T>, _element_idx: usize) -> Result<T>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
     {
         // Simplified implementation - returns a default value
         // In a full implementation, this would extract the actual element
@@ -347,7 +347,7 @@ pub mod validation {
         _grad_output: &Tensor<T>,
     ) -> Result<T>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
     {
         // Simplified implementation - returns zero
         // In a full implementation, this would compute: sum((tensor_plus - tensor_minus) * grad_output)
@@ -361,7 +361,7 @@ pub mod validation {
         _tolerance: T,
     ) -> Result<bool>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static + PartialOrd,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static + PartialOrd,
     {
         // Check that gradients are finite (no NaN or Inf)
         if let Some(grad_data) = gradient.as_slice() {
@@ -388,7 +388,7 @@ pub mod validation {
     /// Compute Frobenius norm of a tensor
     fn compute_tensor_norm<T>(tensor: &Tensor<T>) -> Result<T>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
     {
         // Simplified implementation
         // In practice, this would compute sqrt(sum(x^2)) for all elements
@@ -412,7 +412,7 @@ pub mod validation {
         tolerance: T,
     ) -> Result<GradientValidationStats>
     where
-        T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
         F: Fn(&[Tensor<T>]) -> Result<Vec<Tensor<T>>>,
     {
         // Compute outputs
@@ -608,7 +608,7 @@ mod tests {
 
         assert!(result.is_ok());
         let stats = result.unwrap();
-        assert!(stats.num_elements >= 0);
+        assert!(stats.num_elements > 0);
     }
 
     #[test]

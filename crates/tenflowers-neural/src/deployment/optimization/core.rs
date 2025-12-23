@@ -4,7 +4,7 @@
 //! used throughout the optimization system.
 
 use crate::model::{Model, Sequential};
-use num_traits;
+use scirs2_core::num_traits;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use tenflowers_core::{DType, TensorError};
@@ -123,7 +123,7 @@ impl ModelOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -191,7 +191,7 @@ impl ModelOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -221,7 +221,7 @@ impl ModelOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -264,7 +264,7 @@ impl ModelOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,

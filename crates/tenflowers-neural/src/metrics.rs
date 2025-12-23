@@ -1,4 +1,4 @@
-use num_traits::ToPrimitive;
+use scirs2_core::num_traits::ToPrimitive;
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Compute accuracy between predictions and targets

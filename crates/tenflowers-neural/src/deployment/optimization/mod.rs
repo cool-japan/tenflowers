@@ -51,7 +51,7 @@ pub use hardware::HardwareOptimizationConfigs;
 
 // Convenience re-exports for common operations
 use crate::model::Sequential;
-use num_traits;
+use scirs2_core::num_traits;
 use tenflowers_core::TensorError;
 
 /// High-level API for model deployment optimization.
@@ -67,7 +67,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -87,7 +87,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -107,7 +107,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -127,7 +127,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -144,7 +144,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -163,7 +163,7 @@ where
         + Default
         + Send
         + Sync
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,

@@ -4,9 +4,10 @@
 //! comprehensive broadcasting support and device management.
 
 use super::core::BinaryOp;
+use crate::shape_error_taxonomy::ShapeErrorUtils;
 use crate::{Device, Result, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::Zero;
 
 /// Generic binary operation implementation with broadcasting
 #[allow(unused_variables)]
@@ -33,7 +34,7 @@ where
 
     // Compute broadcast shape
     let broadcast_shape = a.shape().broadcast_shape(b.shape()).ok_or_else(|| {
-        TensorError::shape_mismatch("binary_op", &a.shape().to_string(), &b.shape().to_string())
+        ShapeErrorUtils::broadcast_incompatible("binary_op", a.shape(), b.shape())
     })?;
 
     // Handle different device types
@@ -44,8 +45,8 @@ where
         }
         #[cfg(feature = "gpu")]
         (Device::Gpu(_), Device::Gpu(_)) => {
-            // GPU implementation would go here
-            todo!("GPU binary operations not yet implemented")
+            // GPU implementation
+            gpu_binary_op(a, b, op, &broadcast_shape)
         }
         #[cfg(feature = "rocm")]
         (Device::Rocm(_), Device::Rocm(_)) => {
@@ -226,4 +227,75 @@ where
     }
 
     Ok(())
+}
+
+/// GPU binary operation implementation with broadcasting
+#[cfg(feature = "gpu")]
+fn gpu_binary_op<T, Op>(
+    a: &Tensor<T>,
+    b: &Tensor<T>,
+    op: Op,
+    broadcast_shape: &crate::Shape,
+) -> Result<Tensor<T>>
+where
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
+    Op: BinaryOp<T>,
+{
+    use crate::gpu::binary_ops;
+    use crate::tensor::TensorStorage;
+
+    // Get GPU buffers from tensors
+    let (a_buffer, b_buffer) = match (&a.storage, &b.storage) {
+        (TensorStorage::Gpu(ref a_buf), TensorStorage::Gpu(ref b_buf)) => (a_buf, b_buf),
+        _ => {
+            return Err(TensorError::device_mismatch(
+                "gpu_binary_op",
+                "gpu",
+                "non-gpu",
+            ))
+        }
+    };
+
+    // Map operation name to GPU operation type
+    let gpu_op = match op.name() {
+        "Add" => binary_ops::BinaryOp::Add,
+        "Sub" => binary_ops::BinaryOp::Sub,
+        "Mul" => binary_ops::BinaryOp::Mul,
+        "Div" => binary_ops::BinaryOp::Div,
+        "Pow" => binary_ops::BinaryOp::Pow,
+        "Min" => binary_ops::BinaryOp::Min,
+        "Max" => binary_ops::BinaryOp::Max,
+        _ => {
+            return Err(TensorError::invalid_argument(format!(
+                "Unsupported GPU binary operation: {}",
+                op.name()
+            )))
+        }
+    };
+
+    // Calculate output size
+    let output_len = broadcast_shape.size();
+
+    // Execute GPU operation with broadcasting if needed
+    let result_buffer = if a.shape() == b.shape() && a.shape().dims() == broadcast_shape.dims() {
+        // Simple case: same shapes - no broadcasting needed
+        binary_ops::execute_binary_op(a_buffer, b_buffer, gpu_op, output_len)?
+    } else {
+        // Broadcasting case
+        binary_ops::execute_binary_op_with_broadcasting(
+            a_buffer,
+            b_buffer,
+            gpu_op,
+            a.shape().dims(),
+            b.shape().dims(),
+            broadcast_shape.dims(),
+            output_len,
+        )?
+    };
+
+    // Create result tensor from GPU buffer
+    Ok(Tensor::from_gpu_buffer(
+        result_buffer,
+        broadcast_shape.clone(),
+    ))
 }

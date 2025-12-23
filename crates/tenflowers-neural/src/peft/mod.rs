@@ -31,7 +31,7 @@ pub use ptuning_v2::{
 pub use qlora::{QLoRAAdapter, QLoRAConfig, QLoRAMemoryStats, QuantizationType};
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Trait for parameter-efficient fine-tuning methods

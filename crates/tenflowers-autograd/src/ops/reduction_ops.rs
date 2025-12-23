@@ -13,7 +13,7 @@
 //! properly managing gradient flow through dimension reductions.
 
 #[allow(unused_imports)]
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::ops::broadcast_to;
 use tenflowers_core::{Result, Tensor};
 
@@ -23,8 +23,8 @@ pub fn sum_backward<T>(grad_output: &Tensor<T>, input_shape: &[usize]) -> Result
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -41,10 +41,10 @@ pub fn mean_backward<T>(grad_output: &Tensor<T>, input_shape: &[usize]) -> Resul
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Div<Output = T>
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -76,12 +76,12 @@ pub fn weighted_mean_backward<T>(
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Div<Output = T>
         + std::ops::Mul<Output = T>
         + std::ops::Add<Output = T>
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static
@@ -201,8 +201,8 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Add<Output = T>
-        + num_traits::FromPrimitive
-        + num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -274,8 +274,8 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Add<Output = T>
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + Send
         + Sync
         + 'static

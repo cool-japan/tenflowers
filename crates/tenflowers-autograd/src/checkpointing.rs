@@ -287,17 +287,17 @@ pub trait CheckpointedGradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable;
 }
@@ -315,17 +315,17 @@ impl CheckpointedGradientTape for GradientTape {
             + Send
             + Sync
             + 'static
-            + num_traits::Zero
-            + num_traits::One
-            + num_traits::FromPrimitive
-            + num_traits::Float
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
             + std::ops::Add<Output = T>
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Signed
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -352,7 +352,7 @@ impl CheckpointedGradientTape for GradientTape {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::Array1;
+    use scirs2_core::ndarray::Array1;
     use tenflowers_core::Tensor;
 
     #[test]
@@ -390,11 +390,12 @@ mod tests {
         assert!(restored.is_some());
 
         let restored_tensor = restored.unwrap();
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = restored_tensor.storage {
-            assert_eq!(array[[0]], 1.0);
-            assert_eq!(array[[1]], 2.0);
-            assert_eq!(array[[2]], 3.0);
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = restored_tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert_eq!(array[[0]], 1.0);
+        assert_eq!(array[[1]], 2.0);
+        assert_eq!(array[[2]], 3.0);
 
         // Test non-existent checkpoint
         let missing: Option<Tensor<f32>> = manager.restore_checkpoint(999).unwrap();
@@ -423,13 +424,15 @@ mod tests {
         let result = checkpointed_fn.execute(&input, 0).unwrap();
 
         // Verify result
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage {
-            assert_eq!(array[[0]], 2.0);
-            assert_eq!(array[[1]], 4.0);
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert_eq!(array[[0]], 2.0);
+        assert_eq!(array[[1]], 4.0);
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn test_checkpoint_sequence() {
         // Create a sequence of operations
         let ops: Vec<Box<dyn Fn(&TrackedTensor<f32>) -> Result<TrackedTensor<f32>>>> = vec![
@@ -446,9 +449,10 @@ mod tests {
         let result = checkpoint_sequence(ops, CheckpointStrategy::EveryNLayers(2), input).unwrap();
 
         // Result should be 1 * 2 * 2 * 2 = 8
-        if let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage {
-            assert_eq!(array[[0]], 8.0);
-        }
+        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {
+            panic!("Expected CPU storage in test");
+        };
+        assert_eq!(array[[0]], 8.0);
     }
 
     #[test]
@@ -469,5 +473,409 @@ mod tests {
         // Clear to reset
         manager.clear_checkpoints();
         assert_eq!(manager.memory_usage(), 0);
+    }
+}
+
+// ============================================================================
+// Enhanced Activation Recompute API
+// ============================================================================
+
+/// Activation checkpointing policy for neural network layers
+///
+/// This provides a high-level interface for automatic activation checkpointing
+/// in deep neural networks, optimizing the memory-computation tradeoff.
+#[derive(Debug, Clone)]
+pub enum ActivationCheckpointPolicy {
+    /// No checkpointing - store all activations (maximum memory, minimum computation)
+    StoreAll,
+    /// Checkpoint every N layers
+    EveryNLayers(usize),
+    /// Checkpoint based on memory budget (in MB)
+    MemoryBudget(usize),
+    /// Adaptive checkpointing based on layer characteristics
+    Adaptive {
+        /// Memory budget in MB
+        memory_budget_mb: usize,
+        /// Prefer checkpointing computationally cheap layers
+        prefer_cheap_recompute: bool,
+    },
+    /// Checkpoint only specific layer types (e.g., "conv2d", "linear")
+    LayerTypes(Vec<String>),
+}
+
+impl Default for ActivationCheckpointPolicy {
+    fn default() -> Self {
+        ActivationCheckpointPolicy::Adaptive {
+            memory_budget_mb: 1024, // 1GB default
+            prefer_cheap_recompute: true,
+        }
+    }
+}
+
+/// Statistics for checkpointing effectiveness
+#[derive(Debug, Clone, Default)]
+pub struct CheckpointingStats {
+    /// Total activations computed
+    pub total_activations: usize,
+    /// Number of activations checkpointed
+    pub checkpointed_activations: usize,
+    /// Number of activations recomputed during backward
+    pub recomputed_activations: usize,
+    /// Total memory saved (bytes)
+    pub memory_saved_bytes: usize,
+    /// Total recomputation time (milliseconds)
+    pub recomputation_time_ms: u64,
+    /// Peak memory usage (bytes)
+    pub peak_memory_bytes: usize,
+}
+
+/// Layer metadata for checkpointing decisions
+#[derive(Debug, Clone)]
+pub struct LayerMetadata {
+    /// Layer name/identifier
+    pub name: String,
+    /// Layer type (e.g., "conv2d", "linear", "relu")
+    pub layer_type: String,
+    /// Index in the network
+    pub layer_index: usize,
+    /// Estimated computation cost (flops)
+    pub computation_cost: f64,
+    /// Estimated memory requirement (bytes)
+    pub memory_requirement: usize,
+    /// Whether this layer is memory-intensive
+    pub is_memory_intensive: bool,
+    /// Whether this layer is compute-intensive
+    pub is_compute_intensive: bool,
+}
+
+/// Activation recomputation manager
+///
+/// This provides automatic activation checkpointing for neural network training,
+/// optimizing memory usage while minimizing recomputation overhead.
+pub struct ActivationRecomputeManager {
+    policy: ActivationCheckpointPolicy,
+    checkpoint_manager: CheckpointManager,
+    stats: CheckpointingStats,
+    layer_metadata: Vec<LayerMetadata>,
+    memory_budget_bytes: usize,
+    current_memory_usage: usize,
+}
+
+impl ActivationRecomputeManager {
+    /// Create a new activation recompute manager
+    pub fn new(policy: ActivationCheckpointPolicy) -> Self {
+        let memory_budget_bytes = match &policy {
+            ActivationCheckpointPolicy::MemoryBudget(mb) => mb * 1024 * 1024,
+            ActivationCheckpointPolicy::Adaptive {
+                memory_budget_mb, ..
+            } => memory_budget_mb * 1024 * 1024,
+            _ => 1024 * 1024 * 1024, // 1GB default
+        };
+
+        // Convert policy to checkpoint strategy
+        let strategy = match &policy {
+            ActivationCheckpointPolicy::StoreAll => CheckpointStrategy::NoCheckpointing,
+            ActivationCheckpointPolicy::EveryNLayers(n) => CheckpointStrategy::EveryNLayers(*n),
+            ActivationCheckpointPolicy::MemoryBudget(mb) => {
+                CheckpointStrategy::MemoryThreshold(mb * 1024 * 1024)
+            }
+            _ => CheckpointStrategy::NoCheckpointing,
+        };
+
+        Self {
+            policy,
+            checkpoint_manager: CheckpointManager::new(strategy),
+            stats: CheckpointingStats::default(),
+            layer_metadata: Vec::new(),
+            memory_budget_bytes,
+            current_memory_usage: 0,
+        }
+    }
+
+    /// Register a layer with metadata for checkpointing decisions
+    pub fn register_layer(&mut self, metadata: LayerMetadata) {
+        self.layer_metadata.push(metadata);
+    }
+
+    /// Decide whether to checkpoint an activation
+    pub fn should_checkpoint_activation(
+        &self,
+        layer_index: usize,
+        layer_type: &str,
+        activation_size: usize,
+    ) -> bool {
+        match &self.policy {
+            ActivationCheckpointPolicy::StoreAll => true,
+            ActivationCheckpointPolicy::EveryNLayers(n) => layer_index % n == 0,
+            ActivationCheckpointPolicy::MemoryBudget(_) => {
+                self.current_memory_usage + activation_size <= self.memory_budget_bytes
+            }
+            ActivationCheckpointPolicy::Adaptive {
+                prefer_cheap_recompute,
+                ..
+            } => {
+                // Check memory budget
+                if self.current_memory_usage + activation_size > self.memory_budget_bytes {
+                    return false;
+                }
+
+                // If we prefer cheap recompute, checkpoint expensive layers
+                if *prefer_cheap_recompute {
+                    if let Some(metadata) = self.layer_metadata.get(layer_index) {
+                        return metadata.is_compute_intensive;
+                    }
+                }
+
+                true
+            }
+            ActivationCheckpointPolicy::LayerTypes(types) => {
+                types.contains(&layer_type.to_string())
+            }
+        }
+    }
+
+    /// Checkpoint an activation
+    pub fn checkpoint_activation<T>(
+        &mut self,
+        tensor_id: TensorId,
+        tensor: &Tensor<T>,
+    ) -> Result<()>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        let size = self.estimate_tensor_size(tensor);
+
+        self.checkpoint_manager.save_checkpoint(tensor_id, tensor);
+        self.current_memory_usage += size;
+        self.stats.checkpointed_activations += 1;
+        self.stats.total_activations += 1;
+
+        if self.current_memory_usage > self.stats.peak_memory_bytes {
+            self.stats.peak_memory_bytes = self.current_memory_usage;
+        }
+
+        Ok(())
+    }
+
+    /// Mark an activation as not checkpointed (will be recomputed)
+    pub fn mark_for_recomputation(&mut self, activation_size: usize) {
+        self.stats.total_activations += 1;
+        self.stats.memory_saved_bytes += activation_size;
+    }
+
+    /// Recompute an activation during backward pass
+    pub fn recompute_activation<T, F>(
+        &mut self,
+        tensor_id: TensorId,
+        recompute_fn: F,
+    ) -> Result<Tensor<T>>
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnOnce() -> Result<Tensor<T>>,
+    {
+        let start = std::time::Instant::now();
+
+        // Try to restore from checkpoint first
+        if let Some(tensor) = self.checkpoint_manager.restore_checkpoint::<T>(tensor_id)? {
+            return Ok(tensor);
+        }
+
+        // Recompute the activation
+        let tensor = recompute_fn()?;
+        self.stats.recomputed_activations += 1;
+        self.stats.recomputation_time_ms += start.elapsed().as_millis() as u64;
+
+        Ok(tensor)
+    }
+
+    /// Get checkpointing statistics
+    pub fn get_stats(&self) -> &CheckpointingStats {
+        &self.stats
+    }
+
+    /// Reset statistics
+    pub fn reset_stats(&mut self) {
+        self.stats = CheckpointingStats::default();
+        self.current_memory_usage = 0;
+    }
+
+    /// Clear all checkpoints and reset memory usage
+    pub fn clear(&mut self) {
+        self.checkpoint_manager.clear_checkpoints();
+        self.current_memory_usage = 0;
+    }
+
+    /// Print checkpointing report
+    pub fn print_report(&self) {
+        println!("\n=== Activation Checkpointing Report ===");
+        println!("Total activations: {}", self.stats.total_activations);
+        println!("Checkpointed: {}", self.stats.checkpointed_activations);
+        println!("Recomputed: {}", self.stats.recomputed_activations);
+
+        let checkpoint_rate = if self.stats.total_activations > 0 {
+            self.stats.checkpointed_activations as f64 / self.stats.total_activations as f64 * 100.0
+        } else {
+            0.0
+        };
+        println!("Checkpoint rate: {:.1}%", checkpoint_rate);
+
+        println!(
+            "Memory saved: {:.2} MB",
+            self.stats.memory_saved_bytes as f64 / 1024.0 / 1024.0
+        );
+        println!(
+            "Peak memory: {:.2} MB",
+            self.stats.peak_memory_bytes as f64 / 1024.0 / 1024.0
+        );
+        println!(
+            "Recomputation time: {} ms",
+            self.stats.recomputation_time_ms
+        );
+
+        if self.stats.recomputed_activations > 0 {
+            let avg_recompute_time =
+                self.stats.recomputation_time_ms as f64 / self.stats.recomputed_activations as f64;
+            println!("Avg recomputation time: {:.2} ms", avg_recompute_time);
+        }
+        println!("======================================\n");
+    }
+
+    /// Estimate tensor size in bytes
+    fn estimate_tensor_size<T>(&self, tensor: &Tensor<T>) -> usize {
+        let shape = tensor.shape();
+        let elements = shape.dims().iter().product::<usize>();
+        elements * std::mem::size_of::<T>()
+    }
+}
+
+/// Trait for layers that support activation checkpointing
+pub trait ActivationCheckpointing {
+    /// Forward pass with optional activation checkpointing
+    fn forward_with_checkpointing<T>(
+        &self,
+        input: &TrackedTensor<T>,
+        manager: &mut ActivationRecomputeManager,
+    ) -> Result<TrackedTensor<T>>
+    where
+        T: Clone + Send + Sync + 'static;
+
+    /// Get layer metadata for checkpointing decisions
+    fn get_layer_metadata(&self) -> LayerMetadata;
+}
+
+#[cfg(test)]
+mod activation_tests {
+    use super::*;
+
+    #[test]
+    fn test_activation_checkpoint_policy() {
+        let policy = ActivationCheckpointPolicy::default();
+        match policy {
+            ActivationCheckpointPolicy::Adaptive {
+                memory_budget_mb, ..
+            } => {
+                assert_eq!(memory_budget_mb, 1024);
+            }
+            _ => panic!("Expected Adaptive policy"),
+        }
+
+        let policy2 = ActivationCheckpointPolicy::EveryNLayers(2);
+        match policy2 {
+            ActivationCheckpointPolicy::EveryNLayers(n) => {
+                assert_eq!(n, 2);
+            }
+            _ => panic!("Expected EveryNLayers policy"),
+        }
+    }
+
+    #[test]
+    fn test_activation_recompute_manager() {
+        let policy = ActivationCheckpointPolicy::EveryNLayers(2);
+        let mut manager = ActivationRecomputeManager::new(policy);
+
+        // Layer 0 should be checkpointed (0 % 2 == 0)
+        assert!(manager.should_checkpoint_activation(0, "conv2d", 1000));
+
+        // Layer 1 should not be checkpointed (1 % 2 != 0)
+        assert!(!manager.should_checkpoint_activation(1, "conv2d", 1000));
+
+        // Layer 2 should be checkpointed (2 % 2 == 0)
+        assert!(manager.should_checkpoint_activation(2, "conv2d", 1000));
+    }
+
+    #[test]
+    fn test_memory_budget_policy() {
+        let policy = ActivationCheckpointPolicy::MemoryBudget(1); // 1 MB
+        let manager = ActivationRecomputeManager::new(policy);
+
+        // Small activation should fit
+        assert!(manager.should_checkpoint_activation(0, "relu", 1000));
+
+        // Large activation should not fit
+        assert!(!manager.should_checkpoint_activation(0, "conv2d", 10 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_layer_metadata() {
+        let metadata = LayerMetadata {
+            name: "conv1".to_string(),
+            layer_type: "conv2d".to_string(),
+            layer_index: 0,
+            computation_cost: 1000000.0,
+            memory_requirement: 4 * 1024 * 1024,
+            is_memory_intensive: true,
+            is_compute_intensive: false,
+        };
+
+        assert_eq!(metadata.name, "conv1");
+        assert_eq!(metadata.layer_type, "conv2d");
+        assert!(metadata.is_memory_intensive);
+    }
+
+    #[test]
+    fn test_checkpointing_stats() {
+        let policy = ActivationCheckpointPolicy::EveryNLayers(2);
+        let mut manager = ActivationRecomputeManager::new(policy);
+
+        // Mark some activations for recomputation
+        manager.mark_for_recomputation(1000);
+        manager.mark_for_recomputation(2000);
+
+        let stats = manager.get_stats();
+        assert_eq!(stats.total_activations, 2);
+        assert_eq!(stats.memory_saved_bytes, 3000);
+    }
+
+    #[test]
+    fn test_layer_types_policy() {
+        let policy = ActivationCheckpointPolicy::LayerTypes(vec![
+            "conv2d".to_string(),
+            "linear".to_string(),
+        ]);
+        let manager = ActivationRecomputeManager::new(policy);
+
+        // Should checkpoint conv2d
+        assert!(manager.should_checkpoint_activation(0, "conv2d", 1000));
+
+        // Should checkpoint linear
+        assert!(manager.should_checkpoint_activation(1, "linear", 1000));
+
+        // Should not checkpoint relu
+        assert!(!manager.should_checkpoint_activation(2, "relu", 1000));
+    }
+
+    #[test]
+    fn test_reset_and_clear() {
+        let policy = ActivationCheckpointPolicy::EveryNLayers(1);
+        let mut manager = ActivationRecomputeManager::new(policy);
+
+        manager.mark_for_recomputation(1000);
+        assert_eq!(manager.get_stats().total_activations, 1);
+
+        manager.reset_stats();
+        assert_eq!(manager.get_stats().total_activations, 0);
+
+        manager.clear();
+        assert_eq!(manager.current_memory_usage, 0);
     }
 }

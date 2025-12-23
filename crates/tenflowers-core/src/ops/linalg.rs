@@ -1,5 +1,5 @@
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, One, Zero};
+use scirs2_core::numeric::{Float, One, Zero};
 
 #[cfg(feature = "gpu")]
 use crate::tensor::TensorStorage;

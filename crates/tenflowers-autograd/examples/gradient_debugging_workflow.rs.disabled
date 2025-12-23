@@ -1,0 +1,419 @@
+/// Gradient Debugging Workflow Example
+///
+/// This example demonstrates a complete workflow for debugging gradient computation issues,
+/// including numerical validation, error analysis, visualization, and systematic debugging.
+use scirs2_autograd::ndarray::{array, Array2};
+use std::sync::{Arc, Mutex};
+use tenflowers_autograd::{
+    CheckerConfig, DeterministicConfig, DeterministicMode, FiniteDifferenceMethod,
+    GradientFlowVisualizer, GradientTape, NumericalChecker, VisualizationSettings,
+};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Gradient Debugging Workflow");
+    println!("======================================\n");
+
+    // Scenario 1: Debugging a simple operation
+    println!("Scenario 1: Validating Simple Operations");
+    println!("-".repeat(50));
+    validate_simple_operations()?;
+
+    // Scenario 2: Finding bugs in custom operations
+    println!("\nScenario 2: Debugging Custom Operations");
+    println!("-".repeat(50));
+    debug_custom_operation()?;
+
+    // Scenario 3: Analyzing gradient flow issues
+    println!("\nScenario 3: Gradient Flow Analysis");
+    println!("-".repeat(50));
+    analyze_gradient_flow()?;
+
+    // Scenario 4: Systematic debugging of training issues
+    println!("\nScenario 4: Systematic Training Debugging");
+    println!("-".repeat(50));
+    systematic_training_debug()?;
+
+    println!("\n✓ All debugging scenarios complete!");
+
+    Ok(())
+}
+
+/// Validate basic operations against numerical gradients
+fn validate_simple_operations() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Testing basic operations with numerical validation\n");
+
+    // Configure numerical checker
+    let checker_config = CheckerConfig {
+        method: FiniteDifferenceMethod::Central,
+        epsilon: 1e-4,
+        relative_tolerance: 1e-3,
+        absolute_tolerance: 1e-5,
+        seed: Some(42),
+    };
+    let mut checker = NumericalChecker::new(checker_config);
+
+    // Test 1: Multiplication
+    println!("Test 1: Element-wise multiplication (x * y)");
+    {
+        let mut tape = GradientTape::new();
+        let x = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
+
+        let result = checker.check_gradient_central(&mut tape, &x, |tape, x_inner| {
+            let x_tracked = tape.watch(x_inner.clone());
+            let y = Tensor::from_array(array![2.0f32, 3.0, 4.0].into_dyn());
+            let y_tracked = tape.watch(y);
+            Ok(x_tracked.mul(&y_tracked)?.tensor().clone())
+        })?;
+
+        print_validation_result("Multiplication", &result);
+    }
+
+    // Test 2: Power operation
+    println!("\nTest 2: Power operation (x^2)");
+    {
+        let mut tape = GradientTape::new();
+        let x = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
+
+        let result = checker.check_gradient_central(&mut tape, &x, |tape, x_inner| {
+            let x_tracked = tape.watch(x_inner.clone());
+            Ok(x_tracked.mul(&x_tracked)?.tensor().clone())
+        })?;
+
+        print_validation_result("Power", &result);
+    }
+
+    // Test 3: ReLU activation
+    println!("\nTest 3: ReLU activation");
+    {
+        let mut tape = GradientTape::new();
+        let x = Tensor::from_array(array![-1.0f32, 0.0, 1.0, 2.0].into_dyn());
+
+        let result = checker.check_gradient_central(&mut tape, &x, |tape, x_inner| {
+            let x_tracked = tape.watch(x_inner.clone());
+            Ok(x_tracked.relu()?.tensor().clone())
+        })?;
+
+        print_validation_result("ReLU", &result);
+    }
+
+    // Test 4: Sigmoid activation
+    println!("\nTest 4: Sigmoid activation");
+    {
+        let mut tape = GradientTape::new();
+        let x = Tensor::from_array(array![-2.0f32, -1.0, 0.0, 1.0, 2.0].into_dyn());
+
+        let result = checker.check_gradient_central(&mut tape, &x, |tape, x_inner| {
+            let x_tracked = tape.watch(x_inner.clone());
+            Ok(x_tracked.sigmoid()?.tensor().clone())
+        })?;
+
+        print_validation_result("Sigmoid", &result);
+    }
+
+    println!("\n✓ All basic operations validated");
+    Ok(())
+}
+
+/// Debug a custom operation that might have gradient issues
+fn debug_custom_operation() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Debugging a custom operation with potential gradient issues\n");
+
+    // Simulate a custom operation: soft_threshold(x) = sign(x) * max(|x| - threshold, 0)
+    // This has a discontinuous gradient at x = ±threshold
+
+    let threshold = 0.5f32;
+
+    // Test with deterministic mode for reproducibility
+    let det_config = DeterministicConfig {
+        mode: DeterministicMode::Strict,
+        global_seed: Some(42),
+        operation_seeds: true,
+        cudnn_deterministic: true,
+    };
+
+    println!("Step 1: Validate gradient computation");
+    println!("--------------------------------------");
+
+    let checker_config = CheckerConfig {
+        method: FiniteDifferenceMethod::Central4Point,
+        epsilon: 1e-5,
+        relative_tolerance: 1e-2,
+        absolute_tolerance: 1e-4,
+        seed: Some(42),
+    };
+    let mut checker = NumericalChecker::new(checker_config);
+
+    // Test points across the discontinuity
+    let test_points = vec![
+        ("Far from threshold", vec![-2.0, -1.0, 1.0, 2.0]),
+        ("Near threshold", vec![-0.6, -0.4, 0.4, 0.6]),
+        ("At threshold", vec![-0.5, 0.5]),
+    ];
+
+    for (name, points) in test_points {
+        println!("\nTesting: {}", name);
+
+        let tape = GradientTape::with_deterministic_config(det_config.clone());
+        let x = Tensor::from_array(Array2::from_shape_vec((1, points.len()), points)?.into_dyn());
+
+        // Custom soft threshold operation
+        let result = checker.check_gradient_central(&mut tape.clone(), &x, |tape, x_inner| {
+            let x_tracked = tape.watch(x_inner.clone());
+
+            // soft_threshold implementation
+            let abs_x = x_tracked.abs()?;
+            let threshold_tensor = Tensor::scalar(threshold);
+            let threshold_tensor = threshold_tensor.broadcast_to(&abs_x.shape().dims())?;
+
+            let shrink = abs_x.sub(&threshold_tensor)?;
+            let zero = Tensor::zeros(&shrink.shape().dims());
+            let shrink_positive = shrink.maximum(&zero)?;
+
+            // Multiply by sign
+            let sign = x_tracked.sign()?;
+            let output = sign.mul(&shrink_positive)?;
+
+            Ok(output.tensor().clone())
+        })?;
+
+        print_validation_result(name, &result);
+
+        if !result.is_valid {
+            println!("  ⚠ Gradient issue detected!");
+            println!("  Recommendation: Use smooth approximation near threshold");
+        }
+    }
+
+    println!("\nStep 2: Proposed fix - Smooth approximation");
+    println!("-------------------------------------------");
+    println!("Replace discontinuous threshold with smooth function:");
+    println!("  soft_threshold_smooth(x) = x * sigmoid((|x| - threshold) / smoothness)");
+    println!("  This makes the gradient continuous and well-defined");
+
+    Ok(())
+}
+
+/// Analyze gradient flow in a network
+fn analyze_gradient_flow() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Analyzing gradient flow through a multi-layer network\n");
+
+    let tape = Arc::new(Mutex::new(GradientTape::new()));
+
+    // Build a small network
+    println!("Building network: input → hidden1 → hidden2 → output");
+
+    let x = {
+        let tape_ref = tape.lock().unwrap();
+        tape_ref.watch(Tensor::from_array(
+            array![[-1.0f32, -0.5, 0.0, 0.5, 1.0]].into_dyn(),
+        ))
+    };
+
+    // Layer 1
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((5, 10), |(i, j)| ((i + j) as f32 * 0.1).sin()).into_dyn(),
+    );
+    let h1 = x.matmul(&w1)?;
+    let h1_act = h1.sigmoid()?;
+    println!("  Layer 1: [1,5] → [1,10] (sigmoid)");
+
+    // Layer 2
+    let w2 = Tensor::from_array(
+        Array2::from_shape_fn((10, 10), |(i, j)| ((i * 2 + j) as f32 * 0.05).cos()).into_dyn(),
+    );
+    let h2 = h1_act.matmul(&w2)?;
+    let h2_act = h2.sigmoid()?;
+    println!("  Layer 2: [1,10] → [1,10] (sigmoid)");
+
+    // Layer 3
+    let w3 = Tensor::from_array(
+        Array2::from_shape_fn((10, 3), |(i, j)| (i + j * 3) as f32 * 0.1).into_dyn(),
+    );
+    let output = h2_act.matmul(&w3)?;
+    let loss = output.sum(None, false)?;
+    println!("  Layer 3: [1,10] → [1,3] (linear)");
+
+    // Analyze gradient flow
+    println!("\nAnalyzing gradient flow...");
+    let mut visualizer = GradientFlowVisualizer::new();
+    {
+        let tape_ref = tape.lock().unwrap();
+        visualizer.analyze_flow(&tape_ref, &loss, &[&x])?;
+    }
+
+    // Get health summary
+    let health_summary = visualizer.get_health_summary()?;
+    println!("Gradient flow health: {}", health_summary);
+
+    // Detailed analysis
+    if let Some(analysis) = visualizer.flow_analysis() {
+        println!("\nDetailed Analysis:");
+        println!("  Health score: {:.1}/100", analysis.health_score);
+        println!("  Issues found: {}", analysis.issues.len());
+
+        for (i, issue) in analysis.issues.iter().enumerate().take(5) {
+            println!(
+                "    {}. {:?}: {}",
+                i + 1,
+                issue.issue_type,
+                issue.description
+            );
+        }
+
+        if !analysis.bottlenecks.is_empty() {
+            println!("\n  Bottlenecks detected:");
+            for (i, bottleneck) in analysis.bottlenecks.iter().enumerate().take(3) {
+                println!("    {}. {}", i + 1, bottleneck);
+            }
+        }
+
+        // Recommendations
+        println!("\nRecommendations:");
+        if analysis.health_score < 70.0 {
+            println!("  ⚠ Poor gradient flow detected!");
+            println!("  • Consider using ReLU instead of sigmoid");
+            println!("  • Add batch normalization between layers");
+            println!("  • Use skip connections (residual blocks)");
+            println!("  • Initialize weights with Xavier/He initialization");
+        } else {
+            println!("  ✓ Gradient flow is healthy");
+        }
+    }
+
+    Ok(())
+}
+
+/// Systematic debugging of training issues
+fn systematic_training_debug() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Systematic debugging workflow for training issues\n");
+
+    println!("Common Training Issues and Debugging Steps:");
+    println!("=".repeat(50));
+
+    // Issue 1: Exploding gradients
+    println!("\n1. Exploding Gradients");
+    println!("   Symptoms: Loss becomes NaN, weights grow unbounded");
+    println!("   Debugging:");
+    println!("     a) Check gradient norms");
+    println!("     b) Validate gradient computation");
+    println!("     c) Analyze gradient flow");
+    println!("   Solutions:");
+    println!("     • Gradient clipping (demonstrated)");
+    println!("     • Lower learning rate");
+    println!("     • Better weight initialization");
+
+    let example_grads = vec![
+        Tensor::from_array(array![1000.0f32, 2000.0, 3000.0].into_dyn()),
+        Tensor::from_array(array![500.0f32, 1500.0].into_dyn()),
+    ];
+
+    let mut total_norm_sq = 0.0f32;
+    for grad in &example_grads {
+        let grad_data = grad.as_slice().unwrap_or(&[]);
+        for &val in grad_data {
+            total_norm_sq += val * val;
+        }
+    }
+    let gradient_norm = total_norm_sq.sqrt();
+
+    println!("\n   Example gradient norm: {:.2}", gradient_norm);
+    if gradient_norm > 100.0 {
+        println!("   ⚠ DETECTED: Gradient explosion!");
+        println!("   Applying gradient clipping with max_norm=1.0");
+
+        let clip_factor = 1.0 / gradient_norm;
+        println!("   Clip factor: {:.6}", clip_factor);
+        println!("   ✓ Gradients clipped successfully");
+    }
+
+    // Issue 2: Vanishing gradients
+    println!("\n2. Vanishing Gradients");
+    println!("   Symptoms: Loss plateaus, early layers don't learn");
+    println!("   Debugging:");
+    println!("     a) Check gradient magnitudes per layer");
+    println!("     b) Analyze gradient flow health score");
+    println!("     c) Test activation function derivatives");
+    println!("   Solutions:");
+    println!("     • Use ReLU/LeakyReLU instead of sigmoid/tanh");
+    println!("     • Add batch normalization");
+    println!("     • Use skip connections");
+
+    let layer_gradients = vec![
+        ("layer_1", 0.1),
+        ("layer_2", 0.01),
+        ("layer_3", 0.001),
+        ("layer_4", 0.0001),
+    ];
+
+    println!("\n   Example layer gradient magnitudes:");
+    for (layer, mag) in &layer_gradients {
+        println!("     {}: {:.6}", layer, mag);
+        if *mag < 0.001 {
+            println!("       ⚠ Very small gradient!");
+        }
+    }
+    println!("   ⚠ DETECTED: Vanishing gradient in later layers");
+
+    // Issue 3: Numerical instability
+    println!("\n3. Numerical Instability");
+    println!("   Symptoms: Occasional NaN, inconsistent results");
+    println!("   Debugging:");
+    println!("     a) Enable deterministic mode");
+    println!("     b) Check for division by zero");
+    println!("     c) Validate intermediate values");
+    println!("   Solutions:");
+    println!("     • Add numerical stability epsilons");
+    println!("     • Use log-space computations");
+    println!("     • Clip values to valid ranges");
+
+    println!("\n   Example: Stabilizing softmax");
+    println!("     Unstable:   exp(x) / sum(exp(x))");
+    println!("     Stable:     exp(x - max(x)) / sum(exp(x - max(x)))");
+
+    // Issue 4: Wrong gradient implementation
+    println!("\n4. Incorrect Gradient Implementation");
+    println!("   Symptoms: Training doesn't converge, unexpected behavior");
+    println!("   Debugging:");
+    println!("     a) Numerical gradient checking");
+    println!("     b) Test on simple inputs");
+    println!("     c) Compare with reference implementation");
+    println!("   Solutions:");
+    println!("     • Fix gradient formula");
+    println!("     • Add comprehensive tests");
+
+    println!("\n   Numerical validation steps:");
+    println!("     1. Implement forward pass");
+    println!("     2. Implement backward pass");
+    println!("     3. Run numerical gradient check");
+    println!("     4. If check fails:");
+    println!("        → Review gradient formula");
+    println!("        → Test on simpler inputs");
+    println!("        → Check dimension handling");
+
+    println!("\n✓ Systematic debugging workflow complete");
+    println!("\nDebugging Toolkit Summary:");
+    println!("  ✓ Numerical gradient validation");
+    println!("  ✓ Gradient flow visualization");
+    println!("  ✓ Deterministic mode for reproducibility");
+    println!("  ✓ Gradient clipping utilities");
+    println!("  ✓ Memory and performance profiling");
+
+    Ok(())
+}
+
+/// Print validation result in a nice format
+fn print_validation_result(operation_name: &str, result: &tenflowers_autograd::ValidationResult) {
+    if result.is_valid {
+        println!("  ✓ {}: PASSED", operation_name);
+        println!("    Max error: {:.6e}", result.max_error);
+        println!("    Mean error: {:.6e}", result.mean_error);
+    } else {
+        println!("  ✗ {}: FAILED", operation_name);
+        println!(
+            "    Max error: {:.6e} (threshold: {:.6e})",
+            result.max_error, result.tolerance
+        );
+        println!("    Mean error: {:.6e}", result.mean_error);
+    }
+}

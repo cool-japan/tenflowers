@@ -1,4 +1,4 @@
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::manipulation::transpose_axes;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -7,7 +7,7 @@ pub fn inv_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Ten
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -33,7 +33,7 @@ pub fn det_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Ten
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -66,7 +66,7 @@ pub fn pinv_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Te
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -126,7 +126,7 @@ fn pseudoinverse_gradient_general<T>(
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static

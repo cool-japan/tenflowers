@@ -98,7 +98,7 @@ impl<T, D: Dataset<T> + Send + Sync + 'static> EnhancedDataLoader<T, D>
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static
@@ -458,7 +458,7 @@ impl<T, D: Dataset<T> + Send + Sync + 'static> Iterator for EnhancedDataLoader<T
 where
     T: Clone
         + Default
-        + num_traits::Zero
+        + scirs2_core::numeric::Zero
         + Send
         + Sync
         + 'static
@@ -542,7 +542,7 @@ impl EnhancedDataLoaderBuilder {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static

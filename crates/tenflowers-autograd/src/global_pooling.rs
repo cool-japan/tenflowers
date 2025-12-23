@@ -1,4 +1,4 @@
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Backward pass for Global Average Pooling 2D
@@ -19,7 +19,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -145,7 +145,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive,
+        + scirs2_core::num_traits::FromPrimitive,
 {
     if input_shape.len() != 4 {
         return Err(TensorError::shape_mismatch(
@@ -248,8 +248,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
-        + num_traits::Float,
+        + scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float,
 {
     if input_shape.len() != 4 {
         return Err(TensorError::shape_mismatch(
@@ -534,11 +534,11 @@ mod tests {
         if let Some(data) = grad_input.as_slice() {
             // Each spatial position should have gradient / spatial_size
             // Channel 0: 1.0 / 9.0 ≈ 0.111, Channel 1: 2.0 / 9.0 ≈ 0.222
-            for i in 0..9 {
-                assert!((data[i] - 1.0 / 9.0).abs() < 1e-6);
+            for item in data.iter().take(9) {
+                assert!((item - 1.0 / 9.0).abs() < 1e-6);
             }
-            for i in 9..18 {
-                assert!((data[i] - 2.0 / 9.0).abs() < 1e-6);
+            for item in data.iter().skip(9).take(9) {
+                assert!((item - 2.0 / 9.0).abs() < 1e-6);
             }
         }
     }

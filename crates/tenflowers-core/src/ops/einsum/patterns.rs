@@ -5,7 +5,7 @@
 
 use super::utils::{batch_transpose, cache_friendly_trace, compute_outer_product};
 use crate::{Result, Tensor};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 
 #[cfg(feature = "gpu")]
 use super::gpu::{

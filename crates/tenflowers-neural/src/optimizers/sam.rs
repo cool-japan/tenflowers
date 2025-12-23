@@ -1,6 +1,6 @@
 use crate::model::Model;
 use crate::optimizers::{Adam, Optimizer, SGD};
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::num_traits::{Float, FromPrimitive};
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -275,9 +275,9 @@ where
         + std::ops::Div<Output = T>
         + std::ops::Neg<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::Zero
-        + num_traits::One
-        + num_traits::Signed
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Signed
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

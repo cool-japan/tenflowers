@@ -93,8 +93,8 @@ impl<T> PipelineParallelModel<T>
 where
     T: Clone
         + Default
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + Send
         + Sync
         + 'static
@@ -316,7 +316,9 @@ fn get_device_memory_multiplier(device: &tenflowers_core::Device) -> usize {
     match device {
         tenflowers_core::Device::Cpu => 1,
         #[cfg(feature = "gpu")]
-        _ => 2, // GPU/ROCm tensors need extra memory for transfers
+        tenflowers_core::Device::Gpu(_) => 2, // GPU tensors need extra memory for transfers
+        #[allow(unreachable_patterns)]
+        _ => 2, // Other device types (e.g. Rocm from core) need extra memory for transfers
     }
 }
 
@@ -373,7 +375,13 @@ pub struct PipelineModelBuilder<T> {
 
 impl<T> PipelineModelBuilder<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + Send
+        + Sync
+        + 'static,
 {
     /// Create new builder
     pub fn new() -> Self {
@@ -400,8 +408,8 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::One
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
             + Send
             + Sync
             + 'static
@@ -420,7 +428,13 @@ where
 
 impl<T> Default for PipelineModelBuilder<T>
 where
-    T: Clone + Default + num_traits::Zero + num_traits::One + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
+        + Send
+        + Sync
+        + 'static,
 {
     fn default() -> Self {
         Self::new()

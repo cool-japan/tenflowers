@@ -13,7 +13,7 @@ use tenflowers_core::{Result, Tensor, TensorError};
 /// This is because FFT is a linear transformation, so its adjoint is IFFT
 pub fn fft_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // For complex FFT: if Y = FFT(X), then dX/dY = IFFT matrix
     // Since FFT is linear: d/dX[FFT(X)] = FFT_matrix
@@ -57,7 +57,7 @@ where
 /// This is the mathematical inverse relationship of FFT gradients
 pub fn ifft_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // For complex IFFT: if Y = IFFT(X), then dX/dY = FFT matrix
     // Since IFFT is linear: d/dX[IFFT(X)] = IFFT_matrix
@@ -91,7 +91,7 @@ where
 /// where IRFFT is the inverse real FFT that produces real output
 pub fn rfft_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // Real FFT gradient computation:
     // 1. RFFT takes real input and produces complex output (Hermitian symmetric)
@@ -143,6 +143,7 @@ where
         let mut result_data = vec![T::zero(); input.shape().size()];
 
         // Copy available gradient data
+        #[allow(unreachable_patterns)] // GPU pattern unreachable when gpu feature is disabled
         if let Some(grad_slice) = match &grad_output.storage {
             tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr.as_slice(),
             #[cfg(feature = "gpu")]
@@ -154,6 +155,8 @@ where
                     context: None,
                 });
             }
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         } {
             let copy_len = std::cmp::min(grad_slice.len(), result_data.len());
             result_data[..copy_len].clone_from_slice(&grad_slice[..copy_len]);
@@ -168,7 +171,7 @@ where
 /// 2D FFT applies FFT along two specified axes consecutively
 pub fn fft2_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // 2D FFT gradient computation:
     // FFT2(x) = FFT(FFT(x, axis=0), axis=1) for standard axes
@@ -201,7 +204,7 @@ where
 /// For IFFT2: y = IFFT2(x), the gradient is: grad_x = FFT2(grad_y)
 pub fn ifft2_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // 2D IFFT gradient computation:
     // Similar to 1D case but extended to 2 dimensions
@@ -229,7 +232,7 @@ where
 /// Enhanced implementation with complex tensor support planned for future release
 pub fn fft3_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // Validate input shapes match
     if grad_output.shape().dims() != input.shape().dims() {
@@ -257,7 +260,7 @@ where
 /// Enhanced implementation with complex tensor support planned for future release
 pub fn ifft3_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::num_traits::Float + Send + Sync + 'static,
 {
     // Validate input shapes match
     if grad_output.shape().dims() != input.shape().dims() {

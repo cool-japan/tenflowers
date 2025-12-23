@@ -7,7 +7,7 @@
 //! Reference: "Prefix-Tuning: Optimizing Continuous Prompts for Generation" (Li & Liang, 2021)
 
 use super::{PEFTAdapter, PEFTMethod};
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{Device, Result, Tensor};
 
@@ -302,7 +302,7 @@ where
 
             // Generate random mask using rng
             use scirs2_core::random::Rng;
-            let mut rng = scirs2_core::random::rng();
+            let mut rng = scirs2_core::random::thread_rng();
             let keep_prob = 1.0 - self.config.prefix_dropout;
             let inverted_dropout_scale = T::from(1.0 / keep_prob).unwrap();
 

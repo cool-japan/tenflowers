@@ -544,7 +544,7 @@ impl FusedOperation {
         }
 
         // Don't fuse normalization layers together
-        if (has_batch_norm && has_layer_norm) {
+        if has_batch_norm && has_layer_norm {
             return false;
         }
 
@@ -914,13 +914,15 @@ impl KernelFusionManager {
     /// Create bind group for fused operation
     fn create_bind_group<T>(
         &self,
-        pipeline: &wgpu::ComputePipeline,
-        inputs: &[&GpuBuffer<T>],
-        output: &wgpu::Buffer,
-        fused_op: &FusedOperation,
+        _pipeline: &wgpu::ComputePipeline,
+        _inputs: &[&GpuBuffer<T>],
+        _output: &wgpu::Buffer,
+        _fused_op: &FusedOperation,
     ) -> Result<wgpu::BindGroup> {
-        let bind_group_layout = pipeline.get_bind_group_layout(0);
-        self.create_bind_group(pipeline, inputs, output, fused_op)
+        // TODO: Implement bind group creation for fused kernel operations
+        Err(TensorError::unsupported_operation_simple(
+            "Fused kernel bind group creation not yet implemented".to_string(),
+        ))
     }
 
     fn create_bind_group_with_layout_static<T>(
@@ -985,11 +987,14 @@ impl KernelFusionManager {
     /// Dispatch fused compute kernel
     fn dispatch_fused_kernel(
         &self,
-        pipeline: &wgpu::ComputePipeline,
-        bind_group: &wgpu::BindGroup,
-        output_shape: &[usize],
+        _pipeline: &wgpu::ComputePipeline,
+        _bind_group: &wgpu::BindGroup,
+        _output_shape: &[usize],
     ) -> Result<()> {
-        self.dispatch_fused_kernel(pipeline, bind_group, output_shape)
+        // TODO: Implement fused kernel dispatch
+        Err(TensorError::unsupported_operation_simple(
+            "Fused kernel dispatch not yet implemented".to_string(),
+        ))
     }
 
     fn dispatch_fused_kernel_with_device_static(

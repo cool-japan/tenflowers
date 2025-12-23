@@ -5,10 +5,10 @@
 //! data distribution management.
 
 use crate::{Dataset, Result};
-use scirs2_core::random::distributions::{Distribution, Normal};
 use scirs2_core::random::rand_prelude::*;
 use scirs2_core::random::rngs::StdRng;
 use scirs2_core::random::SeedableRng;
+use scirs2_core::random::{rng, Random};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -265,8 +265,12 @@ impl PrivacyManager {
     }
 
     fn sample_gaussian(&mut self, sigma: f64) -> f64 {
-        let normal = Normal::new(0.0, sigma).unwrap();
-        normal.sample(&mut self.rng)
+        // Box-Muller transform to generate Gaussian noise
+        let u1: f64 = self.rng.random();
+        let u2: f64 = self.rng.random();
+
+        let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+        z0 * sigma
     }
 
     /// Check if privacy budget allows the operation

@@ -4,7 +4,7 @@
 //! Multi-query attention shares key and value heads across multiple query heads.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 use super::KVCache;
@@ -194,7 +194,7 @@ where
 
         // Scale by sqrt(head_dim)
         let scale = T::from(1.0 / (self.head_dim as f64).sqrt()).unwrap_or_else(T::one);
-        let scale_tensor = Tensor::from_array(scirs2_autograd::ndarray::arr0(scale).into_dyn());
+        let scale_tensor = Tensor::from_array(scirs2_core::ndarray::arr0(scale).into_dyn());
         let scores = tenflowers_core::ops::mul(&scores, &scale_tensor)?;
 
         // Apply attention mask if provided

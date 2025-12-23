@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use tenflowers_autograd::grad_ops::{fft3_backward, ifft3_backward};
 use tenflowers_core::{Result, Tensor, TensorError};
 

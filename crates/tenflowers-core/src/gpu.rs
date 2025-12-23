@@ -6,7 +6,7 @@
 use crate::gpu_profiler::global_profiler;
 #[cfg(feature = "gpu")]
 use crate::{buffer::TensorBuffer, Device, Result, TensorError};
-use scirs2_autograd::ndarray::ArrayD;
+use scirs2_core::ndarray::ArrayD;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -124,12 +124,7 @@ impl GpuContext {
     /// Create a new GPU context
     pub fn new() -> Result<Self> {
         pollster::block_on(async {
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::all(),
-                dx12_shader_compiler: Default::default(),
-                flags: wgpu::InstanceFlags::default(),
-                gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
-            });
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
 
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
@@ -395,6 +390,8 @@ pub use gpu_include_shader;
 // Core GPU buffer and operation modules
 pub mod binary_ops;
 pub mod buffer;
+pub mod logical_ops;
+pub mod random_ops;
 pub mod unary_ops;
 
 // Async kernel execution module
@@ -432,6 +429,18 @@ pub mod ultra_fusion_integration;
 // Advanced memory pool management
 #[cfg(feature = "gpu")]
 pub mod memory_pool;
+
+// GPU memory allocation tracing and diagnostics
+#[cfg(feature = "gpu")]
+pub mod memory_tracing;
+
+// GPU memory diagnostics and profiling
+#[cfg(feature = "gpu")]
+pub mod memory_diagnostics;
+
+// GPU reduction kernel templates and execution
+#[cfg(feature = "gpu")]
+pub mod reduction_kernels;
 
 // Performance optimizer and profiler
 #[cfg(feature = "gpu")]
@@ -476,6 +485,13 @@ pub use ultra_fusion_integration::*;
 
 // Re-export common types from ops module
 pub use ops::ReductionOp;
+
+// Re-export memory tracking functions
+#[cfg(feature = "gpu")]
+pub use memory_tracing::{
+    current_gpu_memory_usage, generate_gpu_memory_report, peak_gpu_memory_usage,
+    print_gpu_memory_report, MemoryReport, MemoryStats,
+};
 
 /// Trait for GPU operations on tensors
 pub trait GpuOps {

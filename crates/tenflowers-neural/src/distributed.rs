@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs)]
+#![allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -17,13 +18,13 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Zero,
+        + scirs2_core::num_traits::Zero,
 {
     use tenflowers_core::tensor::TensorStorage;
 
     match (&a.storage, &b.storage) {
         (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-            let result = ndarray::Zip::from(arr_a)
+            let result = scirs2_core::ndarray::Zip::from(arr_a)
                 .and(arr_b)
                 .map_collect(|a_val, b_val| {
                     if a_val <= b_val {
@@ -44,6 +45,8 @@ where
             "element_wise_min",
             "Tensors must be on the same device",
         )),
+        #[cfg(not(feature = "gpu"))]
+        _ => unreachable!("GPU variant should not exist without gpu feature"),
     }
 }
 
@@ -58,13 +61,13 @@ where
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable
-        + num_traits::Zero,
+        + scirs2_core::num_traits::Zero,
 {
     use tenflowers_core::tensor::TensorStorage;
 
     match (&a.storage, &b.storage) {
         (TensorStorage::Cpu(arr_a), TensorStorage::Cpu(arr_b)) => {
-            let result = ndarray::Zip::from(arr_a)
+            let result = scirs2_core::ndarray::Zip::from(arr_a)
                 .and(arr_b)
                 .map_collect(|a_val, b_val| {
                     if a_val >= b_val {
@@ -85,6 +88,8 @@ where
             "element_wise_max",
             "Tensors must be on the same device",
         )),
+        #[cfg(not(feature = "gpu"))]
+        _ => unreachable!("GPU variant should not exist without gpu feature"),
     }
 }
 

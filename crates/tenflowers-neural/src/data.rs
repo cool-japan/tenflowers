@@ -64,7 +64,7 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Send
             + Sync
             + 'static
@@ -88,7 +88,7 @@ where
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + Send
             + Sync
             + 'static

@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::Array1;
+use scirs2_core::ndarray::Array1;
 /// Example demonstrating gradient validation concept
 ///
 /// To run the actual gradient correctness tests, use:

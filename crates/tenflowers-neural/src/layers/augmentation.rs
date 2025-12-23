@@ -4,7 +4,7 @@
 //! that are essential for training robust neural networks.
 
 use super::Layer;
-use scirs2_core::random::rng;
+use scirs2_core::random::thread_rng;
 use std::cmp::{max, min};
 use tenflowers_core::{
     ops::{add, gather, mul},
@@ -58,7 +58,10 @@ impl Mixup {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::Zero + num_traits::One + num_traits::FromPrimitive + num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::ToPrimitive,
     {
         if !self.enabled {
             let lambda = 1.0;
@@ -73,7 +76,7 @@ impl Mixup {
         }
 
         // Sample lambda from Beta distribution (approximated)
-        let mut rng = rng();
+        let mut rng = thread_rng();
         let lambda = if self.alpha > 0.0 {
             // Sample from Beta(alpha, alpha) distribution
             // For simplicity, we'll use a uniform distribution when alpha=1.0
@@ -111,7 +114,9 @@ impl Mixup {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::Zero + num_traits::One + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive,
     {
         // Create indices tensor for gathering
         let indices_tensor = Tensor::from_vec(indices.to_vec(), &[indices.len()])?;
@@ -203,7 +208,10 @@ impl CutMix {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::Zero + num_traits::One + num_traits::FromPrimitive + num_traits::ToPrimitive,
+        T: scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::ToPrimitive,
     {
         if !self.enabled {
             let lambda = 1.0;
@@ -228,7 +236,7 @@ impl CutMix {
         }
 
         // Sample lambda from Beta distribution
-        let mut rng = rng();
+        let mut rng = thread_rng();
         let lambda = if self.alpha > 0.0 {
             let u1: f32 = rng.gen_range(0.0..1.0);
             let u2: f32 = rng.gen_range(0.0..1.0);
@@ -284,7 +292,9 @@ impl CutMix {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::Zero + num_traits::One + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive,
     {
         use tenflowers_core::ops::gather;
 
@@ -353,7 +363,9 @@ impl CutMix {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::Zero + num_traits::One + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::FromPrimitive,
     {
         // Create indices tensor
         let indices_tensor = Tensor::from_vec(indices.to_vec(), &[indices.len()])?;
@@ -376,7 +388,9 @@ impl CutMix {
     where
         T: Default + Clone + Copy + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
         T: std::ops::Add<Output = T> + std::ops::Mul<Output = T>,
-        T: num_traits::FromPrimitive + num_traits::Zero + num_traits::One,
+        T: scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One,
     {
         let indices_tensor = Tensor::from_vec(indices.to_vec(), &[indices.len()])?;
         let shuffled_labels = gather(labels, &indices_tensor, 0)?;
@@ -459,7 +473,9 @@ impl LabelSmoothing {
             + std::ops::Sub<Output = T>
             + std::ops::Mul<Output = T>
             + std::ops::Div<Output = T>,
-        T: num_traits::FromPrimitive + num_traits::One + num_traits::Zero,
+        T: scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::Zero,
     {
         if !self.enabled || self.smoothing == 0.0 {
             return Ok(labels.clone());
@@ -493,7 +509,9 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Mul<Output = T>
         + std::ops::Div<Output = T>,
-    T: num_traits::FromPrimitive + num_traits::One + num_traits::Zero,
+    T: scirs2_core::num_traits::FromPrimitive
+        + scirs2_core::num_traits::One
+        + scirs2_core::num_traits::Zero,
 {
     /// Standard Layer forward pass - applies label smoothing to input
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {

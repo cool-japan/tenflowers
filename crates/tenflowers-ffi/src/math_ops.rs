@@ -470,7 +470,7 @@ pub fn argmin(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyRe
 pub fn cat(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> {
     let tensor_vec: Vec<PyRef<PyTensor>> = tensors
         .iter()
-        .map(|item| item.extract::<PyRef<PyTensor>>())
+        .map(|item| item.extract::<PyRef<PyTensor>>().map_err(Into::into))
         .collect::<PyResult<Vec<_>>>()?;
     let axis = dim.unwrap_or(0);
 
@@ -498,7 +498,7 @@ pub fn cat(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> 
 pub fn stack(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> {
     let tensor_vec: Vec<PyRef<PyTensor>> = tensors
         .iter()
-        .map(|item| item.extract::<PyRef<PyTensor>>())
+        .map(|item| item.extract::<PyRef<PyTensor>>().map_err(Into::into))
         .collect::<PyResult<Vec<_>>>()?;
     let axis = dim.unwrap_or(0);
 

@@ -49,7 +49,13 @@ where
 impl<T, Tr> Dataset<T> for MultimodalTransformedDataset<T, Tr>
 where
     Tr: MultimodalTransform<T>,
-    T: Clone + Default + num_traits::Zero + num_traits::Float + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + scirs2_core::numeric::Float
+        + Send
+        + Sync
+        + 'static,
 {
     fn len(&self) -> usize {
         self.dataset.len()

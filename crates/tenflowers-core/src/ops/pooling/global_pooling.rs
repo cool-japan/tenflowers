@@ -6,7 +6,7 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, Zero};
 
 /// Global max pooling 2D - pools over the entire spatial dimensions
 /// Input shape: [batch, channels, height, width] (NCHW format)

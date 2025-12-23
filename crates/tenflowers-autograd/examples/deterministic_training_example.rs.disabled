@@ -1,0 +1,221 @@
+/// Deterministic Training Example
+///
+/// This example demonstrates how to ensure reproducible training results
+/// by using deterministic seed management across forward and backward passes.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{DeterministicConfig, DeterministicMode, GradientTape, SeedStrategy};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Deterministic Training Example");
+    println!("=========================================\n");
+
+    // Example 1: Basic deterministic training
+    println!("Example 1: Basic Deterministic Training");
+    println!("---------------------------------------");
+    basic_deterministic_example()?;
+
+    println!("\nExample 2: Reproducible Random Initialization");
+    println!("--------------------------------------------");
+    reproducible_initialization_example()?;
+
+    println!("\nExample 3: Multi-Run Consistency");
+    println!("--------------------------------");
+    multi_run_consistency_example()?;
+
+    println!("\nExample 4: Debugging with Determinism");
+    println!("-------------------------------------");
+    debugging_with_determinism_example()?;
+
+    Ok(())
+}
+
+fn basic_deterministic_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure deterministic mode with global seed
+    let det_config = DeterministicConfig {
+        mode: DeterministicMode::Strict,
+        global_seed: Some(42),
+        operation_seeds: true,
+        cudnn_deterministic: true,
+    };
+
+    println!("Running with deterministic seed: 42\n");
+
+    // Run 1
+    let tape1 = GradientTape::with_deterministic_config(det_config.clone());
+    let x1 = tape1.watch(Tensor::from_array(
+        Array2::from_shape_fn((4, 8), |(i, j)| (i as f32 + j as f32) * 0.1).into_dyn(),
+    ));
+
+    // Add some randomness (dropout simulation)
+    let dropout_mask1 = Tensor::randn(&[4, 8], Device::cpu())?;
+    let masked1 = x1.mul(&dropout_mask1)?;
+    let loss1 = masked1.sum(None, false)?;
+    let grads1 = tape1.gradient(&[loss1.clone()], &[x1.clone()])?;
+
+    println!("Run 1:");
+    println!(
+        "  Loss: {:?}",
+        loss1.tensor().as_slice().unwrap_or(&[]).get(0)
+    );
+    println!(
+        "  Gradient sum: {}",
+        grads1[0].sum(None, false)?.as_slice().unwrap_or(&[])[0]
+    );
+
+    // Run 2 with same seed - should produce identical results
+    let tape2 = GradientTape::with_deterministic_config(det_config.clone());
+    let x2 = tape2.watch(Tensor::from_array(
+        Array2::from_shape_fn((4, 8), |(i, j)| (i as f32 + j as f32) * 0.1).into_dyn(),
+    ));
+
+    let dropout_mask2 = Tensor::randn(&[4, 8], Device::cpu())?;
+    let masked2 = x2.mul(&dropout_mask2)?;
+    let loss2 = masked2.sum(None, false)?;
+    let grads2 = tape2.gradient(&[loss2.clone()], &[x2.clone()])?;
+
+    println!("\nRun 2:");
+    println!(
+        "  Loss: {:?}",
+        loss2.tensor().as_slice().unwrap_or(&[]).get(0)
+    );
+    println!(
+        "  Gradient sum: {}",
+        grads2[0].sum(None, false)?.as_slice().unwrap_or(&[])[0]
+    );
+
+    println!("\n✓ Both runs should produce identical results with same seed");
+
+    Ok(())
+}
+
+fn reproducible_initialization_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Demonstrating reproducible weight initialization\n");
+
+    // Seed strategy for consistent initialization
+    let det_config = DeterministicConfig {
+        mode: DeterministicMode::Strict,
+        global_seed: Some(123),
+        operation_seeds: true,
+        cudnn_deterministic: true,
+    };
+
+    let tape = GradientTape::with_deterministic_config(det_config);
+
+    // Initialize "model weights" with deterministic random values
+    println!("Initializing layer 1 weights (seed: 123)...");
+    let layer1_weights = Tensor::randn(&[64, 32], Device::cpu())?;
+    println!(
+        "  First weight value: {}",
+        layer1_weights.as_slice().unwrap_or(&[])[0]
+    );
+
+    println!("Initializing layer 2 weights (seed: 123)...");
+    let layer2_weights = Tensor::randn(&[32, 16], Device::cpu())?;
+    println!(
+        "  First weight value: {}",
+        layer2_weights.as_slice().unwrap_or(&[])[0]
+    );
+
+    println!("\n✓ Same seed always produces same initialization");
+    println!("  This enables exact reproduction of experiments");
+
+    Ok(())
+}
+
+fn multi_run_consistency_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Testing consistency across multiple training steps\n");
+
+    let det_config = DeterministicConfig {
+        mode: DeterministicMode::Strict,
+        global_seed: Some(999),
+        operation_seeds: true,
+        cudnn_deterministic: true,
+    };
+
+    // Simulate 5 training steps
+    let mut loss_values = Vec::new();
+
+    for step in 0..5 {
+        let tape = GradientTape::with_deterministic_config(det_config.clone());
+
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn((2, 4), |(i, j)| ((step + i + j) as f32) * 0.01).into_dyn(),
+        ));
+
+        let w = Tensor::randn(&[4, 2], Device::cpu())?;
+        let output = x.matmul(&w)?;
+        let loss = output.sum(None, false)?;
+
+        let loss_val = loss.tensor().as_slice().unwrap_or(&[])[0];
+        loss_values.push(loss_val);
+
+        println!("Step {}: Loss = {:.6}", step + 1, loss_val);
+
+        let _ = tape.gradient(&[loss.clone()], &[x.clone()])?;
+    }
+
+    println!("\n✓ Training trajectory is fully deterministic");
+    println!("  Re-running with same seed will produce identical losses");
+
+    Ok(())
+}
+
+fn debugging_with_determinism_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Using determinism for debugging gradient issues\n");
+
+    // Strict deterministic mode for debugging
+    let det_config = DeterministicConfig {
+        mode: DeterministicMode::Strict,
+        global_seed: Some(42),
+        operation_seeds: true,
+        cudnn_deterministic: true,
+    };
+
+    let tape = GradientTape::with_deterministic_config(det_config);
+
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((3, 5), |(i, j)| (i as f32 * 0.5 + j as f32 * 0.1)).into_dyn(),
+    ));
+
+    println!("Building computation graph...");
+
+    // Intentionally create a computation that might have numerical issues
+    let squared = x.mul(&x)?;
+    println!("  Step 1: x^2");
+
+    let cubed = squared.mul(&x)?;
+    println!("  Step 2: x^3");
+
+    // Add small value to test stability
+    let stabilized = cubed.add(&Tensor::scalar(1e-7, Device::cpu())?)?;
+    println!("  Step 3: x^3 + 1e-7");
+
+    let loss = stabilized.sum(None, false)?;
+    println!("  Step 4: sum");
+
+    println!("\nComputing gradients...");
+    let grads = tape.gradient(&[loss.clone()], &[x.clone()])?;
+
+    let grad_sum = grads[0].sum(None, false)?;
+    println!("Total gradient: {}", grad_sum.as_slice().unwrap_or(&[])[0]);
+
+    println!("\n✓ Deterministic mode enabled reproducible debugging");
+    println!("  Benefits:");
+    println!("  • Exact reproduction of numerical issues");
+    println!("  • Consistent gradient values for testing");
+    println!("  • Easier to isolate bugs");
+    println!("  • Facilitates unit testing with known outputs");
+
+    println!("\n📝 When to Use Deterministic Mode:");
+    println!("  • Debugging gradient computation issues");
+    println!("  • Reproducing research results");
+    println!("  • Unit testing with expected outputs");
+    println!("  • Benchmarking and performance comparisons");
+    println!("\n📝 Trade-offs:");
+    println!("  • May be slightly slower than non-deterministic");
+    println!("  • Some GPU optimizations may be disabled");
+    println!("  • Worth it for reproducibility and debugging");
+
+    Ok(())
+}

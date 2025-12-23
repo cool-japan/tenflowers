@@ -3,7 +3,7 @@
 //! This module provides advanced automatic differentiation operations and utilities
 //! that enhance the basic gradient computation capabilities.
 
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -121,7 +121,7 @@ pub mod gradient_clipping {
             + bytemuck::Pod
             + bytemuck::Zeroable
             + PartialOrd
-            + num_traits::Zero,
+            + scirs2_core::num_traits::Zero,
     {
         let mut clipped_gradients = Vec::new();
 
@@ -170,7 +170,7 @@ pub mod higher_order {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive,
     {
         // First compute gradients
         let first_order = tape.gradient(std::slice::from_ref(loss), params)?;
@@ -218,7 +218,7 @@ pub mod higher_order {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive,
     {
         let mut hessian = Vec::new();
 
@@ -272,7 +272,7 @@ pub mod jacobian {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive,
     {
         let mut jacobian = Vec::new();
 
@@ -301,7 +301,7 @@ pub mod jacobian {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive,
     {
         // Compute JVP using forward-mode AD or reverse-mode with vector trick
         let mut jvp_results = Vec::new();

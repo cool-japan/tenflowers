@@ -10,8 +10,10 @@
 //! - CPU and GPU optimized embedding lookup operations
 //! - Pre-trained embedding support
 
+#![allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
+
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use scirs2_core::random::rand_prelude::*;
 use tenflowers_core::{Result, Shape, Tensor, TensorError};
 
@@ -183,7 +185,7 @@ where
     /// Clips the norm of each embedding vector to be at most `max_norm`
     pub fn apply_max_norm_constraint(&mut self) -> Result<()>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         if let Some(max_norm) = self.regularization.max_norm {
             let max_norm_t = T::from_f32(max_norm).unwrap_or_else(|| T::from(2.0).unwrap());
@@ -214,7 +216,7 @@ where
     /// Apply dropout to embeddings during training
     fn apply_embedding_dropout(&self, embeddings: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         if !self.training || self.regularization.dropout == 0.0 {
             return Ok(embeddings.clone());
@@ -224,7 +226,7 @@ where
         let keep_prob = 1.0 - dropout_rate;
 
         // Simple dropout implementation
-        let mut rng = scirs2_core::random::rng();
+        let mut rng = scirs2_core::random::thread_rng();
         let shape = embeddings.shape().dims();
         let total_elements = shape.iter().product::<usize>();
 
@@ -250,7 +252,7 @@ where
     /// Compute L2 regularization loss
     pub fn l2_regularization_loss(&self) -> Result<T>
     where
-        T: num_traits::Float + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         if self.regularization.l2_reg == 0.0 {
             return Ok(T::zero());
@@ -278,7 +280,10 @@ where
     /// Tensor with shape [...indices.shape, embedding_dim]
     fn lookup_embeddings(&self, indices: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::ToPrimitive + num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::ToPrimitive
+            + scirs2_core::num_traits::FromPrimitive
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         use tenflowers_core::tensor::TensorStorage;
 
@@ -293,12 +298,14 @@ where
             _ => Err(TensorError::unsupported_operation_simple(
                 "Mixed CPU/GPU embedding lookup not supported".to_string(),
             )),
+            #[cfg(not(feature = "gpu"))]
+            _ => unreachable!("GPU variant should not exist without gpu feature"),
         }
     }
 
     fn lookup_embeddings_cpu(&self, indices: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::ToPrimitive + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::ToPrimitive + scirs2_core::num_traits::FromPrimitive,
     {
         let indices_data = indices.as_slice().ok_or_else(|| {
             TensorError::device_error_simple("Cannot access indices tensor data".to_string())
@@ -342,7 +349,10 @@ where
     #[cfg(feature = "gpu")]
     fn lookup_embeddings_gpu(&self, indices: &Tensor<T>) -> Result<Tensor<T>>
     where
-        T: num_traits::ToPrimitive + num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable,
+        T: scirs2_core::num_traits::ToPrimitive
+            + scirs2_core::num_traits::FromPrimitive
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         use tenflowers_core::gpu::execute_embedding_lookup;
         use tenflowers_core::tensor::TensorStorage;
@@ -399,8 +409,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::ToPrimitive
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::ToPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

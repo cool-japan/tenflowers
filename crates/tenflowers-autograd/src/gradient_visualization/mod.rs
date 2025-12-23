@@ -67,9 +67,11 @@ mod integration_tests {
 
     #[test]
     fn test_visualization_settings_integration() {
-        let mut settings = VisualizationSettings::default();
-        settings.color_scheme = ColorScheme::Plasma;
-        settings.show_gradient_flow = false;
+        let settings = VisualizationSettings {
+            color_scheme: ColorScheme::Plasma,
+            show_gradient_flow: false,
+            ..Default::default()
+        };
 
         let visualizer = GradientFlowVisualizer::<f32>::with_settings(settings);
 

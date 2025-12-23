@@ -7,15 +7,15 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::{Float, FromPrimitive};
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
 /// Batch normalization for 4D tensors (NCHW format)
-/// Input shape: [batch, channels, height, width]
-/// Running mean/var shapes: [channels]
-/// Gamma/beta shapes: [channels]
+/// Input shape: `[batch, channels, height, width]`
+/// Running mean/var shapes: `[channels]`
+/// Gamma/beta shapes: `[channels]`
 pub fn batch_norm<T>(
     input: &Tensor<T>,
     gamma: &Tensor<T>,

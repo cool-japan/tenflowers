@@ -292,7 +292,7 @@ impl GpuContext {
     }
 
     async fn new_async(device_id: usize) -> Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -468,10 +468,10 @@ pub fn get_gpu_context(device_id: usize) -> Result<GpuContextInfo> {
 #[cfg(any(feature = "gpu", feature = "cudnn"))]
 pub fn get_enhanced_gpu_context(device_id: usize) -> Result<EnhancedGpuContext> {
     // Check if cuDNN is available and requested
-    #[cfg(feature = "cudnn")]
+    #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
     {
         if crate::gpu::cudnn::CudnnContext::is_available() {
-            let cudnn_ctx = crate::gpu::cudnn::global_cudnn_context();
+            let mut cudnn_ctx = crate::gpu::cudnn::global_cudnn_context();
             let cudnn_handle = cudnn_ctx.get_handle(device_id)?;
 
             // Also get WGPU context for fallback
@@ -516,7 +516,7 @@ pub struct GpuContextInfo {
 pub enum GpuBackend {
     #[cfg(feature = "gpu")]
     WGPU(GpuContextInfo),
-    #[cfg(feature = "cudnn")]
+    #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
     CuDNN(Arc<crate::gpu::cudnn::CudnnHandle>),
 }
 
@@ -532,7 +532,7 @@ pub struct EnhancedGpuContext {
 #[cfg(any(feature = "gpu", feature = "cudnn"))]
 impl EnhancedGpuContext {
     /// Check if cuDNN backend is being used
-    #[cfg(feature = "cudnn")]
+    #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
     pub fn is_cudnn(&self) -> bool {
         matches!(self.backend, GpuBackend::CuDNN(_))
     }
@@ -544,7 +544,7 @@ impl EnhancedGpuContext {
     }
 
     /// Get cuDNN handle if available
-    #[cfg(feature = "cudnn")]
+    #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
     pub fn get_cudnn_handle(&self) -> Option<&Arc<crate::gpu::cudnn::CudnnHandle>> {
         match &self.backend {
             GpuBackend::CuDNN(handle) => Some(handle),
@@ -557,6 +557,7 @@ impl EnhancedGpuContext {
     pub fn get_wgpu_context(&self) -> Option<&GpuContextInfo> {
         match &self.backend {
             GpuBackend::WGPU(ctx) => Some(ctx),
+            #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
             _ => self.wgpu_fallback.as_ref(),
         }
     }

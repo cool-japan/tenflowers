@@ -8,7 +8,7 @@ use crate::Result;
 // use crate::simd::{global_simd_engine, ElementWiseOp};
 // use crate::memory::{global_unified_optimizer, global_ultra_cache_optimizer};
 // use crate::monitoring::global_performance_monitor;
-use scirs2_autograd::ndarray::{Array2, ArrayView2};
+use scirs2_core::ndarray::{Array2, ArrayView2};
 // use std::sync::Arc;
 use std::time::Instant;
 
@@ -140,7 +140,7 @@ impl UltraOptimizedDenseLayer {
     fn blocked_matmul(
         &self,
         input: &ArrayView2<f32>,
-        output: &mut scirs2_autograd::ndarray::ArrayViewMut2<f32>,
+        output: &mut scirs2_core::ndarray::ArrayViewMut2<f32>,
         _block_strategy: &str,
     ) -> Result<()> {
         // For now, use a simple blocked approach

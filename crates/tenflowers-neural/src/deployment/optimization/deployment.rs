@@ -4,7 +4,7 @@
 //! and high-level optimization APIs for different deployment scenarios.
 
 use crate::model::Sequential;
-use num_traits;
+use scirs2_core::num_traits;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -204,7 +204,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -229,7 +229,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -248,7 +248,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -268,7 +268,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -285,7 +285,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -303,7 +303,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -406,7 +406,7 @@ impl DeploymentOptimizer {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -430,7 +430,7 @@ pub mod presets {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -448,7 +448,7 @@ pub mod presets {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -465,7 +465,7 @@ pub mod presets {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -483,7 +483,7 @@ pub mod presets {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -500,7 +500,7 @@ pub mod presets {
             + Default
             + Send
             + Sync
-            + num_traits::Zero
+            + scirs2_core::num_traits::Zero
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,

@@ -14,7 +14,7 @@ impl<T> AddNoise<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -30,7 +30,7 @@ impl<T> Transform<T> for AddNoise<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -86,7 +86,7 @@ impl<T> BackgroundNoise<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -119,7 +119,7 @@ where
         }
 
         let mut rng = scirs2_core::random::rng();
-        let noise_level = rng.gen_range(0.0..max_noise_level);
+        let noise_level = rng.random_range(0.0..max_noise_level);
 
         Ok(Self {
             noise_level,
@@ -225,7 +225,7 @@ impl<T> Transform<T> for BackgroundNoise<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -255,7 +255,7 @@ impl<T> Transform<T> for GaussianNoise
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -319,7 +319,7 @@ impl<T> Default for RealTimeAudioAugmentation<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -335,7 +335,7 @@ impl<T> RealTimeAudioAugmentation<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -371,7 +371,7 @@ impl<T> Transform<T> for RealTimeAudioAugmentation<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static

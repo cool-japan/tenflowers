@@ -31,7 +31,7 @@ pub struct AsyncGpuScheduler {
 }
 
 /// Queued operation with priority and dependencies
-struct QueuedOperation {
+pub struct QueuedOperation {
     id: u64,
     priority: OperationPriority,
     operation: Box<dyn AsyncGpuOperation + Send + Sync>,
@@ -752,7 +752,7 @@ pub mod utils {
     /// Create an optimized async GPU scheduler with auto-tuned parameters
     pub fn create_optimized_scheduler() -> AsyncGpuScheduler {
         let num_cpus = num_cpus::get();
-        let max_concurrency = (num_cpus * 2).min(16).max(4); // Reasonable bounds
+        let max_concurrency = (num_cpus * 2).clamp(4, 16); // Reasonable bounds
         AsyncGpuScheduler::new(max_concurrency)
     }
 
@@ -832,7 +832,7 @@ pub mod utils {
         // Estimate sync time based on async time and operation count
         // Sync execution typically takes longer due to lack of parallelization
         // This is a reasonable approximation when we can't re-run the same operations
-        let estimated_sync_multiplier = (operation_count as f32 * 0.5).max(1.5).min(4.0);
+        let estimated_sync_multiplier = (operation_count as f32 * 0.5).clamp(1.5, 4.0);
         let sync_time = async_time.mul_f32(estimated_sync_multiplier);
 
         (async_time, sync_time)

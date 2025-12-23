@@ -7,9 +7,8 @@
 
 use super::{PEFTAdapter, PEFTMethod};
 use crate::layers::Dense;
-use num_traits::{Float, FromPrimitive, One, Zero};
-use scirs2_core::random::distributions::{Distribution, Normal};
-use scirs2_core::random::rng;
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::random::Random;
 use std::marker::PhantomData;
 use tenflowers_core::{ops::matmul, Result, Tensor};
 
@@ -143,16 +142,16 @@ where
         let total_elements = shape.iter().product::<usize>();
         let std_dev = 1.0 / (rank as f64).sqrt();
 
-        let mut rng = rng();
-        let normal = Normal::new(0.0, std_dev).map_err(|_| {
-            tenflowers_core::TensorError::invalid_argument(
-                "Invalid normal distribution parameters".to_string(),
-            )
-        })?;
+        let mut rng = Random::default();
+        let mean = 0.0;
 
         let mut data = Vec::with_capacity(total_elements);
         for _ in 0..total_elements {
-            let random_val = normal.sample(&mut rng);
+            // Box-Muller transform for normal distribution
+            let u1 = rng.random_f64();
+            let u2 = rng.random_f64();
+            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            let random_val = mean + std_dev * z;
             let tensor_val = T::from_f64(random_val).unwrap_or_else(|| T::zero());
             data.push(tensor_val);
         }

@@ -1,4 +1,4 @@
-use num_traits::{Float, Zero};
+use scirs2_core::numeric::{Float, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor};
 

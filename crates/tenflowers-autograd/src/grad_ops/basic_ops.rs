@@ -5,7 +5,7 @@
 //! division, and power operations.
 
 use super::utils::unbroadcast;
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Backward pass for addition
@@ -23,7 +23,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -152,7 +152,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + PartialEq
         + bytemuck::Pod
         + bytemuck::Zeroable,
@@ -184,7 +184,7 @@ where
 /// Helper function to check if a tensor contains integer values
 pub fn is_integer_power<T>(b: &Tensor<T>) -> Result<bool>
 where
-    T: Clone + Default + num_traits::Float + PartialEq,
+    T: Clone + Default + scirs2_core::num_traits::Float + PartialEq,
 {
     // Check if all values in b are close to integers
     // This is a simplified check - in practice, you might want more sophisticated detection
@@ -216,7 +216,7 @@ where
         + Zero
         + One
         + std::ops::Mul<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -241,7 +241,7 @@ where
         + Zero
         + One
         + std::ops::Mul<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -265,7 +265,7 @@ where
         + std::ops::Add<Output = T>
         + std::ops::Div<Output = T>
         + std::ops::Mul<Output = T>
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static

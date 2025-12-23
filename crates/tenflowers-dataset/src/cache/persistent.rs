@@ -254,7 +254,13 @@ impl TensorPersistentCache {
     /// Get tensors from cache
     pub fn get<T>(&mut self, index: &usize) -> Result<Option<(Tensor<T>, Tensor<T>)>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::cast::NumCast,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::cast::NumCast,
     {
         if let Some((features_bytes, labels_bytes)) = self.cache.get(index)? {
             // Deserialize tensors from byte arrays
@@ -274,7 +280,13 @@ impl TensorPersistentCache {
         labels: &Tensor<T>,
     ) -> Result<()>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::cast::NumCast,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::cast::NumCast,
     {
         // Serialize tensors to byte arrays
         let features_bytes = Self::serialize_tensor(features)?;
@@ -294,7 +306,7 @@ impl TensorPersistentCache {
     /// Format: [type_id: u8][shape_len: u32][shape: u32...][data: T...]
     fn serialize_tensor<T>(tensor: &Tensor<T>) -> Result<Vec<u8>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         let mut bytes = Vec::new();
 
@@ -336,7 +348,13 @@ impl TensorPersistentCache {
     /// Deserialize a tensor from bytes
     fn deserialize_tensor<T>(bytes: &[u8]) -> Result<Tensor<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::cast::NumCast,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::cast::NumCast,
     {
         if bytes.len() < 5 {
             // At least type_id + shape_len
@@ -403,7 +421,8 @@ impl TensorPersistentCache {
                 1 => {
                     // u8 or i8
                     let byte_val = data_bytes[element_offset];
-                    num_traits::cast::NumCast::from(byte_val).unwrap_or_else(T::default)
+                    scirs2_core::num_traits::cast::NumCast::from(byte_val)
+                        .unwrap_or_else(T::default)
                 }
                 2 => {
                     // u16 or i16
@@ -412,7 +431,7 @@ impl TensorPersistentCache {
                             data_bytes[element_offset],
                             data_bytes[element_offset + 1],
                         ]);
-                        num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
+                        scirs2_core::num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
                     } else {
                         T::default()
                     }
@@ -426,7 +445,7 @@ impl TensorPersistentCache {
                             data_bytes[element_offset + 2],
                             data_bytes[element_offset + 3],
                         ]);
-                        num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
+                        scirs2_core::num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
                     } else {
                         T::default()
                     }
@@ -444,7 +463,7 @@ impl TensorPersistentCache {
                             data_bytes[element_offset + 6],
                             data_bytes[element_offset + 7],
                         ]);
-                        num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
+                        scirs2_core::num_traits::cast::NumCast::from(val).unwrap_or_else(T::default)
                     } else {
                         T::default()
                     }
@@ -474,7 +493,13 @@ pub struct PersistentlyCachedDataset<T, D: Dataset<T>> {
 
 impl<T, D: Dataset<T>> PersistentlyCachedDataset<T, D>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::cast::NumCast,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::cast::NumCast,
 {
     /// Create a new persistently cached dataset
     pub fn new<P: AsRef<Path>>(dataset: D, cache_dir: P, cache_capacity: usize) -> Result<Self> {
@@ -542,7 +567,13 @@ where
 
 impl<T, D: Dataset<T>> Dataset<T> for PersistentlyCachedDataset<T, D>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::cast::NumCast,
+    T: Clone
+        + Default
+        + scirs2_core::numeric::Zero
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::cast::NumCast,
 {
     fn len(&self) -> usize {
         self.dataset.len()

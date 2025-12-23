@@ -4,7 +4,7 @@
 //! optimal path computation, cost estimation, and tensor manipulation utilities.
 
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashSet;
 
 /// Compute optimal contraction path for multi-operand einsum

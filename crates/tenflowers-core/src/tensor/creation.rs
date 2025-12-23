@@ -6,14 +6,14 @@
 
 use super::core::{Tensor, TensorStorage};
 use crate::{Device, Result, Shape, TensorError};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 
 // Impl block for constructors that need Default
 impl<T: Clone + Default> Tensor<T> {
     /// Create a tensor filled with zeros
     pub fn zeros(shape: &[usize]) -> Self
     where
-        T: num_traits::Zero,
+        T: scirs2_core::num_traits::Zero,
     {
         let array = ArrayD::zeros(IxDyn(shape));
         Self {
@@ -28,7 +28,7 @@ impl<T: Clone + Default> Tensor<T> {
     /// Create a tensor filled with ones
     pub fn ones(shape: &[usize]) -> Self
     where
-        T: num_traits::One,
+        T: scirs2_core::num_traits::One,
     {
         let array = ArrayD::ones(IxDyn(shape));
         Self {
@@ -169,7 +169,7 @@ impl<T: Clone + Default> Tensor<T> {
     /// Create an identity matrix tensor
     pub fn eye(n: usize) -> Self
     where
-        T: num_traits::Zero + num_traits::One + Clone,
+        T: scirs2_core::num_traits::Zero + scirs2_core::num_traits::One + Clone,
     {
         let mut array = ArrayD::zeros(IxDyn(&[n, n]));
         for i in 0..n {
@@ -187,7 +187,9 @@ impl<T: Clone + Default> Tensor<T> {
     /// Create a tensor with evenly spaced values in a given interval
     pub fn arange(start: T, end: T, step: T) -> Result<Self>
     where
-        T: num_traits::Float + num_traits::ToPrimitive + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::ToPrimitive
+            + scirs2_core::num_traits::FromPrimitive,
     {
         let start_f = start.to_f64().ok_or_else(|| {
             crate::TensorError::invalid_argument("Invalid start value".to_string())
@@ -227,7 +229,9 @@ impl<T: Clone + Default> Tensor<T> {
     /// Create a tensor with linearly spaced values between start and end
     pub fn linspace(start: T, end: T, steps: usize) -> Result<Self>
     where
-        T: num_traits::Float + num_traits::ToPrimitive + num_traits::FromPrimitive,
+        T: scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::ToPrimitive
+            + scirs2_core::num_traits::FromPrimitive,
     {
         if steps == 0 {
             return Err(crate::TensorError::invalid_argument(

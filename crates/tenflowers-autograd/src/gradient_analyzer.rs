@@ -3,7 +3,7 @@
 //! This module provides comprehensive tools for analyzing gradient flow,
 //! detecting gradient-related issues, and providing debugging information.
 
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 use std::collections::HashMap;
 use std::time::Instant;
 use tenflowers_core::{Result, Tensor};

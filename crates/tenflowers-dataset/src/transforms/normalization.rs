@@ -13,7 +13,7 @@ impl<T> Normalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -128,7 +128,7 @@ impl<T> Transform<T> for Normalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -169,7 +169,7 @@ impl<T> MinMaxScale<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -229,7 +229,7 @@ impl<T> Transform<T> for MinMaxScale<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -281,7 +281,7 @@ impl<T> RobustScaler<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -362,7 +362,7 @@ impl<T> Transform<T> for RobustScaler<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -404,7 +404,7 @@ impl<T> PerChannelNormalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -444,7 +444,7 @@ impl<T> Transform<T> for PerChannelNormalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -503,7 +503,7 @@ impl<T> GlobalNormalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -560,7 +560,7 @@ impl<T> Transform<T> for GlobalNormalize<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static

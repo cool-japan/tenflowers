@@ -5,7 +5,7 @@
 //! advanced memory management techniques.
 
 use crate::layers::{Layer, LayerType};
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use std::sync::Arc;
 use tenflowers_core::{Result, Tensor, TensorError};
 

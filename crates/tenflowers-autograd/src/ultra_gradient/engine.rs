@@ -9,7 +9,7 @@ use super::{
     simd_ops::SimdOpsProcessor,
 };
 use crate::tape::{GradientTape, TapeNode, TrackedTensor};
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tenflowers_core::{Result, Tensor, TensorError};

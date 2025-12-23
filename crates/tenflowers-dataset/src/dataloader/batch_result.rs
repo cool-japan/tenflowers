@@ -18,7 +18,7 @@ pub enum BatchResult<T> {
 
 impl<T> BatchResult<T>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Get the batch size (number of samples)
     pub fn len(&self) -> usize {
@@ -36,7 +36,7 @@ where
     /// Convert to individual samples if not already
     pub fn into_samples(self) -> Result<Vec<(Tensor<T>, Tensor<T>)>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         match self {
             BatchResult::Samples(samples) => Ok(samples),
@@ -77,7 +77,7 @@ where
     /// Convert to collated batch if not already
     pub fn into_collated(self) -> Result<(Tensor<T>, Tensor<T>)>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         match self {
             BatchResult::Samples(samples) => {

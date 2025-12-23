@@ -8,7 +8,7 @@ use super::context::{GpuLinalgContext, LinalgMetadata};
 use crate::gpu::buffer::GpuBuffer;
 use crate::{Result, Shape, TensorError};
 use bytemuck::{Pod, Zeroable};
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 
 /// Matrix transpose operation
 pub fn transpose<T>(

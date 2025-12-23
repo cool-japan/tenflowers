@@ -58,7 +58,7 @@
 //!     fn backward(&self, grad_output: &Tensor<f32>, inputs: &[&Tensor<f32>], output: &Tensor<f32>) -> Result<Vec<Tensor<f32>>> {
 //!         // Custom backward implementation: dy/dx = 2x + cos(x)
 //!         let x = inputs[0];
-//!         let two = tenflowers_core::Tensor::from_array(scirs2_autograd::ndarray::arr0(2.0f32).into_dyn());
+//!         let two = tenflowers_core::Tensor::from_array(scirs2_core::ndarray::arr0(2.0f32).into_dyn());
 //!         let two_x = tenflowers_core::ops::mul(&two, x)?;
 //!         let cos_x = tenflowers_core::ops::cos(x)?;
 //!         let grad_x = tenflowers_core::ops::add(&two_x, &cos_x)?;
@@ -112,38 +112,52 @@
 
 pub mod advanced_grad_ops;
 // pub mod advanced_linalg; // TODO: Fix compilation issues
+pub mod amp_policy;
 pub mod boolean_indexing;
 pub mod checkpointing;
 pub mod context;
+pub mod coverage_matrix;
 pub mod custom_gradients;
 pub mod debug;
+pub mod deterministic;
 pub mod device_placement;
 pub mod efficient_memory;
 pub mod ellipsis_newaxis;
+pub mod error_taxonomy;
 pub mod forward_ad;
 pub mod forward_reverse;
 pub mod global_pooling;
+pub mod gpu_gradient_expansion;
 pub mod grad_ops;
 pub mod gradient_accumulation;
 pub mod gradient_analyzer;
 pub mod gradient_buffer_manager_simple;
 pub mod gradient_compression;
+pub mod gradient_compression_advanced;
+pub mod gradient_ops;
+// pub mod gradient_utils; // TODO: Fix API compatibility with tenflowers-core
 // pub mod gradient_validation; // TODO: Fix compilation issues
 pub mod gradient_visualization;
 pub mod graph_optimization;
 pub mod higher_order;
+pub mod hybrid_scheduler;
 pub mod implicit_differentiation;
 pub mod inplace_ops;
 pub mod jit_compiler;
 pub mod jit_integration;
 pub mod kernel_fusion;
+pub mod memory_diff_reporter;
 pub mod memory_profiler;
 pub mod neural_integration;
 pub mod no_grad;
+pub mod numerical_checker;
 pub mod ops;
 #[cfg(feature = "parallel")]
 pub mod parallel_gradients;
 pub mod parameter_server;
+pub mod performance_benchmark;
+pub mod second_order;
+pub mod second_order_utils;
 pub mod simd_grad_ops_simple;
 pub mod special_functions;
 pub mod subgraph_extraction;
@@ -158,20 +172,34 @@ pub use boolean_indexing::{
     boolean_mask_backward, integer_array_indexing_backward, where_backward,
 };
 pub use checkpointing::{
-    checkpoint_sequence, CheckpointManager, CheckpointStrategy, CheckpointedFunction,
-    CheckpointedGradientTape, RecomputationContext,
+    checkpoint_sequence, ActivationCheckpointPolicy, ActivationCheckpointing,
+    ActivationRecomputeManager, CheckpointManager, CheckpointStrategy, CheckpointedFunction,
+    CheckpointedGradientTape, CheckpointingStats, LayerMetadata, RecomputationContext,
 };
 pub use context::{AutogradContext, ShapeInferenceRule, StaticShapeInference};
+pub use coverage_matrix::{
+    CategoryCoverage, CoverageMatrix, CoverageReport, OperationCategory, OperationMetadata,
+};
 pub use custom_gradients::{
     CustomGradientFunction, CustomGradientOp, GradientClipFunction, GradientScaleFunction,
     StopGradientFunction,
 };
 pub use debug::{GradientDebugInfo, GradientDebugger};
+pub use deterministic::{
+    clear_operation_seeds, get_global_seed, get_operation_seed, get_seeded_operation_count,
+    hash_tensor_data, is_deterministic, reset_deterministic_state, set_deterministic,
+    set_global_seed, set_operation_seed, DeterministicConfig, DeterministicContext,
+    DeterministicOperation, ReproducibilityChecker, ReproducibilityStats, SeedManager,
+};
 pub use device_placement::{
     DevicePlacementConfig, DevicePlacementOptimizer, GraphOperation, PlacementDecision,
     PlacementResult, PlacementStrategy,
 };
 pub use ellipsis_newaxis::{ellipsis_newaxis_backward, AdvancedIndexer, IndexSpec};
+pub use error_taxonomy::{
+    utils as error_utils, AutogradErrorBuilder, ErrorPatternValidator, GradientContext,
+    ValidationResult,
+};
 pub use forward_ad::{forward_ops, DualTensor, ForwardADContext, ForwardMode};
 pub use forward_reverse::{
     ComplexityEstimate, DifferentiationMode, ForwardReverseConfig, ForwardReverseDifferentiator,
@@ -180,6 +208,10 @@ pub use global_pooling::{
     adaptive_avg_pool2d_backward, adaptive_max_pool2d_backward,
     fractional_adaptive_avg_pool2d_backward, global_avg_pool2d_backward,
     global_max_pool2d_backward,
+};
+pub use gpu_gradient_expansion::{
+    GpuCategoryCoverage, GpuCoverageAnalysis, GpuGradInfo, GpuGradStatus, GpuGradientPlanner,
+    ImplementationPlan, ImplementationTask, Priority,
 };
 pub use grad_ops::{
     batch_fused_activations_forward_backward, fused_gelu_forward_backward,
@@ -198,6 +230,11 @@ pub use gradient_buffer_manager_simple::{
 pub use gradient_compression::{
     CompressedGradient, CompressionConfig, CompressionMethod, CompressionStats, GradientCompressor,
 };
+pub use gradient_ops::{
+    accumulate_gradients, add_gradient_noise, average_gradients, clip_by_global_norm,
+    clip_by_value, compute_gradient_statistics, has_invalid_gradients, scale_gradients,
+    zero_gradients, GradientPipeline, GradientStatistics, NamedGradientAccumulator,
+};
 pub use gradient_visualization::{
     ColorScheme, EdgeType, GradientFlowAnalysis, GradientFlowEdge, GradientFlowIssue,
     GradientFlowNode, GradientFlowVisualizer, GradientStats, IssueType, LayoutAlgorithm, NodeType,
@@ -206,6 +243,9 @@ pub use gradient_visualization::{
 pub use graph_optimization::{
     CommunicationPlan, EnhancedGraphOptimizer, GradientFusion, GraphOptimizationConfig,
     GraphOptimizationResult, MemoryOptimization,
+};
+pub use hybrid_scheduler::{
+    ExecutionStats, ExecutionSummary, GraphAnalysis, HybridScheduler, SchedulerConfig, StrategyCost,
 };
 pub use implicit_differentiation::{
     FixedPointFunction, GradientInfo, ImplicitDiffConfig, ImplicitDifferentiator, ImplicitFunction,
@@ -218,12 +258,16 @@ pub use jit_compiler::{
 };
 pub use jit_integration::{utils as jit_utils, JitConfig, JitGradientContext, JitGradientTapeExt};
 pub use kernel_fusion::{FusableOp, FusedKernel, FusionStats, KernelFusionOptimizer, OpSequence};
+pub use memory_diff_reporter::{MemoryDiff, MemoryDiffReporter, MemorySnapshot};
 pub use memory_profiler::{get_global_profiler, GradientMemoryProfiler, MemoryReport, MemoryStats};
 pub use neural_integration::{
     AutogradLayer, AutogradOptimizer, AutogradTrainer, OptimizerType, TrainingMetrics,
 };
 pub use no_grad::{
     enable_grad, is_grad_enabled, no_grad, set_grad_enabled, EnableGradGuard, NoGradGuard,
+};
+pub use numerical_checker::{
+    CheckerConfig, ErrorAnalysis, FiniteDifferenceMethod, GradientCheckResult, NumericalChecker,
 };
 #[cfg(feature = "parallel")]
 pub use parallel_gradients::{
@@ -233,6 +277,11 @@ pub use parallel_gradients::{
 pub use parameter_server::{
     FaultToleranceMode, LoadBalancingStrategy, ParameterServer, ParameterServerClient,
     ParameterServerConfig, ParameterServerStats,
+};
+pub use performance_benchmark::{
+    BenchmarkConfig, BenchmarkReport, BenchmarkResult, BenchmarkStatistics, BenchmarkSummary,
+    ComparisonResult, PerformanceBenchmark, RegressionReport, RegressionSeverity,
+    ThroughputMetrics,
 };
 pub use simd_grad_ops_simple::{
     global_simd_grad_ops, SimdGradConfig, SimdGradOps, SimdPerformanceMetrics,
@@ -264,6 +313,9 @@ pub use advanced_grad_ops::{
     gradient_clipping, higher_order as advanced_higher_order, jacobian, optimization,
     AdaptiveGradientAccumulator,
 };
+pub use amp_policy::{
+    AMPConfig, AMPPolicy, AMPStabilityMetrics, ScaleAdjustment, ScaleAdjustmentReason,
+};
 pub use efficient_memory::{
     AggregationStats, CheckpointStats, GradientCheckpointer, GradientMemoryManager,
     GradientMemoryPool, LazyGradient, MemoryManagerStats, MemoryPoolStats,
@@ -271,8 +323,12 @@ pub use efficient_memory::{
 };
 pub use gradient_analyzer::{
     AnalysisConfig, GradientAnalysisReport, GradientAnalyzer,
-    GradientFlowAnalysis as AdvancedGradientFlowAnalysis, GradientIssue, GradientStatistics,
-    PerformanceMetrics,
+    GradientFlowAnalysis as AdvancedGradientFlowAnalysis, GradientIssue,
+    GradientStatistics as AnalyzerGradientStatistics, PerformanceMetrics,
+};
+pub use second_order_utils::{
+    compute_hessian, compute_hessian_diagonal, compute_jacobian, compute_laplacian,
+    directional_second_derivative, hessian_vector_product,
 };
 
 pub trait Differentiable<T> {

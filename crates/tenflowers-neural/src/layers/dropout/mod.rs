@@ -13,8 +13,8 @@ pub use standard::Dropout;
 
 // For now, include the other dropout variants inline until full refactoring
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
-use scirs2_core::random::rng;
+use scirs2_core::num_traits::{Float, One, Zero};
+use scirs2_core::random::thread_rng;
 // use std::collections::HashMap; // Unused for now
 use tenflowers_core::{Result, Tensor};
 
@@ -39,7 +39,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -88,7 +88,7 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Sub<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -108,7 +108,7 @@ where
         let keep_prob = T::one() - self.dropout_rate;
 
         // Create channel-wise dropout mask
-        let mut rng = rng();
+        let mut rng = thread_rng();
         let mut channel_mask = Vec::with_capacity(batch_size * channels);
 
         for _ in 0..batch_size {
@@ -132,7 +132,7 @@ where
             }
         }
 
-        use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+        use scirs2_core::ndarray::{ArrayD, IxDyn};
         let mask_array = ArrayD::from_shape_vec(IxDyn(shape), mask_data).map_err(|_| {
             tenflowers_core::error::TensorError::invalid_shape_simple(
                 "Failed to create spatial dropout mask".to_string(),
@@ -171,7 +171,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
 
     #[test]
     fn test_standard_dropout() {

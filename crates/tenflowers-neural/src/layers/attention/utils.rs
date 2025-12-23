@@ -3,7 +3,7 @@
 //! This module provides utility functions for attention mechanisms including
 //! mask creation, positional encodings, and attention pattern analysis.
 
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Complete attention utility functions and helper methods
@@ -27,7 +27,7 @@ where
 {
     // Create a lower triangular matrix with 0s for allowed positions
     // and negative infinity for masked positions
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
 
     let mut mask_data = Array2::zeros((seq_len, seq_len));
     let neg_inf = T::from(-1e9).unwrap_or_else(|| T::zero() - T::one());
@@ -57,7 +57,7 @@ where
         + bytemuck::Zeroable,
 {
     // Create a mask that masks out padded positions
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
 
     let batch_size = seq_lengths.len();
     let mut mask_data = Array2::zeros((batch_size, max_seq_len));
@@ -115,7 +115,8 @@ where
         + Sync
         + 'static
         + bytemuck::Pod
-        + bytemuck::Zeroable,
+        + bytemuck::Zeroable
+        + std::iter::Sum,
 {
     // Scaled dot-product attention: Attention(Q,K,V) = softmax(QK^T/√d_k)V
 
@@ -127,7 +128,7 @@ where
     // Step 2: Scale by sqrt(d_k)
     let d_k = query.shape().dims().last().unwrap_or(&1);
     let scale = T::from(1.0 / (*d_k as f64).sqrt()).unwrap_or_else(T::one);
-    let scale_tensor = Tensor::from_array(scirs2_autograd::ndarray::arr0(scale).into_dyn());
+    let scale_tensor = Tensor::from_array(scirs2_core::ndarray::arr0(scale).into_dyn());
     let scaled_scores = tenflowers_core::ops::mul(&attention_scores, &scale_tensor)?;
 
     // Step 3: Apply attention mask if provided
@@ -142,14 +143,44 @@ where
     };
 
     // Step 4: Apply softmax to get attention weights
-    // For now, use the original tensor as a placeholder for softmax
-    // A full implementation would need proper softmax operation
-    let attention_weights = masked_scores.clone();
+    let attention_weights = masked_scores.softmax(Some(-1))?;
 
     // Step 5: Apply dropout if in training mode
-    let final_weights = if training && dropout_prob > 0.0 {
-        // Placeholder for dropout - would need proper dropout implementation
-        attention_weights
+    let final_weights = if training && dropout_prob > 0.0 && dropout_prob < 1.0 {
+        // Apply dropout to attention weights
+        use scirs2_core::ndarray::{ArrayD, IxDyn};
+        use scirs2_core::random::thread_rng;
+
+        let shape = attention_weights.shape().dims();
+        let total_elements: usize = shape.iter().product();
+        let mut rng = thread_rng();
+
+        // Generate dropout mask
+        let mut mask_data = Vec::with_capacity(total_elements);
+        for _ in 0..total_elements {
+            let random_val: f64 = rng.gen_range(0.0..1.0);
+            if random_val < dropout_prob as f64 {
+                mask_data.push(T::zero()); // Drop this element
+            } else {
+                mask_data.push(T::one()); // Keep this element
+            }
+        }
+
+        let mask_array = ArrayD::from_shape_vec(IxDyn(shape), mask_data).map_err(|_| {
+            tenflowers_core::TensorError::invalid_shape_simple(
+                "Failed to create dropout mask".to_string(),
+            )
+        })?;
+        let mask = Tensor::from_array(mask_array);
+
+        // Apply mask and scale by 1/(1-dropout_prob) for inverted dropout
+        let dropped = attention_weights.mul(&mask)?;
+        let keep_prob = 1.0 - dropout_prob;
+        let scale = T::from(1.0 / keep_prob as f64).unwrap_or(T::one());
+        dropped.mul(&Tensor::from_scalar(scale))?
+    } else if dropout_prob >= 1.0 && training {
+        // If dropout is 1.0, return zeros
+        Tensor::zeros(attention_weights.shape().dims())
     } else {
         attention_weights
     };
@@ -179,7 +210,7 @@ where
         + bytemuck::Zeroable,
 {
     // Generate sinusoidal positional embeddings as in "Attention Is All You Need"
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
 
     let mut pos_encoding = Array2::zeros((seq_len, embed_dim));
 
@@ -429,7 +460,7 @@ mod tests {
     #[test]
     fn test_scaled_dot_product_attention() {
         // Create simple test matrices
-        use scirs2_autograd::ndarray::array;
+        use scirs2_core::ndarray::array;
 
         // Query: [1, 2, 4] - 1 batch, 2 sequence length, 4 features
         let query_data = array![[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]];
@@ -478,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_attention_mask_application() {
-        use scirs2_autograd::ndarray::array;
+        use scirs2_core::ndarray::array;
 
         // Create attention scores
         let scores_data = array![[1.0, 2.0], [3.0, 4.0]];
@@ -503,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_attention_stats_analysis() {
-        use scirs2_autograd::ndarray::array;
+        use scirs2_core::ndarray::array;
 
         // Create simple attention weights
         let weights_data = array![[0.8, 0.2], [0.3, 0.7]];
@@ -521,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_rotary_position_embedding() {
-        use scirs2_autograd::ndarray::array;
+        use scirs2_core::ndarray::array;
 
         // Create test input tensor [1, 2, 4] (batch=1, seq_len=2, features=4)
         let input_data = array![[[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 1.0, 0.0]]];
@@ -558,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_rotary_position_embedding_invalid_dims() {
-        use scirs2_autograd::ndarray::array;
+        use scirs2_core::ndarray::array;
 
         // Create test input tensor with odd feature dimension (should fail)
         let input_data = array![[[1.0, 0.0, 0.0]]]; // 3 features (odd)

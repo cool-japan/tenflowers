@@ -3,7 +3,7 @@
 //! This module provides advanced gradient buffer management with zero-copy operations,
 //! automatic memory optimization, and integration with SciRS2-Core memory systems.
 
-// use num_traits::{Float, FromPrimitive, One, Zero}; // Unused imports removed
+// use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero}; // Unused imports removed
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, TensorError};

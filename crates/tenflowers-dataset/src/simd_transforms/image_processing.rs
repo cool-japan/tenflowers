@@ -20,7 +20,7 @@ pub struct SimdColorConvert<T> {
 
 impl<T> SimdColorConvert<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -142,7 +142,7 @@ where
 
 impl<T> Default for SimdColorConvert<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -151,7 +151,7 @@ where
 
 impl<T> Transform<T> for SimdColorConvert<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         let (features, labels) = sample;

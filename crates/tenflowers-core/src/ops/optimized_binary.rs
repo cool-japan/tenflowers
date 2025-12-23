@@ -7,11 +7,12 @@
 //! - Zero-copy optimizations where possible
 //! - Specialized fast paths for common cases
 
+use crate::shape_error_taxonomy::ShapeErrorUtils;
 use crate::tensor::TensorStorage;
 use crate::{Result, Shape, Tensor, TensorError};
-use num_traits::Zero;
 use rayon::prelude::*;
-use scirs2_autograd::ndarray::{ArrayD, IxDyn, Zip};
+use scirs2_core::ndarray::{ArrayD, IxDyn, Zip};
+use scirs2_core::numeric::Zero;
 use std::ops::{Add as StdAdd, Div as StdDiv, Mul as StdMul, Sub as StdSub};
 
 /// Threshold for switching to parallel processing (number of elements)
@@ -331,11 +332,7 @@ where
 
             // General case: broadcasting required
             let broadcast_shape = a.shape().broadcast_shape(b.shape()).ok_or_else(|| {
-                TensorError::shape_mismatch(
-                    "optimized_binary_op",
-                    &a.shape().to_string(),
-                    &b.shape().to_string(),
-                )
+                ShapeErrorUtils::broadcast_incompatible("optimized_binary_op", a.shape(), b.shape())
             })?;
 
             // Broadcast arrays to common shape
@@ -414,10 +411,10 @@ where
 
             // General case: broadcasting required
             let broadcast_shape = a.shape().broadcast_shape(b.shape()).ok_or_else(|| {
-                TensorError::shape_mismatch(
+                ShapeErrorUtils::broadcast_incompatible(
                     "optimized_binary_op_copy",
-                    &a.shape().to_string(),
-                    &b.shape().to_string(),
+                    a.shape(),
+                    b.shape(),
                 )
             })?;
 
@@ -621,15 +618,15 @@ fn broadcast_array<T: Clone>(array: &ArrayD<T>, target_shape: &Shape) -> Result<
         return Ok(array.clone());
     }
 
+    // Convert array shape to Shape object for standardized error messages
+    let array_shape = Shape::from_slice(array.shape());
+
     // Use ndarray's broadcast functionality
     array
         .broadcast(target_dims)
         .ok_or_else(|| {
-            TensorError::invalid_argument(format!(
-                "Cannot broadcast from {:?} to {:?}",
-                array.shape(),
-                target_shape
-            ))
+            // Use standardized broadcast error message
+            ShapeErrorUtils::broadcast_incompatible("broadcast_cpu", &array_shape, target_shape)
         })
         .map(|view| view.to_owned())
 }

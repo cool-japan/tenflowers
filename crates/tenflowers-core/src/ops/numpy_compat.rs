@@ -9,7 +9,7 @@
 use crate::ops::shape_inference::{BroadcastableConstraint, ShapeValidator};
 use crate::ops::{basic, binary};
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, Zero};
+use scirs2_core::numeric::{Float, Zero};
 use std::collections::HashMap;
 
 /// Universal function (ufunc) trait for NumPy-style operations
@@ -436,7 +436,7 @@ where
 /// Absolute value
 pub fn absolute<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Signed,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Signed,
 {
     apply_elementwise_unary(tensor, |x| x.abs())
 }
@@ -444,7 +444,7 @@ where
 /// Sign function
 pub fn sign<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Signed + PartialOrd,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Signed + PartialOrd,
 {
     apply_elementwise_unary(tensor, |x| {
         if x > T::zero() {

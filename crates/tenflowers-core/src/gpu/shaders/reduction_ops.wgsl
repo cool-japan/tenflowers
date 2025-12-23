@@ -2,7 +2,7 @@
 // These kernels implement parallel reduction algorithms
 
 @group(0) @binding(0) var<storage, read> input: array<f32>;
-@group(0) @binding(1) var<storage, read_write> output: array<f32>;
+@group(0) @binding(1) var<storage, read_write> output: array<atomic<u32>>;
 @group(0) @binding(2) var<storage, read> metadata: array<u32>; // [input_size, output_size, axis_info]
 
 // Shared memory for workgroup-level reductions
@@ -35,10 +35,11 @@ fn sum_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
         workgroupBarrier();
         stride = stride / 2u;
     }
-    
-    // Write result
-    if (thread_id == 0u) {
-        atomicAdd(&output[0], shared_data[0]);
+
+    // Write result - using simple atomic store (works for single workgroup output)
+    // For multi-workgroup, a two-stage reduction would be needed
+    if (thread_id == 0u && group_id.x == 0u) {
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -49,28 +50,28 @@ fn sum_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
 @group(0) @binding(3) var<storage, read> input_shape: array<u32>;
 @group(0) @binding(4) var<storage, read> output_shape: array<u32>;
 
-// Helper function to compute flat index from multidimensional indices
-fn compute_flat_index(indices: ptr<function, array<u32, 8>>, shape: ptr<storage, array<u32>>, rank: u32) -> u32 {
+// Helper function to compute flat index from multidimensional indices using input_shape
+fn compute_flat_index_input(indices: ptr<function, array<u32, 8>>, rank: u32) -> u32 {
     var flat_idx = 0u;
     var stride = 1u;
-    
+
     for (var i = 0u; i < rank; i++) {
         let dim_idx = rank - 1u - i;
         flat_idx += (*indices)[dim_idx] * stride;
-        stride *= (*shape)[dim_idx];
+        stride *= input_shape[dim_idx];
     }
-    
+
     return flat_idx;
 }
 
-// Helper function to compute multidimensional indices from flat index
-fn compute_multi_index(flat_idx: u32, indices: ptr<function, array<u32, 8>>, shape: ptr<storage, array<u32>>, rank: u32) {
+// Helper function to compute multidimensional indices from flat index using output_shape
+fn compute_multi_index_output(flat_idx: u32, indices: ptr<function, array<u32, 8>>, rank: u32) {
     var remaining = flat_idx;
-    
+
     for (var i = 0u; i < rank; i++) {
         let dim_idx = rank - 1u - i;
-        (*indices)[dim_idx] = remaining % (*shape)[dim_idx];
-        remaining = remaining / (*shape)[dim_idx];
+        (*indices)[dim_idx] = remaining % output_shape[dim_idx];
+        remaining = remaining / output_shape[dim_idx];
     }
 }
 
@@ -89,7 +90,7 @@ fn sum_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize sum
     var sum_val = 0.0;
@@ -120,7 +121,7 @@ fn sum_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             sum_val += axis_input[input_flat_idx];
@@ -145,7 +146,7 @@ fn mean_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize sum and count
     var sum_val = 0.0;
@@ -173,7 +174,7 @@ fn mean_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             sum_val += axis_input[input_flat_idx];
@@ -203,7 +204,7 @@ fn max_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize max value
     var max_val = -3.40282347e+38; // -FLT_MAX
@@ -230,7 +231,7 @@ fn max_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             max_val = max(max_val, axis_input[input_flat_idx]);
@@ -255,7 +256,7 @@ fn min_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize min value
     var min_val = 3.40282347e+38; // FLT_MAX
@@ -282,7 +283,7 @@ fn min_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             min_val = min(min_val, axis_input[input_flat_idx]);
@@ -307,7 +308,7 @@ fn argmax_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize max value and index
     var max_val = -3.40282347e+38; // -FLT_MAX
@@ -335,7 +336,7 @@ fn argmax_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             let val = axis_input[input_flat_idx];
@@ -364,7 +365,7 @@ fn argmin_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize min value and index
     var min_val = 3.40282347e+38; // FLT_MAX
@@ -392,7 +393,7 @@ fn argmin_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             let val = axis_input[input_flat_idx];
@@ -421,7 +422,7 @@ fn all_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize all value (true = 1.0)
     var all_val = 1.0;
@@ -448,7 +449,7 @@ fn all_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             let val = axis_input[input_flat_idx];
@@ -477,7 +478,7 @@ fn any_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Get output indices
     var output_indices: array<u32, 8>;
-    compute_multi_index(output_idx, &output_indices, &output_shape, arrayLength(&output_shape));
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
     
     // Initialize any value (false = 0.0)
     var any_val = 0.0;
@@ -504,7 +505,7 @@ fn any_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
         
         // Compute flat input index
-        let input_flat_idx = compute_flat_index(&input_indices, &input_shape, input_rank);
+        let input_flat_idx = compute_flat_index_input(&input_indices, input_rank);
         
         if (input_flat_idx < input_size) {
             let val = axis_input[input_flat_idx];
@@ -554,8 +555,8 @@ fn sum_axis_reduction_legacy(@builtin(global_invocation_id) global_id: vec3<u32>
             }
         }
     }
-    
-    output[output_idx] = sum_val;
+
+    atomicStore(&output[output_idx], bitcast<u32>(sum_val));
 }
 
 // Max reduction
@@ -589,7 +590,7 @@ fn max_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
     if (thread_id == 0u) {
         // For atomic max, we need to implement atomic compare-and-swap
         // For now, just write the result (works for single workgroup)
-        output[0] = shared_data[0];
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -622,7 +623,7 @@ fn min_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
     
     // Write result
     if (thread_id == 0u) {
-        output[0] = shared_data[0];
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -713,7 +714,8 @@ fn argmin_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
 // Mean reduction (sum followed by division)
 @compute @workgroup_size(256)
 fn mean_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
-                  @builtin(local_invocation_id) local_id: vec3<u32>) {
+                  @builtin(local_invocation_id) local_id: vec3<u32>,
+                  @builtin(workgroup_id) group_id: vec3<u32>) {
     let thread_id = local_id.x;
     let global_idx = global_id.x;
     let input_size = metadata[0];
@@ -737,9 +739,10 @@ fn mean_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
         stride = stride / 2u;
     }
     
-    // Write result divided by input size
-    if (thread_id == 0u) {
-        atomicAdd(&output[0], shared_data[0] / f32(input_size));
+    // Write result divided by input size - using simple atomic store (works for single workgroup output)
+    // For multi-workgroup, a two-stage reduction would be needed
+    if (thread_id == 0u && group_id.x == 0u) {
+        atomicStore(&output[0], bitcast<u32>(shared_data[0] / f32(input_size)));
     }
 }
 
@@ -772,7 +775,7 @@ fn all_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
     
     // Write result
     if (thread_id == 0u) {
-        output[0] = shared_data[0];
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -805,7 +808,7 @@ fn any_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
     
     // Write result
     if (thread_id == 0u) {
-        output[0] = shared_data[0];
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -821,9 +824,16 @@ fn inf_nan_detection(@builtin(global_invocation_id) global_id: vec3<u32>,
     if (global_idx < input_size) {
         let value = input[global_idx];
         // Check if value is infinite or NaN
-        let is_inf = isinf(value);
-        let is_nan = isnan(value);
-        shared_data[thread_id] = select(0.0, 1.0, is_inf || is_nan);
+        // In IEEE 754: infinity has exponent bits all 1 and mantissa all 0
+        // NaN has exponent bits all 1 and mantissa non-zero
+        let bits = bitcast<u32>(value);
+        let exponent = (bits >> 23u) & 0xFFu;
+        let mantissa = bits & 0x7FFFFFu;
+
+        // Exponent = 0xFF (255) means inf or NaN
+        let is_inf_or_nan = (exponent == 0xFFu);
+
+        shared_data[thread_id] = select(0.0, 1.0, is_inf_or_nan);
     } else {
         shared_data[thread_id] = 0.0; // Identity for OR
     }
@@ -842,7 +852,7 @@ fn inf_nan_detection(@builtin(global_invocation_id) global_id: vec3<u32>,
     
     // Write result
     if (thread_id == 0u) {
-        output[0] = shared_data[0];
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
     }
 }
 
@@ -861,11 +871,11 @@ fn histogram_computation(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
     
     let value = input[global_idx];
-    
-    // Get histogram parameters from metadata
-    let min_val = metadata[0];
-    let max_val = metadata[1]; 
-    let num_bins = u32(metadata[2]);
+
+    // Get histogram parameters from metadata (stored as u32 bits, interpreted as f32)
+    let min_val = bitcast<f32>(metadata[0]);
+    let max_val = bitcast<f32>(metadata[1]);
+    let num_bins = metadata[2];
     
     // Check if value is within range
     if (value < min_val || value > max_val) {
@@ -882,4 +892,166 @@ fn histogram_computation(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Atomically increment the bin count
     atomicAdd(&output[bin_idx], 1u);
+}
+// Product reduction kernel
+// Computes the product of all elements in the input
+@compute @workgroup_size(256)
+fn product_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
+                      @builtin(local_invocation_id) local_id: vec3<u32>,
+                      @builtin(workgroup_id) group_id: vec3<u32>) {
+    let thread_id = local_id.x;
+    let global_idx = global_id.x;
+    let input_size = metadata[0];
+    
+    // Load data into shared memory with multiplicative identity (1.0)
+    if (global_idx < input_size) {
+        shared_data[thread_id] = input[global_idx];
+    } else {
+        shared_data[thread_id] = 1.0;
+    }
+    
+    workgroupBarrier();
+    
+    // Parallel reduction in shared memory with multiplication
+    var stride = 128u;
+    while (stride > 0u) {
+        if (thread_id < stride && (thread_id + stride) < 256u) {
+            shared_data[thread_id] *= shared_data[thread_id + stride];
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    
+    // Write result - note: atomic multiply not available, so we need a workaround
+    // For now, we'll use a simple non-atomic approach which works for single workgroup
+    if (thread_id == 0u) {
+        // For multi-workgroup, this would need atomic operations or a two-pass approach
+        atomicStore(&output[group_id.x], bitcast<u32>(shared_data[0]));
+    }
+}
+
+// Variance reduction kernel  
+// Computes the variance of all elements: Var(X) = E[X^2] - E[X]^2
+// This requires a two-pass algorithm or Welford's online algorithm
+// For now, implementing a simple two-pass approach
+@compute @workgroup_size(256)
+fn variance_reduction(@builtin(global_invocation_id) global_id: vec3<u32>,
+                       @builtin(local_invocation_id) local_id: vec3<u32>,
+                       @builtin(workgroup_id) group_id: vec3<u32>) {
+    let thread_id = local_id.x;
+    let global_idx = global_id.x;
+    let input_size = metadata[0];
+    
+    // First pass: compute mean (assuming it's precomputed and stored in metadata[3])
+    let mean = bitcast<f32>(metadata[3]);
+    
+    // Load squared differences into shared memory
+    if (global_idx < input_size) {
+        let diff = input[global_idx] - mean;
+        shared_data[thread_id] = diff * diff;
+    } else {
+        shared_data[thread_id] = 0.0;
+    }
+    
+    workgroupBarrier();
+    
+    // Parallel reduction in shared memory
+    var stride = 128u;
+    while (stride > 0u) {
+        if (thread_id < stride && (thread_id + stride) < 256u) {
+            shared_data[thread_id] += shared_data[thread_id + stride];
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+
+    // Write result - using simple atomic store (works for single workgroup output)
+    // For multi-workgroup, a two-stage reduction would be needed
+    if (thread_id == 0u && group_id.x == 0u) {
+        atomicStore(&output[0], bitcast<u32>(shared_data[0]));
+    }
+}
+
+// Product reduction along specific axes
+@compute @workgroup_size(64)
+fn product_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let output_idx = global_id.x;
+    let input_size = axis_metadata[0];
+    let output_size = axis_metadata[1];
+    let input_rank = axis_metadata[2];
+    let num_axes = axis_metadata[3];
+    
+    if (output_idx >= output_size) {
+        return;
+    }
+    
+    // Get output indices
+    var output_indices: array<u32, 8>;
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
+    
+    // Initialize product with multiplicative identity
+    var product_val = 1.0;
+    
+    // Iterate over reduction dimensions
+    // This is a simplified version; production would optimize based on specific axes
+    let reduction_size = input_size / output_size;
+    
+    for (var i = 0u; i < reduction_size; i++) {
+        // Map to input index (simplified - assumes last axis reduction)
+        let input_idx = output_idx * reduction_size + i;
+        if (input_idx < input_size) {
+            product_val *= axis_input[input_idx];
+        }
+    }
+    
+    // Store result
+    axis_output[output_idx] = product_val;
+}
+
+// Variance reduction along specific axes
+@compute @workgroup_size(64)
+fn variance_axis_reduction(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let output_idx = global_id.x;
+    let input_size = axis_metadata[0];
+    let output_size = axis_metadata[1];
+    let input_rank = axis_metadata[2];
+    let num_axes = axis_metadata[3];
+    
+    if (output_idx >= output_size) {
+        return;
+    }
+    
+    // Get output indices
+    var output_indices: array<u32, 8>;
+    compute_multi_index_output(output_idx, &output_indices, arrayLength(&output_shape));
+    
+    // Two-pass algorithm for variance
+    // Pass 1: Compute mean
+    var sum_val = 0.0;
+    let reduction_size = input_size / output_size;
+    var count = 0.0;
+    
+    for (var i = 0u; i < reduction_size; i++) {
+        let input_idx = output_idx * reduction_size + i;
+        if (input_idx < input_size) {
+            sum_val += axis_input[input_idx];
+            count += 1.0;
+        }
+    }
+    
+    let mean_val = sum_val / count;
+    
+    // Pass 2: Compute variance
+    var variance_val = 0.0;
+    
+    for (var i = 0u; i < reduction_size; i++) {
+        let input_idx = output_idx * reduction_size + i;
+        if (input_idx < input_size) {
+            let diff = axis_input[input_idx] - mean_val;
+            variance_val += diff * diff;
+        }
+    }
+    
+    // Store result (population variance)
+    axis_output[output_idx] = variance_val / count;
 }

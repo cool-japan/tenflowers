@@ -227,7 +227,7 @@ impl Default for CacheStats {
 
 impl<T, K> SmartCache<T, K>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     K: Eq + Hash + Clone + Send + Sync,
 {
     /// Create a new smart cache with specified capacities
@@ -527,7 +527,7 @@ pub struct SmartCachedDataset<T, D: Dataset<T>> {
 
 impl<T, D: Dataset<T>> SmartCachedDataset<T, D>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     /// Create a new smart cached dataset
     pub fn new(
@@ -556,7 +556,7 @@ where
 
 impl<T, D: Dataset<T>> Dataset<T> for SmartCachedDataset<T, D>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
 {
     fn len(&self) -> usize {
         self.dataset.len()
@@ -714,7 +714,7 @@ where
 /// Enhanced smart cache with predictive prefetching
 pub struct PredictiveSmartCache<T, K>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     K: Eq + Hash + Clone + Send + Sync,
 {
     /// Base smart cache
@@ -731,7 +731,7 @@ where
 
 impl<T, K> PredictiveSmartCache<T, K>
 where
-    T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     K: Eq + Hash + Clone + Send + Sync,
 {
     pub fn new(

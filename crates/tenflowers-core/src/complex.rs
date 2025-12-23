@@ -3,7 +3,7 @@
 //! This module provides Complex32 and Complex64 types to support FFT operations
 //! and other complex number computations.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 

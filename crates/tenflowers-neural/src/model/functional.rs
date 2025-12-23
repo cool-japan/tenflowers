@@ -635,7 +635,7 @@ where
 
 impl<T> Model<T> for FunctionalModel<T>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Zero,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Zero,
 {
     /// Forward pass with single input (for compatibility with Model trait)
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {

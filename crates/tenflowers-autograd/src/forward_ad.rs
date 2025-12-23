@@ -1,4 +1,4 @@
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 use tenflowers_core::{ops, Result, Tensor, TensorError};
 
@@ -540,7 +540,7 @@ mod tests {
         // f(x) = x * x = x^2, so f'(x) = 2x, and f'(3) = 6
         // Directional derivative with v = [1] should be 6 * 1 = 6
         let result = forward
-            .directional_derivative(&x, &v, |dual_x| forward_ops::mul(&dual_x, &dual_x))
+            .directional_derivative(&x, &v, |dual_x| forward_ops::mul(dual_x, dual_x))
             .unwrap();
 
         assert_eq!(result.as_slice().unwrap(), &[6.0]);

@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::TensorError;
 use crate::{Result, Tensor};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 
 // GPU einsum implementations
 #[cfg(feature = "gpu")]
@@ -106,7 +106,7 @@ where
             if a_shape[0] != b_shape[0] || a_shape[2] != b_shape[1] {
                 return Err(TensorError::ShapeMismatch {
                     operation: "einsum_batch_matmul_gpu".to_string(),
-                    expected: format!("(B, M, K) and (B, K, N)"),
+                    expected: "(B, M, K) and (B, K, N)".to_string(),
                     got: format!(
                         "({}, {}, {}) and ({}, {}, {})",
                         a_shape[0], a_shape[1], a_shape[2], b_shape[0], b_shape[1], b_shape[2]

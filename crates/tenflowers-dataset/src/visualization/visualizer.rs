@@ -15,7 +15,7 @@ impl DatasetVisualizer {
     /// Create a sample preview showing basic statistics and examples
     pub fn sample_preview<T, D>(dataset: &D, num_samples: usize) -> Result<SamplePreview>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
         D: Dataset<T>,
     {
         if dataset.is_empty() {
@@ -61,7 +61,13 @@ impl DatasetVisualizer {
         max_samples: Option<usize>,
     ) -> Result<DistributionInfo<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
         D: Dataset<T>,
     {
         if dataset.is_empty() {
@@ -162,7 +168,7 @@ impl DatasetVisualizer {
     /// Generate class distribution for classification datasets
     pub fn class_distribution<T, D>(dataset: &D) -> Result<ClassDistribution>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
         D: Dataset<T>,
     {
         let mut class_counts = std::collections::HashMap::new();
@@ -192,11 +198,11 @@ impl DatasetVisualizer {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + PartialOrd,
         D: Dataset<T>,
     {
@@ -271,11 +277,11 @@ impl DatasetVisualizer {
     where
         T: Clone
             + Default
-            + num_traits::Zero
+            + scirs2_core::numeric::Zero
             + Send
             + Sync
             + 'static
-            + num_traits::Float
+            + scirs2_core::numeric::Float
             + PartialOrd,
         D: Dataset<T>,
         Tr: Transform<T>,
@@ -338,7 +344,13 @@ impl DatasetVisualizer {
         comparison_count: usize,
     ) -> Result<Vec<SampleComparison<T>>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
         Tr: Transform<T>,
     {
         let mut comparisons = Vec::new();
@@ -378,7 +390,13 @@ impl DatasetVisualizer {
         pairs: &[BeforeAfterPair<T>],
     ) -> Result<FeatureChangeAnalysis<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
     {
         if pairs.is_empty() {
             return Err(TensorError::invalid_argument(
@@ -435,7 +453,13 @@ impl DatasetVisualizer {
         pairs: &[BeforeAfterPair<T>],
     ) -> Result<DistributionChangeAnalysis<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
     {
         // Calculate mean and std before and after transformation
         let mut original_sum = T::zero();
@@ -489,7 +513,13 @@ impl DatasetVisualizer {
     // Helper method to calculate basic tensor statistics
     pub fn calculate_tensor_stats<T>(tensor: &tenflowers_core::Tensor<T>) -> Result<TensorStats<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
     {
         if let Some(data) = tensor.as_slice() {
             if data.is_empty() {
@@ -543,7 +573,13 @@ impl DatasetVisualizer {
         transformed: &tenflowers_core::Tensor<T>,
     ) -> Result<T>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static + num_traits::Float,
+        T: Clone
+            + Default
+            + scirs2_core::numeric::Zero
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::numeric::Float,
     {
         if let (Some(orig_data), Some(trans_data)) = (original.as_slice(), transformed.as_slice()) {
             if orig_data.len() != trans_data.len() {

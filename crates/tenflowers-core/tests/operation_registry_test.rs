@@ -72,9 +72,10 @@ fn test_kernel_execution_f32() {
         .expect("Result should be f32 tensor");
 
     let expected = vec![5.0, 7.0, 9.0];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test kernel execution with f64
@@ -94,9 +95,10 @@ fn test_kernel_execution_f64() {
     let result = results[0].downcast_ref::<Tensor<f64>>().unwrap();
 
     let expected = vec![2.0, 4.0, 6.0];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test kernel execution with integer types
@@ -116,9 +118,10 @@ fn test_kernel_execution_i32() {
     let result = results[0].downcast_ref::<Tensor<i32>>().unwrap();
 
     let expected = vec![11, 22, 33];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test kernel execution with extended dtype support
@@ -138,9 +141,10 @@ fn test_kernel_execution_i8() {
     let result = results[0].downcast_ref::<Tensor<i8>>().unwrap();
 
     let expected = vec![15i8, 30i8, 45i8];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test kernel execution with u8 type
@@ -160,9 +164,10 @@ fn test_kernel_execution_u8() {
     let result = results[0].downcast_ref::<Tensor<u8>>().unwrap();
 
     let expected = vec![110u8, 170u8, 230u8];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test error handling for invalid inputs
@@ -288,9 +293,10 @@ fn test_registry_broadcasting() {
 
     // Expected: [[11, 21], [12, 22], [13, 23]]
     let expected = vec![11.0, 21.0, 12.0, 22.0, 13.0, 23.0];
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    assert_eq!(arr.as_slice().unwrap(), &expected);
 }
 
 /// Test performance with larger tensors through registry
@@ -323,10 +329,11 @@ fn test_registry_performance() {
 
     // Verify correctness
     let result = results[0].downcast_ref::<Tensor<f32>>().unwrap();
-    if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        let slice = arr.as_slice().unwrap();
-        assert_eq!(slice[0], 1.0); // 0 + 1
-        assert_eq!(slice[100], 201.0); // 100 + 101
-        assert_eq!(slice[size - 1], (2 * size - 1) as f32); // (size-1) + size
-    }
+    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
+        panic!("Expected CPU storage in test");
+    };
+    let slice = arr.as_slice().unwrap();
+    assert_eq!(slice[0], 1.0); // 0 + 1
+    assert_eq!(slice[100], 201.0); // 100 + 101
+    assert_eq!(slice[size - 1], (2 * size - 1) as f32); // (size-1) + size
 }

@@ -5,7 +5,7 @@
 //! such as anti-checkerboard artifact mitigation and fractional stride support.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// Anti-checkerboard options for ConvTranspose2D
@@ -197,8 +197,8 @@ where
             + Default
             + Zero
             + One
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + Send
             + Sync
             + 'static
@@ -234,8 +234,8 @@ where
             + Default
             + Zero
             + One
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + Send
             + Sync
             + 'static
@@ -266,8 +266,8 @@ where
             + Default
             + Zero
             + One
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + Send
             + Sync
             + 'static
@@ -475,8 +475,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -555,7 +555,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let input_shape = input.shape().dims();
     let weight_shape = weight.shape().dims();
@@ -724,8 +724,8 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

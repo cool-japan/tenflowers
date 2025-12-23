@@ -1,5 +1,5 @@
 use crate::{Result, Tensor, TensorError};
-use num_traits::Float;
+use scirs2_core::numeric::Float;
 
 /// GPU implementation of softmax for f32 tensors
 #[cfg(feature = "gpu")]
@@ -21,11 +21,7 @@ where
     // Default to last axis if not specified
     let ndim = x.shape().rank();
     let axis = axis.unwrap_or(-1);
-    let axis = if axis < 0 {
-        (ndim as i32 + axis) as i32
-    } else {
-        axis
-    };
+    let axis = if axis < 0 { ndim as i32 + axis } else { axis };
 
     if axis < 0 || axis >= ndim as i32 {
         return Err(TensorError::InvalidAxis {
@@ -167,7 +163,7 @@ where
         }
     }
 
-    pub fn next(&mut self) -> Result<Option<crate::gpu::buffer::GpuBuffer<T>>> {
+    pub fn next_buffer(&mut self) -> Result<Option<crate::gpu::buffer::GpuBuffer<T>>> {
         if self.current_index >= self.operations.len() {
             return Ok(None);
         }
@@ -183,7 +179,7 @@ where
     }
 
     pub fn process_all(mut self) -> Result<crate::gpu::buffer::GpuBuffer<T>> {
-        while let Some(result) = self.next()? {
+        while let Some(result) = self.next_buffer()? {
             self.buffer = result;
         }
         Ok(self.buffer)

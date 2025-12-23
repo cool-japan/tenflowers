@@ -4,6 +4,13 @@
 
 **TenfloweRS MUST use SciRS2 as its scientific computing foundation.** This document establishes the policy for proper, minimal, and effective integration of SciRS2 crates into TenfloweRS.
 
+## Policy Version
+- **Version**: 2.0.0 (Enhanced - Full SciRS2 Ecosystem Alignment)
+- **Based on**: SciRS2 Ecosystem Policy v3.0.0
+- **Effective Date**: TenfloweRS v0.1.0-alpha.2
+- **Last Updated**: 2025-10-04
+- **Status**: Active - Full Compliance Required
+
 ## Core Integration Principles
 
 ### 1. **Foundation, Not Dependency Bloat**
@@ -24,8 +31,123 @@ OptiRS (ML Optimization Specialization)
     ↓ builds upon
 SciRS2 (Scientific Computing Foundation)
     ↓ builds upon
-ndarray, num-traits, etc. (Core Rust Scientific Stack)
+ndarray, num-traits, rand, etc. (Core Rust Scientific Stack)
 ```
+
+### 4. **Layered Abstraction Architecture**
+Following SciRS2's core principle: **Only scirs2-core can use external dependencies directly**. All TenfloweRS crates must access external scientific libraries through SciRS2-Core abstractions.
+
+## Dependency Abstraction Policy
+
+### **Core Principle: No Direct External Dependencies**
+
+**Applies to:** All TenfloweRS crates
+- `tenflowers-core`, `tenflowers-autograd`, `tenflowers-neural`, `tenflowers-dataset`, `tenflowers-ffi`
+- All tests, examples, benchmarks in all crates
+- All integration tests and documentation examples
+
+### **Prohibited Direct Dependencies in Cargo.toml**
+
+The following dependencies are **FORBIDDEN** in TenfloweRS crates' `[dependencies]` sections:
+
+```toml
+# ❌ FORBIDDEN - Use scirs2-core instead
+rand = { workspace = true }              # Use scirs2_core::random
+rand_distr = { workspace = true }        # Use scirs2_core::random
+rand_core = { workspace = true }         # Use scirs2_core::random
+rand_chacha = { workspace = true }       # Use scirs2_core::random
+rand_pcg = { workspace = true }          # Use scirs2_core::random
+ndarray = { workspace = true }           # Use scirs2_core::ndarray
+ndarray-rand = { workspace = true }      # Use scirs2_core::ndarray (array feature)
+ndarray-stats = { workspace = true }     # Use scirs2_core::ndarray (array feature)
+ndarray-npy = { workspace = true }       # Use scirs2_core::ndarray (array feature)
+ndarray-linalg = { workspace = true }    # Use scirs2_core::ndarray (array feature)
+num-traits = { workspace = true }        # Use scirs2_core::numeric
+num-complex = { workspace = true }       # Use scirs2_core::numeric
+num-integer = { workspace = true }       # Use scirs2_core::numeric
+nalgebra = { workspace = true }          # Use scirs2_core::linalg
+```
+
+### **Required SciRS2-Core Dependency**
+
+```toml
+# ✅ REQUIRED in all TenfloweRS crates
+[dependencies]
+scirs2-core = { workspace = true, features = ["array", "random"] }
+# All external dependencies accessed through scirs2-core
+```
+
+### **Prohibited Direct Imports in Code**
+
+```rust
+// ❌ FORBIDDEN in TenfloweRS code
+use rand::*;
+use rand::Rng;
+use rand::seq::SliceRandom;
+use rand_distr::{Beta, Normal, StudentT};
+use ndarray::*;
+use ndarray::{Array, Array1, Array2};
+use ndarray::{array, s};
+use num_complex::Complex;
+use num_traits::*;
+// etc.
+```
+
+### **Required SciRS2-Core Abstractions**
+
+```rust
+// ✅ REQUIRED in TenfloweRS code
+
+// === Random Number Generation ===
+use scirs2_core::random::*;           // Complete rand + rand_distr functionality
+// Includes: thread_rng, Rng, SliceRandom, etc.
+// All distributions: Beta, Cauchy, ChiSquared, Normal, StudentT, Weibull, etc.
+
+// === Array Operations ===
+use scirs2_core::ndarray::*;          // Full ndarray functionality with array! macro
+// Includes: Array, Array1, Array2, ArrayView, array!, s!, azip! macros
+
+// === Array Extensions ===
+use scirs2_core::ndarray_ext::*;      // Additional array utilities
+// Includes: stats, matrix, manipulation functions
+
+// === Numerical Traits ===
+use scirs2_core::num_traits::*;       // num-traits, num-complex, num-integer
+use scirs2_core::numeric::*;          // Numeric utilities
+// Includes: Float, Zero, One, Num, Complex, etc.
+
+// === Advanced Types ===
+use scirs2_core::array::*;            // Scientific array types
+use scirs2_core::linalg::*;           // Linear algebra (nalgebra when needed)
+```
+
+### **Complete Dependency Mapping**
+
+| External Crate | SciRS2-Core Module | Note |
+|----------------|-------------------|------|
+| `rand` | `scirs2_core::random` | Full functionality |
+| `rand_distr` | `scirs2_core::random` | All distributions |
+| `rand_core` | `scirs2_core::random` | Core traits |
+| `rand_chacha` | `scirs2_core::random` | ChaCha RNG |
+| `rand_pcg` | `scirs2_core::random` | PCG RNG |
+| `ndarray` | `scirs2_core::ndarray` | Full with array! macro |
+| `ndarray-rand` | `scirs2_core::ndarray` | Via ndarray re-export |
+| `ndarray-stats` | `scirs2_core::ndarray_ext::stats` | Stats extensions |
+| `ndarray-npy` | `scirs2_core::ndarray` | Via ndarray re-export |
+| `ndarray-linalg` | `scirs2_core::ndarray` | Via ndarray re-export |
+| `num-traits` | `scirs2_core::num_traits` | All numeric traits |
+| `num-complex` | `scirs2_core::num_traits` | Complex numbers |
+| `num-integer` | `scirs2_core::num_traits` | Integer traits |
+| `nalgebra` | `scirs2_core::linalg` | When needed |
+
+### **Benefits of This Architecture**
+
+1. **Consistent APIs**: All TenfloweRS crates use the same interfaces
+2. **Version Control**: Only SciRS2-core manages external dependency versions
+3. **Type Safety**: Prevents mixing external types with SciRS2 types
+4. **Maintainability**: Changes to external APIs only affect core
+5. **Performance**: Core can optimize all external library usage
+6. **Documentation**: Single source of truth for API documentation
 
 ## Required SciRS2 Crates Analysis
 
@@ -307,8 +429,8 @@ This policy ensures TenfloweRS properly leverages SciRS2's scientific computing 
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-09-20
+**Document Version**: 2.0.0
+**Last Updated**: 2025-10-04
 **Next Review**: Q1 2026
 **Owner**: TenfloweRS Architecture Team
 
@@ -316,17 +438,17 @@ This policy ensures TenfloweRS properly leverages SciRS2's scientific computing 
 
 ### Current Recommended Integration (Minimal Start)
 ```toml
-# Essential SciRS2 dependencies for TenfloweRS
-scirs2-core = "0.1.0-beta.2"      # Always required - foundation
-scirs2-autograd = "0.1.0-beta.2"  # Primary source for ndarray types with array! macro
-scirs2-neural = "0.1.0-beta.2"    # Neural network abstractions
-optirs = { path = "../optirs/optirs" }  # Training optimizers from OptiRS project
+# Essential SciRS2 dependencies for TenfloweRS (using RC.1)
+scirs2-core = "0.1.0-rc.1"      # Always required - foundation
+scirs2-autograd = "0.1.0-rc.1"  # Primary source for ndarray types with array! macro
+scirs2-neural = "0.1.0-rc.1"    # Neural network abstractions
+optirs = "0.1.0-beta.1"         # Training optimizers from OptiRS project
 
 # Add these only when needed:
-# scirs2-linalg = "0.1.0-beta.2"    # If advanced linalg beyond ndarray
-# scirs2-datasets = "0.1.0-beta.2"  # If using SciRS2 data utilities
-# scirs2-metrics = "0.1.0-beta.2"   # If using SciRS2 metrics
-# scirs2-transform = "0.1.0-beta.2" # If data transformations needed
+# scirs2-linalg = "0.1.0-rc.1"    # If advanced linalg beyond ndarray
+# scirs2-datasets = "0.1.0-rc.1"  # If using SciRS2 data utilities
+# scirs2-metrics = "0.1.0-rc.1"   # If using SciRS2 metrics
+# scirs2-transform = "0.1.0-rc.1" # If data transformations needed
 ```
 
 ### Correct Import Patterns for Arrays

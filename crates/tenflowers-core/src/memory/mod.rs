@@ -12,7 +12,9 @@
 //! - High-level memory management coordination
 
 pub mod cache;
+pub mod diagnostics;
 pub mod manager;
+pub mod pool_diagnostics;
 pub mod pools;
 pub mod streams;
 pub mod tracking;
@@ -23,11 +25,25 @@ pub mod views;
 
 // Re-export all public types for backward compatibility
 
+// GPU memory diagnostics and allocation tracing
+pub use diagnostics::{
+    global_diagnostics, AllocationEvent, AllocationStats, LeakReport, MemoryDiagnostics, SizeBucket,
+};
+
 // Memory pool management
 pub use pools::{
     align_size, AllocationTracker, BufferView, MemoryPool, MemoryPoolStats, MemoryPressureLevel,
     PooledBuffer,
 };
+
+// Memory pool diagnostics and optimization
+pub use pool_diagnostics::{
+    IntegratedDiagnosticReport, OptimizationResult, PoolHealthMetrics, PoolHealthStatus,
+    PoolOptimizationConfig,
+};
+
+#[cfg(feature = "gpu")]
+pub use pool_diagnostics::DiagnosticMemoryPool;
 
 // Performance monitoring and tracking
 pub use tracking::{

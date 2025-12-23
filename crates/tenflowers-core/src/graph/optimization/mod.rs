@@ -24,7 +24,10 @@ pub mod placement;
 pub use passes::OptimizationPass;
 
 // Basic optimization passes
-pub use passes::{CSEPass, ConstantFoldingPass, DeadCodeEliminationPass};
+pub use passes::{
+    AlgebraicSimplificationPass, CSEPass, ConstantFoldingPass, DeadCodeEliminationPass,
+    OperationSchedulingPass, StrengthReductionPass,
+};
 
 // Operation fusion
 pub use fusion::{FusionCandidate, FusionPattern, OperationFusionPass};
@@ -54,6 +57,11 @@ mod tests {
         let _cse_pass = CSEPass::new();
         let _dce_pass = DeadCodeEliminationPass::new();
 
+        // Advanced passes
+        let _algebraic_pass = AlgebraicSimplificationPass::new();
+        let _scheduling_pass = OperationSchedulingPass::new();
+        let _strength_pass = StrengthReductionPass::new();
+
         // Fusion
         let _fusion_pass = OperationFusionPass::new();
         let _pattern = FusionPattern::MatMulAdd;
@@ -81,6 +89,9 @@ mod tests {
             Box::new(ConstantFoldingPass::new()),
             Box::new(CSEPass::new()),
             Box::new(DeadCodeEliminationPass::new()),
+            Box::new(AlgebraicSimplificationPass::new()),
+            Box::new(OperationSchedulingPass::new()),
+            Box::new(StrengthReductionPass::new()),
             Box::new(OperationFusionPass::new()),
             Box::new(MemoryOptimizationPass::new()),
             Box::new(DevicePlacementOptimizationPass::new()),
@@ -111,16 +122,19 @@ mod tests {
         optimizer.add_pass(Box::new(ConstantFoldingPass::new()));
         optimizer.add_pass(Box::new(CSEPass::new()));
         optimizer.add_pass(Box::new(DeadCodeEliminationPass::new()));
+        optimizer.add_pass(Box::new(AlgebraicSimplificationPass::new()));
+        optimizer.add_pass(Box::new(OperationSchedulingPass::new()));
+        optimizer.add_pass(Box::new(StrengthReductionPass::new()));
         optimizer.add_pass(Box::new(OperationFusionPass::new()));
         optimizer.add_pass(Box::new(MemoryOptimizationPass::new()));
         optimizer.add_pass(Box::new(DevicePlacementOptimizationPass::new()));
 
         // Verify all passes were added
-        assert_eq!(optimizer.pass_count(), 6);
+        assert_eq!(optimizer.pass_count(), 9);
 
         // Test default optimizer
         let default_optimizer = GraphOptimizer::new();
-        assert_eq!(default_optimizer.pass_count(), 6);
+        assert_eq!(default_optimizer.pass_count(), 9);
     }
 
     #[test]

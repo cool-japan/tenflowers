@@ -32,7 +32,11 @@ pub use mixture_of_experts::MixtureOfExperts;
 pub use multi_head::{FlashAttentionConfig, MultiHeadAttention};
 pub use multi_query::MultiQueryAttention;
 pub use transformer::{TransformerDecoder, TransformerEncoder};
-pub use utils::*;
+pub use utils::{
+    analyze_attention_patterns, apply_attention_mask, apply_rotary_position_embedding,
+    create_causal_mask, create_padding_mask, scaled_dot_product_attention,
+    sinusoidal_positional_encoding, AttentionStats,
+};
 
 /// Key-Value cache for efficient autoregressive generation
 #[derive(Debug, Clone)]

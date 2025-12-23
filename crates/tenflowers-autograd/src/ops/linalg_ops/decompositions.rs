@@ -17,7 +17,7 @@ pub fn eig_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Ten
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -54,7 +54,7 @@ where
 
     // Build gradient matrix using ndarray operations
     // Convert tensors to ndarray for easier manipulation
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
     let mut grad_matrix = Array2::<T>::zeros((n, n));
 
     // For each eigenvalue, compute its contribution to the gradient
@@ -123,7 +123,7 @@ pub fn svd_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Ten
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -278,7 +278,7 @@ pub fn cholesky_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Resul
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -314,7 +314,7 @@ where
     }
 
     // Build gradient matrix using ndarray operations for easier manipulation
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
     let mut grad_matrix = Array2::<T>::zeros((n, n));
 
     // Convert grad_output to ndarray for easier access
@@ -415,7 +415,7 @@ pub fn lu_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tens
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::num_traits::Float
         + Send
         + Sync
         + 'static
@@ -451,7 +451,7 @@ where
     let (l, u, p) = lu(input)?;
 
     // Build gradient matrix using ndarray operations
-    use scirs2_autograd::ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
     let mut grad_matrix = Array2::<T>::zeros((n, n));
 
     // Extract matrices to ndarray for easier manipulation

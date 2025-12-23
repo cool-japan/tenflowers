@@ -4,7 +4,7 @@
 //! commonly used in computer vision and image processing tasks.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// 2D Convolutional layer for image and spatial data processing

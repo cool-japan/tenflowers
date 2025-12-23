@@ -23,7 +23,7 @@ pub struct SimdMatrixOps<T> {
 
 impl<T> SimdMatrixOps<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     /// Create a new SIMD-accelerated matrix operations instance
     pub fn new() -> Self {
@@ -142,7 +142,7 @@ where
 
 impl<T> Default for SimdMatrixOps<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -153,7 +153,7 @@ impl<T> Transform<T> for SimdMatrixOps<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + bytemuck::Pod

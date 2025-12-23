@@ -7,8 +7,8 @@ use crate::{
     layers::{Dense, Layer},
     model::Model,
 };
-use num_traits::{Float, FromPrimitive, One, Zero};
-use scirs2_autograd::ndarray::Array2;
+use scirs2_core::ndarray::Array2;
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use tenflowers_core::tensor::TensorStorage;
 use tenflowers_core::{Result, Tensor};
 

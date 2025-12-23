@@ -17,7 +17,7 @@ where
 /// Compute natural logarithm of tensor elements
 pub fn log<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Float,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Float,
 {
     // Re-export from numpy_compat::log
     crate::ops::numpy_compat::log(tensor)
@@ -26,7 +26,7 @@ where
 /// Compute absolute value of tensor elements
 pub fn abs<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Send + Sync + 'static + num_traits::Signed,
+    T: Clone + Default + Send + Sync + 'static + scirs2_core::num_traits::Signed,
 {
     // Re-export from numpy_compat::absolute
     crate::ops::numpy_compat::absolute(tensor)

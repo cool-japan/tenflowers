@@ -18,7 +18,7 @@ pub struct SimdStats<T> {
 
 impl<T> SimdStats<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -120,7 +120,7 @@ where
 
 impl<T> Default for SimdStats<T>
 where
-    T: Clone + Default + num_traits::Float + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Float + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()

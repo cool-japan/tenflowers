@@ -4,7 +4,7 @@
 //! SIMD-optimized operations, KV caching, Flash attention, and relative position bias.
 
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive};
+use scirs2_core::num_traits::{Float, FromPrimitive};
 use std::sync::RwLock;
 use tenflowers_core::{Result, Tensor, TensorError};
 // Note: SIMD optimizations available when scirs2_core::simd API is complete

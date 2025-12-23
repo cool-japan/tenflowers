@@ -4,7 +4,9 @@
 //! demonstrating both basic gradient clipping and adaptive scaling techniques that
 //! are essential for stable training of large neural networks.
 
-use scirs2_autograd::ndarray::Array1;
+#![allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+
+use scirs2_core::ndarray::Array1;
 use tenflowers_core::{GradientClipper, GradientClippingConfig, NormType, Result, Tensor};
 
 fn main() -> Result<()> {

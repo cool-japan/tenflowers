@@ -29,7 +29,7 @@ impl GpuContext {
     /// Create a new GPU context
     pub async fn new() -> Result<Self> {
         // Request an adapter
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });

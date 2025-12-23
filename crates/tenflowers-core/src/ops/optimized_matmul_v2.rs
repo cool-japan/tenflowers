@@ -8,9 +8,9 @@
 use crate::tensor::TensorStorage;
 use crate::ultra_performance_profiler::record_matmul_performance;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Num;
-use scirs2_autograd::ndarray::{Array2, ArrayD, ArrayView2};
 use scirs2_core::metrics::Timer;
+use scirs2_core::ndarray::{Array2, ArrayD, ArrayView2};
+use scirs2_core::numeric::Num;
 use std::time::Instant;
 
 /// Ultra-performance matrix multiplication V2 - redesigned for true performance
@@ -99,11 +99,11 @@ where
 {
     let a_2d = a
         .view()
-        .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
     let b_2d = b
         .view()
-        .into_dimensionality::<scirs2_autograd::ndarray::Ix2>()
+        .into_dimensionality::<scirs2_core::ndarray::Ix2>()
         .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
     // Strategy: leverage ndarray's optimized dot product as baseline,
@@ -237,7 +237,7 @@ where
     let n = b_shape[b_ndim - 1];
 
     // Create result array
-    let mut result = ArrayD::zeros(scirs2_autograd::ndarray::IxDyn(result_shape));
+    let mut result = ArrayD::zeros(scirs2_core::ndarray::IxDyn(result_shape));
 
     // Get number of batch elements
     let batch_size: usize = result_shape[..result_shape.len() - 2].iter().product();

@@ -9,7 +9,7 @@ use crate::{Result, Tensor, TensorError};
 #[allow(unused_imports)]
 use num_complex::Complex;
 #[allow(unused_imports)]
-use num_traits::{Float, FromPrimitive, Signed};
+use scirs2_core::numeric::{Float, FromPrimitive, Signed};
 #[allow(unused_imports)]
 use std::fmt::Debug;
 

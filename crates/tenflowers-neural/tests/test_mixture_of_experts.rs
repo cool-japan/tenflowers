@@ -2,7 +2,7 @@
 //!
 //! Tests for enhanced MoE layer with proper gating, routing, and load balancing
 
-use scirs2_autograd::ndarray::{array, Array3};
+use scirs2_core::ndarray::{array, Array3};
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::layers::attention::mixture_of_experts::MixtureOfExperts;
 use tenflowers_neural::layers::Layer;

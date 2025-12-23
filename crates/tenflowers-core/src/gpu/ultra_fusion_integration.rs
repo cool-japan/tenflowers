@@ -149,6 +149,7 @@ impl UltraGpuFusionCoordinator {
     }
 
     /// Execute ultra-sophisticated fused tensor operation with production optimization
+    #[allow(clippy::await_holding_lock)]
     pub async fn execute_fused_tensor_operation(
         &self,
         operation_id: &str,
@@ -235,28 +236,25 @@ impl UltraGpuFusionCoordinator {
         &self,
         input_tensors: &[&Tensor<f32>],
     ) -> Result<Vec<GpuBuffer<f32>>> {
-        let mut gpu_buffers = Vec::new();
-
-        for tensor in input_tensors {
-            // Extract GPU buffer from tensor with sophisticated error handling
-            match &tensor.storage {
-                crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
-                    // TODO: Implement proper GPU buffer sharing/viewing for fusion
-                    // For now, return an error until proper buffer management is implemented
-                    return Err(TensorError::unsupported_operation_simple(
-                        "GPU buffer fusion not yet implemented - requires buffer sharing mechanism"
-                            .to_string(),
-                    ));
-                }
-                _ => {
-                    return Err(TensorError::invalid_argument(
-                        "All tensors must be on GPU for fusion operations".to_string(),
-                    ));
-                }
-            }
+        // Check if there are any tensors to process
+        if input_tensors.is_empty() {
+            return Ok(Vec::new());
         }
 
-        Ok(gpu_buffers)
+        // TODO: Implement proper GPU buffer sharing/viewing for fusion
+        // For now, return an error until proper buffer management is implemented
+        // Check the first tensor to determine if all are on GPU
+        match &input_tensors[0].storage {
+            crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+                Err(TensorError::unsupported_operation_simple(
+                    "GPU buffer fusion not yet implemented - requires buffer sharing mechanism"
+                        .to_string(),
+                ))
+            }
+            _ => Err(TensorError::invalid_argument(
+                "All tensors must be on GPU for fusion operations".to_string(),
+            )),
+        }
     }
 
     /// Create sophisticated result tensor with optimal placement

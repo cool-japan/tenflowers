@@ -825,7 +825,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -874,7 +874,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
@@ -916,7 +916,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Zero
+        + scirs2_core::num_traits::Zero
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {

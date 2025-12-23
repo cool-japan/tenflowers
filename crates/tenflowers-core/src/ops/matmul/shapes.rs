@@ -3,13 +3,18 @@
 //! This module handles shape validation, computation, and broadcasting
 //! for matrix multiplication operations.
 
-use crate::{Result, TensorError};
+use crate::shape_error_taxonomy::ShapeErrorUtils;
+use crate::{Result, Shape, TensorError};
 
 /// Compute the result shape for matrix multiplication with broadcasting
 pub fn compute_matmul_shape(a_shape: &[usize], b_shape: &[usize]) -> Result<Vec<usize>> {
     if a_shape.is_empty() || b_shape.is_empty() {
-        return Err(TensorError::invalid_shape_simple(
-            "Cannot perform matmul on empty tensors".to_string(),
+        let empty_shape = Shape::from_slice(&[]);
+        return Err(ShapeErrorUtils::rank_range_mismatch(
+            "matmul",
+            2,
+            None,
+            &empty_shape,
         ));
     }
 
@@ -20,10 +25,13 @@ pub fn compute_matmul_shape(a_shape: &[usize], b_shape: &[usize]) -> Result<Vec<
     let b_cols = b_shape[b_shape.len() - 1];
 
     if a_cols != b_rows {
-        return Err(TensorError::invalid_shape_simple(format!(
-            "Matrix dimensions incompatible for multiplication: {}x{} vs {}x{}",
-            a_rows, a_cols, b_rows, b_cols
-        )));
+        return Err(ShapeErrorUtils::matmul_incompatible(
+            "matmul",
+            &Shape::from_slice(a_shape),
+            &Shape::from_slice(b_shape),
+            false,
+            false,
+        ));
     }
 
     // Broadcast the batch dimensions
@@ -52,10 +60,11 @@ pub fn broadcast_shapes(a: &[usize], b: &[usize]) -> Result<Vec<usize>> {
         } else if b_dim == 1 || a_dim == b_dim {
             a_dim
         } else {
-            return Err(TensorError::invalid_shape_simple(format!(
-                "Cannot broadcast shapes: dimension {} vs {}",
-                a_dim, b_dim
-            )));
+            return Err(ShapeErrorUtils::broadcast_incompatible(
+                "matmul_broadcast",
+                &Shape::from_slice(a),
+                &Shape::from_slice(b),
+            ));
         };
 
         result.push(result_dim);

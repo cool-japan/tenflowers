@@ -4,7 +4,7 @@
 //! optimizations while maintaining compatibility with all tensor operations.
 
 use crate::tape::{GradientTape, TrackedTensor};
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, One, Zero};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -508,6 +508,7 @@ mod tests {
         let x = tape.watch(Tensor::<f32>::ones(&[2, 2]));
         let y = tape.watch(Tensor::<f32>::ones(&[2, 2]));
 
+        #[allow(clippy::cloned_ref_to_slice_refs)]
         let result = tape.gradient_ultra(&[x.clone()], &[x, y]);
         assert!(result.is_ok());
 

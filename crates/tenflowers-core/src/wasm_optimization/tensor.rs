@@ -128,7 +128,7 @@ where
         // Use a simple O(n²) approach for uniqueness counting
         let mut unique_items = Vec::new();
         for item in data {
-            if !unique_items.iter().any(|existing| *existing == item) {
+            if !unique_items.contains(&item) {
                 unique_items.push(item);
             }
         }
@@ -136,7 +136,7 @@ where
     }
 
     fn calculate_sparsity(data: &[T]) -> f64 {
-        let zero_count = data.iter().filter(|&&ref x| *x == T::default()).count();
+        let zero_count = data.iter().filter(|&x| *x == T::default()).count();
         zero_count as f64 / data.len() as f64
     }
 

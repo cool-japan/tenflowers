@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use scirs2_autograd::ndarray::{Array1, Array2, Array3, Array4};
+use scirs2_core::ndarray::{Array1, Array2, Array3, Array4};
 use std::time::Duration;
 use tenflowers_autograd::{get_global_profiler, GradientTape, MemoryStats};
 use tenflowers_core::{DType, Device, Tensor};

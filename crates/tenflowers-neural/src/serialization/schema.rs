@@ -508,7 +508,7 @@ impl SchemaValidator {
             }
 
             // Check for zero dimensions
-            if param.shape.iter().any(|&dim| dim == 0) {
+            if param.shape.contains(&0) {
                 result.errors.push(ValidationError {
                     error_type: ValidationErrorType::InvalidShape,
                     message: "Parameter shape contains zero dimension".to_string(),

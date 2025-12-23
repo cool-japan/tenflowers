@@ -5,7 +5,7 @@
 //! tensor operations while maintaining clean separation of concerns.
 
 use crate::{Device, Result, Shape};
-use scirs2_autograd::ndarray::ArrayD;
+use scirs2_core::ndarray::ArrayD;
 use std::sync::Arc;
 
 /// Core tensor structure that holds data and metadata

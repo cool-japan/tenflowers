@@ -7,7 +7,7 @@ use super::super::context::{GpuLinalgContext, LinalgMetadata};
 use crate::gpu::buffer::GpuBuffer;
 use crate::{Result, Shape, TensorError};
 use bytemuck::{Pod, Zeroable};
-use num_traits::{Float, One};
+use scirs2_core::numeric::{Float, One};
 use wgpu::{BufferDescriptor, BufferUsages};
 
 /// Eigenvalue computation for symmetric matrices

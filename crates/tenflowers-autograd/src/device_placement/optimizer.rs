@@ -188,7 +188,7 @@ impl DevicePlacementOptimizer {
                     "Transpose",
                 ]
                 .iter()
-                .map(|s| s.to_string())
+                .map(|s| (*s).to_string())
                 .collect(),
                 current_memory_usage_gb: 0.0,
                 peak_memory_usage_gb: 0.0,
@@ -566,6 +566,7 @@ impl DevicePlacementOptimizer {
 
     /// Create default device capabilities
     fn default_device_capabilities(&self, device: &Device) -> DeviceCapabilities {
+        #[allow(unreachable_patterns)] // GPU/ROCM patterns unreachable when features are disabled
         match device {
             Device::Cpu => DeviceCapabilities {
                 compute_power_gflops: 100.0,
@@ -596,6 +597,8 @@ impl DevicePlacementOptimizer {
                 current_memory_usage_gb: 0.0,
                 peak_memory_usage_gb: 0.0,
             },
+            #[cfg(not(any(feature = "gpu", feature = "rocm")))]
+            _ => unreachable!("GPU/ROCM variants should not exist without features"),
         }
     }
 

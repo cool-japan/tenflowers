@@ -9,8 +9,8 @@
 use crate::layout::{convert_layout, DataLayout, LayoutOptimizer, OperationType};
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::{One, Zero};
 
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
@@ -302,7 +302,7 @@ where
             TensorStorage::Gpu(bias_gpu) => {
                 // Convert GPU bias to CPU for this CPU convolution
                 let bias_cpu = bias_gpu.to_cpu()?;
-                let bias_arr = scirs2_autograd::ndarray::Array1::from_vec(bias_cpu).into_dyn();
+                let bias_arr = scirs2_core::ndarray::Array1::from_vec(bias_cpu).into_dyn();
 
                 if bias_arr.shape() != [out_channels] {
                     return Err(TensorError::ShapeMismatch {
@@ -636,7 +636,7 @@ fn next_power_of_two(n: usize) -> usize {
 }
 
 #[cfg(feature = "gpu")]
-fn select_conv_kernel<T>(
+fn select_conv_kernel(
     input_shape: &[usize],
     kernel_shape: &[usize],
     stride: (usize, usize),
@@ -723,8 +723,7 @@ where
     let kernel_width = weight_shape.dims()[3];
 
     // Select optimal kernel based on input characteristics
-    let kernel_type =
-        select_conv_kernel::<T>(input_shape.dims(), weight_shape.dims(), stride, padding);
+    let kernel_type = select_conv_kernel(input_shape.dims(), weight_shape.dims(), stride, padding);
 
     // Calculate output dimensions
     let (out_height, out_width, pad_top, pad_left) = match padding {

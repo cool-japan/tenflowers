@@ -7,9 +7,9 @@ use crate::{
     layers::{Conv2D, Dense, Layer},
     model::Model,
 };
-use num_traits::{Float, FromPrimitive, One, Zero};
-use scirs2_autograd::ndarray::Array3;
-use scirs2_core::random::rng;
+use scirs2_core::ndarray::Array3;
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::random::thread_rng;
 use tenflowers_core::tensor::TensorStorage;
 use tenflowers_core::{Result, Tensor};
 
@@ -212,7 +212,7 @@ where
         let num_patches = patch_embed.num_patches();
 
         // Initialize CLS token with random values
-        let mut rng = rng();
+        let mut rng = thread_rng();
         let cls_data = Array3::from_shape_fn((1, 1, embed_dim), |_| {
             let range = T::from(0.04).unwrap(); // Total range from -0.02 to +0.02
             let random_val: f64 = rng.gen_range(0.0..1.0);

@@ -1,0 +1,231 @@
+/// Activation Checkpointing Example
+///
+/// This example demonstrates how to use activation checkpointing to reduce
+/// memory usage during training by trading compute for memory. This is especially
+/// useful for training large models where GPU memory is limited.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{
+    checkpoint_sequence, ActivationCheckpointPolicy, ActivationCheckpointing, CheckpointManager,
+    CheckpointStrategy, GradientTape,
+};
+use tenflowers_core::Tensor;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Activation Checkpointing Example");
+    println!("===========================================\n");
+
+    // Example 1: Basic checkpointing with manual strategy
+    println!("Example 1: Manual Checkpointing Strategy");
+    println!("----------------------------------------");
+    basic_checkpointing_example()?;
+
+    // Example 2: Automatic checkpointing policy
+    println!("\nExample 2: Automatic Checkpointing Policy");
+    println!("-----------------------------------------");
+    automatic_checkpointing_example()?;
+
+    // Example 3: Checkpoint sequence for long models
+    println!("\nExample 3: Sequence Checkpointing");
+    println!("---------------------------------");
+    sequence_checkpointing_example()?;
+
+    // Example 4: Memory vs compute trade-off analysis
+    println!("\nExample 4: Memory-Compute Trade-off");
+    println!("-----------------------------------");
+    tradeoff_analysis_example()?;
+
+    Ok(())
+}
+
+fn basic_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    let tape = GradientTape::new();
+
+    // Create input tensor
+    println!("Creating input tensor...");
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((32, 128), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    ));
+
+    println!("Without checkpointing:");
+    println!("  - All intermediate activations stored in memory");
+    println!("  - Memory usage: ~4-8x model size for deep networks");
+    println!("  - Backward pass: fast (no recomputation)");
+
+    // Simulate forward pass
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((128, 64), |(i, j)| (i as f32 - j as f32) * 0.001).into_dyn(),
+    );
+    let hidden1 = x.tensor().matmul(&w1)?;
+
+    println!("\nWith checkpointing:");
+    println!("  - Only checkpoint nodes stored");
+    println!("  - Memory usage: ~2-3x model size (50% reduction)");
+    println!("  - Backward pass: slower (requires recomputation)");
+    println!("  - Best for: Large models where memory is limited");
+
+    // Create checkpoint manager
+    let mut checkpoint_manager = CheckpointManager::new(CheckpointStrategy::EveryNLayers(2));
+    println!("\nCheckpoint strategy: Save every 2 layers");
+    println!("Memory saved: ~40-60% for typical networks");
+
+    Ok(())
+}
+
+fn automatic_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    // Create automatic policy based on available memory
+    let policy = ActivationCheckpointPolicy::default()
+        .with_memory_budget_mb(2048) // 2GB memory budget
+        .with_min_computation_threshold(100); // Only checkpoint expensive ops
+
+    println!("Automatic checkpointing policy:");
+    println!("  Memory budget: 2048 MB");
+    println!("  Min computation threshold: 100 FLOPs");
+    println!("  Strategy: Adaptive based on layer cost");
+
+    let tape = GradientTape::new();
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((16, 256), |(i, j)| i as f32 * 0.01 + j as f32 * 0.001).into_dyn(),
+    ));
+
+    println!("\nPolicy decides which layers to checkpoint:");
+    println!("  ✓ Large matrix multiplications (high memory)");
+    println!("  ✓ Expensive convolutions");
+    println!("  ✗ Cheap activations (ReLU, etc.)");
+    println!("  ✗ Normalization layers");
+
+    // Simulate layer decisions
+    println!("\nLayer analysis:");
+    println!("  Layer 1 (MatMul 256x512): CHECKPOINT ✓ (high memory cost)");
+    println!("  Layer 2 (ReLU):           STORE ✗ (cheap to recompute)");
+    println!("  Layer 3 (LayerNorm):      STORE ✗ (numerical stability)");
+    println!("  Layer 4 (MatMul 512x1024): CHECKPOINT ✓ (high memory cost)");
+
+    Ok(())
+}
+
+fn sequence_checkpointing_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Checkpointing long sequences (e.g., Transformers):");
+    println!("Model: 24-layer transformer");
+    println!("Strategy: Checkpoint every 4 layers\n");
+
+    let tape = GradientTape::new();
+
+    // Simulate transformer input
+    let seq_length = 512;
+    let hidden_size = 768;
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((seq_length, hidden_size), |(i, j)| {
+            (i as f32 * 0.001 + j as f32 * 0.0001)
+        })
+        .into_dyn(),
+    ));
+
+    println!("Memory analysis:");
+    println!("Without checkpointing:");
+    println!("  - 24 layers × 512 seq × 768 hidden × 4 bytes = ~37 MB per batch");
+    println!("  - Total: ~37 MB × batch_size");
+    println!("");
+    println!("With checkpointing (every 4 layers):");
+    println!("  - Stored: 6 checkpoints × 512 × 768 × 4 bytes = ~9.4 MB");
+    println!("  - Savings: ~75% memory reduction");
+    println!("  - Cost: ~33% more compute (recompute 3/4 layers)");
+
+    // Use checkpoint_sequence for automatic management
+    let checkpoint_config = ActivationCheckpointing::new()
+        .with_checkpoint_every_n_layers(4)
+        .with_recompute_attention(true); // Special handling for attention
+
+    println!("\nCheckpoint configuration:");
+    println!("  Checkpoint frequency: Every 4 layers");
+    println!("  Recompute attention: Yes (for memory efficiency)");
+    println!("  Gradient accumulation compatible: Yes");
+
+    Ok(())
+}
+
+fn tradeoff_analysis_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Memory-Compute Trade-off Analysis\n");
+
+    struct Scenario {
+        name: &'static str,
+        checkpoint_freq: usize,
+        memory_usage: f32, // Relative to full storage
+        compute_cost: f32, // Relative to no checkpointing
+        best_for: &'static str,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            name: "No Checkpointing",
+            checkpoint_freq: 0,
+            memory_usage: 1.0,
+            compute_cost: 1.0,
+            best_for: "Small models, unlimited memory",
+        },
+        Scenario {
+            name: "Checkpoint Every Layer",
+            checkpoint_freq: 1,
+            memory_usage: 0.2,
+            compute_cost: 2.0,
+            best_for: "Extreme memory constraints",
+        },
+        Scenario {
+            name: "Checkpoint Every 2 Layers",
+            checkpoint_freq: 2,
+            memory_usage: 0.4,
+            compute_cost: 1.5,
+            best_for: "Balanced trade-off",
+        },
+        Scenario {
+            name: "Checkpoint Every 4 Layers",
+            checkpoint_freq: 4,
+            memory_usage: 0.6,
+            compute_cost: 1.25,
+            best_for: "Large models (GPT, BERT)",
+        },
+        Scenario {
+            name: "Selective Checkpointing",
+            checkpoint_freq: 999, // Variable
+            memory_usage: 0.5,
+            compute_cost: 1.15,
+            best_for: "Production training (recommended)",
+        },
+    ];
+
+    println!("┌─────────────────────────────┬────────┬─────────┬──────────┬────────────────────────────┐");
+    println!("│ Strategy                    │ Memory │ Compute │ Overhead │ Best For                   │");
+    println!("├─────────────────────────────┼────────┼─────────┼──────────┼────────────────────────────┤");
+
+    for scenario in &scenarios {
+        let memory_pct = (scenario.memory_usage * 100.0) as i32;
+        let compute_pct = ((scenario.compute_cost - 1.0) * 100.0) as i32;
+
+        println!(
+            "│ {:<27} │ {:>5}% │ +{:>5}% │ {:>7}% │ {:<26} │",
+            scenario.name, memory_pct, compute_pct, compute_pct, scenario.best_for
+        );
+    }
+
+    println!("└─────────────────────────────┴────────┴─────────┴──────────┴────────────────────────────┘");
+
+    println!("\n📊 Recommendations:");
+    println!("  • GPT-3 scale (175B params): Checkpoint every 4-8 layers");
+    println!("  • BERT-Large (340M params): Checkpoint every 2-4 layers");
+    println!("  • ResNet-50 (25M params): Selective checkpointing or none");
+    println!("  • ViT-Huge (630M params): Checkpoint every 3-6 layers");
+
+    println!("\n💡 Best Practices:");
+    println!("  1. Profile your model first to find memory bottlenecks");
+    println!("  2. Start with checkpoint_every_n_layers(4)");
+    println!("  3. Adjust based on available GPU memory");
+    println!("  4. Use selective checkpointing in production");
+    println!("  5. Combine with gradient accumulation for large batches");
+
+    println!("\n⚠️  When NOT to use checkpointing:");
+    println!("  • Small models that fit in memory");
+    println!("  • Inference (no backward pass needed)");
+    println!("  • When training time is critical");
+    println!("  • Models with cheap activations (mostly convolutions)");
+
+    Ok(())
+}

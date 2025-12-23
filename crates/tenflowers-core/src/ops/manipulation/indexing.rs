@@ -15,8 +15,8 @@ use crate::gpu::buffer::GpuBuffer;
 use crate::strided::{SliceParams, StridedLayout};
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::Zero;
 
 // Import common helper functions
 use super::common::{broadcast_indices, calculate_strides, coords_to_flat, flat_to_coords};

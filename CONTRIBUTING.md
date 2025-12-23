@@ -398,7 +398,7 @@ All contributors will be recognized in:
 
 - **GitHub Discussions**: For design discussions
 - **Issue Tracker**: For bugs and features
-- **Email**: info@kitasan.io (Team KitaSan)
+- **Email**: contact@cooljapan.tech (COOLJAPAN OU)
 
 ## Additional Resources
 

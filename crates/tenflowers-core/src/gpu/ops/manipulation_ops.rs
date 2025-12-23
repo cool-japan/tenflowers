@@ -347,19 +347,20 @@ where
 
     // Calculate output shape
     let mut output_shape = Vec::new();
-    for i in 0..input_shape.len() {
+    for (i, &dim_size) in input_shape.iter().enumerate() {
         let start = starts.get(i).copied().unwrap_or(0);
-        let end = ends.get(i).copied().unwrap_or(input_shape[i]);
+        let end = ends.get(i).copied().unwrap_or(dim_size);
         let step = steps.get(i).copied().unwrap_or(1);
         output_shape.push((end - start + step - 1) / step);
     }
 
     // Prepare metadata for shader
-    let mut metadata = Vec::new();
-    metadata.push(input_shape.len() as u32); // ndim
-    metadata.push(output_len as u32); // total_size
-    metadata.push(0u32); // pad1
-    metadata.push(0u32); // pad2
+    let mut metadata = vec![
+        input_shape.len() as u32, // ndim
+        output_len as u32,        // total_size
+        0u32,                     // pad1
+        0u32,                     // pad2
+    ];
     metadata.extend(input_shape.iter().map(|&x| x as u32));
     metadata.extend(output_shape.iter().map(|&x| x as u32));
     metadata.extend(starts.iter().map(|&x| x as u32));
@@ -1236,8 +1237,8 @@ where
     });
 
     // For simplicity, use the first shift and first axis
-    let shift = shifts.get(0).copied().unwrap_or(0);
-    let axis = axes.and_then(|a| a.get(0)).copied().unwrap_or(0);
+    let shift = shifts.first().copied().unwrap_or(0);
+    let axis = axes.and_then(|a| a.first()).copied().unwrap_or(0);
 
     // Create uniform data for roll info
     let roll_info = [

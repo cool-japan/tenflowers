@@ -26,6 +26,9 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Jupyter
+.ipynb_checkpoints/
+
 # Python (for FFI)
 __pycache__/
 *.py[cod]

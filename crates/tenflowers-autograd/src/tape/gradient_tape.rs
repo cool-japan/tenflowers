@@ -3,7 +3,7 @@
 //! This module provides the main GradientTape implementation that records operations
 //! and computes gradients through the computation graph.
 
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -394,8 +394,8 @@ impl GradientTape {
             + std::ops::Div<Output = T>
             + std::ops::Neg<Output = T>
             + PartialOrd
-            + num_traits::Float
-            + num_traits::FromPrimitive
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::FromPrimitive
             + bytemuck::Pod
             + bytemuck::Zeroable,
         F: Fn(&[&TrackedTensor<T>]) -> Result<TrackedTensor<T>>,

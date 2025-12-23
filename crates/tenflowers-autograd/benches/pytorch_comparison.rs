@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use scirs2_autograd::ndarray::{Array1, Array2, Array3, Array4};
+use scirs2_core::ndarray::{Array1, Array2, Array3, Array4};
 use serde_json::{json, Value};
 use std::process::Command;
 use std::time::{Duration, Instant};

@@ -18,8 +18,8 @@ impl DatasetStatisticsComputer {
     where
         T: Clone
             + Default
-            + num_traits::Zero
-            + num_traits::Float
+            + scirs2_core::numeric::Zero
+            + scirs2_core::numeric::Float
             + std::fmt::Debug
             + Send
             + Sync
@@ -105,7 +105,7 @@ impl DatasetStatisticsComputer {
     /// Convert tensor to vector
     pub fn tensor_to_vec<T>(tensor: &Tensor<T>) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Zero + Send + Sync + 'static,
+        T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
     {
         // Get the raw data from tensor
         let data = tensor.as_slice().ok_or_else(|| {
@@ -119,7 +119,7 @@ impl DatasetStatisticsComputer {
     /// Compute mean of feature vectors
     pub fn compute_mean<T>(features: &[Vec<T>]) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
         if features.is_empty() {
             return Err(TensorError::invalid_argument(
@@ -147,7 +147,7 @@ impl DatasetStatisticsComputer {
     /// Compute standard deviation of feature vectors
     fn compute_std<T>(features: &[Vec<T>], mean: &[T]) -> Result<Vec<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
         if features.is_empty() {
             return Err(TensorError::invalid_argument(
@@ -178,7 +178,7 @@ impl DatasetStatisticsComputer {
     /// Compute min and max of feature vectors
     fn compute_min_max<T>(features: &[Vec<T>]) -> Result<(Vec<T>, Vec<T>)>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
         if features.is_empty() {
             return Err(TensorError::invalid_argument(
@@ -212,7 +212,7 @@ impl DatasetStatisticsComputer {
         bins: usize,
     ) -> Result<Histogram<T>>
     where
-        T: Clone + Default + num_traits::Zero + num_traits::Float,
+        T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
         if features.is_empty() {
             return Err(TensorError::invalid_argument(

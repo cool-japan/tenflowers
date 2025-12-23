@@ -133,8 +133,8 @@ impl<T: Clone> Tensor<T> {
             #[cfg(feature = "gpu")]
             (TensorStorage::Gpu(gpu_buffer), Device::Cpu) => {
                 let cpu_data = gpu_buffer.to_cpu()?;
-                let array = scirs2_autograd::ndarray::ArrayD::from_shape_vec(
-                    scirs2_autograd::ndarray::IxDyn(self.shape().dims()),
+                let array = scirs2_core::ndarray::ArrayD::from_shape_vec(
+                    scirs2_core::ndarray::IxDyn(self.shape().dims()),
                     cpu_data,
                 )
                 .map_err(|e| crate::TensorError::invalid_shape_simple(e.to_string()))?;

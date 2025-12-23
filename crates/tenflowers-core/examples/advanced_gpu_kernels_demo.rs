@@ -15,6 +15,9 @@
 //! cargo run --features gpu,rocm --example advanced_gpu_kernels_demo
 //! ```
 
+#![allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+#![allow(unreachable_code)] // Early returns when GPU features are not available
+
 use tenflowers_core::ops::random::random_normal_f32_device;
 use tenflowers_core::{DType, Device, Result, Tensor};
 

@@ -3,10 +3,11 @@
 //! This module contains the main public API functions for matrix multiplication,
 //! including matmul, dot product, and batch matmul operations.
 
+use crate::shape_error_taxonomy::ShapeErrorUtils;
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::Zero;
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
+use scirs2_core::numeric::Zero;
 
 use super::batch::matmul_batch;
 use super::optimized::matmul_2d_optimized;
@@ -16,8 +17,8 @@ use super::shapes::compute_matmul_shape;
 pub fn matmul<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
         + Default
@@ -32,8 +33,15 @@ where
 
     // Validate shapes
     if a_shape.is_empty() || b_shape.is_empty() {
-        return Err(TensorError::invalid_shape_simple(
-            "Tensors must have at least 1 dimension for matrix multiplication".to_string(),
+        return Err(ShapeErrorUtils::rank_range_mismatch(
+            "matmul",
+            1,
+            None,
+            if a_shape.is_empty() {
+                a.shape()
+            } else {
+                b.shape()
+            },
         ));
     }
 
@@ -46,10 +54,13 @@ where
     };
 
     if a_cols != b_rows {
-        return Err(TensorError::invalid_shape_simple(format!(
-            "Matrix multiplication dimension mismatch: {} vs {}",
-            a_cols, b_rows
-        )));
+        return Err(ShapeErrorUtils::matmul_incompatible(
+            "matmul",
+            a.shape(),
+            b.shape(),
+            false,
+            false,
+        ));
     }
 
     match (a_shape.len(), b_shape.len()) {
@@ -92,8 +103,15 @@ where
     let result_shape = compute_matmul_shape(a.shape().dims(), b.shape().dims())?;
 
     if a.shape().dims().len() < 2 || b.shape().dims().len() < 2 {
-        return Err(TensorError::invalid_shape_simple(
-            "Batch matmul requires tensors with at least 2 dimensions".to_string(),
+        return Err(ShapeErrorUtils::rank_range_mismatch(
+            "batch_matmul",
+            2,
+            None,
+            if a.shape().dims().len() < 2 {
+                a.shape()
+            } else {
+                b.shape()
+            },
         ));
     }
 
@@ -107,7 +125,7 @@ where
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
         + Zero
-        + num_traits::One
+        + scirs2_core::num_traits::One
         + Default
         + Send
         + Sync
@@ -176,11 +194,11 @@ where
         (TensorStorage::Cpu(a_arr), TensorStorage::Cpu(b_arr)) => {
             let a_view = a_arr
                 .view()
-                .into_dimensionality::<ndarray::Ix2>()
+                .into_dimensionality::<scirs2_core::ndarray::Ix2>()
                 .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
             let b_view = b_arr
                 .view()
-                .into_dimensionality::<ndarray::Ix2>()
+                .into_dimensionality::<scirs2_core::ndarray::Ix2>()
                 .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
             let result = matmul_2d_optimized(a_view, b_view);
@@ -202,8 +220,8 @@ where
 fn vector_matrix_mul<T>(vector: &Tensor<T>, matrix: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
         + Default
@@ -247,8 +265,8 @@ where
 fn matrix_vector_mul<T>(matrix: &Tensor<T>, vector: &Tensor<T>) -> Result<Tensor<T>>
 where
     T: Clone
-        + num_traits::Zero
-        + num_traits::One
+        + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::One
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
         + Default

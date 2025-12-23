@@ -7,7 +7,7 @@ use crate::tensor::TensorStorage;
 #[cfg(feature = "gpu")]
 use crate::Shape;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{Float, FromPrimitive, Zero};
+use scirs2_core::numeric::{Float, FromPrimitive, Zero};
 use std::cmp::min;
 
 /// Max pooling 2D operation

@@ -5,8 +5,8 @@
 //! applies identity transformation (no dropout).
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
-use scirs2_core::random::rng;
+use scirs2_core::num_traits::{Float, One, Zero};
+use scirs2_core::random::thread_rng;
 use tenflowers_core::{Result, Tensor};
 
 /// Standard dropout layer for regularization
@@ -17,7 +17,10 @@ use tenflowers_core::{Result, Tensor};
 #[derive(Debug, Clone)]
 pub struct Dropout<T>
 where
-    T: num_traits::FromPrimitive + bytemuck::Pod + bytemuck::Zeroable + std::fmt::Debug,
+    T: scirs2_core::num_traits::FromPrimitive
+        + bytemuck::Pod
+        + bytemuck::Zeroable
+        + std::fmt::Debug,
 {
     dropout_rate: T,
     training: bool,
@@ -33,7 +36,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -98,7 +101,7 @@ where
     /// Generate dropout mask for given shape
     fn generate_mask(&self, shape: &[usize]) -> Result<Tensor<T>> {
         let total_elements: usize = shape.iter().product();
-        let mut rng = rng();
+        let mut rng = thread_rng();
 
         let mut mask_data = Vec::with_capacity(total_elements);
         for _ in 0..total_elements {
@@ -111,7 +114,7 @@ where
             }
         }
 
-        use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+        use scirs2_core::ndarray::{ArrayD, IxDyn};
         let mask_array = ArrayD::from_shape_vec(IxDyn(shape), mask_data).map_err(|_| {
             tenflowers_core::error::TensorError::invalid_shape_simple(
                 "Failed to create dropout mask".to_string(),
@@ -136,7 +139,7 @@ where
         + std::ops::Mul<Output = T>
         + std::ops::Sub<Output = T>
         + std::cmp::PartialOrd
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -194,7 +197,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::FromPrimitive
+        + scirs2_core::num_traits::FromPrimitive
         + bytemuck::Pod
         + bytemuck::Zeroable
         + std::fmt::Debug,
@@ -208,7 +211,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scirs2_autograd::ndarray::array;
+    use scirs2_core::ndarray::array;
 
     #[test]
     fn test_dropout_creation() {
@@ -232,13 +235,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_dropout_invalid_rate_high() {
         Dropout::<f32>::new(1.5);
     }
 
     #[test]
-    #[should_panic(assertion_failed)]
+    #[should_panic]
     fn test_dropout_invalid_rate_negative() {
         Dropout::<f32>::new(-0.1);
     }

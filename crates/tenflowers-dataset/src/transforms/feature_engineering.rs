@@ -22,7 +22,7 @@ impl<T> PolynomialFeatures<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -118,7 +118,7 @@ impl<T> Transform<T> for PolynomialFeatures<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -175,7 +175,7 @@ impl<T> BinningTransform<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -283,7 +283,7 @@ impl<T> Transform<T> for BinningTransform<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -327,7 +327,7 @@ impl<T> OneHotEncode<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -381,7 +381,7 @@ impl<T> Default for OneHotEncode<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -399,7 +399,7 @@ impl<T> Transform<T> for OneHotEncode<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -467,7 +467,7 @@ impl<T> TargetEncode<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -532,7 +532,7 @@ impl<T> Transform<T> for TargetEncode<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -580,7 +580,7 @@ impl<T> VarianceThreshold<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -646,7 +646,7 @@ impl<T> Transform<T> for VarianceThreshold<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -701,7 +701,7 @@ impl<T> PowerTransform<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static
@@ -776,7 +776,7 @@ impl<T> Transform<T> for PowerTransform<T>
 where
     T: Clone
         + Default
-        + num_traits::Float
+        + scirs2_core::numeric::Float
         + Send
         + Sync
         + 'static

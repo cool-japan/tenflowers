@@ -416,11 +416,10 @@ impl CacheFriendlyMatMul {
                 unsafe {
                     if j + 1 < dimensions.n {
                         std::arch::x86_64::_mm_prefetch(
-                            &b[((offsets.b_row_offset) * strides.b_stride
+                            &b[(offsets.b_row_offset) * strides.b_stride
                                 + offsets.b_col_offset
                                 + j
-                                + 1) as usize] as *const f32
-                                as *const i8,
+                                + 1] as *const f32 as *const i8,
                             std::arch::x86_64::_MM_HINT_T0,
                         );
                     }

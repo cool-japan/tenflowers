@@ -783,7 +783,7 @@ impl GraphPlacementOptimizer {
 
     /// Initialize transfer cost matrix between devices
     fn initialize_transfer_costs(&mut self) {
-        let devices = vec![Device::Cpu];
+        let devices = [Device::Cpu];
         #[cfg(feature = "gpu")]
         let devices = {
             let mut devices = vec![Device::Cpu];

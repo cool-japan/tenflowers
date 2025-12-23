@@ -5,7 +5,7 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use num_traits::{One, Zero};
+use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 
 #[cfg(any(feature = "blas-openblas", feature = "blas-mkl"))]

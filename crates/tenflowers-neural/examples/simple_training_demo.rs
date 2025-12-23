@@ -1,4 +1,4 @@
-use scirs2_autograd::ndarray::{ArrayD, IxDyn};
+use scirs2_core::ndarray::{ArrayD, IxDyn};
 use std::time::Instant;
 /// Simple Neural Network Training Demo using TenfloweRS
 ///

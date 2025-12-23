@@ -2,7 +2,7 @@
 
 use super::ResetGateVariation;
 use crate::layers::Layer;
-use num_traits::{Float, FromPrimitive, One, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 // use scirs2_core::random::{rng, Random}; // Unused for now
 use tenflowers_core::{Result, Tensor, TensorError};
 

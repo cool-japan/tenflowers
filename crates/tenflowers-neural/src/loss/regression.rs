@@ -1,4 +1,4 @@
-use num_traits::{Float, FromPrimitive, One, Signed, Zero};
+use scirs2_core::num_traits::{Float, FromPrimitive, One, Signed, Zero};
 use tenflowers_core::{Result, Tensor};
 
 use super::utils::convert_u8_to_bool_tensor;

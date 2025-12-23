@@ -5,7 +5,7 @@
 //! for time series data, text processing, and other sequential data applications.
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use tenflowers_core::{Result, Tensor};
 
 /// 1D Convolutional layer for sequence processing
@@ -161,7 +161,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         // For now, implement a simplified 1D convolution
@@ -257,7 +257,7 @@ where
         + Send
         + Sync
         + 'static
-        + num_traits::Float,
+        + scirs2_core::num_traits::Float,
 {
     let input_shape = input.shape().dims();
     let weight_shape = weight.shape().dims();

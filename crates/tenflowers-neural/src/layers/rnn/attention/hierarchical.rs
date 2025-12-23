@@ -3,7 +3,7 @@
 // TODO: Move HierarchicalAttention implementation from rnn.rs (lines 4803-5012)
 
 use crate::layers::Layer;
-use num_traits::{Float, One, Zero};
+use scirs2_core::num_traits::{Float, One, Zero};
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor};
 

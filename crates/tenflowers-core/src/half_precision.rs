@@ -7,7 +7,7 @@ pub use half::{bf16, f16};
 
 /// Trait for half precision floating point types
 pub trait HalfPrecision: Copy + Clone + Send + Sync + 'static {
-    type FullPrecision: num_traits::Float;
+    type FullPrecision: scirs2_core::num_traits::Float;
 
     /// Convert to full precision (f32)
     fn to_f32(self) -> f32;

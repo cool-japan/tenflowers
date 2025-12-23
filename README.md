@@ -2,12 +2,12 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha.1-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.1.0--alpha.2-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
 
-> Alpha Release Notice (0.1.0-alpha.1 · 2025-09-27)
-> This is the first public alpha. APIs may change; performance paths are under active tuning. Please pin exact versions. See the new Alpha Readiness & Roadmap section below for scope and next steps.
+> Alpha Release Notice (0.1.0-alpha.2 · 2025-12-23)
+> This is the second alpha release. APIs may change; performance paths are under active tuning. Please pin exact versions. See the new Alpha Readiness & Roadmap section below for scope and next steps.
 
 ## Overview
 
@@ -48,11 +48,11 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 
 ## Project Status
 
-**Current Version: 0.1.0-alpha.1**
+**Current Version: 0.1.0-alpha.2**
 
 This is an early alpha release with core infrastructure in place. Many operations are implemented as stubs (`todo!()`) and are being actively developed. See [TODO.md](TODO.md) for the complete roadmap.
 
-### Alpha 1 Scope (Delivered 2025-09-27)
+### Alpha 2 Scope (Delivered 2025-12-23)
 - Core tensor type abstractions (CPU stable, GPU experimental)
 - Initial eager execution pipeline with gradient tape skeleton
 - Modular crate layout (core / autograd / neural / dataset / ffi)
@@ -109,14 +109,14 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.1.0-alpha.1"
-tenflowers-neural = "0.1.0-alpha.1"
+tenflowers-core = "0.1.0-alpha.2"
+tenflowers-neural = "0.1.0-alpha.2"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.0-alpha.1", features = ["gpu"] }
+tenflowers-core = { version = "0.1.0-alpha.2", features = ["gpu"] }
 ```
 
 ## Quick Start
