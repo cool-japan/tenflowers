@@ -221,10 +221,13 @@ where
         let edges = match self.strategy {
             BinningStrategy::Uniform => {
                 let mut edges = Vec::with_capacity(self.n_bins + 1);
-                let step = (max_val - min_val) / T::from(self.n_bins).unwrap();
+                let step = (max_val - min_val)
+                    / T::from(self.n_bins).expect("bin count should convert to float");
 
                 for i in 0..=self.n_bins {
-                    edges.push(min_val + T::from(i).unwrap() * step);
+                    edges.push(
+                        min_val + T::from(i).expect("bin index should convert to float") * step,
+                    );
                 }
                 edges
             }
@@ -244,16 +247,20 @@ where
             BinningStrategy::KMeans => {
                 // Simplified k-means for bin centers
                 let mut centers = Vec::with_capacity(self.n_bins);
-                let step = (max_val - min_val) / T::from(self.n_bins - 1).unwrap();
+                let step = (max_val - min_val)
+                    / T::from(self.n_bins - 1).expect("bin count should convert to float");
 
                 for i in 0..self.n_bins {
-                    centers.push(min_val + T::from(i).unwrap() * step);
+                    centers.push(
+                        min_val + T::from(i).expect("center index should convert to float") * step,
+                    );
                 }
 
                 // Convert centers to edges (midpoints)
                 let mut edges = vec![min_val];
                 for i in 1..self.n_bins {
-                    let midpoint = (centers[i - 1] + centers[i]) / T::from(2.0).unwrap();
+                    let midpoint = (centers[i - 1] + centers[i])
+                        / T::from(2.0).expect("constant 2.0 should convert to float");
                     edges.push(midpoint);
                 }
                 edges.push(max_val);
@@ -307,7 +314,7 @@ where
 
         let binned_data: Vec<T> = feature_data
             .iter()
-            .map(|&val| T::from(self.find_bin(val)).unwrap())
+            .map(|&val| T::from(self.find_bin(val)).expect("bin index should convert to T"))
             .collect();
 
         let binned_features = Tensor::from_vec(binned_data, features.shape().dims())?;
@@ -423,7 +430,12 @@ where
             )
         })?;
 
-        let categories = self.categories.as_ref().unwrap().get(&0).unwrap();
+        let categories = self
+            .categories
+            .as_ref()
+            .expect("categories should be fitted")
+            .get(&0)
+            .expect("feature index 0 should exist");
         let output_size = self.output_size();
         let mut encoded_data = Vec::with_capacity(output_size * feature_data.len());
 
@@ -494,8 +506,8 @@ where
         }
 
         // Calculate global mean
-        let global_mean =
-            targets.iter().fold(T::zero(), |acc, &x| acc + x) / T::from(targets.len()).unwrap();
+        let global_mean = targets.iter().fold(T::zero(), |acc, &x| acc + x)
+            / T::from(targets.len()).expect("target length should convert to T");
         self.global_mean = Some(global_mean);
 
         // Calculate category means
@@ -509,12 +521,12 @@ where
 
         let mut category_means = HashMap::new();
         for (category, (sum, count)) in category_sums {
-            let category_mean = sum / T::from(count).unwrap();
+            let category_mean = sum / T::from(count).expect("count should convert to T");
 
             // Apply smoothing
             let smoothed_mean = if self.smoothing > 0.0 {
-                let alpha = T::from(self.smoothing).unwrap();
-                let n = T::from(count).unwrap();
+                let alpha = T::from(self.smoothing).expect("smoothing value should convert to T");
+                let n = T::from(count).expect("count should convert to T");
                 (category_mean * n + global_mean * alpha) / (n + alpha)
             } else {
                 category_mean
@@ -556,8 +568,11 @@ where
             )
         })?;
 
-        let category_means = self.category_means.as_ref().unwrap();
-        let global_mean = self.global_mean.unwrap();
+        let category_means = self
+            .category_means
+            .as_ref()
+            .expect("category_means should be fitted");
+        let global_mean = self.global_mean.expect("global_mean should be fitted");
 
         let encoded_data: Vec<T> = feature_data
             .iter()
@@ -604,7 +619,7 @@ where
         }
 
         let n_features = data[0].len();
-        let n_samples = T::from(data.len()).unwrap();
+        let n_samples = T::from(data.len()).expect("data length should convert to T");
         let mut selected = Vec::new();
 
         for feature_idx in 0..n_features {
@@ -668,7 +683,10 @@ where
             )
         })?;
 
-        let selected = self.selected_features.as_ref().unwrap();
+        let selected = self
+            .selected_features
+            .as_ref()
+            .expect("selected_features should be fitted");
         let mut filtered_data = Vec::with_capacity(selected.len());
 
         for &idx in selected {
@@ -729,7 +747,7 @@ where
         // For simplicity, we'll use a fixed lambda of 0.5 for Box-Cox
         // and 1.0 for Yeo-Johnson. In practice, you'd optimize these.
         let lambda = match self.method {
-            PowerMethod::BoxCox => T::from(0.5).unwrap(),
+            PowerMethod::BoxCox => T::from(0.5).expect("power method default should convert to T"),
             PowerMethod::YeoJohnson => T::one(),
         };
 
@@ -754,7 +772,7 @@ where
     /// Apply Yeo-Johnson transformation
     fn yeo_johnson_transform(&self, value: T, lambda: T) -> T {
         let one = T::one();
-        let two = T::from(2.0).unwrap();
+        let two = T::from(2.0).expect("constant 2.0 should convert to T");
 
         if value >= T::zero() {
             if lambda == T::zero() {
@@ -798,7 +816,10 @@ where
             )
         })?;
 
-        let lambda = self.fitted_lambdas.as_ref().unwrap()[0];
+        let lambda = self
+            .fitted_lambdas
+            .as_ref()
+            .expect("fitted_lambdas should be fitted")[0];
         let transformed_data: Vec<T> = feature_data
             .iter()
             .map(|&value| match self.method {

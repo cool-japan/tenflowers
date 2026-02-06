@@ -114,7 +114,8 @@ fn test_onnx_roundtrip_large_tensor() {
 
 #[test]
 fn test_onnx_roundtrip_negative_values() {
-    let original = Tensor::from_array(array![-1.0f32, -2.5, -3.14, -100.0].into_dyn());
+    let original =
+        Tensor::from_array(array![-1.0f32, -2.5, -std::f32::consts::PI, -100.0].into_dyn());
 
     let serialized = tenflowers_core::serialization_onnx::serialize_tensor_onnx(&original, None)
         .expect("Failed to serialize to ONNX");

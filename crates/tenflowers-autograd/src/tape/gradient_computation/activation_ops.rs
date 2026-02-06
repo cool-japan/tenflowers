@@ -165,7 +165,7 @@ where
 
         if let Some(grad_data) = grad_output.as_slice() {
             let grad_sum: T = grad_data.iter().cloned().fold(T::zero(), |acc, x| acc + x);
-            let n = T::from(grad_data.len()).unwrap_or(T::one());
+            let n = T::from(grad_data.len()).unwrap_or_else(|| T::one());
             let avg_grad = grad_sum / n;
 
             // Subtract the average from each gradient component to approximate zero-sum constraint

@@ -12,8 +12,8 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-autograd = "0.1.0-alpha.2"
-tenflowers-core = "0.1.0-alpha.2"
+tenflowers-autograd = "0.1.0-beta.1"
+tenflowers-core = "0.1.0-beta.1"
 scirs2-autograd = "0.1.0-rc.1"
 ```
 

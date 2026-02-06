@@ -56,7 +56,7 @@ where
             u,
             v,
             num_power_iterations: 1,
-            eps: T::from(1e-12).unwrap(),
+            eps: T::from(1e-12).expect("Failed to convert 1e-12 to tensor type"),
         })
     }
 

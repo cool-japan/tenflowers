@@ -518,7 +518,7 @@ mod tests {
     fn test_memory_profiling() {
         let result = profiling::profile_memory_operation("test_op", || {
             let pool = global_memory_pool();
-            let pool = pool.lock().unwrap();
+            let pool = pool.lock().expect("lock should not be poisoned");
             let _buffer = pool.allocate(1024)?;
             Ok(42)
         });

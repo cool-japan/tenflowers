@@ -128,7 +128,11 @@ where
     ) -> Result<Vec<Tensor<T>>> {
         if let Some(ref accumulator) = self.accumulator {
             // Use gradient accumulation
-            accumulator.accumulate(&self.tape.lock().unwrap(), loss, parameters)?;
+            accumulator.accumulate(
+                &self.tape.lock().expect("lock should not be poisoned"),
+                loss,
+                parameters,
+            )?;
 
             let mut gradients = Vec::new();
             for param in parameters {
@@ -141,7 +145,7 @@ where
             Ok(gradients)
         } else {
             // Direct gradient computation
-            let tape_guard = self.tape.lock().unwrap();
+            let tape_guard = self.tape.lock().expect("lock should not be poisoned");
             let targets = vec![loss.clone()];
             let sources: Vec<TrackedTensor<T>> = parameters.iter().map(|&p| p.clone()).collect();
             let computed_grads = tape_guard.gradient(&targets, &sources)?;
@@ -194,20 +198,20 @@ where
                 // Apply momentum
                 let momentum_key = format!("momentum_{}", i);
                 if let Some(momentum_tensor) = self.optimizer_state.get(&momentum_key) {
-                    let momentum_scalar = T::from_f32(*mom).unwrap_or_else(T::zero);
+                    let momentum_scalar = T::from_f32(*mom).unwrap_or_else(|| T::zero());
                     let new_momentum = momentum_tensor
                         .mul_scalar(momentum_scalar)?
                         .add(&grad.mul_scalar(self.learning_rate)?)?;
 
                     let new_param = param.tensor.sub(&new_momentum)?;
-                    let tape_ref = self.tape.lock().unwrap();
+                    let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                     *param = tape_ref.watch(new_param);
 
                     self.optimizer_state.insert(momentum_key, new_momentum);
                 } else {
                     let momentum_tensor = grad.mul_scalar(self.learning_rate)?;
                     let new_param = param.tensor.sub(&momentum_tensor)?;
-                    let tape_ref = self.tape.lock().unwrap();
+                    let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                     *param = tape_ref.watch(new_param);
 
                     self.optimizer_state.insert(momentum_key, momentum_tensor);
@@ -216,7 +220,7 @@ where
                 // Simple SGD
                 let update = grad.mul_scalar(self.learning_rate)?;
                 let new_param = param.tensor.sub(&update)?;
-                let tape_ref = self.tape.lock().unwrap();
+                let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                 *param = tape_ref.watch(new_param);
             }
         }
@@ -232,9 +236,9 @@ where
         beta2: f32,
         epsilon: f32,
     ) -> Result<()> {
-        let beta1_t = T::from_f32(beta1).unwrap_or_else(T::zero);
-        let beta2_t = T::from_f32(beta2).unwrap_or_else(T::zero);
-        let eps_t = T::from_f32(epsilon).unwrap_or_else(T::zero);
+        let beta1_t = T::from_f32(beta1).unwrap_or_else(|| T::zero());
+        let beta2_t = T::from_f32(beta2).unwrap_or_else(|| T::zero());
+        let eps_t = T::from_f32(epsilon).unwrap_or_else(|| T::zero());
 
         for (i, (param, grad)) in parameters.iter_mut().zip(gradients.iter()).enumerate() {
             let m_key = format!("adam_m_{}", i);
@@ -275,7 +279,7 @@ where
             let update = m_hat.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().unwrap();
+            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
             *param = tape_ref.watch(new_param);
 
             // Store updated moments
@@ -293,8 +297,8 @@ where
         alpha: f32,
         epsilon: f32,
     ) -> Result<()> {
-        let alpha_t = T::from_f32(alpha).unwrap_or_else(T::zero);
-        let eps_t = T::from_f32(epsilon).unwrap_or_else(T::zero);
+        let alpha_t = T::from_f32(alpha).unwrap_or_else(|| T::zero());
+        let eps_t = T::from_f32(epsilon).unwrap_or_else(|| T::zero());
 
         for (i, (param, grad)) in parameters.iter_mut().zip(gradients.iter()).enumerate() {
             let v_key = format!("rmsprop_v_{}", i);
@@ -318,7 +322,7 @@ where
             let update = grad.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().unwrap();
+            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
             *param = tape_ref.watch(new_param);
 
             // Store updated accumulator
@@ -334,7 +338,7 @@ where
         gradients: &[Tensor<T>],
         epsilon: f32,
     ) -> Result<()> {
-        let eps_t = T::from_f32(epsilon).unwrap_or_else(T::zero);
+        let eps_t = T::from_f32(epsilon).unwrap_or_else(|| T::zero());
 
         for (i, (param, grad)) in parameters.iter_mut().zip(gradients.iter()).enumerate() {
             let g_key = format!("adagrad_g_{}", i);
@@ -356,7 +360,7 @@ where
             let update = grad.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().unwrap();
+            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
             *param = tape_ref.watch(new_param);
 
             // Store updated accumulator

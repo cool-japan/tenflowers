@@ -117,7 +117,8 @@ where
 
         // Scale loss if configured
         let scaled_loss = if self.config.scale_loss {
-            let scale = T::from_usize(self.config.accumulation_steps).unwrap();
+            let scale = T::from_usize(self.config.accumulation_steps)
+                .unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
             loss.div(&Tensor::from_scalar(scale))?
         } else {
             loss.clone()
@@ -267,7 +268,9 @@ where
         // Clip gradients if necessary
         if total_norm > max_norm {
             let clip_coef = max_norm / total_norm;
-            let clip_tensor = Tensor::from_scalar(T::from_f32(clip_coef).unwrap());
+            let clip_tensor = Tensor::from_scalar(
+                T::from_f32(clip_coef).unwrap_or_else(|| T::from(1).unwrap_or(T::one())),
+            );
 
             for param in model.parameters_mut() {
                 if let Some(grad) = param.grad() {
@@ -283,7 +286,7 @@ where
     /// Calculate tensor norm (proper implementation using tensor operations)
     fn calculate_tensor_norm(&self, tensor: &Tensor<T>) -> Result<f32> {
         // Calculate L2 norm using tensor operations
-        let two = Tensor::from_scalar(T::from(2.0).unwrap_or(T::from(2.0).unwrap()));
+        let two = Tensor::from_scalar(T::from(2.0).unwrap_or_else(|| T::one() + T::one()));
         let squared = tenflowers_core::ops::pow(tensor, &two)?;
         let sum = tenflowers_core::ops::sum(&squared, None, false)?;
         let norm_tensor = tenflowers_core::ops::sqrt(&sum)?;

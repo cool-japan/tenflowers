@@ -214,17 +214,19 @@ where
         // Initialize CLS token with random values
         let mut rng = thread_rng();
         let cls_data = Array3::from_shape_fn((1, 1, embed_dim), |_| {
-            let range = T::from(0.04).unwrap(); // Total range from -0.02 to +0.02
+            let range = T::from(0.04).expect("constant 0.04 should convert to target type"); // Total range from -0.02 to +0.02
             let random_val: f64 = rng.gen_range(0.0..1.0);
-            T::from(random_val).unwrap() * range - T::from(0.02).unwrap()
+            T::from(random_val).expect("random value should convert to target type") * range
+                - T::from(0.02).expect("constant 0.02 should convert to target type")
         });
         let cls_token = Tensor::from_array(cls_data.into_dyn());
 
         // Initialize positional embeddings (num_patches + 1 for CLS token)
         let pos_data = Array3::from_shape_fn((1, num_patches + 1, embed_dim), |_| {
-            let range = T::from(0.04).unwrap(); // Total range from -0.02 to +0.02
+            let range = T::from(0.04).expect("constant 0.04 should convert to target type"); // Total range from -0.02 to +0.02
             let random_val: f64 = rng.gen_range(0.0..1.0);
-            T::from(random_val).unwrap() * range - T::from(0.02).unwrap()
+            T::from(random_val).expect("random value should convert to target type") * range
+                - T::from(0.02).expect("constant 0.02 should convert to target type")
         });
         let pos_embedding = Tensor::from_array(pos_data.into_dyn());
 

@@ -43,10 +43,10 @@ where
     ///
     /// # Arguments
     /// * `matrix` - Input matrix as 2D tensor [M, N]
-    /// * `vector` - Input vector as 1D tensor [N]
+    /// * `vector` - Input vector as 1D tensor `[N]`
     ///
     /// # Returns
-    /// Result vector as 1D tensor [M]
+    /// Result vector as 1D tensor `[M]`
     pub fn mat_vec_mul(&self, matrix: &Tensor<T>, vector: &Tensor<T>) -> Result<Tensor<T>>
     where
         T: bytemuck::Pod + bytemuck::Zeroable,

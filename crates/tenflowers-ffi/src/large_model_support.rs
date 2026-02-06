@@ -299,7 +299,10 @@ impl PyLargeModelManager {
         model_id: &str,
         config: &Bound<'_, PyDict>,
     ) -> PyResult<()> {
-        let mut manager = self.inner.write().unwrap();
+        let mut manager = self
+            .inner
+            .write()
+            .expect("write lock should not be poisoned");
 
         // Extract configuration
         let parameter_count: usize = config
@@ -430,7 +433,7 @@ impl PyLargeModelManager {
     /// Get comprehensive model statistics
     #[pyo3(signature = (model_id=None))]
     pub fn get_model_statistics(&self, py: Python, model_id: Option<&str>) -> PyResult<PyObject> {
-        let manager = self.inner.read().unwrap();
+        let manager = self.inner.read().expect("read lock should not be poisoned");
         let py_dict = PyDict::new(py);
 
         if let Some(id) = model_id {
@@ -516,7 +519,10 @@ impl PyLargeModelManager {
         py: Python,
         model_id: &str,
     ) -> PyResult<PyObject> {
-        let mut manager = self.inner.write().unwrap();
+        let mut manager = self
+            .inner
+            .write()
+            .expect("write lock should not be poisoned");
         let optimization_results = PyDict::new(py);
 
         // Extract optimization config values first to avoid borrowing conflicts
@@ -591,7 +597,7 @@ impl PyLargeModelManager {
 
     /// Get memory optimization recommendations
     pub fn get_memory_recommendations(&self, py: Python, model_id: &str) -> PyResult<PyObject> {
-        let manager = self.inner.read().unwrap();
+        let manager = self.inner.read().expect("read lock should not be poisoned");
         let mut recommendations = Vec::new();
 
         if let Some(model_info) = manager.models.get(model_id) {
@@ -672,7 +678,7 @@ impl PyLargeModelManager {
         let max_params_per_shard = self
             .inner
             .read()
-            .unwrap()
+            .expect("RwLock should not be poisoned")
             .optimization_config
             .max_parameters_per_shard;
         let num_shards = (parameter_count + max_params_per_shard - 1) / max_params_per_shard;
@@ -710,7 +716,7 @@ impl PyLargeModelManager {
         let checkpoint_frequency = self
             .inner
             .read()
-            .unwrap()
+            .expect("RwLock should not be poisoned")
             .optimization_config
             .checkpoint_frequency;
         let mut checkpoint_layers = Vec::new();

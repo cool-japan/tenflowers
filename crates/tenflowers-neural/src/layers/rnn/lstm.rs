@@ -131,7 +131,8 @@ where
             };
 
             // Xavier/Glorot initialization for weights
-            let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+            let scale = T::from(1.0 / (input_dim as f64).sqrt())
+                .expect("Failed to convert scale factor to tensor type");
 
             // Input-to-hidden weights: [input_dim, 4*hidden_size] (i, f, g, o gates)
             let w_ih = Self::init_weight(&[input_dim, 4 * hidden_size], scale)?;
@@ -159,8 +160,14 @@ where
                 let b_ih = Tensor::from_vec(b_ih_data, &[4 * hidden_size])?;
                 let b_hh = Tensor::from_vec(b_hh_data, &[4 * hidden_size])?;
 
-                bias_ih.as_mut().unwrap().push(b_ih);
-                bias_hh.as_mut().unwrap().push(b_hh);
+                bias_ih
+                    .as_mut()
+                    .expect("bias_ih should be Some when bias is true")
+                    .push(b_ih);
+                bias_hh
+                    .as_mut()
+                    .expect("bias_hh should be Some when bias is true")
+                    .push(b_hh);
             }
         }
 
@@ -174,7 +181,8 @@ where
 
                 for i in 0..num_layers {
                     let input_dim = if i == 0 { input_size } else { hidden_size * 2 };
-                    let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+                    let scale = T::from(1.0 / (input_dim as f64).sqrt())
+                        .expect("Failed to convert scale factor to tensor type");
 
                     w_ih_rev.push(Self::init_weight(&[input_dim, 4 * hidden_size], scale)?);
                     w_hh_rev.push(Self::init_weight(&[hidden_size, 4 * hidden_size], scale)?);
@@ -195,11 +203,11 @@ where
 
                         b_ih_rev
                             .as_mut()
-                            .unwrap()
+                            .expect("b_ih_rev should be Some for bidirectional LSTM")
                             .push(Tensor::from_vec(b_ih_data, &[4 * hidden_size])?);
                         b_hh_rev
                             .as_mut()
-                            .unwrap()
+                            .expect("b_hh_rev should be Some for bidirectional LSTM")
                             .push(Tensor::from_vec(b_hh_data, &[4 * hidden_size])?);
                     }
                 }
@@ -232,12 +240,16 @@ where
     /// Initialize weight tensor with Xavier/Glorot initialization
     fn init_weight(shape: &[usize], scale: T) -> Result<Tensor<T>> {
         let total_size: usize = shape.iter().product();
-        let bound = scale * T::from(3.0).unwrap().sqrt(); // sqrt(3) for uniform distribution
+        let bound = scale
+            * T::from(3.0)
+                .expect("Failed to convert 3.0 to tensor type")
+                .sqrt(); // sqrt(3) for uniform distribution
         let data: Vec<T> = (0..total_size)
             .map(|i| {
                 // Simple pseudo-random initialization based on index
                 let pseudo_random = (i as f64 * 1.23456789) % 2.0 - 1.0; // Range [-1,1]
-                T::from(pseudo_random).unwrap() * bound
+                T::from(pseudo_random).expect("Failed to convert random value to tensor type")
+                    * bound
             })
             .collect();
         Tensor::from_vec(data, shape)
@@ -313,12 +325,16 @@ where
         };
 
         let weights_ih = if reverse {
-            self.weight_ih_reverse.as_ref().unwrap()
+            self.weight_ih_reverse
+                .as_ref()
+                .expect("Reverse weight_ih not initialized for bidirectional LSTM")
         } else {
             &self.weight_ih
         };
         let weights_hh = if reverse {
-            self.weight_hh_reverse.as_ref().unwrap()
+            self.weight_hh_reverse
+                .as_ref()
+                .expect("Reverse weight_hh not initialized for bidirectional LSTM")
         } else {
             &self.weight_hh
         };
@@ -562,7 +578,8 @@ where
 
         // Simple dropout implementation - scale by 1/(1-p) during training
         let keep_prob = 1.0 - dropout_prob;
-        let scale = T::from(1.0 / keep_prob as f64).unwrap();
+        let scale = T::from(1.0 / keep_prob as f64)
+            .expect("Failed to convert dropout scale to tensor type");
 
         // For now, just apply scaling (full dropout implementation would need random mask)
         input.mul_scalar(scale)

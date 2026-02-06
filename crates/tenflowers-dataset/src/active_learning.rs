@@ -96,7 +96,10 @@ impl ActiveLearningSampler {
             combined_scores.into_iter().enumerate().collect();
 
         // Sort by score in descending order (higher score = more informative)
-        indexed_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        indexed_scores.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         // Return top batch_size indices
         Ok(indexed_scores
@@ -152,7 +155,10 @@ impl ActiveLearningSampler {
         }
 
         let mut sorted_preds = predictions.to_vec();
-        sorted_preds.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted_preds.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         // Return negative margin (smaller margin = higher uncertainty)
         Ok(-(sorted_preds[0] - sorted_preds[1]))
@@ -160,7 +166,10 @@ impl ActiveLearningSampler {
 
     /// Calculate least confident score
     fn calculate_least_confident(&self, predictions: &[f32]) -> Result<f32> {
-        let max_pred = predictions.iter().max_by(|a, b| a.partial_cmp(b).unwrap());
+        let max_pred = predictions.iter().max_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
         match max_pred {
             Some(max_val) => Ok(1.0 - max_val), // Higher uncertainty = lower confidence
             None => Ok(0.0),
@@ -195,7 +204,10 @@ impl ActiveLearningSampler {
             let min_distance = centroids
                 .iter()
                 .map(|centroid| self.euclidean_distance(feature, centroid))
-                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .min_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("partial_cmp should not return None for valid values")
+                })
                 .unwrap_or(0.0);
 
             scores.push(min_distance);
@@ -267,7 +279,9 @@ impl ActiveLearningSampler {
                     .min_by(|(_, a), (_, b)| {
                         let dist_a = self.euclidean_distance(feature, a);
                         let dist_b = self.euclidean_distance(feature, b);
-                        dist_a.partial_cmp(&dist_b).unwrap()
+                        dist_a
+                            .partial_cmp(&dist_b)
+                            .expect("partial_cmp should not return None for valid values")
                     })
                     .map(|(idx, _)| idx)
                     .unwrap_or(0);
@@ -324,11 +338,17 @@ impl ActiveLearningSampler {
                 // Normalize scores to [0, 1] range
                 let max_uncertainty = uncertainty_scores
                     .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .max_by(|a, b| {
+                        a.partial_cmp(b)
+                            .expect("partial_cmp should not return None for valid values")
+                    })
                     .unwrap_or(&1.0);
                 let max_diversity = diversity_scores
                     .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .max_by(|a, b| {
+                        a.partial_cmp(b)
+                            .expect("partial_cmp should not return None for valid values")
+                    })
                     .unwrap_or(&1.0);
 
                 for (u_score, d_score) in uncertainty_scores.iter().zip(diversity_scores.iter()) {

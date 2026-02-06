@@ -2,7 +2,7 @@
 //!
 //! Implements the multiplicative attention mechanism from:
 //! "Effective Approaches to Attention-based Neural Machine Translation"
-//! https://arxiv.org/abs/1508.04025
+//! <https://arxiv.org/abs/1508.04025>
 //!
 //! This mechanism computes attention scores using three variants:
 //! - Dot: score = h_t^T * h_s
@@ -126,7 +126,8 @@ where
             ));
         }
 
-        let scale = T::from(1.0 / (hidden_size as f64).sqrt()).unwrap();
+        let scale = T::from(1.0 / (hidden_size as f64).sqrt())
+            .expect("Failed to convert scale to tensor type");
 
         let (w_general, w_concat, v_concat, bias) = match attention_type {
             LuongAttentionType::Dot => {
@@ -176,7 +177,7 @@ where
         let values: Vec<T> = (0..total_elements)
             .map(|_| {
                 let random_val = rng.gen_range(-1.0..1.0);
-                T::from(random_val).unwrap() * scale
+                T::from(random_val).expect("Failed to convert random value to tensor type") * scale
             })
             .collect();
 

@@ -1,6 +1,6 @@
 # Dispatch Registry Integration Guide
 
-**Version:** 0.1.0-alpha.2
+**Version:** 0.1.0-beta.1
 **Audience:** TenfloweRS Core Contributors
 **Status:** Active Reference Document
 

@@ -756,8 +756,8 @@ mod tests {
         assert_eq!(int_attr.as_int(), Some(42));
         assert_eq!(int_attr.as_float(), None);
 
-        let float_attr = OnnxAttribute::Float(3.14);
-        assert_eq!(float_attr.as_float(), Some(3.14));
+        let float_attr = OnnxAttribute::Float(3.15);
+        assert_eq!(float_attr.as_float(), Some(3.15));
         assert_eq!(float_attr.as_int(), None);
 
         let ints_attr = OnnxAttribute::Ints(vec![1, 2, 3]);

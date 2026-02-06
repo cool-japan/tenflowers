@@ -707,7 +707,7 @@ mod tests {
         assert_eq!(dataset.len(), 3);
         assert!(dataset.vocabulary().len() > 0);
 
-        let (features, label) = dataset.get(0).unwrap();
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(
             features.shape().dims()[0],
             dataset.config().max_sequence_length

@@ -10,14 +10,14 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use tenflowers_core::{Result, Tensor, TensorError};
 
-/// Implement Transform for Box<dyn Transform<T> + Send + Sync> to enable trait object usage
+/// Implement `Transform` for `Box<dyn Transform<T> + Send + Sync>` to enable trait object usage
 impl<T> Transform<T> for Box<dyn Transform<T> + Send + Sync> {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         self.as_ref().apply(sample)
     }
 }
 
-/// Implement Transform for Box<dyn Transform<T>> to enable trait object usage
+/// Implement `Transform` for `Box<dyn Transform<T>>` to enable trait object usage
 impl<T> Transform<T> for Box<dyn Transform<T>> {
     fn apply(&self, sample: (Tensor<T>, Tensor<T>)) -> Result<(Tensor<T>, Tensor<T>)> {
         self.as_ref().apply(sample)
@@ -488,7 +488,10 @@ impl<T> RandomChoice<T> {
         }
 
         // Fallback to last transform
-        Ok(self.transforms.last().unwrap())
+        Ok(self
+            .transforms
+            .last()
+            .expect("collection should not be empty"))
     }
 
     /// Get the number of transforms

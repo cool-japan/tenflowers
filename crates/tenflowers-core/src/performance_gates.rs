@@ -166,8 +166,8 @@ impl PerformanceGate {
         // Calculate statistics
         times.sort_unstable();
         let median_ns = times[times.len() / 2];
-        let min_ns = *times.first().unwrap();
-        let max_ns = *times.last().unwrap();
+        let min_ns = *times.first().expect("collection should not be empty");
+        let max_ns = *times.last().expect("collection should not be empty");
         let mean_ns = times.iter().sum::<u64>() / times.len() as u64;
 
         let passed = self.baseline.check_regression(median_ns);

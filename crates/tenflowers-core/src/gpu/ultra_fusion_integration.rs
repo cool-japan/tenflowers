@@ -167,7 +167,10 @@ impl UltraGpuFusionCoordinator {
         let start_time = std::time::Instant::now();
 
         let result_buffer = {
-            let mut scheduler = self.fusion_scheduler.lock().unwrap();
+            let mut scheduler = self
+                .fusion_scheduler
+                .lock()
+                .expect("lock should not be poisoned");
             scheduler
                 .execute_ultra_sophisticated_fusion(
                     fusion_pattern,
@@ -301,7 +304,10 @@ impl UltraGpuFusionCoordinator {
 
         // Record metrics with sophisticated analytics
         {
-            let mut monitor = self.performance_monitor.lock().unwrap();
+            let mut monitor = self
+                .performance_monitor
+                .lock()
+                .expect("lock should not be poisoned");
             monitor
                 .current_metrics
                 .insert(fusion_pattern.to_string(), metrics.clone());
@@ -309,7 +315,7 @@ impl UltraGpuFusionCoordinator {
             // Add to historical data with timestamp
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs();
 
             monitor.performance_history.push((timestamp, {
@@ -327,7 +333,10 @@ impl UltraGpuFusionCoordinator {
 
     /// Queue operation for sophisticated batch processing
     pub async fn queue_operation(&self, operation: QueuedOperation) -> Result<()> {
-        let mut queue = self.operation_queue.lock().unwrap();
+        let mut queue = self
+            .operation_queue
+            .lock()
+            .expect("lock should not be poisoned");
 
         if queue.len() >= self.config.max_queue_size {
             return Err(TensorError::invalid_argument(
@@ -346,7 +355,10 @@ impl UltraGpuFusionCoordinator {
     /// Process sophisticated operation queue with advanced batching
     pub async fn process_operation_queue(&self) -> Result<Vec<String>> {
         let operations = {
-            let mut queue = self.operation_queue.lock().unwrap();
+            let mut queue = self
+                .operation_queue
+                .lock()
+                .expect("lock should not be poisoned");
             let batch_size = std::cmp::min(queue.len(), self.config.max_concurrent_operations);
             queue.drain(0..batch_size).collect::<Vec<_>>()
         };
@@ -365,7 +377,10 @@ impl UltraGpuFusionCoordinator {
 
     /// Get ultra-sophisticated performance analytics
     pub fn get_performance_analytics(&self) -> HashMap<String, PerformanceMetrics> {
-        let monitor = self.performance_monitor.lock().unwrap();
+        let monitor = self
+            .performance_monitor
+            .lock()
+            .expect("lock should not be poisoned");
         monitor.current_metrics.clone()
     }
 
@@ -375,7 +390,10 @@ impl UltraGpuFusionCoordinator {
             return Ok(());
         }
 
-        let mut scheduler = self.fusion_scheduler.lock().unwrap();
+        let mut scheduler = self
+            .fusion_scheduler
+            .lock()
+            .expect("lock should not be poisoned");
         scheduler.analyze_and_optimize_fusion_patterns()?;
 
         Ok(())
@@ -462,7 +480,7 @@ impl FusionPerformanceMonitor {
         if let Some(target) = self.performance_targets.get(pattern_id) {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs();
 
             // Detect execution time anomalies

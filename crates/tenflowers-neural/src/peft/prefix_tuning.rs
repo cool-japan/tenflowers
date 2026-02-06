@@ -179,7 +179,7 @@ where
                 let key_data: Vec<T> = (0..key_size)
                     .map(|_| {
                         T::from(0.01 * (std::ptr::addr_of!(key_size) as usize % 100) as f64 / 100.0)
-                            .unwrap()
+                            .unwrap_or_else(|| T::zero())
                     })
                     .collect();
                 let prefix_key = Tensor::from_vec(
@@ -193,7 +193,7 @@ where
                         T::from(
                             0.01 * (std::ptr::addr_of!(value_size) as usize % 100) as f64 / 100.0,
                         )
-                        .unwrap()
+                        .unwrap_or_else(|| T::zero())
                     })
                     .collect();
                 let prefix_value = Tensor::from_vec(
@@ -209,7 +209,10 @@ where
                 // Initialize with small random values
                 let key_size = config.prefix_length * config.num_attention_heads * head_dim;
                 let key_data: Vec<T> = (0..key_size)
-                    .map(|i| T::from(0.02 * ((i + layer_idx) % 100) as f64 / 100.0).unwrap())
+                    .map(|i| {
+                        T::from(0.02 * ((i + layer_idx) % 100) as f64 / 100.0)
+                            .unwrap_or_else(|| T::zero())
+                    })
                     .collect();
                 let prefix_key = Tensor::from_vec(
                     key_data,
@@ -218,7 +221,10 @@ where
 
                 let value_size = config.prefix_length * config.num_attention_heads * head_dim;
                 let value_data: Vec<T> = (0..value_size)
-                    .map(|i| T::from(0.02 * ((i + layer_idx + 13) % 100) as f64 / 100.0).unwrap())
+                    .map(|i| {
+                        T::from(0.02 * ((i + layer_idx + 13) % 100) as f64 / 100.0)
+                            .unwrap_or_else(|| T::zero())
+                    })
                     .collect();
                 let prefix_value = Tensor::from_vec(
                     value_data,
@@ -304,7 +310,8 @@ where
             use scirs2_core::random::Rng;
             let mut rng = scirs2_core::random::thread_rng();
             let keep_prob = 1.0 - self.config.prefix_dropout;
-            let inverted_dropout_scale = T::from(1.0 / keep_prob).unwrap();
+            let inverted_dropout_scale =
+                T::from(1.0 / keep_prob).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
 
             let mask_data: Vec<T> = (0..total_elements)
                 .map(|_| {
@@ -385,21 +392,23 @@ where
         // Xavier initialization
         let fan_in1 = input_dim;
         let fan_out1 = hidden_dim;
-        let std1 = T::from((2.0 / (fan_in1 + fan_out1) as f64).sqrt()).unwrap();
+        let std1 = T::from((2.0 / (fan_in1 + fan_out1) as f64).sqrt())
+            .unwrap_or_else(|| T::from(0.1).unwrap_or(T::one()));
 
         let fan_in2 = hidden_dim;
         let fan_out2 = output_dim;
-        let std2 = T::from((2.0 / (fan_in2 + fan_out2) as f64).sqrt()).unwrap();
+        let std2 = T::from((2.0 / (fan_in2 + fan_out2) as f64).sqrt())
+            .unwrap_or_else(|| T::from(0.1).unwrap_or(T::one()));
 
         // Initialize with Xavier initialization approximation
         let linear1_data: Vec<T> = (0..(input_dim * hidden_dim))
-            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap() * std1)
+            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap_or_else(|| T::zero()) * std1)
             .collect();
         let linear1 = Tensor::from_vec(linear1_data, &[input_dim, hidden_dim])?;
         let bias1 = Some(Tensor::zeros(&[hidden_dim]));
 
         let linear2_data: Vec<T> = (0..(hidden_dim * output_dim))
-            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap() * std2)
+            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap_or_else(|| T::zero()) * std2)
             .collect();
         let linear2 = Tensor::from_vec(linear2_data, &[hidden_dim, output_dim])?;
         let bias2 = Some(Tensor::zeros(&[output_dim]));

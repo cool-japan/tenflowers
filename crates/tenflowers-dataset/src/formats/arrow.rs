@@ -332,7 +332,7 @@ impl<T> ArrowDataset<T> {
 #[cfg(feature = "parquet")]
 impl<T> ArrowDataset<T> {
     /// Get a batch of samples with zero-copy where possible
-    /// Returns features and labels as separate tensors with shape [batch_size, num_features] and [batch_size]
+    /// Returns features and labels as separate tensors with shape `[batch_size, num_features]` and `[batch_size]`
     pub fn get_batch_range(
         &self,
         start: usize,
@@ -414,28 +414,40 @@ impl<T: scirs2_core::numeric::NumCast + Clone + Default> Dataset<T> for ArrowDat
             // In a real implementation, this would handle the specific array type
             match column.data_type() {
                 ArrowDataType::Float32 => {
-                    let arr = column.as_any().downcast_ref::<Float32Array>().unwrap();
+                    let arr = column
+                        .as_any()
+                        .downcast_ref::<Float32Array>()
+                        .expect("data type already checked as Float32");
                     if !arr.is_null(local_idx) {
                         let val = T::from(arr.value(local_idx)).unwrap_or_default();
                         feature_values.push(val);
                     }
                 }
                 ArrowDataType::Float64 => {
-                    let arr = column.as_any().downcast_ref::<Float64Array>().unwrap();
+                    let arr = column
+                        .as_any()
+                        .downcast_ref::<Float64Array>()
+                        .expect("data type already checked as Float64");
                     if !arr.is_null(local_idx) {
                         let val = T::from(arr.value(local_idx)).unwrap_or_default();
                         feature_values.push(val);
                     }
                 }
                 ArrowDataType::Int32 => {
-                    let arr = column.as_any().downcast_ref::<Int32Array>().unwrap();
+                    let arr = column
+                        .as_any()
+                        .downcast_ref::<Int32Array>()
+                        .expect("data type already checked as Int32");
                     if !arr.is_null(local_idx) {
                         let val = T::from(arr.value(local_idx)).unwrap_or_default();
                         feature_values.push(val);
                     }
                 }
                 ArrowDataType::Int64 => {
-                    let arr = column.as_any().downcast_ref::<Int64Array>().unwrap();
+                    let arr = column
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .expect("data type already checked as Int64");
                     if !arr.is_null(local_idx) {
                         let val = T::from(arr.value(local_idx)).unwrap_or_default();
                         feature_values.push(val);
@@ -466,22 +478,28 @@ impl<T: scirs2_core::numeric::NumCast + Clone + Default> Dataset<T> for ArrowDat
                 let arr = label_column
                     .as_any()
                     .downcast_ref::<Float32Array>()
-                    .unwrap();
+                    .expect("label data type already checked as Float32");
                 T::from(arr.value(local_idx)).unwrap_or_default()
             }
             ArrowDataType::Float64 => {
                 let arr = label_column
                     .as_any()
                     .downcast_ref::<Float64Array>()
-                    .unwrap();
+                    .expect("label data type already checked as Float64");
                 T::from(arr.value(local_idx)).unwrap_or_default()
             }
             ArrowDataType::Int32 => {
-                let arr = label_column.as_any().downcast_ref::<Int32Array>().unwrap();
+                let arr = label_column
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .expect("label data type already checked as Int32");
                 T::from(arr.value(local_idx)).unwrap_or_default()
             }
             ArrowDataType::Int64 => {
-                let arr = label_column.as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = label_column
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("label data type already checked as Int64");
                 T::from(arr.value(local_idx)).unwrap_or_default()
             }
             _ => {

@@ -18,7 +18,10 @@ fn test_sum_gradient() {
     // For sum, all gradients should be 1.0
     assert_eq!(grads.len(), 1);
     let grad_tensor = grads[0].as_ref().unwrap();
-    assert_eq!(grad_tensor.as_slice().unwrap(), &[1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        grad_tensor.as_slice().expect("tensor should be contiguous"),
+        &[1.0, 1.0, 1.0, 1.0]
+    );
 }
 
 #[test]
@@ -38,7 +41,10 @@ fn test_mean_gradient() {
     // For mean, all gradients should be 1/4 = 0.25
     assert_eq!(grads.len(), 1);
     let grad_tensor = grads[0].as_ref().unwrap();
-    assert_eq!(grad_tensor.as_slice().unwrap(), &[0.25, 0.25, 0.25, 0.25]);
+    assert_eq!(
+        grad_tensor.as_slice().expect("tensor should be contiguous"),
+        &[0.25, 0.25, 0.25, 0.25]
+    );
 }
 
 #[test]
@@ -60,5 +66,8 @@ fn test_sum_mean_chain() {
     // Gradient should be 2.0 for each element (since sum distributes 1 to each, then multiply by 2)
     assert_eq!(grads.len(), 1);
     let grad_tensor = grads[0].as_ref().unwrap();
-    assert_eq!(grad_tensor.as_slice().unwrap(), &[2.0, 2.0, 2.0, 2.0]);
+    assert_eq!(
+        grad_tensor.as_slice().expect("tensor should be contiguous"),
+        &[2.0, 2.0, 2.0, 2.0]
+    );
 }

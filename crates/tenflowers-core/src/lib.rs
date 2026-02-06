@@ -177,7 +177,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tenflowers-core = { version = "0.1.0-alpha.2", features = ["gpu"] }
+//! tenflowers-core = { version = "0.1.0-beta.1", features = ["gpu"] }
 //! ```
 //!
 //! ## Safety and Correctness
@@ -505,3 +505,4 @@ mod tests {
         assert_eq!(tensor.shape(), &Shape::from_slice(&[2, 3]));
     }
 }
+pub mod shape_inference_helpers;

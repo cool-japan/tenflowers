@@ -761,7 +761,7 @@ where
     /// use tenflowers_core::Tensor;
     ///
     /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-    /// let flattened = tensor.flatten().unwrap();
+    /// let flattened = tensor.flatten().expect("flatten should not fail");
     /// assert_eq!(flattened.shape().dims(), &[4]);
     /// ```
     pub fn flatten(&self) -> Result<Self>

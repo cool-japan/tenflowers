@@ -411,7 +411,7 @@ pub fn add_gradient_noise(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("System time should be after UNIX_EPOCH")
             .as_nanos() as u64
     });
     let mut rng = Random::seed(seed_value);
@@ -646,7 +646,7 @@ mod tests {
         assert!((original_norm - 5.0).abs() < 1e-5);
         assert_eq!(clipped.len(), 1);
 
-        let clipped_data = clipped[0].as_slice().unwrap();
+        let clipped_data = clipped[0].as_slice().expect("tensor should be contiguous");
         // Should be scaled by 1.0/5.0 = 0.2
         assert!((clipped_data[0] - 0.6).abs() < 1e-5);
         assert!((clipped_data[1] - 0.8).abs() < 1e-5);
@@ -658,7 +658,7 @@ mod tests {
         let grads = vec![Tensor::from_data(vec![-5.0f32, 10.0, 0.5], &[3])?];
 
         let clipped = clip_by_value(&grads, 1.0)?;
-        let clipped_data = clipped[0].as_slice().unwrap();
+        let clipped_data = clipped[0].as_slice().expect("tensor should be contiguous");
 
         assert_eq!(clipped_data[0], -1.0);
         assert_eq!(clipped_data[1], 1.0);
@@ -688,7 +688,7 @@ mod tests {
         let grads = vec![Tensor::from_data(vec![2.0f32, 4.0], &[2])?];
 
         let scaled = scale_gradients(&grads, 0.5)?;
-        let scaled_data = scaled[0].as_slice().unwrap();
+        let scaled_data = scaled[0].as_slice().expect("tensor should be contiguous");
 
         assert_eq!(scaled_data[0], 1.0);
         assert_eq!(scaled_data[1], 2.0);
@@ -713,8 +713,18 @@ mod tests {
         accumulator.accumulate(&names, &grads2)?;
 
         let averaged = accumulator.average()?;
-        assert_eq!(averaged["w1"].as_slice().unwrap()[0], 2.0); // (1+3)/2
-        assert_eq!(averaged["w2"].as_slice().unwrap()[0], 3.0); // (2+4)/2
+        assert_eq!(
+            averaged["w1"]
+                .as_slice()
+                .expect("tensor should be contiguous")[0],
+            2.0
+        ); // (1+3)/2
+        assert_eq!(
+            averaged["w2"]
+                .as_slice()
+                .expect("tensor should be contiguous")[0],
+            3.0
+        ); // (2+4)/2
         Ok(())
     }
 
@@ -727,8 +737,8 @@ mod tests {
         let noisy2 = add_gradient_noise(&grads, 0.1, Some(42))?;
 
         // Same seed should produce same noise
-        let data1 = noisy1[0].as_slice().unwrap();
-        let data2 = noisy2[0].as_slice().unwrap();
+        let data1 = noisy1[0].as_slice().expect("tensor should be contiguous");
+        let data2 = noisy2[0].as_slice().expect("tensor should be contiguous");
 
         for (a, b) in data1.iter().zip(data2.iter()) {
             assert!((a - b).abs() < 1e-6);
@@ -750,7 +760,10 @@ mod tests {
         let result = pipeline.apply(&grads)?;
 
         // Empty pipeline should return unchanged gradients
-        assert_eq!(result[0].as_slice().unwrap()[0], 5.0);
+        assert_eq!(
+            result[0].as_slice().expect("tensor should be contiguous")[0],
+            5.0
+        );
         Ok(())
     }
 
@@ -761,7 +774,7 @@ mod tests {
         // Test clip by norm
         let pipeline = GradientPipeline::new().clip_by_norm(1.0);
         let result = pipeline.apply(&grads)?;
-        let result_data = result[0].as_slice().unwrap();
+        let result_data = result[0].as_slice().expect("tensor should be contiguous");
 
         // Original norm = sqrt(10^2 + 20^2) = sqrt(500) ≈ 22.36
         // Clipped norm should be 1.0
@@ -781,7 +794,7 @@ mod tests {
             .clip_by_value(2.0); // Clip to [-2, 2]
 
         let result = pipeline.apply(&grads)?;
-        let result_data = result[0].as_slice().unwrap();
+        let result_data = result[0].as_slice().expect("tensor should be contiguous");
 
         // All values should be within [-2, 2]
         for &val in result_data {
@@ -800,7 +813,7 @@ mod tests {
             .clip_by_value(0.15);
 
         let result = pipeline.apply(&grads)?;
-        let result_data = result[0].as_slice().unwrap();
+        let result_data = result[0].as_slice().expect("tensor should be contiguous");
 
         // All values should be clipped to [-0.15, 0.15]
         for &val in result_data {

@@ -192,7 +192,7 @@ impl DatasetGenerator {
 
             for _ in 0..cluster_samples {
                 for &center_val in center.iter().take(n_features) {
-                    let noise = rng.random_range(-cluster_std, cluster_std);
+                    let noise = rng.random_range(-cluster_std..cluster_std);
                     let value = center_val + noise;
                     features.push(value);
                 }
@@ -262,7 +262,7 @@ impl DatasetGenerator {
         // Generate samples
         for sample_idx in 0..config.n_samples {
             // Choose random class
-            let class_id = rng.random_range(0, n_classes);
+            let class_id = rng.random_range(0..n_classes);
 
             // Generate informative features
             for feat_idx in 0..n_informative {
@@ -296,7 +296,7 @@ impl DatasetGenerator {
 
             // Assign label with possible flip
             let final_label = if rng.gen_range(0.0..1.0) < flip_y {
-                rng.random_range(0, n_classes)
+                rng.random_range(0..n_classes)
             } else {
                 class_id
             };

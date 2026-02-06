@@ -38,7 +38,7 @@ impl GradientTape {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
 
         // Initialize gradients map
         let mut gradients: HashMap<TensorId, Tensor<T>> = HashMap::new();

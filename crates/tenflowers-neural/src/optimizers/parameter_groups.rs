@@ -257,13 +257,13 @@ impl<T, O: Optimizer<T>> ParameterGroupOptimizer<T, O> {
         let pretrained_config = ParameterGroupConfig::new(pretrained_lr);
         optimizer
             .add_group("pretrained".to_string(), pretrained_config)
-            .unwrap();
+            .expect("adding pretrained group should succeed");
 
         // Add new layers group with higher learning rate
         let new_layers_config = ParameterGroupConfig::new(new_layer_lr);
         optimizer
             .add_group("new_layers".to_string(), new_layers_config)
-            .unwrap();
+            .expect("adding new_layers group should succeed");
 
         optimizer
     }

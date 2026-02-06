@@ -136,7 +136,7 @@ impl DatasetStatisticsComputer {
             }
         }
 
-        let n = T::from(features.len()).unwrap();
+        let n = T::from(features.len()).expect("feature count should convert to float");
         for mean_val in &mut mean {
             *mean_val = *mean_val / n;
         }
@@ -165,7 +165,7 @@ impl DatasetStatisticsComputer {
             }
         }
 
-        let n = T::from(features.len()).unwrap();
+        let n = T::from(features.len()).expect("feature count should convert to float");
         let mut std = Vec::new();
         for var_val in variance {
             let std_val = (var_val / n).sqrt();
@@ -227,9 +227,9 @@ impl DatasetStatisticsComputer {
 
         // Create bin edges
         let mut bin_edges = Vec::new();
-        let step = (max_val - min_val) / T::from(bins).unwrap();
+        let step = (max_val - min_val) / T::from(bins).expect("bin count should convert to float");
         for i in 0..=bins {
-            bin_edges.push(min_val + T::from(i).unwrap() * step);
+            bin_edges.push(min_val + T::from(i).expect("bin index should convert to float") * step);
         }
 
         // Count values in each bin
@@ -240,7 +240,7 @@ impl DatasetStatisticsComputer {
                 bins - 1
             } else {
                 let normalized = (value - min_val) / (max_val - min_val);
-                let idx = (normalized * T::from(bins).unwrap())
+                let idx = (normalized * T::from(bins).expect("bin count should convert to float"))
                     .to_usize()
                     .unwrap_or(0);
                 idx.min(bins - 1)
@@ -251,7 +251,8 @@ impl DatasetStatisticsComputer {
         // Create bin centers
         let mut bin_centers = Vec::new();
         for i in 0..bins {
-            let center = (bin_edges[i] + bin_edges[i + 1]) / T::from(2).unwrap();
+            let center = (bin_edges[i] + bin_edges[i + 1])
+                / T::from(2).expect("constant 2 should convert to float");
             bin_centers.push(center);
         }
 

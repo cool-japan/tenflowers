@@ -337,7 +337,8 @@ impl ParallelGradientEngine {
 
             // Average the gradients
             if let Some(sum) = sum_gradient {
-                let scale = T::from_usize(num_devices).unwrap();
+                let scale =
+                    T::from_usize(num_devices).expect("device count should convert to float");
                 let avg_gradient = sum.div(&Tensor::from_scalar(scale))?;
 
                 // Update all results with averaged gradient
@@ -378,7 +379,11 @@ impl ParallelGradientEngine {
             + bytemuck::Pod,
     {
         let mut results = Vec::new();
-        let pipeline_config = self.config.pipeline_config.as_ref().unwrap();
+        let pipeline_config = self
+            .config
+            .pipeline_config
+            .as_ref()
+            .expect("Pipeline config should be set for pipeline execution");
 
         // Select devices for this stage
         let stage_devices = &self.devices[stage * pipeline_config.devices_per_stage

@@ -218,7 +218,7 @@ where
             .iter()
             .find(|&&bucket_size| bucket_size >= length)
             .copied()
-            .unwrap_or(*self.bucket_sizes.last().unwrap_or(&length))
+            .unwrap_or_else(|| self.bucket_sizes.last().copied().unwrap_or(length))
     }
 }
 

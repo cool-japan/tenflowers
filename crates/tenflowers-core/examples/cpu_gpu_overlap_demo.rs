@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)] // TensorError is large but necessary for comprehensive error handling
+#![allow(clippy::useless_vec)] // Vec needed for Result handling in examples
+
 #[cfg(feature = "gpu")]
 use std::time::Instant;
 #[cfg(feature = "gpu")]

@@ -98,7 +98,15 @@ impl GpuLinalgContext {
             self.initialize_lu_pipeline()?;
         }
 
-        let pipeline = self.lu_decomposition_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.lu_decomposition_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "lu_decomposition".to_string(),
+                    details: "LU decomposition pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Create metadata buffer
         let metadata = LinalgMetadata {
@@ -108,7 +116,7 @@ impl GpuLinalgContext {
             cols_b: n,
             batch_size: 1,
             tolerance: T::from(1e-10)
-                .unwrap_or_else(|| T::from(0.0).unwrap())
+                .unwrap_or_else(|| T::from(0.0).expect("fallback value computation failed"))
                 .to_f64()
                 .unwrap_or(1e-10) as f32,
             max_iterations: n,
@@ -242,7 +250,7 @@ impl GpuLinalgContext {
         let metadata = LinalgMetadata::new(m, n)
             .with_tolerance(
                 T::from(1e-10)
-                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .unwrap_or_else(|| T::from(0.0).expect("fallback value computation failed"))
                     .to_f64()
                     .unwrap_or(1e-10) as f32,
             )
@@ -503,7 +511,15 @@ impl GpuLinalgContext {
             self.qr_decomposition_pipeline = Some(self.create_qr_pipeline()?);
         }
 
-        let pipeline = self.qr_decomposition_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.qr_decomposition_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "qr_decomposition".to_string(),
+                    details: "QR decomposition pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Create working buffers
         let matrix_size = m * n;
@@ -549,7 +565,7 @@ impl GpuLinalgContext {
         let metadata = LinalgMetadata::new(m, n)
             .with_tolerance(
                 T::from(1e-10)
-                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .unwrap_or_else(|| T::from(0.0).expect("fallback value computation failed"))
                     .to_f64()
                     .unwrap_or(1e-10) as f32,
             )

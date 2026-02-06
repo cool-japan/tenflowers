@@ -55,25 +55,37 @@ impl GlobalFormatRegistry {
     /// Register a format factory
     pub fn register_factory(&self, factory: Box<dyn FormatFactory>) {
         let format_name = factory.format_name().to_string();
-        let mut factories = self.factories.write().unwrap();
+        let mut factories = self
+            .factories
+            .write()
+            .expect("write lock should not be poisoned");
         factories.insert(format_name, factory);
     }
 
     /// Unregister a format
     pub fn unregister_format(&self, format_name: &str) -> bool {
-        let mut factories = self.factories.write().unwrap();
+        let mut factories = self
+            .factories
+            .write()
+            .expect("write lock should not be poisoned");
         factories.remove(format_name).is_some()
     }
 
     /// Get all registered format names
     pub fn list_formats(&self) -> Vec<String> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         factories.keys().cloned().collect()
     }
 
     /// Get all supported extensions across all formats
     pub fn list_extensions(&self) -> Vec<String> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         let mut extensions = Vec::new();
 
         for factory in factories.values() {
@@ -90,7 +102,10 @@ impl GlobalFormatRegistry {
 
     /// Detect the best format for a given file
     pub fn detect_format(&self, path: &Path) -> Result<FormatDetection> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
 
         if factories.is_empty() {
             return Err(error_helpers::invalid_configuration(
@@ -128,7 +143,10 @@ impl GlobalFormatRegistry {
 
     /// Create a reader for a specific format
     pub fn create_reader(&self, format_name: &str, path: &Path) -> Result<Box<dyn FormatReader>> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
 
         let factory = factories.get(format_name).ok_or_else(|| {
             error_helpers::invalid_configuration(
@@ -161,7 +179,10 @@ impl GlobalFormatRegistry {
 
     /// Get factory for a specific format
     pub fn get_factory(&self, format_name: &str) -> Option<Arc<dyn FormatFactory>> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         factories.get(format_name).map(|f| {
             // Clone the Arc wrapper, not the factory itself
             // This is a workaround since we can't clone trait objects
@@ -173,13 +194,19 @@ impl GlobalFormatRegistry {
 
     /// Check if a format is registered
     pub fn has_format(&self, format_name: &str) -> bool {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         factories.contains_key(format_name)
     }
 
     /// Get format information
     pub fn get_format_info(&self, format_name: &str) -> Option<FormatInfo> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         factories.get(format_name).map(|factory| FormatInfo {
             name: factory.format_name().to_string(),
             extensions: factory
@@ -192,7 +219,10 @@ impl GlobalFormatRegistry {
 
     /// Get all format information
     pub fn get_all_format_info(&self) -> Vec<FormatInfo> {
-        let factories = self.factories.read().unwrap();
+        let factories = self
+            .factories
+            .read()
+            .expect("read lock should not be poisoned");
         factories
             .values()
             .map(|factory| FormatInfo {

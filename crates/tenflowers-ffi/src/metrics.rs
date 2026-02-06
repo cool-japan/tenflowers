@@ -50,7 +50,10 @@ pub fn accuracy(predictions: &PyTensor, targets: &PyTensor) -> PyResult<f32> {
                 sample
                     .iter()
                     .enumerate()
-                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                    .max_by(|(_, a), (_, b)| {
+                        a.partial_cmp(b)
+                            .expect("partial_cmp should not return None for valid values")
+                    })
                     .map(|(idx, _)| idx)
                     .unwrap_or(0)
             })
@@ -411,7 +414,11 @@ pub fn top_k_accuracy(
 
         // Get top k indices
         let mut indices: Vec<usize> = (0..num_classes).collect();
-        indices.sort_by(|&a, &b| sample[b].partial_cmp(&sample[a]).unwrap());
+        indices.sort_by(|&a, &b| {
+            sample[b]
+                .partial_cmp(&sample[a])
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let top_k_indices: Vec<usize> = indices.iter().take(k).copied().collect();
 
@@ -459,7 +466,10 @@ pub fn auc_roc(predictions: &PyTensor, targets: &PyTensor) -> PyResult<f32> {
         .collect();
 
     // Sort by prediction score (descending)
-    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    pairs.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .expect("partial_cmp should not return None for valid values")
+    });
 
     // Count positives and negatives
     let num_positives = pairs.iter().filter(|(_, label)| *label == 1).count();

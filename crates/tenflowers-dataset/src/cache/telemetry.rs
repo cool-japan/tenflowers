@@ -198,7 +198,10 @@ impl CacheTelemetryCollector {
 
     /// Record a cache hit
     pub fn record_hit(&self, latency: Duration, size_bytes: Option<usize>, key_hash: u64) {
-        let mut metrics = self.current_metrics.lock().unwrap();
+        let mut metrics = self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned");
         metrics.hits += 1;
 
         // Update running average for hit latency
@@ -227,7 +230,10 @@ impl CacheTelemetryCollector {
 
     /// Record a cache miss
     pub fn record_miss(&self, latency: Duration, size_bytes: Option<usize>, key_hash: u64) {
-        let mut metrics = self.current_metrics.lock().unwrap();
+        let mut metrics = self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned");
         metrics.misses += 1;
 
         // Update running average for miss latency
@@ -252,7 +258,10 @@ impl CacheTelemetryCollector {
 
     /// Record an eviction
     pub fn record_eviction(&self, size_bytes: Option<usize>, key_hash: u64) {
-        let mut metrics = self.current_metrics.lock().unwrap();
+        let mut metrics = self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned");
         metrics.evictions += 1;
 
         if let Some(size) = size_bytes {
@@ -272,7 +281,10 @@ impl CacheTelemetryCollector {
 
     /// Record an insertion
     pub fn record_insertion(&self, size_bytes: Option<usize>, key_hash: u64) {
-        let mut metrics = self.current_metrics.lock().unwrap();
+        let mut metrics = self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned");
         metrics.insertions += 1;
 
         if let Some(size) = size_bytes {
@@ -293,13 +305,20 @@ impl CacheTelemetryCollector {
 
     /// Get current metrics snapshot
     pub fn get_metrics(&self) -> CacheTelemetryMetrics {
-        let mut metrics = self.current_metrics.lock().unwrap().clone();
+        let mut metrics = self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
         metrics.window_duration = metrics.window_start.elapsed();
         metrics.calculate_derived();
 
         // Calculate percentiles from histogram
         if self.config.track_latency_histogram {
-            let histogram = self.latency_histogram.lock().unwrap();
+            let histogram = self
+                .latency_histogram
+                .lock()
+                .expect("lock should not be poisoned");
             let percentiles = calculate_percentiles(&histogram);
             metrics.p50_latency_us = percentiles.0;
             metrics.p95_latency_us = percentiles.1;
@@ -316,7 +335,7 @@ impl CacheTelemetryCollector {
             metrics: self.get_metrics(),
         };
 
-        let mut snapshots = self.snapshots.lock().unwrap();
+        let mut snapshots = self.snapshots.lock().expect("lock should not be poisoned");
         snapshots.push_back(snapshot);
 
         // Maintain max size
@@ -327,21 +346,41 @@ impl CacheTelemetryCollector {
 
     /// Get recent events
     pub fn get_recent_events(&self, count: usize) -> Vec<CacheEvent> {
-        let events = self.recent_events.lock().unwrap();
+        let events = self
+            .recent_events
+            .lock()
+            .expect("lock should not be poisoned");
         events.iter().rev().take(count).cloned().collect()
     }
 
     /// Get historical snapshots
     pub fn get_snapshots(&self) -> Vec<MetricsSnapshot> {
-        self.snapshots.lock().unwrap().iter().cloned().collect()
+        self.snapshots
+            .lock()
+            .expect("lock should not be poisoned")
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Reset all metrics
     pub fn reset(&self) {
-        *self.current_metrics.lock().unwrap() = CacheTelemetryMetrics::new();
-        self.recent_events.lock().unwrap().clear();
-        self.snapshots.lock().unwrap().clear();
-        self.latency_histogram.lock().unwrap().clear();
+        *self
+            .current_metrics
+            .lock()
+            .expect("lock should not be poisoned") = CacheTelemetryMetrics::new();
+        self.recent_events
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        self.snapshots
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        self.latency_histogram
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
     }
 
     /// Generate a human-readable report
@@ -409,7 +448,10 @@ impl CacheTelemetryCollector {
 
     // Private helper methods
     fn record_event(&self, event: CacheEvent) {
-        let mut events = self.recent_events.lock().unwrap();
+        let mut events = self
+            .recent_events
+            .lock()
+            .expect("lock should not be poisoned");
         events.push_back(event);
 
         // Maintain max size
@@ -420,7 +462,10 @@ impl CacheTelemetryCollector {
 
     fn record_latency(&self, latency: Duration) {
         let bucket = (latency.as_micros() as u64 / 100) * 100; // 100us buckets
-        let mut histogram = self.latency_histogram.lock().unwrap();
+        let mut histogram = self
+            .latency_histogram
+            .lock()
+            .expect("lock should not be poisoned");
         *histogram.entry(bucket).or_insert(0) += 1;
     }
 }
@@ -615,14 +660,17 @@ impl EnhancedTelemetryCollector {
 
     /// Get aggregated statistics
     pub fn get_aggregated_stats(&self) -> AggregatedStats {
-        self.aggregated_stats.lock().unwrap().clone()
+        self.aggregated_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Get active alerts
     pub fn get_active_alerts(&self) -> Vec<PerformanceAlert> {
         self.active_alerts
             .lock()
-            .unwrap()
+            .expect("active_alerts lock should not be poisoned")
             .values()
             .cloned()
             .collect()
@@ -653,7 +701,7 @@ impl EnhancedTelemetryCollector {
             .sum::<f64>()
             / recent.len() as f64;
 
-        let mut baselines = self.baselines.lock().unwrap();
+        let mut baselines = self.baselines.lock().expect("lock should not be poisoned");
         baselines.baseline_hit_rate = avg_hit_rate;
         baselines.baseline_latency_us = avg_latency;
         baselines.baseline_throughput = avg_throughput;
@@ -663,12 +711,18 @@ impl EnhancedTelemetryCollector {
 
     /// Get current baselines
     pub fn get_baselines(&self) -> PerformanceBaselines {
-        self.baselines.lock().unwrap().clone()
+        self.baselines
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Set custom alert thresholds
     pub fn set_alert_thresholds(&self, thresholds: AlertThresholds) {
-        *self.alert_thresholds.lock().unwrap() = thresholds;
+        *self
+            .alert_thresholds
+            .lock()
+            .expect("lock should not be poisoned") = thresholds;
     }
 
     /// Export telemetry as JSON
@@ -831,7 +885,10 @@ impl EnhancedTelemetryCollector {
             return;
         }
 
-        let mut stats = self.aggregated_stats.lock().unwrap();
+        let mut stats = self
+            .aggregated_stats
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Calculate moving averages
         stats.moving_avg_hit_rate =
@@ -872,8 +929,14 @@ impl EnhancedTelemetryCollector {
     fn check_alerts(&self) {
         let metrics = self.get_metrics();
         let stats = self.get_aggregated_stats();
-        let thresholds = self.alert_thresholds.lock().unwrap();
-        let mut alerts = self.active_alerts.lock().unwrap();
+        let thresholds = self
+            .alert_thresholds
+            .lock()
+            .expect("lock should not be poisoned");
+        let mut alerts = self
+            .active_alerts
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Check hit rate
         if metrics.hit_ratio < thresholds.min_hit_rate {

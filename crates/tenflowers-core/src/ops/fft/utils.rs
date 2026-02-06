@@ -11,10 +11,12 @@ where
     T: Float + FromPrimitive,
 {
     let mut twiddle_factors = Vec::with_capacity(n);
-    let two_pi = T::from(2.0 * std::f64::consts::PI).unwrap();
+    let two_pi =
+        T::from(2.0 * std::f64::consts::PI).expect("2*PI must be convertible to float type");
 
     for k in 0..n {
-        let angle = two_pi * T::from(k).unwrap() / T::from(n).unwrap();
+        let angle = two_pi * T::from(k).expect("k must be convertible to float type")
+            / T::from(n).expect("n must be convertible to float type");
         twiddle_factors.push(angle.cos());
         twiddle_factors.push(-angle.sin());
     }

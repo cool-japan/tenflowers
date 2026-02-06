@@ -181,7 +181,10 @@ impl AdaptivePrefetchTuner {
     /// Update metrics and potentially trigger retuning
     pub fn update_metrics(&self, metrics: PrefetchMetrics) -> Option<TuningDecision> {
         // Record metrics
-        let mut history = self.metrics_history.lock().unwrap();
+        let mut history = self
+            .metrics_history
+            .lock()
+            .expect("lock should not be poisoned");
         history.push_back((Instant::now(), metrics.clone()));
 
         // Maintain history size
@@ -191,7 +194,10 @@ impl AdaptivePrefetchTuner {
         drop(history);
 
         // Check if it's time to retune
-        let mut last_tuning = self.last_tuning.lock().unwrap();
+        let mut last_tuning = self
+            .last_tuning
+            .lock()
+            .expect("lock should not be poisoned");
         if last_tuning.elapsed() < self.tuning_interval {
             return None;
         }
@@ -202,7 +208,7 @@ impl AdaptivePrefetchTuner {
         let decision = self.make_tuning_decision(&metrics)?;
 
         // Apply decision
-        let mut policy = self.policy.lock().unwrap();
+        let mut policy = self.policy.lock().expect("lock should not be poisoned");
         policy.prefetch_depth = decision.new_depth;
         policy.aggressiveness = decision.new_aggressiveness;
         drop(policy);
@@ -212,7 +218,7 @@ impl AdaptivePrefetchTuner {
 
     /// Make a tuning decision based on current metrics
     fn make_tuning_decision(&self, metrics: &PrefetchMetrics) -> Option<TuningDecision> {
-        let policy = self.policy.lock().unwrap();
+        let policy = self.policy.lock().expect("lock should not be poisoned");
         let current_depth = policy.prefetch_depth;
         let current_aggressiveness = policy.aggressiveness;
         let strategy = policy.strategy;
@@ -398,14 +404,17 @@ impl AdaptivePrefetchTuner {
 
     /// Get current policy
     pub fn get_policy(&self) -> AdaptivePrefetchPolicy {
-        self.policy.lock().unwrap().clone()
+        self.policy
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Get metrics history
     pub fn get_metrics_history(&self) -> Vec<(Instant, PrefetchMetrics)> {
         self.metrics_history
             .lock()
-            .unwrap()
+            .expect("metrics_history lock should not be poisoned")
             .iter()
             .cloned()
             .collect()
@@ -413,7 +422,10 @@ impl AdaptivePrefetchTuner {
 
     /// Get average metrics over recent history
     pub fn get_average_metrics(&self, window: Duration) -> Option<PrefetchMetrics> {
-        let history = self.metrics_history.lock().unwrap();
+        let history = self
+            .metrics_history
+            .lock()
+            .expect("lock should not be poisoned");
         let cutoff = Instant::now() - window;
 
         let recent: Vec<_> = history
@@ -442,13 +454,19 @@ impl AdaptivePrefetchTuner {
 
     /// Reset tuner state
     pub fn reset(&self) {
-        self.metrics_history.lock().unwrap().clear();
-        *self.last_tuning.lock().unwrap() = Instant::now();
+        self.metrics_history
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        *self
+            .last_tuning
+            .lock()
+            .expect("lock should not be poisoned") = Instant::now();
     }
 
     /// Generate tuning report
     pub fn generate_report(&self) -> String {
-        let policy = self.policy.lock().unwrap();
+        let policy = self.policy.lock().expect("lock should not be poisoned");
         let avg_metrics = self
             .get_average_metrics(Duration::from_secs(60))
             .unwrap_or_default();

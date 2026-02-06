@@ -160,13 +160,13 @@ fn get_global_state() -> &'static Arc<Mutex<DeterministicState>> {
 /// When enabled, all operations will use deterministic algorithms and RNG seeding.
 pub fn set_deterministic_mode(enabled: bool) {
     let state = get_global_state();
-    state.lock().unwrap().enabled = enabled;
+    state.lock().expect("lock should not be poisoned").enabled = enabled;
 }
 
 /// Check if deterministic mode is enabled
 pub fn is_deterministic_mode() -> bool {
     let state = get_global_state();
-    state.lock().unwrap().enabled
+    state.lock().expect("lock should not be poisoned").enabled
 }
 
 /// Set the global random seed
@@ -174,7 +174,7 @@ pub fn is_deterministic_mode() -> bool {
 /// This seed is used to derive subseeds for all random operations.
 pub fn set_global_seed(seed: u64) {
     let state = get_global_state();
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().expect("lock should not be poisoned");
     s.global_seed = seed;
     s.operation_counter = 0;
     s.clear_log();
@@ -183,19 +183,28 @@ pub fn set_global_seed(seed: u64) {
 /// Get the current global seed
 pub fn get_global_seed() -> u64 {
     let state = get_global_state();
-    state.lock().unwrap().global_seed
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .global_seed
 }
 
 /// Enable strict mode (fail on non-deterministic operations)
 pub fn set_strict_mode(strict: bool) {
     let state = get_global_state();
-    state.lock().unwrap().strict_mode = strict;
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .strict_mode = strict;
 }
 
 /// Check if strict mode is enabled
 pub fn is_strict_mode() -> bool {
     let state = get_global_state();
-    state.lock().unwrap().strict_mode
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .strict_mode
 }
 
 /// Get a subseed for a specific operation
@@ -204,14 +213,14 @@ pub fn is_strict_mode() -> bool {
 /// derived from the global seed and operation sequence.
 pub fn get_operation_seed(operation_name: &str) -> u64 {
     let state = get_global_state();
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().expect("lock should not be poisoned");
 
     if !s.enabled {
         // In non-deterministic mode, use system time
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time should be after UNIX_EPOCH")
             .as_nanos() as u64
     } else {
         s.next_subseed(operation_name)
@@ -224,7 +233,10 @@ pub fn get_operation_seed(operation_name: &str) -> u64 {
 /// the same global seed.
 pub fn reset_operation_counter() {
     let state = get_global_state();
-    state.lock().unwrap().reset_counter();
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .reset_counter();
 }
 
 /// Get a snapshot of the current deterministic state
@@ -232,25 +244,53 @@ pub fn reset_operation_counter() {
 /// Useful for checkpointing and restoring state.
 pub fn get_state_snapshot() -> DeterministicSnapshot {
     let state = get_global_state();
-    state.lock().unwrap().snapshot()
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .snapshot()
 }
 
 /// Restore deterministic state from a snapshot
 pub fn restore_state_snapshot(snapshot: &DeterministicSnapshot) {
     let state = get_global_state();
-    state.lock().unwrap().restore(snapshot);
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .restore(snapshot);
 }
 
 /// Get the operation log for debugging
 pub fn get_operation_log() -> Vec<String> {
     let state = get_global_state();
-    state.lock().unwrap().operation_log.clone()
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .operation_log
+        .clone()
 }
 
 /// Clear the operation log
 pub fn clear_operation_log() {
     let state = get_global_state();
-    state.lock().unwrap().clear_log();
+    state
+        .lock()
+        .expect("lock should not be poisoned")
+        .clear_log();
+}
+
+/// Enable operation logging with default max size
+pub fn enable_operation_logging() {
+    let state = get_global_state();
+    let mut s = state.lock().expect("lock should not be poisoned");
+    s.max_log_size = 1000;
+}
+
+/// Reset all deterministic state to defaults (for testing)
+#[doc(hidden)]
+pub fn reset_to_defaults() {
+    let state = get_global_state();
+    let mut s = state.lock().expect("lock should not be poisoned");
+    *s = DeterministicState::default();
 }
 
 /// Scoped deterministic mode
@@ -318,7 +358,7 @@ impl DeterministicConfig {
         set_strict_mode(self.strict);
 
         let state = get_global_state();
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock().expect("lock should not be poisoned");
         s.prefer_deterministic_algorithms = self.prefer_deterministic;
 
         if !self.log_operations {
@@ -384,7 +424,7 @@ pub fn mark_non_deterministic(operation_name: &str) -> Result<()> {
 /// Helper to check if GPU operations should use deterministic algorithms
 pub fn should_use_deterministic_gpu_ops() -> bool {
     let state = get_global_state();
-    let s = state.lock().unwrap();
+    let s = state.lock().expect("lock should not be poisoned");
     s.enabled && s.prefer_deterministic_algorithms
 }
 
@@ -395,9 +435,17 @@ pub fn should_use_deterministic_gpu_ops() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Global test mutex to serialize tests that modify global state
+    lazy_static::lazy_static! {
+        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
 
     #[test]
     fn test_deterministic_mode_toggle() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         assert!(is_deterministic_mode());
 
@@ -407,6 +455,8 @@ mod tests {
 
     #[test]
     fn test_global_seed() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_global_seed(12345);
         assert_eq!(get_global_seed(), 12345);
 
@@ -416,6 +466,8 @@ mod tests {
 
     #[test]
     fn test_operation_seed_generation() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         set_global_seed(42);
 
@@ -433,6 +485,8 @@ mod tests {
 
     #[test]
     fn test_operation_seed_uniqueness() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         set_global_seed(42);
         reset_operation_counter();
@@ -446,6 +500,8 @@ mod tests {
 
     #[test]
     fn test_snapshot_and_restore() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         set_global_seed(100);
 
@@ -469,6 +525,8 @@ mod tests {
 
     #[test]
     fn test_deterministic_scope() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(false);
         set_global_seed(100);
 
@@ -485,6 +543,8 @@ mod tests {
 
     #[test]
     fn test_strict_mode() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_strict_mode(true);
         assert!(is_strict_mode());
 
@@ -494,6 +554,8 @@ mod tests {
 
     #[test]
     fn test_mark_non_deterministic() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         set_strict_mode(false);
 
@@ -507,6 +569,8 @@ mod tests {
 
     #[test]
     fn test_config_apply() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         let config = DeterministicConfig {
             seed: 777,
             strict: true,
@@ -523,9 +587,11 @@ mod tests {
 
     #[test]
     fn test_operation_log() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
+        enable_operation_logging();
         set_deterministic_mode(true);
         set_global_seed(42);
-        clear_operation_log();
 
         let _ = get_operation_seed("op1");
         let _ = get_operation_seed("op2");
@@ -550,6 +616,8 @@ mod tests {
 
     #[test]
     fn test_reproducibility_with_counter_reset() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(true);
         set_global_seed(42);
 
@@ -570,6 +638,8 @@ mod tests {
 
     #[test]
     fn test_non_deterministic_mode_uses_system_time() {
+        let _guard = TEST_MUTEX.lock().expect("lock should not be poisoned");
+        reset_to_defaults();
         set_deterministic_mode(false);
 
         let seed1 = get_operation_seed("test");

@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 impl Graph {
     /// Compute and cache the topological order of nodes
     pub fn compute_topological_order(&mut self) -> Result<&[NodeId], TensorError> {
-        if self.topological_order.is_some() {
-            return Ok(self.topological_order.as_ref().unwrap());
+        if let Some(ref order) = self.topological_order {
+            return Ok(order);
         }
 
         let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
@@ -29,9 +29,11 @@ impl Graph {
                 // Only consider data dependencies for topological order
                 adjacency
                     .get_mut(&edge.from_node)
-                    .unwrap()
+                    .expect("Adjacency entry must exist for all nodes")
                     .push(edge.to_node);
-                *in_degree.get_mut(&edge.to_node).unwrap() += 1;
+                *in_degree
+                    .get_mut(&edge.to_node)
+                    .expect("In-degree entry must exist for all nodes") += 1;
             }
         }
 
@@ -50,8 +52,13 @@ impl Graph {
             result.push(node_id);
 
             // Remove this node from the graph and update in-degrees
-            for &neighbor in adjacency.get(&node_id).unwrap() {
-                let neighbor_degree = in_degree.get_mut(&neighbor).unwrap();
+            for &neighbor in adjacency
+                .get(&node_id)
+                .expect("Adjacency entry must exist for all nodes")
+            {
+                let neighbor_degree = in_degree
+                    .get_mut(&neighbor)
+                    .expect("In-degree entry must exist for all nodes");
                 *neighbor_degree -= 1;
                 if *neighbor_degree == 0 {
                     queue.push_back(neighbor);
@@ -67,7 +74,10 @@ impl Graph {
         }
 
         self.topological_order = Some(result);
-        Ok(self.topological_order.as_ref().unwrap())
+        Ok(self
+            .topological_order
+            .as_ref()
+            .expect("Topological order must be present after assignment"))
     }
 
     /// Validate the graph structure

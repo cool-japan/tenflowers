@@ -422,7 +422,7 @@ where
         })
         .collect();
 
-    Tensor::from_vec(data, &[dim]).unwrap()
+    Tensor::from_vec(data, &[dim]).expect("Tensor creation from valid dimensions should succeed")
 }
 
 /// Add noise to a vector
@@ -606,8 +606,8 @@ mod tests {
         assert_eq!(noisy.shape().dims(), &[3]);
 
         // Check that the noisy version is different but similar
-        let orig_data = original.as_slice().unwrap();
-        let noisy_data = noisy.as_slice().unwrap();
+        let orig_data = original.as_slice().expect("tensor should be contiguous");
+        let noisy_data = noisy.as_slice().expect("tensor should be contiguous");
 
         for (orig, noise) in orig_data.iter().zip(noisy_data.iter()) {
             assert!((orig - noise).abs() <= 0.2); // Should be within noise range

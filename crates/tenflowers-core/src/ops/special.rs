@@ -2,6 +2,14 @@ use crate::tensor::TensorStorage;
 use crate::{Result, Tensor};
 use scirs2_core::numeric::Float;
 
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 /// Error function (erf)
 ///
 /// Computes the error function of each element of the input tensor.
@@ -227,12 +235,12 @@ where
 /// Error function implementation using rational approximation
 fn erf_impl<T: Float>(x: T) -> T {
     // Using Abramowitz and Stegun approximation
-    let a1 = T::from(0.254829592).unwrap();
-    let a2 = T::from(-0.284496736).unwrap();
-    let a3 = T::from(1.421413741).unwrap();
-    let a4 = T::from(-1.453152027).unwrap();
-    let a5 = T::from(1.061405429).unwrap();
-    let p = T::from(0.3275911).unwrap();
+    let a1 = float_const!(0.254829592, T);
+    let a2 = float_const!(-0.284496736, T);
+    let a3 = float_const!(1.421413741, T);
+    let a4 = float_const!(-1.453152027, T);
+    let a5 = float_const!(1.061405429, T);
+    let p = float_const!(0.3275911, T);
 
     let sign = if x < T::zero() { -T::one() } else { T::one() };
     let x = x.abs();
@@ -254,9 +262,9 @@ fn gamma_impl<T: Float>(z: T) -> T {
     if z < T::zero() {
         // Use reflection formula for negative arguments
         // Γ(z) = π / (sin(πz) * Γ(1-z))
-        let pi = T::from(std::f64::consts::PI).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
         let sin_pi_z = (pi * z).sin();
-        if sin_pi_z.abs() < T::from(1e-15).unwrap() {
+        if sin_pi_z.abs() < float_const!(1e-15, T) {
             // Return infinity for negative integers
             T::infinity()
         } else {
@@ -281,7 +289,7 @@ fn lgamma_impl<T: Float>(x: T) -> T {
 fn digamma_impl<T: Float>(x: T) -> T {
     if x <= T::zero() {
         T::nan()
-    } else if x < T::from(6.0).unwrap() {
+    } else if x < float_const!(6.0, T) {
         // Use recurrence relation: ψ(x+1) = ψ(x) + 1/x
         digamma_impl(x + T::one()) - T::one() / x
     } else {
@@ -291,42 +299,42 @@ fn digamma_impl<T: Float>(x: T) -> T {
         let inv_x2 = inv_x * inv_x;
 
         // ψ(x) ≈ ln(x) - 1/(2x) - 1/(12x²) + 1/(120x⁴) - ...
-        ln_x - inv_x / T::from(2.0).unwrap() - inv_x2 / T::from(12.0).unwrap()
-            + inv_x2 * inv_x2 / T::from(120.0).unwrap()
+        ln_x - inv_x / float_const!(2.0, T) - inv_x2 / float_const!(12.0, T)
+            + inv_x2 * inv_x2 / float_const!(120.0, T)
     }
 }
 
 /// Lanczos approximation for gamma function
 fn lanczos_gamma<T: Float>(z: T) -> T {
-    let g = T::from(7.0).unwrap();
+    let g = float_const!(7.0, T);
     let coeffs = [
-        T::from(0.999_999_999_999_809_9).unwrap(),
-        T::from(676.520_368_121_885_1).unwrap(),
-        T::from(-1_259.139_216_722_402_8).unwrap(),
-        T::from(771.323_428_777_653_1).unwrap(),
-        T::from(-176.615_029_162_140_6).unwrap(),
-        T::from(12.507_343_278_686_905).unwrap(),
-        T::from(-0.138_571_095_265_720_12).unwrap(),
-        T::from(9.984_369_578_019_572e-6).unwrap(),
-        T::from(1.505_632_735_149_311_6e-7).unwrap(),
+        float_const!(0.999_999_999_999_809_9, T),
+        float_const!(676.520_368_121_885_1, T),
+        float_const!(-1_259.139_216_722_402_8, T),
+        float_const!(771.323_428_777_653_1, T),
+        float_const!(-176.615_029_162_140_6, T),
+        float_const!(12.507_343_278_686_905, T),
+        float_const!(-0.138_571_095_265_720_12, T),
+        float_const!(9.984_369_578_019_572e-6, T),
+        float_const!(1.505_632_735_149_311_6e-7, T),
     ];
 
-    if z < T::from(0.5).unwrap() {
+    if z < float_const!(0.5, T) {
         // Use reflection formula
-        let pi = T::from(std::f64::consts::PI).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
         pi / ((pi * z).sin() * lanczos_gamma(T::one() - z))
     } else {
         let z = z - T::one();
         let mut x = coeffs[0];
 
         for (i, &coeff) in coeffs.iter().enumerate().skip(1) {
-            x = x + coeff / (z + T::from(i as f64).unwrap());
+            x = x + coeff / (z + float_const!(i as f64, T));
         }
 
-        let t = z + g + T::from(0.5).unwrap();
-        let sqrt_2pi = T::from(2.5066282746310005).unwrap();
+        let t = z + g + float_const!(0.5, T);
+        let sqrt_2pi = float_const!(2.5066282746310005, T);
 
-        sqrt_2pi * t.powf(z + T::from(0.5).unwrap()) * (-t).exp() * x
+        sqrt_2pi * t.powf(z + float_const!(0.5, T)) * (-t).exp() * x
     }
 }
 
@@ -334,61 +342,60 @@ fn lanczos_gamma<T: Float>(z: T) -> T {
 fn bessel_j0_impl<T: Float>(x: T) -> T {
     let abs_x = x.abs();
 
-    if abs_x < T::from(8.0).unwrap() {
+    if abs_x < float_const!(8.0, T) {
         // High-precision Taylor series for small arguments
         // J0(x) = sum_{n=0}^∞ (-1)^n / (n!)^2 * (x/2)^(2n)
-        let x_half = x / T::from(2.0).unwrap();
+        let x_half = x / float_const!(2.0, T);
         let y = x_half * x_half;
 
         // More accurate Taylor series expansion with proper factorial coefficients
-        let mut result = T::from(1.0).unwrap();
-        let mut term = T::from(1.0).unwrap();
+        let mut result = float_const!(1.0, T);
+        let mut term = float_const!(1.0, T);
 
         // First few terms with exact coefficients
         term = term * (-y); // n=1: -y/1^2
         result = result + term;
 
-        term = term * (-y) / T::from(4.0).unwrap(); // n=2: y^2/(2!)^2 = y^2/4
+        term = term * (-y) / float_const!(4.0, T); // n=2: y^2/(2!)^2 = y^2/4
         result = result + term;
 
-        term = term * (-y) / T::from(9.0).unwrap(); // n=3: -y^3/(3!)^2 = -y^3/36
+        term = term * (-y) / float_const!(9.0, T); // n=3: -y^3/(3!)^2 = -y^3/36
         result = result + term;
 
-        term = term * (-y) / T::from(16.0).unwrap(); // n=4: y^4/(4!)^2 = y^4/576
+        term = term * (-y) / float_const!(16.0, T); // n=4: y^4/(4!)^2 = y^4/576
         result = result + term;
 
-        term = term * (-y) / T::from(25.0).unwrap(); // n=5: -y^5/(5!)^2 = -y^5/14400
+        term = term * (-y) / float_const!(25.0, T); // n=5: -y^5/(5!)^2 = -y^5/14400
         result = result + term;
 
-        term = term * (-y) / T::from(36.0).unwrap(); // n=6: y^6/(6!)^2 = y^6/518400
+        term = term * (-y) / float_const!(36.0, T); // n=6: y^6/(6!)^2 = y^6/518400
         result = result + term;
 
-        term = term * (-y) / T::from(49.0).unwrap(); // n=7: -y^7/(7!)^2
+        term = term * (-y) / float_const!(49.0, T); // n=7: -y^7/(7!)^2
         result = result + term;
 
-        term = term * (-y) / T::from(64.0).unwrap(); // n=8: y^8/(8!)^2
+        term = term * (-y) / float_const!(64.0, T); // n=8: y^8/(8!)^2
         result = result + term;
 
         result
     } else {
         // Asymptotic expansion for large arguments using Hankel's approximation
-        let pi = T::from(std::f64::consts::PI).unwrap();
-        let sqrt_2_over_pi_x = (T::from(2.0).unwrap() / (pi * abs_x)).sqrt();
-        let phase = abs_x - pi / T::from(4.0).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
+        let sqrt_2_over_pi_x = (float_const!(2.0, T) / (pi * abs_x)).sqrt();
+        let phase = abs_x - pi / float_const!(4.0, T);
 
         // More accurate asymptotic coefficients
-        let z = T::from(8.0).unwrap() / abs_x;
+        let z = float_const!(8.0, T) / abs_x;
         let z2 = z * z;
 
         // P polynomial
-        let p = T::from(1.0).unwrap() - T::from(0.109_862_862_710_421).unwrap() * z
-            + T::from(0.0278527697782932).unwrap() * z2
-            - T::from(0.0246353024907655).unwrap() * z2 * z;
+        let p = float_const!(1.0, T) - float_const!(0.109_862_862_710_421, T) * z
+            + float_const!(0.0278527697782932, T) * z2
+            - float_const!(0.0246353024907655, T) * z2 * z;
 
         // Q polynomial
-        let q = T::from(-0.0785398163397448).unwrap() * z
-            + T::from(0.0553413494103509).unwrap() * z2
-            - T::from(0.0435750796815151).unwrap() * z2 * z;
+        let q = float_const!(-0.0785398163397448, T) * z + float_const!(0.0553413494103509, T) * z2
+            - float_const!(0.0435750796815151, T) * z2 * z;
 
         sqrt_2_over_pi_x * (p * phase.cos() - q * phase.sin())
     }
@@ -398,60 +405,60 @@ fn bessel_j0_impl<T: Float>(x: T) -> T {
 fn bessel_j1_impl<T: Float>(x: T) -> T {
     let abs_x = x.abs();
 
-    if abs_x < T::from(8.0).unwrap() {
+    if abs_x < float_const!(8.0, T) {
         // High-precision Taylor series for small arguments
         // J1(x) = (x/2) * sum_{n=0}^∞ (-1)^n / (n!(n+1)!) * (x/2)^(2n)
-        let x_half = x / T::from(2.0).unwrap();
+        let x_half = x / float_const!(2.0, T);
         let y = x_half * x_half;
 
         // More accurate Taylor series with proper factorial coefficients
-        let mut series = T::from(1.0).unwrap();
-        let mut term = T::from(1.0).unwrap();
+        let mut series = float_const!(1.0, T);
+        let mut term = float_const!(1.0, T);
 
         // n=1: -y/(1!*2!) = -y/2
-        term = term * (-y) / T::from(2.0).unwrap();
+        term = term * (-y) / float_const!(2.0, T);
         series = series + term;
 
         // n=2: y^2/(2!*3!) = y^2/12 -> cumulative: y^2/16
-        term = term * (-y) / T::from(8.0).unwrap(); // -y/2 * -y/8 = y^2/16
+        term = term * (-y) / float_const!(8.0, T); // -y/2 * -y/8 = y^2/16
         series = series + term;
 
         // n=3: -y^3/(3!*4!) = -y^3/144
-        term = term * (-y) / T::from(9.0).unwrap();
+        term = term * (-y) / float_const!(9.0, T);
         series = series + term;
 
         // n=4: y^4/(4!*5!) = y^4/2880 -> cumulative: y^4/2304
-        term = term * (-y) / T::from(16.0).unwrap();
+        term = term * (-y) / float_const!(16.0, T);
         series = series + term;
 
         // n=5: -y^5/(5!*6!) = -y^5/86400
-        term = term * (-y) / T::from(25.0).unwrap();
+        term = term * (-y) / float_const!(25.0, T);
         series = series + term;
 
         // n=6: y^6/(6!*7!) = y^6/3628800
-        term = term * (-y) / T::from(36.0).unwrap();
+        term = term * (-y) / float_const!(36.0, T);
         series = series + term;
 
         x_half * series
     } else {
         // Asymptotic expansion for large arguments
-        let pi = T::from(std::f64::consts::PI).unwrap();
-        let sqrt_2_over_pi_x = (T::from(2.0).unwrap() / (pi * abs_x)).sqrt();
-        let phase = abs_x - T::from(3.0).unwrap() * pi / T::from(4.0).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
+        let sqrt_2_over_pi_x = (float_const!(2.0, T) / (pi * abs_x)).sqrt();
+        let phase = abs_x - float_const!(3.0, T) * pi / float_const!(4.0, T);
 
         // More accurate asymptotic coefficients for J1
-        let z = T::from(8.0).unwrap() / abs_x;
+        let z = float_const!(8.0, T) / abs_x;
         let z2 = z * z;
 
         // P polynomial for J1
-        let p = T::from(1.0).unwrap()
-            + T::from(0.1831050767516355).unwrap() * z
-            + T::from(0.0559849689619185).unwrap() * z2;
+        let p = float_const!(1.0, T)
+            + float_const!(0.1831050767516355, T) * z
+            + float_const!(0.0559849689619185, T) * z2;
 
         // Q polynomial for J1
-        let q = T::from(0.109_862_862_710_421).unwrap() * z
-            - T::from(0.0277822709805153).unwrap() * z2
-            + T::from(0.0435751932031683).unwrap() * z2 * z;
+        let q = float_const!(0.109_862_862_710_421, T) * z
+            - float_const!(0.0277822709805153, T) * z2
+            + float_const!(0.0435751932031683, T) * z2 * z;
 
         let sign = if x < T::zero() { -T::one() } else { T::one() };
         sign * sqrt_2_over_pi_x * (p * phase.cos() - q * phase.sin())
@@ -465,66 +472,66 @@ fn bessel_y0_impl<T: Float>(x: T) -> T {
         return T::nan();
     }
 
-    if x < T::from(8.0).unwrap() {
+    if x < float_const!(8.0, T) {
         // Y0(x) = (2/π) * [J0(x) * (ln(x/2) + γ) + sum_{n=1}^∞ H_n * (-1)^n * (x/2)^(2n) / (n!)^2]
         // where γ is Euler's constant and H_n is the nth harmonic number
         let j0_val = bessel_j0_impl(x);
-        let two_over_pi = T::from(2.0 / std::f64::consts::PI).unwrap();
-        let euler_gamma = T::from(0.577_215_664_901_532_9).unwrap(); // Euler's constant
-        let ln_x_over_2 = (x / T::from(2.0).unwrap()).ln();
+        let two_over_pi = float_const!(2.0 / std::f64::consts::PI, T);
+        let euler_gamma = float_const!(0.577_215_664_901_532_9, T); // Euler's constant
+        let ln_x_over_2 = (x / float_const!(2.0, T)).ln();
 
         // First part: J0(x) * (ln(x/2) + γ)
         let logarithmic_term = j0_val * (ln_x_over_2 + euler_gamma);
 
         // Series part with harmonic numbers
-        let x_half = x / T::from(2.0).unwrap();
+        let x_half = x / float_const!(2.0, T);
         let x_half_sq = x_half * x_half;
 
         // First few terms of the series with harmonic numbers
         let mut series = T::zero();
         let mut x_power = x_half_sq; // (x/2)^2
-        let mut factorial_sq = T::from(1.0).unwrap(); // 1!^2
+        let mut factorial_sq = float_const!(1.0, T); // 1!^2
 
         // n=1: H_1 = 1, (-1)^1 = -1
-        let h1 = T::from(1.0).unwrap();
+        let h1 = float_const!(1.0, T);
         series = series - h1 * x_power / factorial_sq;
 
         // n=2: H_2 = 1 + 1/2 = 1.5, (-1)^2 = 1
         x_power = x_power * x_half_sq; // (x/2)^4
-        factorial_sq = factorial_sq * T::from(4.0).unwrap(); // 2!^2 = 4
-        let h2 = T::from(1.5).unwrap();
+        factorial_sq = factorial_sq * float_const!(4.0, T); // 2!^2 = 4
+        let h2 = float_const!(1.5, T);
         series = series + h2 * x_power / factorial_sq;
 
         // n=3: H_3 = 1 + 1/2 + 1/3 = 11/6, (-1)^3 = -1
         x_power = x_power * x_half_sq; // (x/2)^6
-        factorial_sq = factorial_sq * T::from(9.0).unwrap(); // 3!^2 = 36
-        let h3 = T::from(11.0 / 6.0).unwrap();
+        factorial_sq = factorial_sq * float_const!(9.0, T); // 3!^2 = 36
+        let h3 = float_const!(11.0 / 6.0, T);
         series = series - h3 * x_power / factorial_sq;
 
         // n=4: H_4 = 1 + 1/2 + 1/3 + 1/4 = 25/12, (-1)^4 = 1
         x_power = x_power * x_half_sq; // (x/2)^8
-        factorial_sq = factorial_sq * T::from(16.0).unwrap(); // 4!^2 = 576
-        let h4 = T::from(25.0 / 12.0).unwrap();
+        factorial_sq = factorial_sq * float_const!(16.0, T); // 4!^2 = 576
+        let h4 = float_const!(25.0 / 12.0, T);
         series = series + h4 * x_power / factorial_sq;
 
         two_over_pi * (logarithmic_term + series)
     } else {
         // Enhanced asymptotic expansion for large arguments
-        let pi = T::from(std::f64::consts::PI).unwrap();
-        let sqrt_2_over_pi_x = (T::from(2.0).unwrap() / (pi * x)).sqrt();
-        let phase = x - pi / T::from(4.0).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
+        let sqrt_2_over_pi_x = (float_const!(2.0, T) / (pi * x)).sqrt();
+        let phase = x - pi / float_const!(4.0, T);
 
         // More accurate asymptotic coefficients for P0 and Q0
         let x_inv = T::one() / x;
         let x_inv_sq = x_inv * x_inv;
 
         // P0(x) ≈ 1 - 9/(128*x^2) + 225/(6144*x^4) + ...
-        let p0 = T::one() - T::from(9.0 / 128.0).unwrap() * x_inv_sq
-            + T::from(225.0 / 6144.0).unwrap() * x_inv_sq * x_inv_sq;
+        let p0 = T::one() - float_const!(9.0 / 128.0, T) * x_inv_sq
+            + float_const!(225.0 / 6144.0, T) * x_inv_sq * x_inv_sq;
 
         // Q0(x) ≈ -1/(8*x) + 75/(1024*x^3) - 4725/(32768*x^5) + ...
-        let q0 = -T::from(1.0 / 8.0).unwrap() * x_inv
-            + T::from(75.0 / 1024.0).unwrap() * x_inv * x_inv_sq;
+        let q0 =
+            -float_const!(1.0 / 8.0, T) * x_inv + float_const!(75.0 / 1024.0, T) * x_inv * x_inv_sq;
 
         sqrt_2_over_pi_x * (p0 * phase.sin() + q0 * phase.cos())
     }
@@ -537,18 +544,18 @@ fn bessel_y1_impl<T: Float>(x: T) -> T {
         return T::nan();
     }
 
-    if x < T::from(8.0).unwrap() {
+    if x < float_const!(8.0, T) {
         // Y1(x) = (2/π) * [J1(x) * (ln(x/2) + γ) - 1/x + sum_{n=1}^∞ (H_n + H_{n-1}) * (-1)^n * (x/2)^(2n+1) / (n! * (n+1)!)]
         let j1_val = bessel_j1_impl(x);
-        let two_over_pi = T::from(2.0 / std::f64::consts::PI).unwrap();
-        let euler_gamma = T::from(0.577_215_664_901_532_9).unwrap(); // Euler's constant
-        let ln_x_over_2 = (x / T::from(2.0).unwrap()).ln();
+        let two_over_pi = float_const!(2.0 / std::f64::consts::PI, T);
+        let euler_gamma = float_const!(0.577_215_664_901_532_9, T); // Euler's constant
+        let ln_x_over_2 = (x / float_const!(2.0, T)).ln();
 
         // First part: J1(x) * (ln(x/2) + γ) - 1/x
         let logarithmic_term = j1_val * (ln_x_over_2 + euler_gamma) - T::one() / x;
 
         // Series part with harmonic numbers
-        let x_half = x / T::from(2.0).unwrap();
+        let x_half = x / float_const!(2.0, T);
         let x_half_sq = x_half * x_half;
 
         // First few terms of the series
@@ -556,42 +563,42 @@ fn bessel_y1_impl<T: Float>(x: T) -> T {
         let mut x_power = x_half * x_half_sq; // (x/2)^3
 
         // n=1: H_1 + H_0 = 1 + 0 = 1, (-1)^1 = -1, 1! * 2! = 2
-        let h_sum_1 = T::from(1.0).unwrap();
-        series = series - h_sum_1 * x_power / T::from(2.0).unwrap();
+        let h_sum_1 = float_const!(1.0, T);
+        series = series - h_sum_1 * x_power / float_const!(2.0, T);
 
         // n=2: H_2 + H_1 = 1.5 + 1 = 2.5, (-1)^2 = 1, 2! * 3! = 12
         x_power = x_power * x_half_sq; // (x/2)^5
-        let h_sum_2 = T::from(2.5).unwrap();
-        series = series + h_sum_2 * x_power / T::from(12.0).unwrap();
+        let h_sum_2 = float_const!(2.5, T);
+        series = series + h_sum_2 * x_power / float_const!(12.0, T);
 
         // n=3: H_3 + H_2 = 11/6 + 3/2 = 11/6 + 9/6 = 20/6 = 10/3, (-1)^3 = -1, 3! * 4! = 144
         x_power = x_power * x_half_sq; // (x/2)^7
-        let h_sum_3 = T::from(10.0 / 3.0).unwrap();
-        series = series - h_sum_3 * x_power / T::from(144.0).unwrap();
+        let h_sum_3 = float_const!(10.0 / 3.0, T);
+        series = series - h_sum_3 * x_power / float_const!(144.0, T);
 
         // n=4: H_4 + H_3 = 25/12 + 11/6 = 25/12 + 22/12 = 47/12, (-1)^4 = 1, 4! * 5! = 2880
         x_power = x_power * x_half_sq; // (x/2)^9
-        let h_sum_4 = T::from(47.0 / 12.0).unwrap();
-        series = series + h_sum_4 * x_power / T::from(2880.0).unwrap();
+        let h_sum_4 = float_const!(47.0 / 12.0, T);
+        series = series + h_sum_4 * x_power / float_const!(2880.0, T);
 
         two_over_pi * (logarithmic_term + series)
     } else {
         // Enhanced asymptotic expansion for large arguments
-        let pi = T::from(std::f64::consts::PI).unwrap();
-        let sqrt_2_over_pi_x = (T::from(2.0).unwrap() / (pi * x)).sqrt();
-        let phase = x - T::from(3.0).unwrap() * pi / T::from(4.0).unwrap();
+        let pi = float_const!(std::f64::consts::PI, T);
+        let sqrt_2_over_pi_x = (float_const!(2.0, T) / (pi * x)).sqrt();
+        let phase = x - float_const!(3.0, T) * pi / float_const!(4.0, T);
 
         // More accurate asymptotic coefficients for P1 and Q1
         let x_inv = T::one() / x;
         let x_inv_sq = x_inv * x_inv;
 
         // P1(x) ≈ 1 + 15/(128*x^2) - 315/(6144*x^4) + ...
-        let p1 = T::one() + T::from(15.0 / 128.0).unwrap() * x_inv_sq
-            - T::from(315.0 / 6144.0).unwrap() * x_inv_sq * x_inv_sq;
+        let p1 = T::one() + float_const!(15.0 / 128.0, T) * x_inv_sq
+            - float_const!(315.0 / 6144.0, T) * x_inv_sq * x_inv_sq;
 
         // Q1(x) ≈ 3/(8*x) - 99/(1024*x^3) + 6237/(32768*x^5) + ...
-        let q1 = T::from(3.0 / 8.0).unwrap() * x_inv
-            - T::from(99.0 / 1024.0).unwrap() * x_inv * x_inv_sq;
+        let q1 =
+            float_const!(3.0 / 8.0, T) * x_inv - float_const!(99.0 / 1024.0, T) * x_inv * x_inv_sq;
 
         sqrt_2_over_pi_x * (p1 * phase.sin() + q1 * phase.cos())
     }
@@ -781,9 +788,10 @@ mod tests {
 
     #[test]
     fn test_erf_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, -1.0, 2.0, -2.0], &[5]).unwrap();
-        let result = erf(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, -1.0, 2.0, -2.0], &[5])
+            .expect("tensor creation should succeed");
+        let result = erf(&x).expect("erf should succeed");
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values (approximately)
         assert_relative_eq!(values[0], 0.0, epsilon = 1e-6);
@@ -801,8 +809,8 @@ mod tests {
 
         // Property: erf(x) + erfc(x) = 1
         for i in 0..4 {
-            let erf_val = erf_result.as_slice().unwrap()[i];
-            let erfc_val = erfc_result.as_slice().unwrap()[i];
+            let erf_val = erf_result.as_slice().expect("tensor should be contiguous")[i];
+            let erfc_val = erfc_result.as_slice().expect("tensor should be contiguous")[i];
             assert_relative_eq!(erf_val + erfc_val, 1.0, epsilon = 1e-10);
         }
     }
@@ -811,7 +819,7 @@ mod tests {
     fn test_gamma_known_values() {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 0.5], &[5]).unwrap();
         let result = gamma(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values
         assert_relative_eq!(values[0], 1.0, epsilon = 1e-6); // Γ(1) = 1
@@ -829,8 +837,12 @@ mod tests {
 
         // Property: lgamma(x) = ln(gamma(x)) for positive x
         for i in 0..4 {
-            let gamma_val = gamma_result.as_slice().unwrap()[i];
-            let lgamma_val = lgamma_result.as_slice().unwrap()[i];
+            let gamma_val = gamma_result
+                .as_slice()
+                .expect("tensor should be contiguous")[i];
+            let lgamma_val = lgamma_result
+                .as_slice()
+                .expect("tensor should be contiguous")[i];
             assert_relative_eq!(lgamma_val, gamma_val.ln(), epsilon = 1e-10);
         }
     }
@@ -845,9 +857,13 @@ mod tests {
 
         // Property: ψ(x+1) = ψ(x) + 1/x
         for i in 0..3 {
-            let psi_x = digamma_result.as_slice().unwrap()[i];
-            let psi_x_plus_1 = digamma_plus_1.as_slice().unwrap()[i];
-            let x_val = x.as_slice().unwrap()[i];
+            let psi_x = digamma_result
+                .as_slice()
+                .expect("tensor should be contiguous")[i];
+            let psi_x_plus_1 = digamma_plus_1
+                .as_slice()
+                .expect("tensor should be contiguous")[i];
+            let x_val = x.as_slice().expect("tensor should be contiguous")[i];
 
             assert_relative_eq!(psi_x_plus_1, psi_x + 1.0 / x_val, epsilon = 1e-8);
         }
@@ -857,7 +873,7 @@ mod tests {
     fn test_bessel_j0_known_values() {
         let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, 5.0, 10.0], &[5]).unwrap();
         let result = bessel_j0(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values for J0 (approximately) - adjusted tolerances for polynomial approximations
         assert_relative_eq!(values[0], 1.0, epsilon = 1e-6); // J0(0) = 1
@@ -871,7 +887,7 @@ mod tests {
     fn test_bessel_j1_known_values() {
         let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, -1.0], &[4]).unwrap();
         let result = bessel_j1(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values for J1 (approximately) - adjusted tolerances for polynomial approximations
         assert_relative_eq!(values[0], 0.0, epsilon = 1e-6); // J1(0) = 0
@@ -884,7 +900,7 @@ mod tests {
     fn test_bessel_y0_known_values() {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4]).unwrap();
         let result = bessel_y0(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Reference values for Y0 (Bessel function of second kind)
         // Y0(1) ≈ 0.0883241462, Y0(2) ≈ 0.5103756726, Y0(5) ≈ -0.3085176252, Y0(10) ≈ 0.0556711672
@@ -906,7 +922,7 @@ mod tests {
     fn test_bessel_y1_known_values() {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4]).unwrap();
         let result = bessel_y1(&x).unwrap();
-        let values = result.as_slice().unwrap();
+        let values = result.as_slice().expect("tensor should be contiguous");
 
         // Reference values for Y1 (Bessel function of second kind)
         // Y1(1) ≈ -0.7812128213, Y1(2) ≈ -0.1070324315, Y1(5) ≈ 0.1478631433, Y1(10) ≈ 0.2490154242
@@ -930,8 +946,8 @@ mod tests {
         let result_y0 = bessel_y0(&x_neg).unwrap();
         let result_y1 = bessel_y1(&x_neg).unwrap();
 
-        let values_y0 = result_y0.as_slice().unwrap();
-        let values_y1 = result_y1.as_slice().unwrap();
+        let values_y0 = result_y0.as_slice().expect("tensor should be contiguous");
+        let values_y1 = result_y1.as_slice().expect("tensor should be contiguous");
 
         // Y0 and Y1 should return NaN for non-positive arguments
         assert!(values_y0[0].is_nan());
@@ -955,7 +971,7 @@ mod tests {
             .sub(&j0_minus)
             .unwrap()
             .div(&Tensor::from_scalar(2.0 * dx))
-            .unwrap();
+            .expect("operation should succeed");
 
         let j1_vals = bessel_j1(&x).unwrap();
         let negative_j1 = j1_vals.mul(&Tensor::from_scalar(-1.0)).unwrap();

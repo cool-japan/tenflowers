@@ -31,7 +31,10 @@ mod cpu_gpu_overlap_tests {
         println!("Async add took: {:?}", add_time);
 
         if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &[6.0, 8.0, 10.0, 12.0]);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &[6.0, 8.0, 10.0, 12.0]
+            );
         }
 
         // Test async mul
@@ -42,7 +45,10 @@ mod cpu_gpu_overlap_tests {
         println!("Async mul took: {:?}", mul_time);
 
         if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &[5.0, 12.0, 21.0, 32.0]);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &[5.0, 12.0, 21.0, 32.0]
+            );
         }
     }
 
@@ -63,7 +69,10 @@ mod cpu_gpu_overlap_tests {
         println!("High priority async add took: {:?}", high_priority_time);
 
         if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &[5.0, 7.0, 9.0]);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &[5.0, 7.0, 9.0]
+            );
         }
 
         // Test normal priority operation
@@ -76,7 +85,10 @@ mod cpu_gpu_overlap_tests {
         println!("Normal priority async add took: {:?}", normal_priority_time);
 
         if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &[5.0, 7.0, 9.0]);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &[5.0, 7.0, 9.0]
+            );
         }
     }
 
@@ -122,7 +134,10 @@ mod cpu_gpu_overlap_tests {
 
         for (i, result) in results.iter().enumerate() {
             if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-                assert_eq!(arr.as_slice().unwrap(), &expected_results[i]);
+                assert_eq!(
+                    arr.as_slice().expect("tensor should be contiguous"),
+                    &expected_results[i]
+                );
             }
         }
     }
@@ -175,9 +190,9 @@ mod cpu_gpu_overlap_tests {
         // Verify results
         for result in results {
             if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-                let slice = arr.as_slice().unwrap();
-                for i in 0..size.min(10) {
-                    assert_eq!(slice[i], (i as f32) + (i + 1) as f32);
+                let slice = arr.as_slice().expect("tensor should be contiguous");
+                for (i, &value) in slice.iter().enumerate().take(size.min(10)) {
+                    assert_eq!(value, (i as f32) + (i + 1) as f32);
                 }
             }
         }
@@ -208,7 +223,10 @@ mod cpu_gpu_overlap_tests {
 
         // Verify result
         if let crate::tensor::TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &[6.0, 6.0, 6.0, 6.0, 6.0]);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &[6.0, 6.0, 6.0, 6.0, 6.0]
+            );
         }
 
         // Test synchronization
@@ -343,7 +361,7 @@ mod cpu_gpu_overlap_tests {
         for (i, result) in results.iter().enumerate() {
             if let Ok(tensor) = result {
                 if let crate::tensor::TensorStorage::Cpu(arr) = &tensor.storage {
-                    let slice = arr.as_slice().unwrap();
+                    let slice = arr.as_slice().expect("tensor should be contiguous");
                     assert_eq!(slice[0], 1.0 + i as f32);
                     assert_eq!(slice[4], 5.0 + i as f32);
                 }

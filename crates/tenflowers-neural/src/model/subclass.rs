@@ -562,8 +562,11 @@ pub mod helpers {
             let (fan_in, fan_out) = calculate_fan_in_fan_out(shape);
 
             // Xavier initialization: variance = 2 / (fan_in + fan_out)
-            let variance = T::from_f32(2.0).unwrap_or(T::from_usize(2).unwrap())
-                / T::from_usize(fan_in + fan_out).unwrap_or(T::from_usize(1).unwrap());
+            let variance = T::from_f32(2.0).unwrap_or_else(|| {
+                T::from_usize(2).expect("constant 2 should convert to numeric type")
+            }) / T::from_usize(fan_in + fan_out).unwrap_or_else(|| {
+                T::from_usize(1).expect("constant 1 should convert to numeric type")
+            });
             let std_dev = variance.sqrt();
 
             // Initialize with random normal distribution
@@ -594,8 +597,11 @@ pub mod helpers {
             let (fan_in, _fan_out) = calculate_fan_in_fan_out(shape);
 
             // He initialization: variance = 2 / fan_in
-            let variance = T::from_f32(2.0).unwrap_or(T::from_usize(2).unwrap())
-                / T::from_usize(fan_in).unwrap_or(T::from_usize(1).unwrap());
+            let variance = T::from_f32(2.0).unwrap_or_else(|| {
+                T::from_usize(2).expect("constant 2 should convert to numeric type")
+            }) / T::from_usize(fan_in).unwrap_or_else(|| {
+                T::from_usize(1).expect("constant 1 should convert to numeric type")
+            });
             let std_dev = variance.sqrt();
 
             // Initialize with random normal distribution
@@ -655,7 +661,7 @@ pub mod helpers {
 mod tests {
     use super::*;
     use crate::layers::dense::Dense;
-    use tenflowers_core::Tensor;
+    use tenflowers_core::{Tensor, TensorError};
 
     // Example custom model for testing
     struct MyCustomModel {
@@ -684,16 +690,22 @@ mod tests {
         }
 
         fn call_impl(&self, input: &Tensor<f32>) -> Result<Tensor<f32>> {
-            let x = self
-                .layers
-                .get_layer_by_name("dense1")
-                .unwrap()
-                .forward(input)?;
-            let output = self
-                .layers
-                .get_layer_by_name("dense2")
-                .unwrap()
-                .forward(&x)?;
+            let layer1 = self.layers.get_layer_by_name("dense1").ok_or_else(|| {
+                TensorError::InvalidArgument {
+                    operation: "MyCustomModel::call_impl".to_string(),
+                    reason: "dense1 layer not found".to_string(),
+                    context: None,
+                }
+            })?;
+            let x = layer1.forward(input)?;
+            let layer2 = self.layers.get_layer_by_name("dense2").ok_or_else(|| {
+                TensorError::InvalidArgument {
+                    operation: "MyCustomModel::call_impl".to_string(),
+                    reason: "dense2 layer not found".to_string(),
+                    context: None,
+                }
+            })?;
+            let output = layer2.forward(&x)?;
             Ok(output)
         }
     }

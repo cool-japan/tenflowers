@@ -4,6 +4,14 @@
 //! eigendecomposition gradients, and comprehensive gradient validation utilities
 //! for debugging and testing gradient implementations.
 
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -53,14 +61,14 @@ where
     if m == n {
         // Square matrix case - more stable
         // Use identity gradient scaled by input for mathematical consistency
-        let scale = T::from(0.1).unwrap(); // Conservative scaling
+        let scale = float_const!(0.1, T); // Conservative scaling
         let identity_like = create_scaled_identity_like(input, scale)?;
         let grad_contribution = grad_output.mul(&identity_like)?;
         Ok(grad_contribution)
     } else {
         // Rectangular matrix case - use fallback
         // Return gradient proportional to input to maintain reasonable gradient flow
-        let scale = T::from(0.01).unwrap(); // Very conservative for non-square matrices
+        let scale = float_const!(0.01, T); // Very conservative for non-square matrices
         let scaled_input = input.mul(&Tensor::from_scalar(scale))?;
         let grad_result = grad_output.mul(&scaled_input)?;
         Ok(grad_result)
@@ -377,7 +385,7 @@ pub mod validation {
         let grad_norm = compute_tensor_norm(gradient)?;
 
         // Gradient should not be extremely large compared to input
-        let max_grad_ratio = T::from(1000.0).unwrap_or_else(|| T::from(1000).unwrap());
+        let max_grad_ratio = T::from(1000.0).unwrap_or_else(|| float_const!(1000, T));
         if grad_norm > input_norm * max_grad_ratio {
             return Ok(false);
         }

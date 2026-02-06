@@ -335,7 +335,10 @@ where
                 .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
             // Compute exp(x - max)
-            let exp_arr = arr.clone() - &max_expanded.broadcast(arr.dim()).unwrap();
+            let exp_arr = arr.clone()
+                - &max_expanded
+                    .broadcast(arr.dim())
+                    .expect("max array must be broadcastable to input shape");
             let exp_arr = exp_arr.mapv(|x| x.exp());
 
             // Sum along axis
@@ -347,7 +350,10 @@ where
                 .map_err(|e| TensorError::invalid_shape_simple(e.to_string()))?;
 
             // Divide to get softmax
-            let result = exp_arr / &sum_expanded.broadcast(arr.dim()).unwrap();
+            let result = exp_arr
+                / &sum_expanded
+                    .broadcast(arr.dim())
+                    .expect("sum array must be broadcastable to input shape");
 
             Ok(Tensor::from_array(result))
         }
@@ -375,9 +381,11 @@ where
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
-            let sqrt_2_over_pi = T::from(0.797_884_608).unwrap(); // √(2/π)
-            let coeff = T::from(0.044715).unwrap();
-            let half = T::from(0.5).unwrap();
+            let sqrt_2_over_pi = T::from(0.797_884_608)
+                .expect("constant 0.797884608 must be convertible to float type"); // √(2/π)
+            let coeff =
+                T::from(0.044715).expect("constant 0.044715 must be convertible to float type");
+            let half = T::from(0.5).expect("constant 0.5 must be convertible to float type");
             let one = T::one();
 
             let result = arr.mapv(|x| {
@@ -575,8 +583,8 @@ where
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
             let zero = T::zero();
-            let three = T::from(3).unwrap();
-            let six = T::from(6).unwrap();
+            let three = T::from(3).expect("constant 3 must be convertible to float type");
+            let six = T::from(6).expect("constant 6 must be convertible to float type");
 
             let result = arr.mapv(|x| {
                 let x_plus_3 = x + three;

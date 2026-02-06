@@ -291,18 +291,18 @@ impl PyMetricsTracker {
 
     /// Get minimum value
     pub fn get_min(&self) -> Option<f32> {
-        self.history
-            .iter()
-            .copied()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
+        self.history.iter().copied().min_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        })
     }
 
     /// Get maximum value
     pub fn get_max(&self) -> Option<f32> {
-        self.history
-            .iter()
-            .copied()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
+        self.history.iter().copied().max_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        })
     }
 
     /// Get latest value

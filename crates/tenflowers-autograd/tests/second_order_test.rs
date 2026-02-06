@@ -102,8 +102,14 @@ fn test_directional_derivative_linearity() {
     let v1 = Tensor::from_vec(vec![1.0_f32, 0.0], &[2]).unwrap();
     let v2 = Tensor::from_vec(vec![2.0_f32, 0.0], &[2]).unwrap();
 
-    println!("Direction 1: {:?}", v1.as_slice().unwrap());
-    println!("Direction 2: {:?}", v2.as_slice().unwrap());
+    println!(
+        "Direction 1: {:?}",
+        v1.as_slice().expect("tensor should be contiguous")
+    );
+    println!(
+        "Direction 2: {:?}",
+        v2.as_slice().expect("tensor should be contiguous")
+    );
 
     // v2 = 2*v1, so D_v2 should be approximately 4*D_v1 for quadratic functions
     assert_eq!(v1.shape(), v2.shape());
@@ -118,10 +124,13 @@ fn test_newton_direction_descent() {
     let tape = GradientTape::new();
     let x = tape.watch(Tensor::from_vec(vec![3.0_f32, 4.0], &[2]).unwrap());
 
-    println!("Initial point: {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Initial point: {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     // For a convex function, Newton direction should point toward minimum
-    assert!(x.tensor().as_slice().unwrap()[0] > 0.0);
+    assert!(x.tensor().as_slice().expect("tensor should be contiguous")[0] > 0.0);
 }
 
 #[test]
@@ -153,7 +162,10 @@ fn test_zero_gradient_hessian() {
     let x = tape.watch(Tensor::from_vec(vec![0.0_f32, 0.0], &[2]).unwrap());
 
     println!("Testing at origin (potential critical point)");
-    println!("Input: {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     assert_eq!(x.shape().dims(), &[2]);
 }
@@ -168,7 +180,10 @@ fn test_chain_rule_second_order() {
     let x = tape.watch(Tensor::from_vec(vec![2.0_f32], &[1]).unwrap());
 
     println!("Testing composition of functions");
-    println!("Input: x = {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Input: x = {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     // Chain rule should hold for composed functions
     assert_eq!(x.shape().size(), 1);
@@ -198,10 +213,13 @@ fn test_numerical_stability_small_values() {
     let tape = GradientTape::new();
     let x = tape.watch(Tensor::from_vec(vec![1e-6_f32, 2e-6, 3e-6], &[3]).unwrap());
 
-    println!("Input (small values): {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Input (small values): {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     // Should handle small values without underflow
-    assert!(x.tensor().as_slice().unwrap()[0] > 0.0);
+    assert!(x.tensor().as_slice().expect("tensor should be contiguous")[0] > 0.0);
 }
 
 #[test]
@@ -212,10 +230,13 @@ fn test_numerical_stability_large_values() {
     let tape = GradientTape::new();
     let x = tape.watch(Tensor::from_vec(vec![1e3_f32, 2e3, 3e3], &[3]).unwrap());
 
-    println!("Input (large values): {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Input (large values): {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     // Should handle large values without overflow
-    assert!(x.tensor().as_slice().unwrap()[0] > 0.0);
+    assert!(x.tensor().as_slice().expect("tensor should be contiguous")[0] > 0.0);
 }
 
 #[test]
@@ -226,10 +247,13 @@ fn test_mixed_positive_negative_values() {
     let tape = GradientTape::new();
     let x = tape.watch(Tensor::from_vec(vec![-2.0_f32, 0.0, 3.0, -1.0], &[4]).unwrap());
 
-    println!("Input (mixed signs): {:?}", x.tensor().as_slice().unwrap());
+    println!(
+        "Input (mixed signs): {:?}",
+        x.tensor().as_slice().expect("tensor should be contiguous")
+    );
 
     // Should handle mixed signs correctly
-    let data = x.tensor().as_slice().unwrap();
+    let data = x.tensor().as_slice().expect("tensor should be contiguous");
     assert!(data[0] < 0.0); // negative
     assert_eq!(data[1], 0.0); // zero
     assert!(data[2] > 0.0); // positive
@@ -293,7 +317,10 @@ fn test_second_order_optimization_workflow() {
     let params = tape.watch(Tensor::from_vec(vec![3.0_f32, 4.0], &[2]).unwrap());
     println!(
         "1. Initial parameters: {:?}",
-        params.tensor().as_slice().unwrap()
+        params
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous")
     );
 
     // 2. Define loss (would be computed in real scenario)

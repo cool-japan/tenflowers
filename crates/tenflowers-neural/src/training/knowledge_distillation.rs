@@ -31,12 +31,31 @@ where
 {
     fn default() -> Self {
         Self {
-            temperature: T::from_f32(4.0).unwrap(),
-            alpha: T::from_f32(0.7).unwrap(),
-            beta: T::from_f32(0.3).unwrap(),
+            temperature: T::from_f32(4.0)
+                .unwrap_or_else(|| T::from(4).unwrap_or(T::one() + T::one() + T::one() + T::one())),
+            alpha: T::from_f32(0.7).unwrap_or_else(|| {
+                T::from(7).unwrap_or(T::one()) / T::from(10).unwrap_or(T::one() + T::one())
+            }),
+            beta: T::from_f32(0.3).unwrap_or_else(|| {
+                T::from(3).unwrap_or(T::one()) / T::from(10).unwrap_or(T::one() + T::one())
+            }),
             feature_matching: false,
             freeze_teacher: true,
-            student_lr: T::from_f32(0.001).unwrap(),
+            student_lr: T::from_f32(0.001).unwrap_or_else(|| {
+                T::one()
+                    / T::from(1000).unwrap_or(
+                        T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one()
+                            + T::one(),
+                    )
+            }),
             max_epochs: 100,
             batch_size: 32,
         }
@@ -219,7 +238,8 @@ where
                         for param in params {
                             if let Some(grad) = param.grad() {
                                 // Apply simple SGD update: param = param - lr * grad
-                                let lr = T::from(self.config.student_lr).unwrap();
+                                let lr = T::from(self.config.student_lr)
+                                    .unwrap_or_else(|| T::from_f32(0.001).unwrap_or(T::one()));
                                 let update = grad.mul(&Tensor::from_scalar(lr))?;
                                 let new_param = param.sub(&update)?;
                                 *param = new_param;
@@ -274,17 +294,19 @@ where
                 };
 
             // Record metrics
+            let num_samples_t =
+                T::from(num_samples).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
             let feature_loss_avg = if self.config.feature_matching {
                 // When feature matching is enabled, estimate the feature loss component
-                Some(epoch_distill_loss / T::from(num_samples).unwrap() * self.config.beta)
+                Some(epoch_distill_loss / num_samples_t * self.config.beta)
             } else {
                 None
             };
 
             let epoch_metrics = DistillationMetrics {
-                total_loss: epoch_total_loss / T::from(num_samples).unwrap(),
-                distillation_loss: epoch_distill_loss / T::from(num_samples).unwrap(),
-                hard_loss: epoch_hard_loss / T::from(num_samples).unwrap(),
+                total_loss: epoch_total_loss / num_samples_t,
+                distillation_loss: epoch_distill_loss / num_samples_t,
+                hard_loss: epoch_hard_loss / num_samples_t,
                 feature_loss: feature_loss_avg,
                 student_accuracy: student_acc,
                 teacher_accuracy: teacher_acc,
@@ -338,7 +360,9 @@ where
             }
         }
 
-        Ok(T::from(correct).unwrap() / T::from(total).unwrap())
+        let correct_t = T::from(correct).unwrap_or_else(|| T::zero());
+        let total_t = T::from(total).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
+        Ok(correct_t / total_t)
     }
 
     /// Helper function to compute argmax of a tensor

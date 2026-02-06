@@ -496,7 +496,8 @@ impl GpuRnnOps {
         self.device.poll(wgpu::Maintain::Wait);
 
         // Wait for the buffer to be ready
-        let _result = futures::executor::block_on(receiver).unwrap();
+        let _result = futures::executor::block_on(receiver)
+            .expect("buffer mapping should complete successfully");
 
         let data = buffer_slice.get_mapped_range();
         let typed_data: &[T] = bytemuck::cast_slice(&data);

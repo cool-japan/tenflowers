@@ -1,3 +1,15 @@
+//! Activation functions for neural networks
+//!
+//! Comprehensive collection of activation functions for deep learning.
+
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 use scirs2_core::num_traits::Float;
 use tenflowers_core::{Result, Tensor};
 
@@ -121,7 +133,7 @@ impl ActivationFunction {
         T: Float + Clone + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
     {
         if let Some(data) = input.as_slice() {
-            let alpha_t = T::from(alpha).unwrap_or(T::from(0.01).unwrap());
+            let alpha_t = T::from(alpha).unwrap_or(float_const!(0.01, T));
             let result: Vec<T> = data
                 .iter()
                 .map(|&x| if x > T::zero() { x } else { alpha_t * x })
@@ -130,8 +142,7 @@ impl ActivationFunction {
         } else {
             // For GPU tensors - use tensor operations for proper LeakyReLU implementation
             let zero = Tensor::zeros(input.shape().dims());
-            let alpha_tensor =
-                Tensor::from_scalar(T::from(alpha).unwrap_or(T::from(0.01).unwrap()));
+            let alpha_tensor = Tensor::from_scalar(T::from(alpha).unwrap_or(float_const!(0.01, T)));
             let positive_part = tenflowers_core::ops::numpy_compat::maximum(input, &zero)?;
             let negative_part = tenflowers_core::ops::numpy_compat::minimum(input, &zero)?;
             let scaled_negative = tenflowers_core::ops::mul(&negative_part, &alpha_tensor)?;
@@ -145,7 +156,7 @@ impl ActivationFunction {
         T: Float + Clone + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
     {
         if let Some(data) = input.as_slice() {
-            let six = T::from(6.0).unwrap_or(T::from(6.0).unwrap());
+            let six = T::from(6.0).unwrap_or(float_const!(6.0, T));
             let result: Vec<T> = data
                 .iter()
                 .map(|&x| {
@@ -162,7 +173,7 @@ impl ActivationFunction {
         } else {
             // For GPU tensors - use tensor operations for proper ReLU6 implementation
             let zero = Tensor::zeros(input.shape().dims());
-            let six = Tensor::from_scalar(T::from(6.0).unwrap_or(T::from(6.0).unwrap()));
+            let six = Tensor::from_scalar(T::from(6.0).unwrap_or(float_const!(6.0, T)));
             let clamped_min = tenflowers_core::ops::numpy_compat::maximum(input, &zero)?;
             tenflowers_core::ops::numpy_compat::minimum(&clamped_min, &six)
         }
@@ -365,8 +376,8 @@ impl ActivationFunction {
             let elements_per_slice = num_elements / last_dim;
 
             // GELU approximation: 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x^3)))
-            let sqrt_2_over_pi = T::from(0.7978845608028654).unwrap(); // sqrt(2/π)
-            let coeff = T::from(0.044715).unwrap();
+            let sqrt_2_over_pi = float_const!(0.7978845608028654, T); // sqrt(2/π)
+            let coeff = float_const!(0.044715, T);
 
             for slice_idx in 0..elements_per_slice {
                 for i in 0..half_dim {
@@ -377,7 +388,7 @@ impl ActivationFunction {
                     // GELU(x2)
                     let x2_cubed = x2 * x2 * x2;
                     let inner = sqrt_2_over_pi * (x2 + coeff * x2_cubed);
-                    let gelu_x2 = T::from(0.5).unwrap() * x2 * (T::one() + inner.tanh());
+                    let gelu_x2 = float_const!(0.5, T) * x2 * (T::one() + inner.tanh());
 
                     result.push(x1 * gelu_x2);
                 }
@@ -433,7 +444,7 @@ impl ActivationFunction {
         T: Float + Clone + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
     {
         if let Some(data) = input.as_slice() {
-            let beta = T::from(1.702).unwrap_or(T::from(1.702).unwrap());
+            let beta = T::from(1.702).unwrap_or(float_const!(1.702, T));
             let result: Vec<T> = data
                 .iter()
                 .map(|&x| {
@@ -445,8 +456,7 @@ impl ActivationFunction {
             Tensor::from_vec(result, input.shape().dims())
         } else {
             // For GPU tensors - use tensor operations
-            let beta_tensor =
-                Tensor::from_scalar(T::from(1.702).unwrap_or(T::from(1.702).unwrap()));
+            let beta_tensor = Tensor::from_scalar(T::from(1.702).unwrap_or(float_const!(1.702, T)));
             let scaled_x = tenflowers_core::ops::mul(input, &beta_tensor)?;
             let sigmoid_val = tenflowers_core::ops::sigmoid(&scaled_x)?;
 

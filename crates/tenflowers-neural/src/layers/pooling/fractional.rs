@@ -49,12 +49,13 @@ where
         let samples = if self.deterministic {
             self.random_samples.as_ref().map(|s| {
                 // Convert f32 samples to T
-                let f32_data = s.as_slice().unwrap();
+                let f32_data = s.as_slice().expect("tensor should be contiguous");
                 let converted_data: Vec<T> = f32_data
                     .iter()
                     .map(|&x| T::from_f32(x).unwrap_or(T::zero()))
                     .collect();
-                Tensor::from_vec(converted_data, s.shape().dims()).unwrap()
+                Tensor::from_vec(converted_data, s.shape().dims())
+                    .expect("Failed to create tensor from random samples")
             })
         } else {
             None
@@ -126,12 +127,13 @@ where
         let samples = if self.deterministic {
             self.random_samples.as_ref().map(|s| {
                 // Convert f32 samples to T
-                let f32_data = s.as_slice().unwrap();
+                let f32_data = s.as_slice().expect("tensor should be contiguous");
                 let converted_data: Vec<T> = f32_data
                     .iter()
                     .map(|&x| T::from_f32(x).unwrap_or(T::zero()))
                     .collect();
-                Tensor::from_vec(converted_data, s.shape().dims()).unwrap()
+                Tensor::from_vec(converted_data, s.shape().dims())
+                    .expect("Failed to create tensor from random samples")
             })
         } else {
             None

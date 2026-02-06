@@ -419,7 +419,10 @@ pub fn scaled_dot_product_attention(
 
     // Output shape: same as query with last dimension from value
     let mut output_shape = query_shape.iter().copied().collect::<Vec<_>>();
-    *output_shape.last_mut().unwrap() = value_shape[value_shape.len() - 1];
+    *output_shape
+        .last_mut()
+        .expect("output_shape cannot be empty as query is at least 2D") =
+        value_shape[value_shape.len() - 1];
 
     let output = Tensor::zeros(&output_shape);
 

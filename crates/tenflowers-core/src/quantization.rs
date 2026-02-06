@@ -409,13 +409,18 @@ where
     let buffer_slice = staging_buffer.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        sender.send(result).unwrap();
+        sender.send(result).expect("channel send should succeed");
     });
 
     gpu_ctx.device.poll(wgpu::Maintain::Wait);
     receiver
         .recv()
-        .unwrap()
+        .map_err(|e| TensorError::ComputeError {
+            operation: "gpu_buffer_read".to_string(),
+            details: format!("Channel receive failed: {}", e),
+            retry_possible: true,
+            context: None,
+        })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
     let data = buffer_slice.get_mapped_range();
@@ -546,13 +551,18 @@ fn gpu_dequantize(gpu_buffer: &GpuBuffer<i8>, params: &QuantizationParams) -> Re
     let buffer_slice = staging_buffer.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        sender.send(result).unwrap();
+        sender.send(result).expect("channel send should succeed");
     });
 
     gpu_ctx.device.poll(wgpu::Maintain::Wait);
     receiver
         .recv()
-        .unwrap()
+        .map_err(|e| TensorError::ComputeError {
+            operation: "gpu_buffer_read".to_string(),
+            details: format!("Channel receive failed: {}", e),
+            retry_possible: true,
+            context: None,
+        })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
     let data = buffer_slice.get_mapped_range();
@@ -717,13 +727,18 @@ where
     let buffer_slice = staging_buffer.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        sender.send(result).unwrap();
+        sender.send(result).expect("channel send should succeed");
     });
 
     gpu_ctx.device.poll(wgpu::Maintain::Wait);
     receiver
         .recv()
-        .unwrap()
+        .map_err(|e| TensorError::ComputeError {
+            operation: "gpu_buffer_read".to_string(),
+            details: format!("Channel receive failed: {}", e),
+            retry_possible: true,
+            context: None,
+        })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
     let data = buffer_slice.get_mapped_range();

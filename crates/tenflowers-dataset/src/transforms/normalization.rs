@@ -43,7 +43,7 @@ where
 
         let mut feature_sums = vec![T::zero(); feature_dim];
         let mut feature_sq_sums = vec![T::zero(); feature_dim];
-        let n = T::from(dataset.len()).unwrap();
+        let n = T::from(dataset.len()).expect("dataset length should convert to float");
 
         // Compute means and variances
         for i in 0..dataset.len() {
@@ -339,7 +339,8 @@ where
 
             let n = sorted_values.len();
             let median = if n % 2 == 0 {
-                (sorted_values[n / 2 - 1] + sorted_values[n / 2]) / T::from(2.0).unwrap()
+                (sorted_values[n / 2 - 1] + sorted_values[n / 2])
+                    / T::from(2.0).expect("constant 2.0 should convert to float")
             } else {
                 sorted_values[n / 2]
             };
@@ -427,14 +428,14 @@ where
     pub fn imagenet() -> Self {
         Self {
             channel_means: vec![
-                T::from(0.485).unwrap(),
-                T::from(0.456).unwrap(),
-                T::from(0.406).unwrap(),
+                T::from(0.485).expect("constant should convert to float"),
+                T::from(0.456).expect("constant should convert to float"),
+                T::from(0.406).expect("constant should convert to float"),
             ],
             channel_stds: vec![
-                T::from(0.229).unwrap(),
-                T::from(0.224).unwrap(),
-                T::from(0.225).unwrap(),
+                T::from(0.229).expect("constant should convert to float"),
+                T::from(0.224).expect("constant should convert to float"),
+                T::from(0.225).expect("constant should convert to float"),
             ],
         }
     }
@@ -544,7 +545,7 @@ where
             }
         }
 
-        let n = T::from(total_count).unwrap();
+        let n = T::from(total_count).expect("count should convert to float");
         let mean = total_sum / n;
         let variance = (total_sq_sum / n) - (mean * mean);
         let std = variance.sqrt();

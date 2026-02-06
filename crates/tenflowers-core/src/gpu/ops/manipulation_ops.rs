@@ -1564,8 +1564,8 @@ mod ultra_performance_tests {
     #[test]
     fn test_ultra_simd_enhancements() {
         // Test SciRS2 SIMD integration
-        let input_shape = vec![8, 16];
-        let axes = vec![1, 0];
+        let input_shape = [8, 16];
+        let axes = [1, 0];
         let expected_elements = input_shape.iter().product::<usize>();
 
         assert_eq!(expected_elements, 128);
@@ -1575,8 +1575,8 @@ mod ultra_performance_tests {
     #[test]
     fn test_kernel_fusion_memory_optimization() {
         // Verify memory optimization benefits
-        let intermediate_shape = vec![32, 16];
-        let final_shape = vec![16, 32];
+        let intermediate_shape = [32, 16];
+        let final_shape = [16, 32];
         let element_count = intermediate_shape.iter().product::<usize>();
 
         assert_eq!(element_count, final_shape.iter().product::<usize>());

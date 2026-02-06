@@ -5,6 +5,7 @@
 //! are essential for stable training of large neural networks.
 
 #![allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+#![allow(clippy::result_large_err)] // TensorError is large but necessary for comprehensive error handling
 
 use scirs2_core::ndarray::Array1;
 use tenflowers_core::{GradientClipper, GradientClippingConfig, NormType, Result, Tensor};
@@ -58,7 +59,11 @@ fn basic_gradient_clipping_demo() -> Result<()> {
     println!("Original gradients:");
     for (i, grad) in gradients.iter().enumerate() {
         if let tenflowers_core::tensor::TensorStorage::Cpu(array) = &grad.storage {
-            println!("  Gradient {}: {:?}", i, array.as_slice().unwrap());
+            println!(
+                "  Gradient {}: {:?}",
+                i,
+                array.as_slice().expect("tensor should be contiguous")
+            );
         }
     }
 
@@ -70,7 +75,11 @@ fn basic_gradient_clipping_demo() -> Result<()> {
     println!("  Was clipped: {}", global_norm > 1.0);
     for (i, grad) in clipped_gradients.iter().enumerate() {
         if let tenflowers_core::tensor::TensorStorage::Cpu(array) = &grad.storage {
-            println!("  Gradient {}: {:?}", i, array.as_slice().unwrap());
+            println!(
+                "  Gradient {}: {:?}",
+                i,
+                array.as_slice().expect("tensor should be contiguous")
+            );
         }
     }
 
@@ -251,7 +260,7 @@ fn training_simulation_demo() -> Result<()> {
 
     for (step, (base_norm, _phase)) in gradient_patterns.iter().enumerate() {
         // Create gradients with the target norm
-        let target_elements = (base_norm / (2.0_f32).sqrt()) as f32; // For 2-element vector
+        let target_elements = base_norm / (2.0_f32).sqrt(); // For 2-element vector
         let gradients = vec![Tensor::from_array(
             Array1::from_vec(vec![target_elements, target_elements]).into_dyn(),
         )];

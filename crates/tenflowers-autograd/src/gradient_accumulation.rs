@@ -70,7 +70,7 @@ impl GradientAccumulator {
         let source_values: Vec<TrackedTensor<T>> = sources.iter().map(|&s| s.clone()).collect();
         let gradients = tape.gradient(targets, &source_values)?;
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
 
         for (source, gradient_opt) in sources.iter().zip(gradients.iter()) {
             // Skip if gradient is None
@@ -114,7 +114,7 @@ impl GradientAccumulator {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
 
         if let Some(gradient) = inner.accumulated_gradients.get(&source.id) {
             if let Some(grad) = gradient.downcast_ref::<Tensor<T>>() {
@@ -122,7 +122,8 @@ impl GradientAccumulator {
 
                 // Average gradients if requested
                 if inner.average_gradients && inner.num_accumulated > 0 {
-                    let scale = T::from_usize(inner.num_accumulated).unwrap();
+                    let scale = T::from_usize(inner.num_accumulated)
+                        .expect("accumulation count should convert to float");
                     result = result.div(&Tensor::from_scalar(scale))?;
                 }
 
@@ -165,26 +166,26 @@ impl GradientAccumulator {
 
     /// Clear all accumulated gradients
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.accumulated_gradients.clear();
         inner.num_accumulated = 0;
     }
 
     /// Get the number of accumulated batches
     pub fn num_accumulated(&self) -> usize {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         inner.num_accumulated
     }
 
     /// Check if any gradients have been accumulated
     pub fn is_empty(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         inner.accumulated_gradients.is_empty()
     }
 
     /// Set whether to average gradients when retrieving them
     pub fn set_average_gradients(&self, average: bool) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.average_gradients = average;
     }
 }
@@ -343,7 +344,7 @@ impl DistributedGradientAccumulator {
         let targets = std::slice::from_ref(target);
         let source_values: Vec<TrackedTensor<T>> = sources.iter().map(|&s| s.clone()).collect();
         let gradients = tape.gradient(targets, &source_values)?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
 
         let node_grads = inner.node_gradients.entry(self.rank).or_default();
         for (source, gradient_opt) in sources.iter().zip(gradients.iter()) {
@@ -422,7 +423,8 @@ impl DistributedGradientAccumulator {
                 // 4. Continue until all nodes have all accumulated chunks
 
                 // For simulation, we'll just apply the averaging that would happen
-                let scale = T::from_usize(self.world_size).unwrap();
+                let scale =
+                    T::from_usize(self.world_size).expect("world size should convert to float");
                 grad = grad.div(&Tensor::from_scalar(scale))?;
 
                 results.push(grad);
@@ -558,7 +560,7 @@ impl DistributedGradientAccumulator {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
 
         // Increment barrier count
         let count = inner
@@ -596,7 +598,7 @@ impl DistributedGradientAccumulator {
     pub fn clear_distributed(&self) {
         self.local_accumulator.clear();
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.node_gradients.clear();
         inner.sync_barriers.clear();
         inner.pending_communications.clear();
@@ -604,7 +606,7 @@ impl DistributedGradientAccumulator {
 
     /// Get distributed statistics
     pub fn get_distributed_stats(&self) -> DistributedStats {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         DistributedStats {
             rank: self.rank,
             world_size: self.world_size,

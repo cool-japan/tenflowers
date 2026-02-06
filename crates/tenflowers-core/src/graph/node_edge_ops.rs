@@ -119,7 +119,12 @@ impl Graph {
             )));
         }
 
-        let output_edges: Vec<EdgeId> = self.nodes.get(&from_node).unwrap().outputs.clone();
+        let output_edges: Vec<EdgeId> = self
+            .nodes
+            .get(&from_node)
+            .expect("Source node must exist after validation")
+            .outputs
+            .clone();
 
         let mut redirected_count = 0;
 
@@ -129,12 +134,20 @@ impl Graph {
                 redirected_count += 1;
 
                 // Update node edge lists
-                self.nodes.get_mut(&to_node).unwrap().outputs.push(edge_id);
+                self.nodes
+                    .get_mut(&to_node)
+                    .expect("Target node must exist after validation")
+                    .outputs
+                    .push(edge_id);
             }
         }
 
         // Clear output edges from the original node
-        self.nodes.get_mut(&from_node).unwrap().outputs.clear();
+        self.nodes
+            .get_mut(&from_node)
+            .expect("Source node must exist after validation")
+            .outputs
+            .clear();
 
         if redirected_count > 0 {
             self.topological_order = None; // Invalidate cached order

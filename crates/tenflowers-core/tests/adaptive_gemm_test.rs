@@ -17,7 +17,7 @@ fn test_adaptive_gemm_basic_compilation() {
     // Test basic matrix size calculations
     let matrix_size = 256 * 256;
     let is_small = matrix_size < 256 * 256;
-    let is_medium = matrix_size >= 256 * 256 && matrix_size < 2048 * 2048;
+    let is_medium = (256 * 256..2048 * 2048).contains(&matrix_size);
 
     assert!(!is_small);
     assert!(is_medium);

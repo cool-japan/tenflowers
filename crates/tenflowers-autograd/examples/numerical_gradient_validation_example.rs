@@ -63,10 +63,18 @@ fn example_1_basic_checking() -> Result<()> {
     // Compute numerical gradient
     let numerical_grad = checker.compute_numerical_gradient(&x, f, 1e-6)?;
 
-    println!("Input: {:?}", x.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.as_slice().expect("tensor should be contiguous")
+    );
     println!("Function: f(x) = x²");
     println!("Numerical gradient (should be ≈ 2x):");
-    println!("  {:?}", numerical_grad.as_slice().unwrap());
+    println!(
+        "  {:?}",
+        numerical_grad
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
     println!("Expected gradient: [4.0, 6.0, 8.0]\n");
 
     Ok(())
@@ -93,7 +101,10 @@ fn example_2_compare_methods() -> Result<()> {
         ("Central 6-point", FiniteDifferenceMethod::Central6Point),
     ];
 
-    println!("Input: {:?}", x.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.as_slice().expect("tensor should be contiguous")
+    );
     println!("Function: f(x) = x³");
     println!("Expected gradient (3x²): [3.0, 12.0, 27.0]\n");
 
@@ -109,7 +120,9 @@ fn example_2_compare_methods() -> Result<()> {
             "{:20} (h={:.0e}): {:?}",
             name,
             epsilon,
-            numerical_grad.as_slice().unwrap()
+            numerical_grad
+                .as_slice()
+                .expect("tensor should be contiguous")
         );
     }
 
@@ -187,9 +200,17 @@ fn example_4_custom_operation() -> Result<()> {
     let numerical_grad = checker.compute_numerical_gradient(&x, custom_op, 1e-7)?;
 
     println!("Custom operation: softplus approximation");
-    println!("Input: {:?}", x.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.as_slice().expect("tensor should be contiguous")
+    );
     println!("Numerical gradient:");
-    println!("  {:?}", numerical_grad.as_slice().unwrap());
+    println!(
+        "  {:?}",
+        numerical_grad
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
 
     // Expected gradient for x + 0.5*x^2 is 1 + x
     println!("Expected gradient (1 + x): [2.0, 3.0, 4.0, 5.0]\n");
@@ -225,8 +246,16 @@ fn example_5_adaptive_epsilon() -> Result<()> {
         let numerical_grad = checker.compute_numerical_gradient(&x, &f, epsilon)?;
 
         println!("{}: ", name);
-        println!("  Input: {:?}", x.as_slice().unwrap());
-        println!("  Gradient: {:?}", numerical_grad.as_slice().unwrap());
+        println!(
+            "  Input: {:?}",
+            x.as_slice().expect("tensor should be contiguous")
+        );
+        println!(
+            "  Gradient: {:?}",
+            numerical_grad
+                .as_slice()
+                .expect("tensor should be contiguous")
+        );
     }
 
     println!();

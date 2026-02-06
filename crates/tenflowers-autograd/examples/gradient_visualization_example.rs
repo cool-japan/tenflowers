@@ -16,14 +16,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create some input tensors
     let x = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(
             Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn(),
         ))
     };
 
     let y = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(
             Array1::from_vec(vec![2.0f32, 3.0, 4.0]).into_dyn(),
         ))
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create gradient flow visualizer
     let mut visualizer = GradientFlowVisualizer::new();
-    let tape_ref = tape.lock().unwrap();
+    let tape_ref = tape.lock().expect("lock should not be poisoned");
 
     // Analyze gradient flow
     visualizer.analyze_flow(&tape_ref, &loss, &all_params)?;
@@ -133,7 +133,7 @@ fn demonstrate_gradient_issues(
 
     // Create very small input values that might lead to vanishing gradients
     let x = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(
             Array1::from_vec(vec![1e-8f32, 2e-8, 3e-8]).into_dyn(),
         ))
@@ -147,7 +147,7 @@ fn demonstrate_gradient_issues(
 
     // Analyze the gradient flow
     let mut visualizer = GradientFlowVisualizer::new();
-    let tape_ref = tape.lock().unwrap();
+    let tape_ref = tape.lock().expect("lock should not be poisoned");
     visualizer.analyze_flow(&tape_ref, &loss, &[&x])?;
 
     let mut health_score = 50.0f64; // Default

@@ -68,7 +68,8 @@ where
                 // more deeply with the autograd system
 
                 // For now, just scale the gradient by 1/accumulation_steps
-                let scale = T::from_usize(self.accumulation_steps).unwrap();
+                let scale = T::from_usize(self.accumulation_steps)
+                    .expect("Failed to convert accumulation_steps to tensor type");
                 let scaled_grad = grad.div(&Tensor::from_scalar(scale))?;
                 param.set_grad(Some(scaled_grad));
             }

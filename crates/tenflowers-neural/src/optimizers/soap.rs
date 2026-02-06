@@ -189,13 +189,17 @@ where
         self.step_count += 1;
 
         // Convert constants to T
-        let beta1_t = T::from(self.beta1).unwrap();
-        let beta2_t = T::from(self.beta2).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let opt_weight_t = T::from(self.optimistic_weight).unwrap();
-        let eps_t = T::from(self.eps).unwrap();
-        let weight_decay_t = T::from(self.weight_decay).unwrap();
-        let step_t = T::from(self.step_count as f32).unwrap();
+        let beta1_t = T::from(self.beta1).expect("Failed to convert beta1 to tensor type");
+        let beta2_t = T::from(self.beta2).expect("Failed to convert beta2 to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let opt_weight_t = T::from(self.optimistic_weight)
+            .expect("Failed to convert optimistic_weight to tensor type");
+        let eps_t = T::from(self.eps).expect("Failed to convert eps to tensor type");
+        let weight_decay_t =
+            T::from(self.weight_decay).expect("Failed to convert weight_decay to tensor type");
+        let step_t =
+            T::from(self.step_count as f32).expect("Failed to convert step_count to tensor type");
 
         let one_minus_beta1 = T::one() - beta1_t;
         let one_minus_beta2 = T::one() - beta2_t;

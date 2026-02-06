@@ -7,8 +7,9 @@ pub mod checkpoint;
 pub mod early_stopping;
 pub mod lr_reduction;
 
-#[cfg(feature = "tensorboard")]
-pub mod tensorboard;
+// Tensorboard feature temporarily removed in v0.1.0-beta.1 (RUSTSEC-2024-0437)
+// #[cfg(feature = "tensorboard")]
+// pub mod tensorboard;
 
 use crate::{optimizers::Optimizer, trainer::metrics::CallbackAction, Model};
 use tenflowers_core::Result;
@@ -68,5 +69,6 @@ pub use checkpoint::ModelCheckpoint;
 pub use early_stopping::EarlyStopping;
 pub use lr_reduction::LearningRateReduction;
 
-#[cfg(feature = "tensorboard")]
-pub use tensorboard::TensorboardCallback;
+// Tensorboard feature temporarily removed in v0.1.0-beta.1 (RUSTSEC-2024-0437)
+// #[cfg(feature = "tensorboard")]
+// pub use tensorboard::TensorboardCallback;

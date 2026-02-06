@@ -27,7 +27,7 @@ pub fn random_normal_f32_device(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     });
 
@@ -77,8 +77,12 @@ pub fn random_normal_f32_device(
         }
         #[cfg(feature = "rocm")]
         Device::Rocm(_) => {
-            // TODO: Implement ROCm random normal operation
-            todo!("ROCm random normal not yet implemented")
+            // ROCm random normal: Fallback to CPU implementation for now
+            // Future: Implement native ROCm random number generation kernels
+            eprintln!(
+                "Warning: ROCm random normal using CPU fallback - native implementation pending"
+            );
+            random_normal_f32_device(shape, mean, std, Some(seed), &Device::Cpu)
         }
     }
 }
@@ -95,7 +99,7 @@ pub fn random_normal_f64(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     }));
 
@@ -139,7 +143,7 @@ pub fn random_uniform_f32_device(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     });
 
@@ -189,8 +193,12 @@ pub fn random_uniform_f32_device(
         }
         #[cfg(feature = "rocm")]
         Device::Rocm(_) => {
-            // TODO: Implement ROCm random uniform operation
-            todo!("ROCm random uniform not yet implemented")
+            // ROCm random uniform: Fallback to CPU implementation for now
+            // Future: Implement native ROCm random number generation kernels
+            eprintln!(
+                "Warning: ROCm random uniform using CPU fallback - native implementation pending"
+            );
+            random_uniform_f32_device(shape, min, max, Some(seed), &Device::Cpu)
         }
     }
 }
@@ -213,7 +221,7 @@ pub fn random_uniform_f64(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     }));
 
@@ -246,7 +254,7 @@ pub fn random_uniform_int(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     }));
 
@@ -318,7 +326,7 @@ pub fn multinomial_f32(
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time must be after UNIX_EPOCH")
             .as_nanos() as u64
     }));
 

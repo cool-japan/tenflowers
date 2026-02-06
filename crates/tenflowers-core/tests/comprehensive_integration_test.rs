@@ -23,12 +23,30 @@ fn test_comparison_operations_comprehensive() {
     assert_eq!(ge_result.shape().dims(), &[2, 2]);
 
     // Verify results
-    assert_eq!(eq_result.as_slice().unwrap(), &[0u8, 1u8, 0u8, 0u8]);
-    assert_eq!(ne_result.as_slice().unwrap(), &[1u8, 0u8, 1u8, 1u8]);
-    assert_eq!(lt_result.as_slice().unwrap(), &[1u8, 0u8, 0u8, 0u8]);
-    assert_eq!(le_result.as_slice().unwrap(), &[1u8, 1u8, 0u8, 0u8]);
-    assert_eq!(gt_result.as_slice().unwrap(), &[0u8, 0u8, 1u8, 1u8]);
-    assert_eq!(ge_result.as_slice().unwrap(), &[0u8, 1u8, 1u8, 1u8]);
+    assert_eq!(
+        eq_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 1u8, 0u8, 0u8]
+    );
+    assert_eq!(
+        ne_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 1u8, 1u8]
+    );
+    assert_eq!(
+        lt_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 0u8, 0u8]
+    );
+    assert_eq!(
+        le_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 1u8, 0u8, 0u8]
+    );
+    assert_eq!(
+        gt_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 0u8, 1u8, 1u8]
+    );
+    assert_eq!(
+        ge_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 1u8, 1u8, 1u8]
+    );
 }
 
 #[test]
@@ -43,7 +61,10 @@ fn test_comparison_operations_broadcasting() {
     // Expected: [[1.0 < 2.0, 1.0 < 1.0], [3.0 < 2.0, 3.0 < 1.0]]
     //          = [[true, false], [false, false]]
     //          = [[1, 0], [0, 0]]
-    assert_eq!(lt_result.as_slice().unwrap(), &[1u8, 0u8, 0u8, 0u8]);
+    assert_eq!(
+        lt_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 0u8, 0u8]
+    );
 }
 
 #[test]
@@ -64,10 +85,22 @@ fn test_logical_operations_comprehensive() {
     assert_eq!(not_result.shape().dims(), &[2, 2]);
 
     // Verify results
-    assert_eq!(and_result.as_slice().unwrap(), &[1u8, 0u8, 0u8, 0u8]);
-    assert_eq!(or_result.as_slice().unwrap(), &[1u8, 1u8, 1u8, 0u8]);
-    assert_eq!(xor_result.as_slice().unwrap(), &[0u8, 1u8, 1u8, 0u8]);
-    assert_eq!(not_result.as_slice().unwrap(), &[0u8, 1u8, 0u8, 1u8]);
+    assert_eq!(
+        and_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 0u8, 0u8]
+    );
+    assert_eq!(
+        or_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 1u8, 1u8, 0u8]
+    );
+    assert_eq!(
+        xor_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 1u8, 1u8, 0u8]
+    );
+    assert_eq!(
+        not_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 1u8, 0u8, 1u8]
+    );
 }
 
 #[test]
@@ -81,7 +114,10 @@ fn test_logical_operations_broadcasting() {
 
     // Expected: [[1 AND 1, 1 AND 0], [0 AND 1, 0 AND 0]]
     //          = [[1, 0], [0, 0]]
-    assert_eq!(and_result.as_slice().unwrap(), &[1u8, 0u8, 0u8, 0u8]);
+    assert_eq!(
+        and_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 0u8, 0u8]
+    );
 }
 
 #[test]
@@ -95,12 +131,18 @@ fn test_advanced_pooling_operations() {
 
     let global_max = global_max_pool2d(&input).unwrap();
     assert_eq!(global_max.shape().dims(), &[1, 1, 1, 1]);
-    assert_eq!(global_max.as_slice().unwrap()[0], 9.0);
+    assert_eq!(
+        global_max.as_slice().expect("tensor should be contiguous")[0],
+        9.0
+    );
 
     let global_avg = global_avg_pool2d(&input).unwrap();
     assert_eq!(global_avg.shape().dims(), &[1, 1, 1, 1]);
     let expected_avg = (1.0 + 8.0 + 3.0 + 4.0 + 5.0 + 6.0 + 7.0 + 2.0 + 9.0) / 9.0;
-    assert!((global_avg.as_slice().unwrap()[0] - expected_avg).abs() < 1e-6);
+    assert!(
+        (global_avg.as_slice().expect("tensor should be contiguous")[0] - expected_avg).abs()
+            < 1e-6
+    );
 }
 
 #[test]
@@ -138,11 +180,17 @@ fn test_multichannel_pooling() {
 
     let global_max = global_max_pool2d(&input).unwrap();
     assert_eq!(global_max.shape().dims(), &[1, 2, 1, 1]);
-    assert_eq!(global_max.as_slice().unwrap(), &[4.0, 8.0]);
+    assert_eq!(
+        global_max.as_slice().expect("tensor should be contiguous"),
+        &[4.0, 8.0]
+    );
 
     let global_avg = global_avg_pool2d(&input).unwrap();
     assert_eq!(global_avg.shape().dims(), &[1, 2, 1, 1]);
-    assert_eq!(global_avg.as_slice().unwrap(), &[2.5, 6.5]);
+    assert_eq!(
+        global_avg.as_slice().expect("tensor should be contiguous"),
+        &[2.5, 6.5]
+    );
 }
 
 #[test]
@@ -155,9 +203,18 @@ fn test_comparison_with_integers() {
     let eq_result = eq(&a, &b).unwrap();
     let gt_result = gt(&a, &b).unwrap();
 
-    assert_eq!(lt_result.as_slice().unwrap(), &[1u8, 0u8, 0u8]);
-    assert_eq!(eq_result.as_slice().unwrap(), &[0u8, 1u8, 0u8]);
-    assert_eq!(gt_result.as_slice().unwrap(), &[0u8, 0u8, 1u8]);
+    assert_eq!(
+        lt_result.as_slice().expect("tensor should be contiguous"),
+        &[1u8, 0u8, 0u8]
+    );
+    assert_eq!(
+        eq_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 1u8, 0u8]
+    );
+    assert_eq!(
+        gt_result.as_slice().expect("tensor should be contiguous"),
+        &[0u8, 0u8, 1u8]
+    );
 }
 
 #[test]
@@ -168,13 +225,22 @@ fn test_edge_cases() {
     let tiny_input = Tensor::<f32>::from_vec(vec![42.0], &[1, 1, 1, 1]).unwrap();
 
     let global_max = global_max_pool2d(&tiny_input).unwrap();
-    assert_eq!(global_max.as_slice().unwrap()[0], 42.0);
+    assert_eq!(
+        global_max.as_slice().expect("tensor should be contiguous")[0],
+        42.0
+    );
 
     let global_avg = global_avg_pool2d(&tiny_input).unwrap();
-    assert_eq!(global_avg.as_slice().unwrap()[0], 42.0);
+    assert_eq!(
+        global_avg.as_slice().expect("tensor should be contiguous")[0],
+        42.0
+    );
 
     let adaptive = adaptive_avg_pool2d(&tiny_input, (1, 1)).unwrap();
-    assert_eq!(adaptive.as_slice().unwrap()[0], 42.0);
+    assert_eq!(
+        adaptive.as_slice().expect("tensor should be contiguous")[0],
+        42.0
+    );
 }
 
 #[test]
@@ -192,5 +258,8 @@ fn test_batched_operations() {
 
     let global_max = global_max_pool2d(&input).unwrap();
     assert_eq!(global_max.shape().dims(), &[2, 1, 1, 1]);
-    assert_eq!(global_max.as_slice().unwrap(), &[4.0, 8.0]);
+    assert_eq!(
+        global_max.as_slice().expect("tensor should be contiguous"),
+        &[4.0, 8.0]
+    );
 }

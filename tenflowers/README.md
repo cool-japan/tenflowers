@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/tenflowers.svg)](https://crates.io/crates/tenflowers)
 [![Documentation](https://docs.rs/tenflowers/badge.svg)](https://docs.rs/tenflowers)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](../README.md#license)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../README.md#license)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 
 A pure Rust implementation of TensorFlow, providing a comprehensive deep learning framework with Rust's safety and performance guarantees.
@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.1.0-alpha.2"
+tenflowers = "0.1.0-beta.1"
 ```
 
 ### Basic Example
@@ -136,23 +136,23 @@ TenfloweRS provides several optional features:
 - `benchmark`: Benchmarking utilities
 
 ### Language Bindings
-- `python`: Python bindings via PyO3
+- `python`: Python bindings via PyO3 ⚠️ Temporarily excluded in beta.1 (requires Python environment)
 
 ### Convenience
-- `full`: Enable most features (gpu, blas-openblas, simd, serialize, compression, onnx, autograd, python)
+- `full`: Enable most features (gpu, blas-openblas, simd, serialize, compression, onnx, autograd)
 
 ### Enable GPU Support
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-alpha.2", features = ["gpu"] }
+tenflowers = { version = "0.1.0-beta.1", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-alpha.2", features = ["full"] }
+tenflowers = { version = "0.1.0-beta.1", features = ["full"] }
 ```
 
 ## Architecture
@@ -209,16 +209,11 @@ Contributions are welcome! Please see [CONTRIBUTING.md](../CONTRIBUTING.md) for 
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](../LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
+Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Status
 
-TenfloweRS is currently in alpha (v0.1.0-alpha.2). APIs may change as development continues.
+TenfloweRS is currently in beta (v0.1.0-beta.1). The core API is stabilizing for 1.0 release. All 2357 tests passing, zero security vulnerabilities.
 
 ## Links
 

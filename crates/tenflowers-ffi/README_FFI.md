@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/cool-japan/tenflowers/workflows/Build%20Wheels/badge.svg)](https://github.com/cool-japan/tenflowers/actions)
 [![PyPI version](https://badge.fury.io/py/tenflowers.svg)](https://pypi.org/project/tenflowers/)
 [![Python](https://img.shields.io/pypi/pyversions/tenflowers.svg)](https://pypi.org/project/tenflowers/)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](../LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../LICENSE)
 
 Python bindings for TenfloweRS - a pure Rust implementation of TensorFlow with high-performance tensor operations and automatic differentiation.
 
@@ -315,10 +315,7 @@ Contributions are welcome! Please see the main repository's CONTRIBUTING.md for 
 
 ## License
 
-TenfloweRS is dual-licensed under:
-
-- MIT License ([LICENSE-MIT](../LICENSE-MIT) or http://opensource.org/licenses/MIT)
-- Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+TenfloweRS is licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Citation
 

@@ -157,7 +157,10 @@ impl EnhancedRegistry {
 
     /// Get device capabilities
     pub fn get_device_capabilities(&self, device: Device) -> DeviceCapabilities {
-        let mut caps = self.device_capabilities.lock().unwrap();
+        let mut caps = self
+            .device_capabilities
+            .lock()
+            .expect("lock should not be poisoned");
         caps.entry(device)
             .or_insert_with(|| DeviceCapabilities::for_device(device))
             .clone()
@@ -165,7 +168,7 @@ impl EnhancedRegistry {
 
     /// Set kernel selection strategy
     pub fn set_strategy(&self, strategy: KernelSelectionStrategy) {
-        *self.strategy.lock().unwrap() = strategy;
+        *self.strategy.lock().expect("lock should not be poisoned") = strategy;
     }
 
     /// Get kernel with intelligent device selection and fallback
@@ -206,7 +209,10 @@ impl EnhancedRegistry {
 
     /// Warm up frequently used kernels
     pub fn warm_kernels(&self, ops: &[(String, Device, DType)]) {
-        let mut warmed = self.warmed_kernels.lock().unwrap();
+        let mut warmed = self
+            .warmed_kernels
+            .lock()
+            .expect("lock should not be poisoned");
 
         for (op_name, device, dtype) in ops {
             let cache_key = format!("{}_{}_{:?}_{:?}", op_name, "warmed", device, dtype);
@@ -224,7 +230,10 @@ impl EnhancedRegistry {
         dtype: DType,
     ) -> Option<Arc<dyn Kernel>> {
         let cache_key = format!("{}_{}_{:?}_{:?}", op_name, "warmed", device, dtype);
-        let warmed = self.warmed_kernels.lock().unwrap();
+        let warmed = self
+            .warmed_kernels
+            .lock()
+            .expect("lock should not be poisoned");
         warmed.get(&cache_key).cloned()
     }
 
@@ -238,7 +247,10 @@ impl EnhancedRegistry {
         success: bool,
     ) {
         let key = format!("{}_{:?}_{:?}", op_name, device, dtype);
-        let mut stats = self.kernel_stats.lock().unwrap();
+        let mut stats = self
+            .kernel_stats
+            .lock()
+            .expect("lock should not be poisoned");
         let entry = stats.entry(key).or_insert_with(KernelStats::default);
 
         if success {
@@ -251,18 +263,24 @@ impl EnhancedRegistry {
     /// Get kernel statistics
     pub fn get_kernel_stats(&self, op_name: &str, device: Device, dtype: DType) -> KernelStats {
         let key = format!("{}_{:?}_{:?}", op_name, device, dtype);
-        let stats = self.kernel_stats.lock().unwrap();
+        let stats = self
+            .kernel_stats
+            .lock()
+            .expect("lock should not be poisoned");
         stats.get(&key).cloned().unwrap_or_default()
     }
 
     /// Get all kernel statistics
     pub fn get_all_stats(&self) -> HashMap<String, KernelStats> {
-        self.kernel_stats.lock().unwrap().clone()
+        self.kernel_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Find optimal device for an operation
     pub fn find_optimal_device(&self, op_name: &str, dtype: DType, data_size: usize) -> Device {
-        let strategy = *self.strategy.lock().unwrap();
+        let strategy = *self.strategy.lock().expect("lock should not be poisoned");
 
         match strategy {
             KernelSelectionStrategy::Performance => {
@@ -305,7 +323,10 @@ impl EnhancedRegistry {
     /// Suggest optimizations based on statistics
     pub fn suggest_optimizations(&self) -> Vec<String> {
         let mut suggestions = Vec::new();
-        let stats = self.kernel_stats.lock().unwrap();
+        let stats = self
+            .kernel_stats
+            .lock()
+            .expect("lock should not be poisoned");
 
         for (key, stat) in stats.iter() {
             // Suggest warming for frequently used kernels
@@ -340,12 +361,18 @@ impl EnhancedRegistry {
 
     /// Clear all statistics
     pub fn reset_statistics(&self) {
-        self.kernel_stats.lock().unwrap().clear();
+        self.kernel_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
     }
 
     /// Generate performance report
     pub fn generate_performance_report(&self) -> PerformanceReport {
-        let stats = self.kernel_stats.lock().unwrap();
+        let stats = self
+            .kernel_stats
+            .lock()
+            .expect("lock should not be poisoned");
 
         let total_executions: u64 = stats.values().map(|s| s.execution_count).sum();
         let total_successes: u64 = stats.values().map(|s| s.success_count).sum();

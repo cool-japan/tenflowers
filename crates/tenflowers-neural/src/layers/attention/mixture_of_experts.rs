@@ -292,7 +292,10 @@ where
                     .collect();
 
                 // Sort by score in descending order
-                expert_score_pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                expert_score_pairs.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .expect("partial_cmp should not return None for valid values")
+                });
 
                 // Take top-k experts
                 for i in 0..self.num_selected.min(num_experts) {
@@ -342,15 +345,21 @@ where
             tenflowers_core::ops::mul(&expert_importance, &expert_utilization)?;
         let total_product = self.tensor_sum(&importance_util_product)?;
 
-        let ideal_balance = T::from(1.0 / (num_experts as f64)).unwrap();
+        let ideal_balance = T::from(1.0 / (num_experts as f64))
+            .expect("Failed to convert ideal_balance to tensor type");
         let ideal_balance_squared = ideal_balance * ideal_balance;
         let ideal_tensor = Tensor::from_scalar(ideal_balance_squared);
 
         let balance_loss = tenflowers_core::ops::sub(&total_product, &ideal_tensor)?;
 
         // Scale by coefficient and number of experts
-        let coef_tensor = Tensor::from_scalar(T::from(self.load_balance_loss_coef).unwrap());
-        let num_experts_tensor = Tensor::from_scalar(T::from(num_experts as f64).unwrap());
+        let coef_tensor = Tensor::from_scalar(
+            T::from(self.load_balance_loss_coef)
+                .expect("Failed to convert load_balance_loss_coef to tensor type"),
+        );
+        let num_experts_tensor = Tensor::from_scalar(
+            T::from(num_experts as f64).expect("Failed to convert num_experts to tensor type"),
+        );
 
         let scaled_loss = tenflowers_core::ops::mul(&balance_loss, &coef_tensor)?;
         let final_loss = tenflowers_core::ops::mul(&scaled_loss, &num_experts_tensor)?;
@@ -377,7 +386,10 @@ where
         // Convert counts to utilization rates
         let utilization_rates: Vec<T> = expert_counts
             .into_iter()
-            .map(|count| T::from(count / total_assignments).unwrap())
+            .map(|count| {
+                T::from(count / total_assignments)
+                    .expect("Failed to convert utilization rate to tensor type")
+            })
             .collect();
 
         Tensor::from_data(utilization_rates, &[self.num_experts])
@@ -394,7 +406,9 @@ where
         let sum_scores = self.tensor_sum_axis(gate_scores, 0)?;
 
         // Divide by batch size to get mean
-        let batch_size_tensor = Tensor::from_scalar(T::from(batch_size).unwrap());
+        let batch_size_tensor = Tensor::from_scalar(
+            T::from(batch_size).expect("Failed to convert batch_size to tensor type"),
+        );
         let mean_scores = tenflowers_core::ops::div(&sum_scores, &batch_size_tensor)?;
 
         Ok(mean_scores)

@@ -69,8 +69,9 @@ where
 {
     fn step(&mut self, model: &mut dyn Model<T>) -> Result<()> {
         // Convert constants to T
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let eps_t = T::from(self.epsilon).unwrap();
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let eps_t = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
 
         // Update each parameter
         for param in model.parameters_mut() {

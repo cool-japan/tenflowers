@@ -155,8 +155,14 @@ impl GradientMemoryProfiler {
             return Ok(());
         }
 
-        let operation_name = self.operation_stack.pop().unwrap();
-        let start_memory = self.operation_start_memory.pop().unwrap();
+        let operation_name = self
+            .operation_stack
+            .pop()
+            .expect("Operation stack should not be empty after emptiness check");
+        let start_memory = self
+            .operation_start_memory
+            .pop()
+            .expect("Start memory stack should not be empty when operation stack is not empty");
         let current_memory = self.get_current_memory_usage()?;
         let memory_delta = current_memory.saturating_sub(start_memory);
 

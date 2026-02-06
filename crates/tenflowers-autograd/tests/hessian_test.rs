@@ -24,7 +24,7 @@ fn test_hessian_simple_quadratic() {
         "Hessian should be 1x1 matrix"
     );
 
-    let hessian_data = hessian.as_slice().unwrap();
+    let hessian_data = hessian.as_slice().expect("tensor should be contiguous");
     // For f(x) = x^2, the Hessian should be [2]
     assert!(
         (hessian_data[0] - 2.0).abs() < 1e-6,
@@ -62,7 +62,7 @@ fn test_hessian_multivariate_function() {
         "Hessian should be 2x2 matrix"
     );
 
-    let hessian_data = hessian.as_slice().unwrap();
+    let hessian_data = hessian.as_slice().expect("tensor should be contiguous");
     // For f(x,y) = x^2 + y^2, the Hessian should be diag([2, 2])
     assert!(
         (hessian_data[0] - 2.0).abs() < 1e-6,
@@ -145,7 +145,9 @@ fn test_jvp_comprehensive() {
     // ∇f = [2*x + 2*y, 2*x + 2*y] = [2*1 + 2*2, 2*1 + 2*2] = [6, 6]
     // JVP = ∇f · v = [6, 6] · [1, 1] = 12
 
-    let jvp_scalar = jvp_values[0].as_slice().unwrap()[0];
+    let jvp_scalar = jvp_values[0]
+        .as_slice()
+        .expect("tensor should be contiguous")[0];
     assert!(
         (jvp_scalar - 12.0).abs() < 1e-6,
         "JVP should be 12.0, got {}",

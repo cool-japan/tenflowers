@@ -188,9 +188,10 @@ where
         T: scirs2_core::num_traits::Float + scirs2_core::num_traits::FromPrimitive,
     {
         if let Some(max_norm) = self.regularization.max_norm {
-            let max_norm_t = T::from_f32(max_norm).unwrap_or_else(|| T::from(2.0).unwrap());
-            let norm_type =
-                T::from_f32(self.regularization.norm_type).unwrap_or_else(|| T::from(2.0).unwrap());
+            let max_norm_t = T::from_f32(max_norm)
+                .unwrap_or_else(|| T::from(2.0).expect("fallback value computation failed"));
+            let norm_type = T::from_f32(self.regularization.norm_type)
+                .unwrap_or_else(|| T::from(2.0).expect("fallback value computation failed"));
 
             // For each embedding vector, compute its norm and clip if necessary
             // This is a simplified implementation - in practice you'd want GPU optimization

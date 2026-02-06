@@ -203,7 +203,10 @@ impl GpuPerformanceOptimizer {
             metrics,
         };
 
-        *self.active_profiling.lock().unwrap() = Some(session);
+        *self
+            .active_profiling
+            .lock()
+            .expect("lock should not be poisoned") = Some(session);
     }
 
     /// Record memory transfer timing
@@ -213,7 +216,12 @@ impl GpuPerformanceOptimizer {
         d2h_time: Duration,
         bytes_transferred: u64,
     ) {
-        if let Some(session) = self.active_profiling.lock().unwrap().as_mut() {
+        if let Some(session) = self
+            .active_profiling
+            .lock()
+            .expect("lock should not be poisoned")
+            .as_mut()
+        {
             session.metrics.h2d_transfer_time = h2d_time;
             session.metrics.d2h_transfer_time = d2h_time;
             session.metrics.memory_usage = bytes_transferred;
@@ -235,7 +243,12 @@ impl GpuPerformanceOptimizer {
         elements_processed: usize,
         workgroup_config: WorkgroupConfig,
     ) {
-        if let Some(session) = self.active_profiling.lock().unwrap().as_mut() {
+        if let Some(session) = self
+            .active_profiling
+            .lock()
+            .expect("lock should not be poisoned")
+            .as_mut()
+        {
             session.metrics.kernel_time = kernel_time;
             session.metrics.elements_processed = elements_processed;
             session.metrics.workgroup_config = workgroup_config;
@@ -252,7 +265,12 @@ impl GpuPerformanceOptimizer {
 
     /// Finish profiling and analyze results
     pub fn finish_profiling(&self) -> Option<GpuOpMetrics> {
-        if let Some(session) = self.active_profiling.lock().unwrap().take() {
+        if let Some(session) = self
+            .active_profiling
+            .lock()
+            .expect("lock should not be poisoned")
+            .take()
+        {
             let total_time = session.start_time.elapsed();
             let mut metrics = session.metrics;
             metrics.total_time = total_time;
@@ -264,7 +282,10 @@ impl GpuPerformanceOptimizer {
             }
 
             // Store in performance history
-            let mut history = self.performance_history.write().unwrap();
+            let mut history = self
+                .performance_history
+                .write()
+                .expect("write lock should not be poisoned");
             history
                 .entry(metrics.operation_name.clone())
                 .or_insert_with(Vec::new)
@@ -370,7 +391,10 @@ impl GpuPerformanceOptimizer {
         let mut recommendations = Vec::new();
 
         // Get historical performance data
-        let history = self.performance_history.read().unwrap();
+        let history = self
+            .performance_history
+            .read()
+            .expect("read lock should not be poisoned");
         if let Some(metrics_history) = history.get(operation_name) {
             if metrics_history.len() >= 3 {
                 // Analyze trends
@@ -431,7 +455,10 @@ impl GpuPerformanceOptimizer {
     /// Auto-tune workgroup configuration
     pub fn auto_tune_workgroup(&self, operation_name: &str, tensor_size: usize) -> WorkgroupConfig {
         // Check if we have an optimal configuration cached
-        let optimal_configs = self.optimal_configs.read().unwrap();
+        let optimal_configs = self
+            .optimal_configs
+            .read()
+            .expect("read lock should not be poisoned");
         if let Some(config) = optimal_configs.get(operation_name) {
             return *config;
         }
@@ -456,7 +483,10 @@ impl GpuPerformanceOptimizer {
         }
 
         // Cache the result
-        let mut optimal_configs = self.optimal_configs.write().unwrap();
+        let mut optimal_configs = self
+            .optimal_configs
+            .write()
+            .expect("write lock should not be poisoned");
         optimal_configs.insert(operation_name.to_string(), best_config);
 
         best_config
@@ -534,7 +564,10 @@ impl GpuPerformanceOptimizer {
 
     /// Generate performance report
     pub fn generate_performance_report(&self) -> PerformanceReport {
-        let history = self.performance_history.read().unwrap();
+        let history = self
+            .performance_history
+            .read()
+            .expect("read lock should not be poisoned");
         let mut total_operations = 0;
         let mut total_time = Duration::ZERO;
         let mut avg_gpu_utilization = 0.0;
@@ -585,7 +618,10 @@ impl GpuPerformanceOptimizer {
     fn generate_global_recommendations(&self) -> Vec<String> {
         let mut recommendations = Vec::new();
 
-        let history = self.performance_history.read().unwrap();
+        let history = self
+            .performance_history
+            .read()
+            .expect("read lock should not be poisoned");
         let total_ops = history.values().map(|v| v.len()).sum::<usize>();
 
         if total_ops > 0 {

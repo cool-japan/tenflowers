@@ -215,11 +215,10 @@ impl PatternDetector {
         let mut predictions = Vec::new();
 
         // Use the pattern with highest confidence
-        if let Some((pattern, _)) = self
-            .detected_patterns
-            .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-        {
+        if let Some((pattern, _)) = self.detected_patterns.iter().max_by(|a, b| {
+            a.1.partial_cmp(b.1)
+                .expect("partial_cmp should not return None for valid values")
+        }) {
             match pattern {
                 AccessPattern::Sequential { stride } => {
                     for i in 1..=count {
@@ -254,7 +253,10 @@ impl PatternDetector {
     pub fn dominant_pattern(&self) -> Option<AccessPattern> {
         self.detected_patterns
             .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| {
+                a.1.partial_cmp(b.1)
+                    .expect("partial_cmp should not return None for valid values")
+            })
             .map(|(pattern, _)| pattern.clone())
     }
 }
@@ -368,7 +370,7 @@ where
             while !shutdown.load(Ordering::Relaxed) {
                 // Process prefetch requests
                 let indices_to_prefetch: Vec<usize> = {
-                    let mut queue_guard = queue.lock().unwrap();
+                    let mut queue_guard = queue.lock().expect("lock should not be poisoned");
                     let mut indices = Vec::new();
 
                     // Take up to max_prefetch_count items
@@ -385,7 +387,8 @@ where
                 // Prefetch the data
                 for index in indices_to_prefetch {
                     if let Ok(data) = dataset.get(index) {
-                        let mut cache_guard = cache.write().unwrap();
+                        let mut cache_guard =
+                            cache.write().expect("write lock should not be poisoned");
 
                         // Check cache size limit
                         if cache_guard.len() >= config.max_cache_size {
@@ -410,7 +413,8 @@ where
                         );
 
                         // Update stats
-                        let mut stats_guard = stats.write().unwrap();
+                        let mut stats_guard =
+                            stats.write().expect("write lock should not be poisoned");
                         stats_guard.bandwidth_saved +=
                             std::mem::size_of::<(Tensor<T>, Tensor<T>)>() as u64;
                     }
@@ -418,7 +422,7 @@ where
 
                 // Clean up expired entries
                 {
-                    let mut cache_guard = cache.write().unwrap();
+                    let mut cache_guard = cache.write().expect("write lock should not be poisoned");
                     let now = Instant::now();
                     cache_guard
                         .retain(|_, entry| now.duration_since(entry.timestamp) < config.cache_ttl);
@@ -433,29 +437,44 @@ where
     pub fn get(&self, index: usize) -> Result<(Tensor<T>, Tensor<T>)> {
         // Update statistics
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self
+                .stats
+                .write()
+                .expect("write lock should not be poisoned");
             stats.total_accesses += 1;
         }
 
         // Record access pattern
         {
-            let mut detector = self.pattern_detector.write().unwrap();
+            let mut detector = self
+                .pattern_detector
+                .write()
+                .expect("write lock should not be poisoned");
             detector.record_access(index);
         }
 
         // Check cache first
         {
-            let mut cache = self.prefetch_cache.write().unwrap();
+            let mut cache = self
+                .prefetch_cache
+                .write()
+                .expect("write lock should not be poisoned");
             if let Some(entry) = cache.get_mut(&index) {
                 entry.access_count += 1;
                 entry.timestamp = Instant::now(); // Update LRU
 
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = self
+                    .stats
+                    .write()
+                    .expect("write lock should not be poisoned");
                 stats.prefetch_hits += 1;
 
                 return Ok(entry.data.clone());
             } else {
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = self
+                    .stats
+                    .write()
+                    .expect("write lock should not be poisoned");
                 stats.prefetch_misses += 1;
             }
         }
@@ -470,48 +489,75 @@ where
     /// Predict future accesses and queue them for prefetching
     fn predict_and_queue_prefetch(&self, current_index: usize) {
         let predictions = {
-            let detector = self.pattern_detector.read().unwrap();
+            let detector = self
+                .pattern_detector
+                .read()
+                .expect("read lock should not be poisoned");
             detector.predict_next(current_index, self.config.max_prefetch_count)
         };
 
         if !predictions.is_empty() {
-            let mut queue = self.prefetch_queue.lock().unwrap();
+            let mut queue = self
+                .prefetch_queue
+                .lock()
+                .expect("lock should not be poisoned");
             for predicted_index in predictions {
                 // Only queue if not already cached
-                let cache = self.prefetch_cache.read().unwrap();
+                let cache = self
+                    .prefetch_cache
+                    .read()
+                    .expect("read lock should not be poisoned");
                 if !cache.contains_key(&predicted_index) {
                     queue.push_back(predicted_index);
                 }
             }
 
             // Update pattern prediction stats
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self
+                .stats
+                .write()
+                .expect("write lock should not be poisoned");
             stats.pattern_hits += 1;
         } else {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self
+                .stats
+                .write()
+                .expect("write lock should not be poisoned");
             stats.pattern_misses += 1;
         }
     }
 
     /// Get current statistics
     pub fn stats(&self) -> AccessStats {
-        self.stats.read().unwrap().clone()
+        self.stats
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Get the dominant access pattern
     pub fn dominant_pattern(&self) -> Option<AccessPattern> {
-        self.pattern_detector.read().unwrap().dominant_pattern()
+        self.pattern_detector
+            .read()
+            .expect("read lock should not be poisoned")
+            .dominant_pattern()
     }
 
     /// Clear the prefetch cache
     pub fn clear_cache(&self) {
-        let mut cache = self.prefetch_cache.write().unwrap();
+        let mut cache = self
+            .prefetch_cache
+            .write()
+            .expect("write lock should not be poisoned");
         cache.clear();
     }
 
     /// Get cache statistics
     pub fn cache_info(&self) -> (usize, usize) {
-        let cache = self.prefetch_cache.read().unwrap();
+        let cache = self
+            .prefetch_cache
+            .read()
+            .expect("read lock should not be poisoned");
         (cache.len(), self.config.max_cache_size)
     }
 }
@@ -645,9 +691,9 @@ mod tests {
         let prefetcher = PredictivePrefetcher::with_config(dataset, config);
 
         // Access in sequential pattern
-        let _ = prefetcher.get(0).unwrap();
-        let _ = prefetcher.get(1).unwrap();
-        let _ = prefetcher.get(2).unwrap();
+        let _ = prefetcher.get(0).expect("index should be in bounds");
+        let _ = prefetcher.get(1).expect("index should be in bounds");
+        let _ = prefetcher.get(2).expect("index should be in bounds");
 
         // Give prefetcher time to work
         thread::sleep(Duration::from_millis(50));
@@ -666,7 +712,7 @@ mod tests {
 
         assert_eq!(dataset.len(), 2);
 
-        let (feat, label) = dataset.get(0).unwrap();
+        let (feat, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(feat.shape().dims(), &[2]);
         assert_eq!(label.shape().dims(), &[] as &[usize]);
 

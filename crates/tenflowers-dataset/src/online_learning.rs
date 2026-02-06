@@ -400,7 +400,10 @@ impl KSDetector {
 
     fn ks_test(&self, sample1: &[f64], sample2: &[f64]) -> f64 {
         let mut combined: Vec<f64> = sample1.iter().chain(sample2.iter()).cloned().collect();
-        combined.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        combined.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let n1 = sample1.len() as f64;
         let n2 = sample2.len() as f64;
@@ -504,7 +507,9 @@ impl DriftDetector for ErrorRateDetector {
             return Ok(false);
         }
 
-        let reference_rate = self.reference_error_rate.unwrap();
+        let reference_rate = self
+            .reference_error_rate
+            .expect("reference_error_rate should be set after check");
 
         // Check if error rate has changed significantly
         if (current_error_rate - reference_rate).abs() > self.threshold {

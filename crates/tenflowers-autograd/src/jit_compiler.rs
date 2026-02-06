@@ -175,7 +175,10 @@ impl JitCompiler {
             },
         ];
 
-        let mut registry = self.template_registry.write().unwrap();
+        let mut registry = self
+            .template_registry
+            .write()
+            .expect("write lock should not be poisoned");
         for template in templates {
             registry.insert(template.operation_name.clone(), template);
         }
@@ -185,7 +188,10 @@ impl JitCompiler {
     pub fn compile_gradient_kernel(&self, signature: KernelSignature) -> Result<CompiledKernel> {
         // Check cache first
         {
-            let cache = self.kernel_cache.read().unwrap();
+            let cache = self
+                .kernel_cache
+                .read()
+                .expect("read lock should not be poisoned");
             if let Some(cached_kernel) = cache.get(&signature) {
                 return Ok(cached_kernel.clone());
             }
@@ -201,7 +207,10 @@ impl JitCompiler {
 
         // Cache the compiled kernel
         {
-            let mut cache = self.kernel_cache.write().unwrap();
+            let mut cache = self
+                .kernel_cache
+                .write()
+                .expect("write lock should not be poisoned");
             cache.insert(signature.clone(), kernel.clone());
         }
 
@@ -211,7 +220,10 @@ impl JitCompiler {
     /// Generate optimized WGSL shader code
     fn compile_kernel_from_signature(&self, signature: &KernelSignature) -> Result<CompiledKernel> {
         let template = {
-            let registry = self.template_registry.read().unwrap();
+            let registry = self
+                .template_registry
+                .read()
+                .expect("read lock should not be poisoned");
             registry
                 .get(&signature.operation)
                 .ok_or_else(|| {
@@ -478,7 +490,10 @@ impl JitCompiler {
 
     /// Get kernel cache statistics
     pub fn cache_stats(&self) -> (usize, usize) {
-        let cache = self.kernel_cache.read().unwrap();
+        let cache = self
+            .kernel_cache
+            .read()
+            .expect("read lock should not be poisoned");
         let total_kernels = cache.len();
         let total_size_estimate = cache.values().map(|k| k.wgsl_source.len()).sum::<usize>();
         (total_kernels, total_size_estimate)
@@ -486,19 +501,28 @@ impl JitCompiler {
 
     /// Clear kernel cache
     pub fn clear_cache(&self) {
-        let mut cache = self.kernel_cache.write().unwrap();
+        let mut cache = self
+            .kernel_cache
+            .write()
+            .expect("write lock should not be poisoned");
         cache.clear();
     }
 
     /// Register a custom gradient kernel template
     pub fn register_template(&self, template: GradientKernelTemplate) {
-        let mut registry = self.template_registry.write().unwrap();
+        let mut registry = self
+            .template_registry
+            .write()
+            .expect("write lock should not be poisoned");
         registry.insert(template.operation_name.clone(), template);
     }
 
     /// Export cached kernels for persistence
     pub fn export_cache(&self) -> Result<String> {
-        let cache = self.kernel_cache.read().unwrap();
+        let cache = self
+            .kernel_cache
+            .read()
+            .expect("read lock should not be poisoned");
         let serializable_cache: HashMap<String, serde_json::Value> = cache
             .iter()
             .map(|(sig, kernel)| {
@@ -601,7 +625,10 @@ mod tests {
         compiler.register_template(custom_template);
 
         // Verify template was registered by checking the registry
-        let registry = compiler.template_registry.read().unwrap();
+        let registry = compiler
+            .template_registry
+            .read()
+            .expect("read lock should not be poisoned");
         assert!(registry.contains_key("custom_op_backward"));
     }
 

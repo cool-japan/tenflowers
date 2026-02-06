@@ -20,7 +20,10 @@ mod tests {
 
         // Compare results
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -35,7 +38,10 @@ mod tests {
         // Expected: [[2, 3], [4, 6], [6, 9]]
         let expected = vec![2.0, 3.0, 4.0, 6.0, 6.0, 9.0];
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -48,7 +54,10 @@ mod tests {
         let expected = vec![4.0, 9.0, 16.0];
 
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
 
         // Test broadcasting
@@ -57,7 +66,10 @@ mod tests {
         let expected = vec![8.0, 27.0, 64.0];
 
         if let TensorStorage::Cpu(arr) = &d.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -74,7 +86,10 @@ mod tests {
         let expected = vec![3.0f32, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -91,7 +106,10 @@ mod tests {
         let expected = vec![3.0f32, 6.0, 10.0, 15.0, 21.0, 28.0, 36.0, 45.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -128,7 +146,10 @@ mod tests {
         let expected = vec![4.0, 5.0, 6.0];
 
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -141,7 +162,10 @@ mod tests {
         let expected = vec![3.0, 2.0, 2.0];
 
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -154,14 +178,20 @@ mod tests {
         let expected_min = vec![1.0, 3.0, 3.0];
 
         if let TensorStorage::Cpu(arr) = &min_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_min);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_min
+            );
         }
 
         let max_result = max(&a, &b).unwrap();
         let expected_max = vec![2.0, 5.0, 4.0];
 
         if let TensorStorage::Cpu(arr) = &max_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_max);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_max
+            );
         }
     }
 
@@ -172,7 +202,10 @@ mod tests {
         let expected = vec![6.0, 7.0, 8.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -183,7 +216,10 @@ mod tests {
         let expected = vec![0.0, 0.5, 2.0, 3.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 
@@ -205,16 +241,28 @@ mod tests {
         let expected_div = vec![4.0, 2.5, 2.0];
 
         if let TensorStorage::Cpu(arr) = &ultra_add_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_add);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_add
+            );
         }
         if let TensorStorage::Cpu(arr) = &ultra_mul_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_mul);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_mul
+            );
         }
         if let TensorStorage::Cpu(arr) = &ultra_sub_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_sub);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_sub
+            );
         }
         if let TensorStorage::Cpu(arr) = &ultra_div_result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected_div);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected_div
+            );
         }
     }
 }

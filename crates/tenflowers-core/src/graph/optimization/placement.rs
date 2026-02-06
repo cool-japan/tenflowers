@@ -174,7 +174,9 @@ impl DevicePlacementOptimizationPass {
         node_id: NodeId,
         current_placements: &HashMap<NodeId, crate::device::Device>,
     ) -> crate::device::Device {
-        let node = graph.get_node(node_id).unwrap();
+        let node = graph
+            .get_node(node_id)
+            .expect("Node must exist in graph during placement computation");
         let profile = self.analyze_operation(node);
 
         match self.placement_strategy {

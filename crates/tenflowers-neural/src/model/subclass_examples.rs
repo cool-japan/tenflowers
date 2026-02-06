@@ -53,7 +53,7 @@ pub mod examples {
             let h1 = self
                 .layers
                 .get_layer_by_name("hidden1")
-                .unwrap()
+                .expect("hidden1 layer should exist")
                 .forward(input)?;
             // Apply ReLU activation
             let h1_relu = activation::relu(&h1)?;
@@ -61,14 +61,14 @@ pub mod examples {
             let h2 = self
                 .layers
                 .get_layer_by_name("hidden2")
-                .unwrap()
+                .expect("hidden2 layer should exist")
                 .forward(&h1_relu)?;
             let h2_relu = activation::relu(&h2)?;
 
             let output = self
                 .layers
                 .get_layer_by_name("output")
-                .unwrap()
+                .expect("output layer should exist")
                 .forward(&h2_relu)?;
             Ok(output)
         }

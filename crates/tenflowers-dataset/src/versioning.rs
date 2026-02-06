@@ -122,7 +122,7 @@ impl DatasetVersionManager {
         let version_id = self.generate_version_id();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time before UNIX_EPOCH")
             .as_secs();
 
         // Calculate dataset statistics
@@ -219,7 +219,7 @@ impl DatasetVersionManager {
     ) -> Result<()> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time before UNIX_EPOCH")
             .as_secs();
 
         let transformation = TransformationRecord {
@@ -609,8 +609,8 @@ mod tests {
         assert_eq!(loaded_dataset.version_id(), &version_id);
 
         // Test loaded data
-        let (features, labels) = loaded_dataset.get(0).unwrap();
-        let features_slice = features.as_slice().unwrap();
+        let (features, labels) = loaded_dataset.get(0).expect("index should be in bounds");
+        let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[1.0, 2.0]);
         assert_eq!(labels.get(&[]).unwrap(), 0.0);
     }

@@ -350,7 +350,10 @@ impl DiagnosticMemoryPool {
 
     /// Get health history
     pub fn health_history(&self) -> Vec<PoolHealthMetrics> {
-        self.health_history.lock().unwrap().clone()
+        self.health_history
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 }
 

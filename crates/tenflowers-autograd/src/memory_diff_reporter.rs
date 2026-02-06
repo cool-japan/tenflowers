@@ -389,7 +389,9 @@ impl MemoryDiffReporter {
     pub fn snapshot(&mut self, name: &str) -> &MemorySnapshot {
         let snapshot = MemorySnapshot::capture();
         self.snapshots.insert(name.to_string(), snapshot);
-        self.snapshots.get(name).unwrap()
+        self.snapshots
+            .get(name)
+            .expect("snapshot should exist after insertion")
     }
 
     /// Take a snapshot with custom data

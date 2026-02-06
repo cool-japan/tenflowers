@@ -165,14 +165,12 @@ pub mod forward_ops {
         }
 
         for direction in all_directions {
-            let lhs_tangent = lhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&lhs.primal).unwrap());
-            let rhs_tangent = rhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&rhs.primal).unwrap());
+            let lhs_tangent = lhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&lhs.primal).expect("fallback value computation failed")
+            });
+            let rhs_tangent = rhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&rhs.primal).expect("fallback value computation failed")
+            });
 
             let tangent = ops::add(&lhs_tangent, &rhs_tangent)?;
             tangents.insert(direction, tangent);
@@ -214,14 +212,12 @@ pub mod forward_ops {
         }
 
         for direction in all_directions {
-            let lhs_tangent = lhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&lhs.primal).unwrap());
-            let rhs_tangent = rhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&rhs.primal).unwrap());
+            let lhs_tangent = lhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&lhs.primal).expect("fallback value computation failed")
+            });
+            let rhs_tangent = rhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&rhs.primal).expect("fallback value computation failed")
+            });
 
             // f'(x) * g(x)
             let term1 = ops::mul(&lhs_tangent, &rhs.primal)?;
@@ -268,14 +264,12 @@ pub mod forward_ops {
         }
 
         for direction in all_directions {
-            let lhs_tangent = lhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&lhs.primal).unwrap());
-            let rhs_tangent = rhs
-                .tangent(direction)
-                .cloned()
-                .unwrap_or_else(|| zeros_like(&rhs.primal).unwrap());
+            let lhs_tangent = lhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&lhs.primal).expect("fallback value computation failed")
+            });
+            let rhs_tangent = rhs.tangent(direction).cloned().unwrap_or_else(|| {
+                zeros_like(&rhs.primal).expect("fallback value computation failed")
+            });
 
             // f'(x) @ g(x)
             let term1 = ops::matmul(&lhs_tangent, &rhs.primal)?;
@@ -480,8 +474,9 @@ where
                 }
             }
 
-            output_tangents
-                .push(total_tangent.unwrap_or_else(|| zeros_like(&dual_output.primal).unwrap()));
+            output_tangents.push(total_tangent.unwrap_or_else(|| {
+                zeros_like(&dual_output.primal).expect("fallback value computation failed")
+            }));
         }
 
         Ok((primals, output_tangents))
@@ -512,8 +507,21 @@ mod tests {
         // f(x) = x + x = 2x, so f'(x) = 2
         let result = forward_ops::add(&x, &x).unwrap();
 
-        assert_eq!(result.primal.as_slice().unwrap(), &[4.0]);
-        assert_eq!(result.tangent(1).unwrap().as_slice().unwrap(), &[2.0]);
+        assert_eq!(
+            result
+                .primal
+                .as_slice()
+                .expect("tensor should be contiguous"),
+            &[4.0]
+        );
+        assert_eq!(
+            result
+                .tangent(1)
+                .unwrap()
+                .as_slice()
+                .expect("tensor should be contiguous"),
+            &[2.0]
+        );
     }
 
     #[test]
@@ -526,8 +534,21 @@ mod tests {
         // f(x) = x * x = x^2, so f'(x) = 2x = 6
         let result = forward_ops::mul(&x, &x).unwrap();
 
-        assert_eq!(result.primal.as_slice().unwrap(), &[9.0]);
-        assert_eq!(result.tangent(1).unwrap().as_slice().unwrap(), &[6.0]);
+        assert_eq!(
+            result
+                .primal
+                .as_slice()
+                .expect("tensor should be contiguous"),
+            &[9.0]
+        );
+        assert_eq!(
+            result
+                .tangent(1)
+                .unwrap()
+                .as_slice()
+                .expect("tensor should be contiguous"),
+            &[6.0]
+        );
     }
 
     #[test]
@@ -543,6 +564,9 @@ mod tests {
             .directional_derivative(&x, &v, |dual_x| forward_ops::mul(dual_x, dual_x))
             .unwrap();
 
-        assert_eq!(result.as_slice().unwrap(), &[6.0]);
+        assert_eq!(
+            result.as_slice().expect("tensor should be contiguous"),
+            &[6.0]
+        );
     }
 }

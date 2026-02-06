@@ -251,7 +251,7 @@ impl ThreadBarrier {
     }
 
     fn wait(&self) {
-        let mut waiting = self.waiting.lock().unwrap();
+        let mut waiting = self.waiting.lock().expect("lock should not be poisoned");
         *waiting += 1;
 
         if *waiting == self.num_threads {
@@ -261,7 +261,10 @@ impl ThreadBarrier {
         } else {
             // Wait for all threads to arrive
             while *waiting != 0 {
-                waiting = self.condvar.wait(waiting).unwrap();
+                waiting = self
+                    .condvar
+                    .wait(waiting)
+                    .expect("condvar wait should not fail");
             }
         }
     }
@@ -389,7 +392,10 @@ mod tests {
             })
             .collect();
 
-        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|h| h.join().expect("thread join should succeed"))
+            .collect();
         assert_eq!(results, vec![0, 1, 2]);
     }
 }

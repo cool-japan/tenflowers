@@ -69,7 +69,15 @@ impl GpuLinalgContext {
             self.initialize_pipelines()?;
         }
 
-        let pipeline = self.transpose_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.transpose_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "transpose".to_string(),
+                    details: "Transpose pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Create metadata
         let metadata = LinalgMetadata::new(shape[0], shape[1]);
@@ -140,7 +148,15 @@ impl GpuLinalgContext {
             self.initialize_pipelines()?;
         }
 
-        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.matmul_linalg_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "matmul".to_string(),
+                    details: "Matrix multiplication pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Validate matrix dimensions
         if shape_a.len() != 2 || shape_b.len() != 2 {
@@ -296,7 +312,15 @@ impl GpuLinalgContext {
             self.initialize_pipelines()?;
         }
 
-        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.matmul_linalg_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "matmul".to_string(),
+                    details: "Matrix multiplication pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Create metadata with tile size hint
         let mut metadata =
@@ -375,7 +399,15 @@ impl GpuLinalgContext {
             self.initialize_pipelines()?;
         }
 
-        let pipeline = self.matmul_linalg_pipeline.as_ref().unwrap();
+        let pipeline =
+            self.matmul_linalg_pipeline
+                .as_ref()
+                .ok_or_else(|| TensorError::ComputeError {
+                    operation: "matmul".to_string(),
+                    details: "Matrix multiplication pipeline not initialized".to_string(),
+                    retry_possible: false,
+                    context: None,
+                })?;
 
         // Create metadata
         let metadata =

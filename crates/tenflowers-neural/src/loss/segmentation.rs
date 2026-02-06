@@ -29,7 +29,22 @@ where
         ));
     }
 
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
 
     // Compute intersection: sum(predictions * targets)
     let intersection = predictions.mul(targets)?;
@@ -41,7 +56,7 @@ where
     let union = pred_sum.add(&target_sum)?;
 
     // Compute Dice coefficient: (2 * intersection) / (union + epsilon)
-    let two = Tensor::from_scalar(T::from(2.0).unwrap());
+    let two = Tensor::from_scalar(T::from(2.0).unwrap_or_else(|| T::one() + T::one()));
     let numerator = two.mul(&intersection_sum)?;
     let denominator = union.add(&Tensor::from_scalar(epsilon))?;
     let dice_coeff = numerator.div(&denominator)?;
@@ -79,7 +94,22 @@ where
         ));
     }
 
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
 
     // Compute intersection: sum(predictions * targets)
     let intersection = predictions.mul(targets)?;
@@ -127,7 +157,22 @@ where
         ));
     }
 
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
     let shape = predictions.shape().dims();
 
     // For multi-class segmentation, we expect the last dimension to be classes
@@ -163,15 +208,20 @@ where
 
             // This is a simplified version - in practice you'd need proper tensor operations
             // for per-class computations
-            total_weighted_intersection =
-                total_weighted_intersection + weight * intersection_sum.as_slice().unwrap()[0];
-            total_weighted_union = total_weighted_union + weight * union.as_slice().unwrap()[0];
+            total_weighted_intersection = total_weighted_intersection
+                + weight
+                    * intersection_sum
+                        .as_slice()
+                        .expect("tensor should be contiguous")[0];
+            total_weighted_union = total_weighted_union
+                + weight * union.as_slice().expect("tensor should be contiguous")[0];
         }
     }
 
     // Compute generalized Dice coefficient
-    let dice_coeff =
-        (T::from(2.0).unwrap() * total_weighted_intersection) / (total_weighted_union + epsilon);
+    let dice_coeff = (T::from(2.0).unwrap_or_else(|| T::one() + T::one())
+        * total_weighted_intersection)
+        / (total_weighted_union + epsilon);
 
     // Return 1 - Dice coefficient
     let loss = T::one() - dice_coeff;

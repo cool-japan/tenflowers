@@ -371,7 +371,11 @@ impl NumaScheduler {
             NumaAssignmentStrategy::LoadBalanced => {
                 // Sort nodes by load estimate (ascending)
                 let mut sorted_nodes = available_nodes.clone();
-                sorted_nodes.sort_by(|a, b| a.load_estimate.partial_cmp(&b.load_estimate).unwrap());
+                sorted_nodes.sort_by(|a, b| {
+                    a.load_estimate
+                        .partial_cmp(&b.load_estimate)
+                        .expect("partial_cmp should not return None for valid values")
+                });
 
                 for worker_id in 0..num_workers {
                     let node_idx = worker_id % sorted_nodes.len();

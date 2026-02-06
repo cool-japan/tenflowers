@@ -309,7 +309,10 @@ impl GradientCompressor {
             .collect();
 
         // Sort by absolute value in descending order
-        indexed_values.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        indexed_values.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .expect("gradient values should not be NaN during compression")
+        });
 
         // Take top K
         let mut indices = Vec::with_capacity(k);

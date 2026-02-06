@@ -58,7 +58,13 @@ fn basic_amp_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("  MatMul: Will be cast to FP16 (autocasted)");
 
     // Loss computation (FP32)
-    let loss = Tensor::<f32>::from_scalar(hidden.as_slice().unwrap().iter().sum::<f32>());
+    let loss = Tensor::<f32>::from_scalar(
+        hidden
+            .as_slice()
+            .expect("tensor should be contiguous")
+            .iter()
+            .sum::<f32>(),
+    );
     println!("  Loss computed in FP32");
 
     // Scale loss before backpropagation
@@ -116,7 +122,11 @@ fn bfloat16_example() -> Result<(), Box<dyn std::error::Error>> {
     let h1 = x.tensor().matmul(&w1)?;
     println!("  Layer 1: BFloat16 matmul");
 
-    let h1_sum = h1.as_slice().unwrap().iter().sum::<f32>();
+    let h1_sum = h1
+        .as_slice()
+        .expect("tensor should be contiguous")
+        .iter()
+        .sum::<f32>();
     let loss = Tensor::<f32>::from_scalar(h1_sum);
 
     println!("Computing gradients with BFloat16...");
@@ -164,7 +174,13 @@ fn dynamic_loss_scaling_example() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         let output = x.tensor().matmul(&w)?;
-        let loss = Tensor::<f32>::from_scalar(output.as_slice().unwrap().iter().sum::<f32>());
+        let loss = Tensor::<f32>::from_scalar(
+            output
+                .as_slice()
+                .expect("tensor should be contiguous")
+                .iter()
+                .sum::<f32>(),
+        );
 
         // Scale and compute gradients
         let mut gradients = vec![Tensor::<f32>::ones(&[8, 32])];
@@ -224,7 +240,13 @@ fn custom_amp_policy_example() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let output = x.tensor().matmul(&w)?;
-    let loss = Tensor::<f32>::from_scalar(output.as_slice().unwrap().iter().sum::<f32>());
+    let loss = Tensor::<f32>::from_scalar(
+        output
+            .as_slice()
+            .expect("tensor should be contiguous")
+            .iter()
+            .sum::<f32>(),
+    );
 
     // Check operation precision
     let matmul_dtype = amp_policy.get_operation_dtype("matmul", DType::Float32);

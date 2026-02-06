@@ -96,7 +96,8 @@ impl AdvancedStatistics {
         }
 
         for mean in &mut means {
-            *mean = mean.clone() / T::from(n_samples).unwrap();
+            *mean =
+                mean.clone() / T::from(n_samples).expect("sample count should convert to float");
         }
 
         // Compute covariance matrix
@@ -116,7 +117,8 @@ impl AdvancedStatistics {
                     covariance = covariance + dev_i * dev_j;
                 }
 
-                cov_matrix[i][j] = covariance / T::from(n_samples - 1).unwrap();
+                cov_matrix[i][j] = covariance
+                    / T::from(n_samples - 1).expect("sample count should convert to float");
             }
         }
 
@@ -157,7 +159,7 @@ impl AdvancedStatistics {
 
             // Compute mean
             let mean = feature_values.iter().fold(T::zero(), |acc, &x| acc + x)
-                / T::from(n_samples).unwrap();
+                / T::from(n_samples).expect("sample count should convert to float");
 
             // Compute variance
             let variance = feature_values
@@ -167,7 +169,7 @@ impl AdvancedStatistics {
                     dev.clone() * dev
                 })
                 .fold(T::zero(), |acc, x| acc + x)
-                / T::from(n_samples).unwrap();
+                / T::from(n_samples).expect("sample count should convert to float");
 
             let std_dev = variance.sqrt();
 
@@ -180,7 +182,7 @@ impl AdvancedStatistics {
                         normalized.clone() * normalized.clone() * normalized
                     })
                     .fold(T::zero(), |acc, x| acc + x)
-                    / T::from(n_samples).unwrap();
+                    / T::from(n_samples).expect("sample count should convert to float");
 
                 skewness_values[feat_idx] = skew;
             }
@@ -206,7 +208,7 @@ impl AdvancedStatistics {
 
             // Compute mean
             let mean = feature_values.iter().fold(T::zero(), |acc, &x| acc + x)
-                / T::from(n_samples).unwrap();
+                / T::from(n_samples).expect("sample count should convert to float");
 
             // Compute variance
             let variance = feature_values
@@ -216,7 +218,7 @@ impl AdvancedStatistics {
                     dev.clone() * dev
                 })
                 .fold(T::zero(), |acc, x| acc + x)
-                / T::from(n_samples).unwrap();
+                / T::from(n_samples).expect("sample count should convert to float");
 
             let std_dev = variance.sqrt();
 
@@ -230,10 +232,11 @@ impl AdvancedStatistics {
                         norm_squared.clone() * norm_squared
                     })
                     .fold(T::zero(), |acc, x| acc + x)
-                    / T::from(n_samples).unwrap();
+                    / T::from(n_samples).expect("sample count should convert to float");
 
                 // Excess kurtosis (subtract 3)
-                kurtosis_values[feat_idx] = kurt - T::from(3.0).unwrap();
+                kurtosis_values[feat_idx] =
+                    kurt - T::from(3.0).expect("constant 3.0 should convert to float");
             }
         }
 

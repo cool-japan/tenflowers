@@ -125,7 +125,7 @@ impl EnvironmentInfo {
     pub fn capture(seed_manager: &SeedManager) -> Self {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time before UNIX_EPOCH")
             .as_secs();
 
         // Capture selected environment variables
@@ -450,7 +450,7 @@ impl ExperimentTracker {
     ) {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time before UNIX_EPOCH")
             .as_secs();
 
         let record = OperationRecord {
@@ -531,21 +531,21 @@ impl DeterministicOps {
     /// Get a deterministic RNG for a component
     pub fn get_rng(component: &str) -> StdRng {
         let manager = SeedManager::global();
-        let mut manager = manager.lock().unwrap();
+        let mut manager = manager.lock().expect("lock should not be poisoned");
         manager.create_rng(component)
     }
 
     /// Get next operation seed
     pub fn next_operation_seed() -> u64 {
         let manager = SeedManager::global();
-        let mut manager = manager.lock().unwrap();
+        let mut manager = manager.lock().expect("lock should not be poisoned");
         manager.next_operation_seed()
     }
 
     /// Capture current environment
     pub fn capture_environment() -> EnvironmentInfo {
         let manager = SeedManager::global();
-        let manager = manager.lock().unwrap();
+        let manager = manager.lock().expect("lock should not be poisoned");
         EnvironmentInfo::capture(&manager)
     }
 }

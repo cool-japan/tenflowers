@@ -251,7 +251,11 @@ impl ConfigValidation for DatasetConfig {
         }
 
         if !errors.is_empty() {
-            return Err(errors.into_iter().next().unwrap().into());
+            return Err(errors
+                .into_iter()
+                .next()
+                .expect("errors vec validated as non-empty")
+                .into());
         }
 
         Ok(())
@@ -296,7 +300,11 @@ impl ConfigValidation for DataLoaderConfig {
         }
 
         if !errors.is_empty() {
-            return Err(errors.into_iter().next().unwrap().into());
+            return Err(errors
+                .into_iter()
+                .next()
+                .expect("errors vec validated as non-empty")
+                .into());
         }
 
         Ok(())

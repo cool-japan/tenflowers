@@ -370,7 +370,7 @@ where
             }
 
             let mean = values.iter().copied().fold(T::zero(), |acc, x| acc + x)
-                / T::from(values.len()).unwrap();
+                / T::from(values.len()).expect("values length should convert to float");
             means.push(mean);
 
             let variance = values
@@ -380,14 +380,15 @@ where
                     diff * diff
                 })
                 .fold(T::zero(), |acc, x| acc + x)
-                / T::from(values.len()).unwrap();
+                / T::from(values.len()).expect("values length should convert to float");
 
             let std = variance.sqrt();
             stds.push(std);
         }
 
         // Check for outliers using Z-score
-        let threshold = T::from(self.config.outlier_threshold).unwrap();
+        let threshold = T::from(self.config.outlier_threshold)
+            .expect("outlier threshold should convert to float");
 
         for (index, (features, _)) in samples {
             if let Some(data) = features.as_slice() {

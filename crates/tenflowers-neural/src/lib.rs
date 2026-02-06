@@ -316,8 +316,9 @@ pub use training_pipeline::{
     quick_train, TrainingPipeline, TrainingPipelineConfig, TrainingResults,
 };
 
-#[cfg(feature = "tensorboard")]
-pub use trainer::TensorboardCallback;
+// Tensorboard feature temporarily removed in v0.1.0-beta.1 (RUSTSEC-2024-0437)
+// #[cfg(feature = "tensorboard")]
+// pub use trainer::TensorboardCallback;
 
 #[cfg(feature = "onnx")]
 pub use onnx::{

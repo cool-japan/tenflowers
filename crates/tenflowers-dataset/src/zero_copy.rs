@@ -745,7 +745,7 @@ mod tests {
         let dataset = ZeroCopyDataset::new(features, labels).unwrap();
         assert_eq!(dataset.len(), 2);
 
-        let (feat, label) = dataset.get(0).unwrap();
+        let (feat, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(feat.shape().dims(), &[2]);
         assert_eq!(label.shape().dims(), &[] as &[usize]);
     }
@@ -765,11 +765,11 @@ mod tests {
 
         assert_eq!(dataset.len(), 2);
 
-        let (feat0, label0) = dataset.get(0).unwrap();
+        let (feat0, label0) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(feat0.shape().dims(), &[2]);
         assert_eq!(label0.shape().dims(), &[] as &[usize]);
 
-        let (feat1, label1) = dataset.get(1).unwrap();
+        let (feat1, label1) = dataset.get(1).expect("index should be in bounds");
         assert_eq!(feat1.shape().dims(), &[2]);
         assert_eq!(label1.shape().dims(), &[] as &[usize]);
     }

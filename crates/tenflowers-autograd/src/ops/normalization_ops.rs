@@ -94,7 +94,7 @@ where
         // where m is the batch size and x_normalized is the normalized input
 
         let batch_size_f =
-            T::from_usize(calculate_batch_size(input_shape, &axes)).unwrap_or(T::one());
+            T::from_usize(calculate_batch_size(input_shape, &axes)).unwrap_or_else(|| T::one());
 
         // sum(grad_output) along batch dimensions
         let grad_sum = grad_output.sum(Some(&axes), true)?;
@@ -207,7 +207,7 @@ where
 
         // For variance, use unbiased estimate: batch_var * N / (N - 1)
         let batch_size =
-            T::from_usize(calculate_batch_size(input_shape, &axes)).unwrap_or(T::one());
+            T::from_usize(calculate_batch_size(input_shape, &axes)).unwrap_or_else(|| T::one());
         let bias_correction = batch_size / (batch_size - T::one());
         let unbiased_var = batch_var.mul(&Tensor::from_scalar(bias_correction))?;
 
@@ -333,7 +333,7 @@ where
 
     // Number of elements being normalized over
     let norm_size: usize = normalized_shape.iter().product();
-    let norm_size_f = T::from_usize(norm_size).unwrap_or(T::one());
+    let norm_size_f = T::from_usize(norm_size).unwrap_or_else(|| T::one());
 
     // Gradient w.r.t. gamma: sum(grad_output * normalized) over non-normalized dimensions
     let grad_gamma_full = grad_output.mul(&normalized)?;
@@ -452,7 +452,7 @@ where
 
     // Number of elements per group
     let group_size = channels_per_group * height * width;
-    let group_size_f = T::from_usize(group_size).unwrap_or(T::one());
+    let group_size_f = T::from_usize(group_size).unwrap_or_else(|| T::one());
 
     // Gradient computation similar to LayerNorm but applied per group
     let grad_sum = reshaped_grad_output.sum(Some(&reduce_axes), true)?;
@@ -547,7 +547,7 @@ where
 
     // Number of spatial elements
     let spatial_size = height * width;
-    let spatial_size_f = T::from_usize(spatial_size).unwrap_or(T::one());
+    let spatial_size_f = T::from_usize(spatial_size).unwrap_or_else(|| T::one());
 
     // Gradient computation
     let grad_sum = grad_output.sum(Some(&reduce_axes), true)?;

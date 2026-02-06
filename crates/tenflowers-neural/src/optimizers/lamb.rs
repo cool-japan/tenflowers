@@ -133,15 +133,19 @@ where
         let t = self.t;
 
         // Bias correction terms
-        let bias_correction1 = T::from(1.0 - self.beta1.powi(t as i32)).unwrap();
-        let bias_correction2 = T::from(1.0 - self.beta2.powi(t as i32)).unwrap();
+        let bias_correction1 = T::from(1.0 - self.beta1.powi(t as i32))
+            .expect("Failed to convert bias_correction1 to tensor type");
+        let bias_correction2 = T::from(1.0 - self.beta2.powi(t as i32))
+            .expect("Failed to convert bias_correction2 to tensor type");
 
         // Convert constants to T
-        let beta1_t = T::from(self.beta1).unwrap();
-        let beta2_t = T::from(self.beta2).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let eps_t = T::from(self.epsilon).unwrap();
-        let weight_decay_t = T::from(self.weight_decay).unwrap();
+        let beta1_t = T::from(self.beta1).expect("Failed to convert beta1 to tensor type");
+        let beta2_t = T::from(self.beta2).expect("Failed to convert beta2 to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let eps_t = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
+        let weight_decay_t =
+            T::from(self.weight_decay).expect("Failed to convert weight_decay to tensor type");
 
         // Update each parameter
         for param in model.parameters_mut() {
@@ -175,8 +179,9 @@ where
                 // v_t = beta2 * v_{t-1} + (1 - beta2) * g_t^2
                 let one_minus_beta2 = Tensor::from_scalar(T::one() - beta2_t);
                 let beta2_v = v.mul(&Tensor::from_scalar(beta2_t))?;
-                let grad_squared =
-                    grad_with_decay.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let grad_squared = grad_with_decay.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let one_minus_beta2_g2 = grad_squared.mul(&one_minus_beta2)?;
                 *v = beta2_v.add(&one_minus_beta2_g2)?;
 
@@ -193,18 +198,23 @@ where
 
                 // Compute layer-wise adaptation
                 // L2 norm = sqrt(sum(x^2))
-                let param_squared = param.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let param_squared = param.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let param_norm_squared = param_squared.sum(None, false)?;
                 let param_norm = param_norm_squared.sqrt()?;
 
-                let r_squared = r.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let r_squared = r.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let r_norm_squared = r_squared.sum(None, false)?;
                 let r_norm = r_norm_squared.sqrt()?;
 
                 // Compute trust ratio
                 // Extract scalar values from 0-dimensional tensors
-                let param_norm_scalar = param_norm.as_slice().unwrap()[0];
-                let r_norm_scalar = r_norm.as_slice().unwrap()[0];
+                let param_norm_scalar =
+                    param_norm.as_slice().expect("tensor should be contiguous")[0];
+                let r_norm_scalar = r_norm.as_slice().expect("tensor should be contiguous")[0];
 
                 let trust_ratio = if r_norm_scalar > T::zero() {
                     param_norm_scalar / r_norm_scalar

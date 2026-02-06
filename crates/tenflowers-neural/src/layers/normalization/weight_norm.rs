@@ -60,7 +60,7 @@ where
         let v_norm = sum_squares.sqrt()?;
 
         // Add small epsilon for numerical stability
-        let eps = T::from(1e-12).unwrap();
+        let eps = T::from(1e-12).expect("Failed to convert 1e-12 to tensor type");
         let eps_tensor = Tensor::from_scalar(eps);
         let v_norm_safe = v_norm.add(&eps_tensor)?;
 

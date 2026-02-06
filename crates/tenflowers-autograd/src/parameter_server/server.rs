@@ -55,7 +55,10 @@ impl ParameterServer {
         });
 
         // Initialize worker status
-        let mut worker_status = inner.worker_status.lock().unwrap();
+        let mut worker_status = inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
         for worker_id in 0..config.num_workers {
             worker_status.insert(
                 worker_id,
@@ -90,7 +93,11 @@ impl ParameterServer {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut parameters = self.inner.parameters.write().unwrap();
+        let mut parameters = self
+            .inner
+            .parameters
+            .write()
+            .expect("write lock should not be poisoned");
 
         // Assign worker based on load balancing strategy
         let assigned_worker = self.assign_worker_for_parameter(tensor_id)?;
@@ -106,7 +113,11 @@ impl ParameterServer {
         parameters.insert(tensor_id, entry);
 
         // Update statistics
-        let mut stats = self.inner.stats.lock().unwrap();
+        let mut stats = self
+            .inner
+            .stats
+            .lock()
+            .expect("lock should not be poisoned");
         stats.total_parameters += 1;
 
         Ok(())
@@ -140,7 +151,11 @@ impl ParameterServer {
         };
 
         // Add to gradient queue
-        let mut queues = self.inner.gradient_queues.lock().unwrap();
+        let mut queues = self
+            .inner
+            .gradient_queues
+            .lock()
+            .expect("lock should not be poisoned");
         let queue = queues.entry(worker_id).or_default();
 
         // Check queue size limits
@@ -151,7 +166,11 @@ impl ParameterServer {
         queue.push_back(update);
 
         // Update worker status
-        let mut worker_status = self.inner.worker_status.lock().unwrap();
+        let mut worker_status = self
+            .inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.pending_gradients += 1;
             status.last_heartbeat = Instant::now();
@@ -168,7 +187,11 @@ impl ParameterServer {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let parameters = self.inner.parameters.read().unwrap();
+        let parameters = self
+            .inner
+            .parameters
+            .read()
+            .expect("read lock should not be poisoned");
 
         if let Some(entry) = parameters.get(&tensor_id) {
             if let Some(param) = entry.parameter.downcast_ref::<Tensor<T>>() {
@@ -193,7 +216,11 @@ impl ParameterServer {
         T: Clone + Send + Sync + 'static,
     {
         let mut results = Vec::new();
-        let parameters = self.inner.parameters.read().unwrap();
+        let parameters = self
+            .inner
+            .parameters
+            .read()
+            .expect("read lock should not be poisoned");
 
         for &tensor_id in tensor_ids {
             if let Some(entry) = parameters.get(&tensor_id) {
@@ -212,7 +239,11 @@ impl ParameterServer {
         }
 
         // Update worker heartbeat
-        let mut worker_status = self.inner.worker_status.lock().unwrap();
+        let mut worker_status = self
+            .inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.last_heartbeat = Instant::now();
         }
@@ -227,7 +258,11 @@ impl ParameterServer {
         capacity: f64,
         latency_ms: f64,
     ) -> Result<()> {
-        let mut worker_status = self.inner.worker_status.lock().unwrap();
+        let mut worker_status = self
+            .inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.capacity = capacity;
@@ -243,7 +278,11 @@ impl ParameterServer {
 
     /// Send heartbeat from worker
     pub fn heartbeat(&self, worker_id: usize, computational_load: f64) -> Result<()> {
-        let mut worker_status = self.inner.worker_status.lock().unwrap();
+        let mut worker_status = self
+            .inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.last_heartbeat = Instant::now();
@@ -259,13 +298,21 @@ impl ParameterServer {
 
     /// Get server statistics
     pub fn get_stats(&self) -> ParameterServerStats {
-        self.inner.stats.lock().unwrap().clone()
+        self.inner
+            .stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Shutdown the parameter server
     pub fn shutdown(&self) {
         // Join all background threads
-        let mut handles = self.inner.update_handles.lock().unwrap();
+        let mut handles = self
+            .inner
+            .update_handles
+            .lock()
+            .expect("lock should not be poisoned");
         for handle in handles.drain(..) {
             let _ = handle.join();
         }
@@ -273,7 +320,11 @@ impl ParameterServer {
 
     /// Assign a worker for a parameter based on load balancing strategy
     fn assign_worker_for_parameter(&self, _tensor_id: TensorId) -> Result<Option<usize>> {
-        let worker_status = self.inner.worker_status.lock().unwrap();
+        let worker_status = self
+            .inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
 
         match self.inner.config.load_balancing {
             LoadBalancingStrategy::RoundRobin => {
@@ -382,7 +433,10 @@ impl ParameterServer {
             })
         };
 
-        let mut handles = inner.update_handles.lock().unwrap();
+        let mut handles = inner
+            .update_handles
+            .lock()
+            .expect("lock should not be poisoned");
         handles.push(gradient_thread);
         handles.push(health_thread);
         handles.push(load_balancing_thread);
@@ -395,7 +449,10 @@ impl ParameterServer {
 
             // Collect all available updates in one critical section
             {
-                let mut queues = inner.gradient_queues.lock().unwrap();
+                let mut queues = inner
+                    .gradient_queues
+                    .lock()
+                    .expect("lock should not be poisoned");
                 for (_worker_id, queue) in queues.iter_mut() {
                     while let Some(update) = queue.pop_front() {
                         updates_to_process.push(update);
@@ -413,7 +470,10 @@ impl ParameterServer {
 
             if !processed_any {
                 // Wait for gradient availability
-                let queues = inner.gradient_queues.lock().unwrap();
+                let queues = inner
+                    .gradient_queues
+                    .lock()
+                    .expect("lock should not be poisoned");
                 let _result = inner
                     .gradient_signal
                     .wait_timeout(queues, Duration::from_millis(100));
@@ -429,14 +489,17 @@ impl ParameterServer {
         inner: &Arc<ParameterServerInner>,
         update: GradientUpdate,
     ) -> Result<()> {
-        let mut parameters = inner.parameters.write().unwrap();
+        let mut parameters = inner
+            .parameters
+            .write()
+            .expect("write lock should not be poisoned");
 
         if let Some(entry) = parameters.get_mut(&update.tensor_id) {
             // Check for staleness
             let staleness = entry.version.saturating_sub(update.parameter_version);
             if staleness > inner.config.staleness_threshold as u64 {
                 // Discard stale update
-                let mut stats = inner.stats.lock().unwrap();
+                let mut stats = inner.stats.lock().expect("lock should not be poisoned");
                 stats.stale_updates += 1;
                 return Ok(());
             }
@@ -448,11 +511,14 @@ impl ParameterServer {
             entry.pending_updates = entry.pending_updates.saturating_sub(1);
 
             // Update statistics
-            let mut stats = inner.stats.lock().unwrap();
+            let mut stats = inner.stats.lock().expect("lock should not be poisoned");
             stats.total_updates += 1;
 
             // Update worker status
-            let mut worker_status = inner.worker_status.lock().unwrap();
+            let mut worker_status = inner
+                .worker_status
+                .lock()
+                .expect("lock should not be poisoned");
             if let Some(status) = worker_status.get_mut(&update.worker_id) {
                 status.pending_gradients = status.pending_gradients.saturating_sub(1);
             }
@@ -509,7 +575,10 @@ impl ParameterServer {
         loop {
             thread::sleep(Duration::from_millis(inner.config.heartbeat_timeout_ms / 2));
 
-            let mut worker_status = inner.worker_status.lock().unwrap();
+            let mut worker_status = inner
+                .worker_status
+                .lock()
+                .expect("lock should not be poisoned");
             let timeout = Duration::from_millis(inner.config.heartbeat_timeout_ms);
             let now = Instant::now();
 
@@ -518,7 +587,7 @@ impl ParameterServer {
                     status.is_alive = false;
 
                     // Update statistics
-                    let mut stats = inner.stats.lock().unwrap();
+                    let mut stats = inner.stats.lock().expect("lock should not be poisoned");
                     stats.worker_failures += 1;
 
                     println!("Worker {worker_id} detected as failed");
@@ -587,7 +656,10 @@ impl ParameterServer {
         // 3. Update worker status and resume processing
 
         // For now, implement a basic recovery mechanism
-        let mut worker_status = inner.worker_status.lock().unwrap();
+        let mut worker_status = inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.is_alive = true;
             status.last_heartbeat = Instant::now();
@@ -614,7 +686,10 @@ impl ParameterServer {
         // 3. Synchronize parameter state
         // 4. Update routing tables
 
-        let mut worker_status = inner.worker_status.lock().unwrap();
+        let mut worker_status = inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Find an available backup worker (simplified selection)
         let backup_worker_id = worker_status
@@ -650,7 +725,10 @@ impl ParameterServer {
 
     /// Rebalance parameters across workers
     fn rebalance_parameters(inner: &Arc<ParameterServerInner>) {
-        let mut worker_status = inner.worker_status.lock().unwrap();
+        let mut worker_status = inner
+            .worker_status
+            .lock()
+            .expect("lock should not be poisoned");
 
         // 1. Analyze current load distribution
         let mut load_distribution: Vec<(usize, f64, usize)> = worker_status
@@ -664,7 +742,10 @@ impl ParameterServer {
         }
 
         // Sort by computational load
-        load_distribution.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        load_distribution.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         // 2. Identify overloaded and underloaded workers
         let avg_load: f64 = load_distribution

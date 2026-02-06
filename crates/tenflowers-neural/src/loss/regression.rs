@@ -94,7 +94,8 @@ where
     let abs_diff = diff.abs()?;
 
     let one = Tensor::from_scalar(T::one());
-    let half = Tensor::from_scalar(T::from(0.5).unwrap());
+    let half =
+        Tensor::from_scalar(T::from(0.5).unwrap_or_else(|| T::one() / (T::one() + T::one())));
 
     // Create mask for |diff| < 1
     let mask = abs_diff.lt(&one)?;
@@ -151,7 +152,8 @@ where
     let abs_diff = diff.abs()?;
 
     let delta_tensor = Tensor::from_scalar(delta);
-    let half = Tensor::from_scalar(T::from(0.5).unwrap());
+    let half =
+        Tensor::from_scalar(T::from(0.5).unwrap_or_else(|| T::one() / (T::one() + T::one())));
 
     // Create mask for |diff| <= delta
     let mask = abs_diff.le(&delta_tensor)?;

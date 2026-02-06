@@ -64,7 +64,10 @@ fn example_1_hessian() -> Result<()> {
     let sum = x_sq.sum(None, false)?;
 
     println!("Function: f(x) = Σ xᵢ²");
-    println!("Input: {:?}", x.tensor.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute Hessian
     let hessian = compute_hessian(&tape, &sum, &x)?;
@@ -98,14 +101,23 @@ fn example_2_hvp() -> Result<()> {
     let v = Tensor::from_array(array![1.0f32, 0.0].into_dyn());
 
     println!("Function: f(x) = Σ xᵢ²");
-    println!("Input x: {:?}", x.tensor.as_slice().unwrap());
-    println!("Direction v: {:?}", v.as_slice().unwrap());
+    println!(
+        "Input x: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
+    println!(
+        "Direction v: {:?}",
+        v.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute H*v without forming full Hessian
     let hvp = hessian_vector_product(&tape, &sum, &x, &v)?;
 
     println!("Hessian-vector product (H*v):");
-    println!("  {:?}", hvp.as_slice().unwrap());
+    println!(
+        "  {:?}",
+        hvp.as_slice().expect("tensor should be contiguous")
+    );
 
     println!("This is much more efficient than computing full Hessian!\n");
 
@@ -125,13 +137,21 @@ fn example_3_hessian_diagonal() -> Result<()> {
     let sum = x_sq.sum(None, false)?;
 
     println!("Function: f(x) = Σ xᵢ²");
-    println!("Input: {:?}", x.tensor.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute only diagonal of Hessian
     let hessian_diag = compute_hessian_diagonal(&tape, &sum, &x)?;
 
     println!("Hessian diagonal:");
-    println!("  {:?}", hessian_diag.as_slice().unwrap());
+    println!(
+        "  {:?}",
+        hessian_diag
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
     println!("Expected: [2.0, 2.0, 2.0, 2.0] (second derivatives)\n");
 
     Ok(())
@@ -150,7 +170,10 @@ fn example_4_jacobian() -> Result<()> {
     let output = x_sq;
 
     println!("Function: f(x) = [x₁², x₂²]");
-    println!("Input: {:?}", x.tensor.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute Jacobian
     let jacobian = compute_jacobian(&tape, std::slice::from_ref(&output), &x)?;
@@ -179,7 +202,10 @@ fn example_5_laplacian() -> Result<()> {
     let sum = x_sq.sum(None, false)?;
 
     println!("Function: f(x) = x₁² + x₂² + x₃²");
-    println!("Input: {:?}", x.tensor.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute Laplacian (Δf = trace(Hessian))
     let laplacian = compute_laplacian(&tape, &sum, &x)?;
@@ -207,8 +233,14 @@ fn example_6_directional_derivative() -> Result<()> {
     let v = Tensor::from_array(array![0.707f32, 0.707].into_dyn()); // ≈ (1/√2, 1/√2)
 
     println!("Function: f(x, y) = x² + y²");
-    println!("Input: {:?}", x.tensor.as_slice().unwrap());
-    println!("Direction: {:?}", v.as_slice().unwrap());
+    println!(
+        "Input: {:?}",
+        x.tensor.as_slice().expect("tensor should be contiguous")
+    );
+    println!(
+        "Direction: {:?}",
+        v.as_slice().expect("tensor should be contiguous")
+    );
 
     // Compute directional second derivative: v^T * H * v
     let dir_second_deriv = directional_second_derivative(&tape, &sum, &x, &v)?;

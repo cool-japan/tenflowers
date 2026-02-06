@@ -304,7 +304,9 @@ pub mod utils {
             };
 
             if let Some(device) = assigned_device {
-                *device_memory_used.get_mut(&device).unwrap() += requirements.total();
+                *device_memory_used
+                    .get_mut(&device)
+                    .expect("device should exist in memory tracking map") += requirements.total();
                 placement.insert(layer_idx, PlacementStrategy::Device(device));
             } else {
                 return Err(TensorError::allocation_error_simple(

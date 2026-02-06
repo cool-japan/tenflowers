@@ -63,7 +63,10 @@ impl CheckpointManager {
             CheckpointStrategy::NoCheckpointing => false,
             CheckpointStrategy::EveryNLayers(n) => layer_index % n == 0,
             CheckpointStrategy::MemoryThreshold(threshold) => {
-                let current_usage = *self.memory_usage.lock().unwrap();
+                let current_usage = *self
+                    .memory_usage
+                    .lock()
+                    .expect("lock should not be poisoned");
                 current_usage < *threshold
             }
             CheckpointStrategy::Custom(predicate) => predicate(operation_name),
@@ -75,11 +78,17 @@ impl CheckpointManager {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut checkpoints = self.checkpoints.lock().unwrap();
+        let mut checkpoints = self
+            .checkpoints
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Estimate memory usage
         let estimated_size = self.estimate_tensor_size(tensor);
-        let mut memory_usage = self.memory_usage.lock().unwrap();
+        let mut memory_usage = self
+            .memory_usage
+            .lock()
+            .expect("lock should not be poisoned");
         *memory_usage += estimated_size;
 
         checkpoints.insert(tensor_id, Box::new(tensor.clone()));
@@ -90,7 +99,10 @@ impl CheckpointManager {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let checkpoints = self.checkpoints.lock().unwrap();
+        let checkpoints = self
+            .checkpoints
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(checkpoint) = checkpoints.get(&tensor_id) {
             if let Some(tensor) = checkpoint.downcast_ref::<Tensor<T>>() {
@@ -107,27 +119,42 @@ impl CheckpointManager {
 
     /// Remove a checkpoint (to free memory)
     pub fn remove_checkpoint(&self, tensor_id: TensorId) {
-        let mut checkpoints = self.checkpoints.lock().unwrap();
+        let mut checkpoints = self
+            .checkpoints
+            .lock()
+            .expect("lock should not be poisoned");
         checkpoints.remove(&tensor_id);
     }
 
     /// Clear all checkpoints
     pub fn clear_checkpoints(&self) {
-        let mut checkpoints = self.checkpoints.lock().unwrap();
+        let mut checkpoints = self
+            .checkpoints
+            .lock()
+            .expect("lock should not be poisoned");
         checkpoints.clear();
 
-        let mut memory_usage = self.memory_usage.lock().unwrap();
+        let mut memory_usage = self
+            .memory_usage
+            .lock()
+            .expect("lock should not be poisoned");
         *memory_usage = 0;
     }
 
     /// Get current memory usage
     pub fn memory_usage(&self) -> usize {
-        *self.memory_usage.lock().unwrap()
+        *self
+            .memory_usage
+            .lock()
+            .expect("lock should not be poisoned")
     }
 
     /// Get number of stored checkpoints
     pub fn checkpoint_count(&self) -> usize {
-        self.checkpoints.lock().unwrap().len()
+        self.checkpoints
+            .lock()
+            .expect("lock should not be poisoned")
+            .len()
     }
 
     /// Estimate the memory size of a tensor

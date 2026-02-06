@@ -1008,7 +1008,7 @@ mod tests {
         );
 
         // Create a simple input tensor: [batch=1, channels=2, height=4, width=4]
-        let input_data = vec![1.0f32; 1 * 2 * 4 * 4];
+        let input_data = vec![1.0f32; 2 * 4 * 4];
         let input = tenflowers_core::Tensor::from_vec(input_data, &[1, 2, 4, 4]).unwrap();
 
         // Forward pass should work without errors

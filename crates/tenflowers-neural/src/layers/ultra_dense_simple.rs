@@ -235,7 +235,9 @@ where
     fn initialize_weights_he(input_dim: usize, output_dim: usize) -> Result<Tensor<T>> {
         // He initialization: std = sqrt(2 / fan_in)
         let fan_in = input_dim;
-        let _std_dev = (T::from(2.0).unwrap() / T::from(fan_in).unwrap()).sqrt();
+        let _std_dev = (T::from(2.0).expect("Failed to convert 2.0 to tensor type")
+            / T::from(fan_in).expect("Failed to convert fan_in to tensor type"))
+        .sqrt();
 
         // For simplicity, return zeros (in real implementation would use proper random initialization)
         Ok(Tensor::zeros(&[input_dim, output_dim]))

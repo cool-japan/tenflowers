@@ -1076,8 +1076,9 @@ impl<T, D1: Dataset<T>, D2: Dataset<T>> MergedDataset<T, D1, D2> {
                 }
 
                 let mut averaged_data = Vec::new();
+                let two = T::from(2.0).expect("conversion of 2.0 to float type should succeed");
                 for (v1, v2) in data1.iter().zip(data2.iter()) {
-                    let avg = (*v1 + *v2) / T::from(2.0).unwrap();
+                    let avg = (*v1 + *v2) / two;
                     averaged_data.push(avg);
                 }
 
@@ -1341,12 +1342,12 @@ mod tests {
         let dataset = TensorDataset::new(features, labels);
 
         // Test getting first sample
-        let (feat, label) = dataset.get(0).unwrap();
+        let (feat, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(feat.shape().dims(), &[2]); // Should be squeezed from [1, 2] to [2]
         assert_eq!(label.shape().dims(), &[] as &[usize]); // Should be squeezed from [1] to scalar
 
         // Test getting second sample
-        let (feat2, label2) = dataset.get(1).unwrap();
+        let (feat2, label2) = dataset.get(1).expect("index should be in bounds");
         assert_eq!(feat2.shape().dims(), &[2]);
         assert_eq!(label2.shape().dims(), &[] as &[usize]);
 
@@ -1435,7 +1436,7 @@ mod tests {
         assert_eq!(merged.len(), 2);
 
         // Test getting first sample
-        let (features, labels) = merged.get(0).unwrap();
+        let (features, labels) = merged.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[4]); // 2 + 2 features concatenated
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -1465,10 +1466,10 @@ mod tests {
         assert_eq!(merged.len(), 2);
 
         // Test getting first sample - should be averaged
-        let (features, _) = merged.get(0).unwrap();
+        let (features, _) = merged.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]); // Same feature size
                                                    // First sample should be (1+5)/2=3, (2+6)/2=4
-        let data = features.as_slice().unwrap();
+        let data = features.as_slice().expect("tensor should be contiguous");
         assert!((data[0] - 3.0).abs() < 1e-6);
         assert!((data[1] - 4.0).abs() < 1e-6);
     }

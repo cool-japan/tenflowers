@@ -86,10 +86,12 @@ where
         self.t += 1;
 
         // Convert constants to T
-        let rho_t = T::from(self.rho).unwrap();
-        let one_minus_rho_t = T::from(1.0 - self.rho).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let eps_t = T::from(self.epsilon).unwrap();
+        let rho_t = T::from(self.rho).expect("Failed to convert rho to tensor type");
+        let one_minus_rho_t =
+            T::from(1.0 - self.rho).expect("Failed to convert one_minus_rho to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let eps_t = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
 
         // Update each parameter
         for param in model.parameters_mut() {
@@ -110,7 +112,9 @@ where
 
                 // Update running average of squared gradients
                 // E[g²]_t = ρ * E[g²]_{t-1} + (1 - ρ) * g_t²
-                let grad_squared = grad.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let grad_squared = grad.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let rho_eg2 = eg2.mul(&Tensor::from_scalar(rho_t))?;
                 let one_minus_rho_grad_sq =
                     grad_squared.mul(&Tensor::from_scalar(one_minus_rho_t))?;
@@ -131,7 +135,9 @@ where
 
                 // Update running average of squared updates
                 // E[Δp²]_t = ρ * E[Δp²]_{t-1} + (1 - ρ) * Δp_t²
-                let update_squared = update.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let update_squared = update.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let rho_ed2 = ed2.mul(&Tensor::from_scalar(rho_t))?;
                 let one_minus_rho_update_sq =
                     update_squared.mul(&Tensor::from_scalar(one_minus_rho_t))?;

@@ -132,9 +132,14 @@ where
 
             let reader = BufReader::new(file);
 
-            let value: V = bincode::deserialize_from(reader).map_err(|e| {
-                TensorError::invalid_argument(format!("Failed to deserialize cached value: {e}"))
-            })?;
+            let value: V =
+                oxicode::serde::decode_from_std_read(reader, oxicode::config::standard())
+                    .map_err(|e| {
+                        TensorError::invalid_argument(format!(
+                            "Failed to deserialize cached value: {e}"
+                        ))
+                    })?
+                    .0;
 
             Ok(Some(value))
         } else {
@@ -162,9 +167,10 @@ where
 
         let writer = BufWriter::new(file);
 
-        bincode::serialize_into(writer, &value).map_err(|e| {
-            TensorError::invalid_argument(format!("Failed to serialize value: {e}"))
-        })?;
+        oxicode::serde::encode_into_std_write(&value, writer, oxicode::config::standard())
+            .map_err(|e| {
+                TensorError::invalid_argument(format!("Failed to serialize value: {e}"))
+            })?;
 
         // Update index
         if let Some((old_filename, _)) = self.index.insert(key, (filename, self.access_counter)) {

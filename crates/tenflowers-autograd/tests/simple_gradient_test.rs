@@ -94,7 +94,7 @@ fn test_softmax_operation() {
     let y = x_tracked.softmax(Some(-1)).unwrap();
 
     // Verify the result - softmax should sum to 1.0
-    let result_data = y.tensor.as_slice().unwrap();
+    let result_data = y.tensor.as_slice().expect("tensor should be contiguous");
     let sum: f32 = result_data.iter().sum();
     assert!(
         (sum - 1.0).abs() < 1e-6,
@@ -118,7 +118,7 @@ fn test_softmax_operation() {
 
     // For a single softmax output with gradient 1.0, the gradient should satisfy:
     // sum of gradients should be 0 (since softmax outputs sum to 1, gradients must sum to 0)
-    let grad_data = grad_x.as_slice().unwrap();
+    let grad_data = grad_x.as_slice().expect("tensor should be contiguous");
     let grad_sum: f32 = grad_data.iter().sum();
     assert!(
         grad_sum.abs() < 1e-5,

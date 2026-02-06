@@ -93,7 +93,7 @@ fn check_framework_availability(framework: &str, python_executable: &str) -> boo
         .arg(format!("import {import_name}"))
         .output();
 
-    output.is_ok() && output.unwrap().status.success()
+    output.as_ref().map(|o| o.status.success()).unwrap_or(false)
 }
 
 /// Generate Python benchmark script for a specific operation

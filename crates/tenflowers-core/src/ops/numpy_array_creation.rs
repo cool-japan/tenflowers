@@ -83,14 +83,14 @@ where
     }
 
     let step = if endpoint {
-        (stop - start) / T::from_usize(num - 1).unwrap()
+        (stop - start) / T::from_usize(num - 1).expect("step count should convert to float")
     } else {
-        (stop - start) / T::from_usize(num).unwrap()
+        (stop - start) / T::from_usize(num).expect("step count should convert to float")
     };
 
     let mut values = Vec::with_capacity(num);
     for i in 0..num {
-        let value = start + step * T::from_usize(i).unwrap();
+        let value = start + step * T::from_usize(i).expect("array index should convert to float");
         values.push(value);
     }
 

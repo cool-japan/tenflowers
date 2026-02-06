@@ -181,7 +181,8 @@ where
             return Ok(());
         }
 
-        let lr_t = T::from(self.learning_rate).unwrap();
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
 
         // Process each parameter tensor
         for param in model.parameters_mut() {
@@ -191,7 +192,10 @@ where
 
                 // Check gradient tolerance for convergence
                 if let Ok(grad_norm) = self.compute_gradient_norm(&grad) {
-                    if grad_norm < T::from(self.tolerance_grad).unwrap() {
+                    if grad_norm
+                        < T::from(self.tolerance_grad)
+                            .expect("Failed to convert tolerance_grad to tensor type")
+                    {
                         continue; // Skip this parameter if gradient is small enough
                     }
                 }

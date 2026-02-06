@@ -15,20 +15,17 @@ description = "Neural network layers, models and training APIs for TenfloweRS"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.2" }
-tenflowers-autograd = { path = "../tenflowers-autograd", version = "0.1.0-alpha.2" }
-tenflowers-dataset = { path = "../tenflowers-dataset", version = "0.1.0-alpha.2" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-beta.1" }
+tenflowers-autograd = { path = "../tenflowers-autograd", version = "0.1.0-beta.1" }
+tenflowers-dataset = { path = "../tenflowers-dataset", version = "0.1.0-beta.1" }
 scirs2-core = { workspace = true, features = ["random", "memory_management", "memory_efficient", "parallel", "simd", "profiling", "gpu"] }
 scirs2-autograd = { workspace = true }
-scirs2-neural = { workspace = true }
-optirs = { workspace = true }
-numrs2 = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
-tensorboard-rs = { workspace = true, optional = true }
+# tensorboard-rs = { workspace = true, optional = true }  # REMOVED for v0.1.0-beta.1 (RUSTSEC-2024-0437)
 prost = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
 num_cpus = { workspace = true, optional = true }
@@ -37,12 +34,12 @@ parking_lot = { workspace = true }
 [dev-dependencies]
 approx = { workspace = true }
 criterion = { workspace = true }
-tempfile = "3.23"
+tempfile = "3.24"
 
 [features]
 default = []
 gpu = ["tenflowers-core/gpu", "tenflowers-autograd/gpu"]
 serialize = ["serde", "serde_json", "chrono", "tenflowers-core/serialize"]
-tensorboard = ["tensorboard-rs"]
+# tensorboard = ["tensorboard-rs"]  # REMOVED for v0.1.0-beta.1 (RUSTSEC-2024-0437)
 onnx = ["prost", "prost-types", "serialize"]
 gloo = ["num_cpus"]

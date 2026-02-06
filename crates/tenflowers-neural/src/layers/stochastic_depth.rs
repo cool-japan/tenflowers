@@ -56,7 +56,7 @@ where
 
     /// Create a new StochasticDepth wrapper with default drop probability (0.1)
     pub fn new_default(layer: Box<dyn Layer<T>>) -> Self {
-        let drop_prob = T::from(0.1).unwrap();
+        let drop_prob = T::from(0.1).expect("Failed to convert 0.1 to tensor type");
         Self::new(layer, drop_prob)
     }
 
@@ -109,7 +109,8 @@ where
             // During training, randomly skip the layer
             let mut rng = scirs2_core::random::thread_rng();
             let random_val: f64 = rng.gen_range(0.0..1.0);
-            let random_t = T::from(random_val).unwrap();
+            let random_t =
+                T::from(random_val).expect("Failed to convert random value to tensor type");
 
             if random_t < self.drop_prob {
                 // Skip the layer (identity function)
@@ -191,7 +192,7 @@ where
 
     /// Create a new StochasticDepthNoResidual wrapper with default drop probability (0.1)
     pub fn new_default(layer: Box<dyn Layer<T>>) -> Self {
-        let drop_prob = T::from(0.1).unwrap();
+        let drop_prob = T::from(0.1).expect("Failed to convert 0.1 to tensor type");
         Self::new(layer, drop_prob)
     }
 
@@ -241,7 +242,8 @@ where
             // During training, randomly skip the layer
             let mut rng = scirs2_core::random::thread_rng();
             let random_val: f64 = rng.gen_range(0.0..1.0);
-            let random_t = T::from(random_val).unwrap();
+            let random_t =
+                T::from(random_val).expect("Failed to convert random value to tensor type");
 
             if random_t < self.drop_prob {
                 // Skip the layer - return zeros with same shape as input

@@ -364,7 +364,7 @@ mod moe_performance_tests {
         )?;
 
         // Test with multiple different inputs to see expert utilization
-        let inputs = vec![
+        let inputs = [
             Tensor::zeros(&[1, 1, 8]),
             Tensor::ones(&[1, 1, 8]),
             Tensor::zeros(&[2, 1, 8]),

@@ -79,7 +79,8 @@ pub mod gradient_clipping {
         // Compute global norm
         let mut total_norm_squared = T::zero();
         for gradient in gradients {
-            let two_tensor = Tensor::from_scalar(T::from(2.0).unwrap());
+            let two_tensor =
+                Tensor::from_scalar(T::from(2.0).expect("constant 2.0 should convert to float"));
             let grad_squared = gradient.pow(&two_tensor)?;
             let grad_norm_squared = grad_squared.sum(None, false)?.to_scalar()?;
             total_norm_squared = total_norm_squared + grad_norm_squared;
@@ -388,8 +389,9 @@ pub mod optimization {
             }
 
             if let Some(sum) = fisher_sum {
-                let num_samples_tensor =
-                    Tensor::from_scalar(T::from(gradient_samples.len()).unwrap());
+                let num_samples_tensor = Tensor::from_scalar(
+                    T::from(gradient_samples.len()).expect("sample count should convert to float"),
+                );
                 let fisher_avg = sum.div(&num_samples_tensor)?;
 
                 // Add regularization (F + λI)

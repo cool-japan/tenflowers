@@ -10,7 +10,6 @@ use crate::{
     dataloader::{BatchResult, DistributedSampler, Sampler},
     DataLoader, DataLoaderConfig, Dataset,
 };
-use bincode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -259,7 +258,7 @@ impl EnhancedDistributedSampler {
 
         // Initialize RDMA if enabled
         if let Some(rdma_context) = &self.rdma_context {
-            let mut ctx = rdma_context.lock().unwrap();
+            let mut ctx = rdma_context.lock().expect("lock should not be poisoned");
             ctx.initialize()?;
         }
 
@@ -340,7 +339,10 @@ impl EnhancedDistributedSampler {
 
         // Update statistics
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self
+                .stats
+                .write()
+                .expect("write lock should not be poisoned");
             stats.local_samples_loaded += local_indices.len() as u64;
             stats.remote_samples_loaded += (indices.len() - local_indices.len()) as u64;
         }
@@ -362,7 +364,10 @@ impl EnhancedDistributedSampler {
         };
 
         // Broadcast to all nodes
-        let comm_manager = self.comm_manager.lock().unwrap();
+        let comm_manager = self
+            .comm_manager
+            .lock()
+            .expect("lock should not be poisoned");
         let results = comm_manager.broadcast_message(&message)?;
 
         // Process collective operation
@@ -380,9 +385,11 @@ impl EnhancedDistributedSampler {
             CollectiveOpType::StatisticsGather => {
                 // Gather and aggregate statistics from all nodes
                 let aggregated_stats = self.aggregate_statistics(results)?;
-                let serialized = bincode::serialize(&aggregated_stats).map_err(|e| {
-                    TensorError::invalid_argument(format!("Serialization error: {e}"))
-                })?;
+                let serialized =
+                    oxicode::serde::encode_to_vec(&aggregated_stats, oxicode::config::standard())
+                        .map_err(|e| {
+                        TensorError::invalid_argument(format!("Serialization error: {e}"))
+                    })?;
                 Ok(Some(serialized))
             }
             CollectiveOpType::ConfigBroadcast => {
@@ -402,26 +409,35 @@ impl EnhancedDistributedSampler {
 
     /// Get performance statistics
     pub fn get_statistics(&self) -> DistributedLoadingStats {
-        self.stats.read().unwrap().clone()
+        self.stats
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Shutdown distributed loading and cleanup resources
     pub fn shutdown(&mut self) -> Result<()> {
         // Close network connections
         {
-            let mut comm_manager = self.comm_manager.lock().unwrap();
+            let mut comm_manager = self
+                .comm_manager
+                .lock()
+                .expect("lock should not be poisoned");
             comm_manager.shutdown()?;
         }
 
         // Cleanup RDMA resources
         if let Some(rdma_context) = &self.rdma_context {
-            let mut ctx = rdma_context.lock().unwrap();
+            let mut ctx = rdma_context.lock().expect("lock should not be poisoned");
             ctx.cleanup()?;
         }
 
         // Clear caches
         {
-            let mut cache = self.sample_cache.lock().unwrap();
+            let mut cache = self
+                .sample_cache
+                .lock()
+                .expect("lock should not be poisoned");
             cache.clear();
         }
 
@@ -493,22 +509,25 @@ impl EnhancedDistributedSampler {
             // Master node generates seed
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
         } else {
             // Other nodes receive seed from master via collective operation
             let collective_msg = DistributedMessage::CollectiveOp {
                 op_type: CollectiveOpType::Broadcast,
                 op_id: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos() as u64,
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0),
                 data: None,
             };
 
             // Send request to master (rank 0) for shuffle seed
             let res = {
-                let comm_manager = self.comm_manager.lock().unwrap();
+                let comm_manager = self
+                    .comm_manager
+                    .lock()
+                    .expect("lock should not be poisoned");
                 comm_manager.send_request(0, &collective_msg)
             };
             match res {
@@ -517,14 +536,19 @@ impl EnhancedDistributedSampler {
                     ..
                 }) => {
                     // Deserialize seed from master
-                    match bincode::deserialize::<u64>(&seed_data) {
+                    match oxicode::serde::decode_owned_from_slice::<u64, _>(
+                        &seed_data,
+                        oxicode::config::standard(),
+                    )
+                    .map(|(v, _)| v)
+                    {
                         Ok(received_seed) => received_seed,
                         Err(_) => {
                             // Fallback to local seed if deserialization fails
                             std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs()
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
                         }
                     }
                 }
@@ -532,8 +556,8 @@ impl EnhancedDistributedSampler {
                     // Fallback to local seed if master communication fails
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
                 }
             }
         };
@@ -605,7 +629,10 @@ impl EnhancedDistributedSampler {
             request_id,
         };
 
-        let comm_manager = self.comm_manager.lock().unwrap();
+        let comm_manager = self
+            .comm_manager
+            .lock()
+            .expect("lock should not be poisoned");
         let response = comm_manager.send_request(remote_rank, &request)?;
 
         match response {
@@ -621,9 +648,12 @@ impl EnhancedDistributedSampler {
 
                 // Deserialize tensor data from network response
                 let samples: Vec<(Tensor<T>, Tensor<T>)> =
-                    match bincode::deserialize::<Vec<(Vec<T>, Vec<usize>, Vec<T>, Vec<usize>)>>(
-                        &decompressed_data,
-                    ) {
+                    match oxicode::serde::decode_owned_from_slice::<
+                        Vec<(Vec<T>, Vec<usize>, Vec<T>, Vec<usize>)>,
+                        _,
+                    >(&decompressed_data, oxicode::config::standard())
+                    .map(|(v, _)| v)
+                    {
                         Ok(tensor_data) => {
                             // Convert serialized data back to tensors
                             tensor_data
@@ -675,7 +705,10 @@ impl EnhancedDistributedSampler {
 
                 // Update network statistics
                 {
-                    let mut stats = self.stats.write().unwrap();
+                    let mut stats = self
+                        .stats
+                        .write()
+                        .expect("write lock should not be poisoned");
                     stats.network_bytes_received += data_len as u64;
                 }
 
@@ -697,7 +730,10 @@ impl EnhancedDistributedSampler {
     }
 
     fn cache_samples(&self, indices: &[usize], data: &[u8]) {
-        let mut cache = self.sample_cache.lock().unwrap();
+        let mut cache = self
+            .sample_cache
+            .lock()
+            .expect("lock should not be poisoned");
         let timestamp = Instant::now();
 
         for &index in indices {
@@ -731,8 +767,8 @@ impl EnhancedDistributedSampler {
     fn generate_operation_id(&self) -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
     }
 
     fn generate_request_id(&self) -> u64 {
@@ -749,23 +785,27 @@ impl EnhancedDistributedSampler {
         // Coordinate shuffle seed across all nodes
         if self.config.rank == 0 {
             // Master node broadcasts seed to all other nodes
-            let seed_data = bincode::serialize(&seed).map_err(|e| {
-                TensorError::invalid_operation_simple(format!("Seed serialization error: {e}"))
-            })?;
+            let seed_data = oxicode::serde::encode_to_vec(&seed, oxicode::config::standard())
+                .map_err(|e| {
+                    TensorError::invalid_operation_simple(format!("Seed serialization error: {e}"))
+                })?;
 
             let broadcast_msg = DistributedMessage::CollectiveOp {
                 op_type: CollectiveOpType::Broadcast,
                 op_id: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos() as u64,
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0),
                 data: Some(seed_data),
             };
 
             // Send seed to all other nodes
             for rank in 1..self.config.world_size {
                 if let Err(e) = {
-                    let comm_manager = self.comm_manager.lock().unwrap();
+                    let comm_manager = self
+                        .comm_manager
+                        .lock()
+                        .expect("lock should not be poisoned");
                     comm_manager.send_request(rank, &broadcast_msg)
                 } {
                     return Err(TensorError::invalid_operation_simple(format!(
@@ -839,9 +879,10 @@ impl CommunicationManager {
         let connections = &self.connections;
         if let Some(connection) = connections.get(&dest_rank) {
             // Serialize message
-            let serialized_message = bincode::serialize(message).map_err(|e| {
-                TensorError::invalid_operation_simple(format!("Serialization error: {e}"))
-            })?;
+            let serialized_message =
+                oxicode::serde::encode_to_vec(message, oxicode::config::standard()).map_err(
+                    |e| TensorError::invalid_operation_simple(format!("Serialization error: {e}")),
+                )?;
 
             // Send message with length prefix
             let mut stream = connection;
@@ -878,7 +919,12 @@ impl CommunicationManager {
             }
 
             // Deserialize response
-            match bincode::deserialize::<DistributedMessage>(&response_data) {
+            match oxicode::serde::decode_owned_from_slice::<DistributedMessage, _>(
+                &response_data,
+                oxicode::config::standard(),
+            )
+            .map(|(v, _)| v)
+            {
                 Ok(response) => Ok(response),
                 Err(e) => Ok(DistributedMessage::Error {
                     message: format!("Deserialization error: {e}"),

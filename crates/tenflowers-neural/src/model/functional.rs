@@ -572,7 +572,10 @@ where
                                 context: None,
                             });
                         }
-                        let layer = shared_layer.layer.lock().unwrap();
+                        let layer = shared_layer
+                            .layer
+                            .lock()
+                            .expect("lock should not be poisoned");
                         layer.forward(input_tensors[0])?
                     }
                     LayerOp::Custom(custom_fn) => custom_fn(&input_tensors)?,
@@ -656,7 +659,14 @@ where
         }
 
         let outputs = self.forward_multi(&[input])?;
-        Ok(outputs.into_iter().next().unwrap())
+        outputs
+            .into_iter()
+            .next()
+            .ok_or_else(|| TensorError::InvalidArgument {
+                operation: "Model::forward".to_string(),
+                reason: "Expected exactly one output but got none".to_string(),
+                context: None,
+            })
     }
 
     /// Get all parameters from all layers
@@ -712,7 +722,10 @@ where
                     layer.set_training(training);
                 }
                 LayerOp::Shared(shared_layer) => {
-                    let mut layer = shared_layer.layer.lock().unwrap();
+                    let mut layer = shared_layer
+                        .layer
+                        .lock()
+                        .expect("lock should not be poisoned");
                     layer.set_training(training);
                 }
                 LayerOp::Custom(_) => {

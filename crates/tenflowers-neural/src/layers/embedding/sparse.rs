@@ -427,7 +427,9 @@ where
             *momentum_buffer = Some(std::collections::HashMap::new());
         }
 
-        let momentum_map = momentum_buffer.as_mut().unwrap();
+        let momentum_map = momentum_buffer
+            .as_mut()
+            .expect("Momentum buffer should be Some after initialization");
 
         // Validate all gradients and initialize momentum buffers
         for (&embedding_idx, gradient) in &sparse_grad.gradients {
@@ -454,7 +456,9 @@ where
 
         // Update momentum buffers first
         for (&embedding_idx, gradient) in &sparse_grad.gradients {
-            let velocity = momentum_map.get_mut(&embedding_idx).unwrap();
+            let velocity = momentum_map
+                .get_mut(&embedding_idx)
+                .expect("Momentum for embedding_idx should exist after initialization");
 
             // Apply momentum update: v = momentum * v + learning_rate * gradient
             for (i, &grad_val) in gradient.iter().enumerate() {

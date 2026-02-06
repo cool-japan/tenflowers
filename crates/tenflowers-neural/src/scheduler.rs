@@ -402,7 +402,7 @@ impl LearningRateScheduler for ReduceLROnPlateau {
 ///
 /// Implements the "1cycle" learning rate policy described in:
 /// "A disciplined approach to neural network hyper-parameters" by Leslie Smith
-/// https://arxiv.org/abs/1803.09820
+/// <https://arxiv.org/abs/1803.09820>
 #[derive(Debug, Clone)]
 pub struct OneCycleLR {
     max_lr: f32,

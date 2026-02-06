@@ -36,8 +36,12 @@ impl Graph {
 
         // Add all edges from the other graph
         for edge in other.edges.values() {
-            let new_from = *id_mapping.get(&edge.from_node).unwrap();
-            let new_to = *id_mapping.get(&edge.to_node).unwrap();
+            let new_from = *id_mapping
+                .get(&edge.from_node)
+                .expect("Node ID must exist in mapping after insertion");
+            let new_to = *id_mapping
+                .get(&edge.to_node)
+                .expect("Node ID must exist in mapping after insertion");
 
             self.add_edge(
                 new_from,

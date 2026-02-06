@@ -36,7 +36,7 @@ fn test_conv1d_cpu_basic() {
     // Position 1: (2*1 + 3*0 + 4*(-1)) + (3*0.5 + 4*0.5 + 5*0.5) + 0.1 = -2 + 6.0 + 0.1 = 4.1
     // Position 2: (3*1 + 4*0 + 5*(-1)) + (4*0.5 + 5*0.5 + 6*0.5) + 0.1 = -2 + 7.5 + 0.1 = 5.6
 
-    let expected = vec![2.6f32, 4.1, 5.6];
+    let expected = [2.6f32, 4.1, 5.6];
     for (i, (&actual, &expected)) in result_data.iter().zip(expected.iter()).enumerate() {
         assert!(
             (actual - expected).abs() < 1e-5f32,
@@ -127,7 +127,7 @@ fn test_conv1d_gpu_basic() {
 
         // Verify correctness
         let result_data = result_cpu.to_vec().unwrap();
-        let expected = vec![-1.0, -1.0, -1.0]; // [1-2, 2-3, 3-4]
+        let expected = [-1.0, -1.0, -1.0]; // [1-2, 2-3, 3-4]
 
         for (i, (&actual, &expected)) in result_data.iter().zip(expected.iter()).enumerate() {
             assert!(
@@ -158,7 +158,7 @@ fn test_conv1d_stride() {
 
     // Expected: [1+2, 3+4, 5+6] = [3, 7, 11]
     let result_data = result.to_vec().unwrap();
-    let expected = vec![3.0f32, 7.0, 11.0];
+    let expected = [3.0f32, 7.0, 11.0];
 
     for (i, (&actual, &expected)) in result_data.iter().zip(expected.iter()).enumerate() {
         assert!(

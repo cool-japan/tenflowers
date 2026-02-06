@@ -805,12 +805,12 @@ mod tests {
 
         // Add healthy gradients
         let healthy =
-            GradientFlowInfo::from_gradients("healthy_layer".to_string(), &vec![0.01, 0.02, 0.015]);
+            GradientFlowInfo::from_gradients("healthy_layer".to_string(), &[0.01, 0.02, 0.015]);
         inspector.add_gradient_flow(healthy);
 
         // Add exploding gradients
         let exploding =
-            GradientFlowInfo::from_gradients("exploding_layer".to_string(), &vec![100.0, 200.0]);
+            GradientFlowInfo::from_gradients("exploding_layer".to_string(), &[100.0, 200.0]);
         inspector.add_gradient_flow(exploding);
 
         let issues = inspector.check_gradient_health();

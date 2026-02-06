@@ -34,8 +34,12 @@ fn test_gradient_tape_basic_add() {
     assert_eq!(grad_b_tensor.shape().dims(), &[2]);
 
     // For addition, gradients should be 1.0
-    let grad_a_data = grad_a_tensor.as_slice().unwrap();
-    let grad_b_data = grad_b_tensor.as_slice().unwrap();
+    let grad_a_data = grad_a_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_b_data = grad_b_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     assert!((grad_a_data[0] - 1.0).abs() < 1e-6);
     assert!((grad_a_data[1] - 1.0).abs() < 1e-6);
@@ -69,8 +73,12 @@ fn test_gradient_tape_multiplication() {
     let grad_b_tensor = grad_b.as_ref().unwrap();
 
     // For multiplication: grad_a = b, grad_b = a
-    let grad_a_data = grad_a_tensor.as_slice().unwrap();
-    let grad_b_data = grad_b_tensor.as_slice().unwrap();
+    let grad_a_data = grad_a_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_b_data = grad_b_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     assert!((grad_a_data[0] - 4.0).abs() < 1e-6); // grad_a[0] = b[0]
     assert!((grad_a_data[1] - 5.0).abs() < 1e-6); // grad_a[1] = b[1]
@@ -111,9 +119,15 @@ fn test_gradient_tape_chain_rule() {
     let grad_b_tensor = grad_b.as_ref().unwrap();
 
     // Check gradients
-    let grad_x_data = grad_x_tensor.as_slice().unwrap();
-    let grad_w_data = grad_w_tensor.as_slice().unwrap();
-    let grad_b_data = grad_b_tensor.as_slice().unwrap();
+    let grad_x_data = grad_x_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_w_data = grad_w_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_b_data = grad_b_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     assert!((grad_x_data[0] - 3.0).abs() < 1e-6); // dy/dx = w = 3.0
     assert!((grad_w_data[0] - 2.0).abs() < 1e-6); // dy/dw = x = 2.0
@@ -138,7 +152,9 @@ fn test_gradient_tape_relu() {
 
     let grad_x = &gradients[0];
     let grad_x_tensor = grad_x.as_ref().unwrap();
-    let grad_x_data = grad_x_tensor.as_slice().unwrap();
+    let grad_x_data = grad_x_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     // Check gradients: should be 1 for positive inputs, 0 for negative
     assert!((grad_x_data[0] - 1.0).abs() < 1e-6); // x[0] > 0
@@ -183,8 +199,12 @@ fn test_gradient_tape_matmul() {
     // grad_a = grad_output @ b.T
     // grad_b = a.T @ grad_output
     // Since grad_output is identity (all ones), we can verify the sums
-    let grad_a_data = grad_a_tensor.as_slice().unwrap();
-    let grad_b_data = grad_b_tensor.as_slice().unwrap();
+    let grad_a_data = grad_a_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_b_data = grad_b_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     // grad_a should be [[15, 19, 23], [15, 19, 23]] (sum of b's columns)
     assert!((grad_a_data[0] - 15.0).abs() < 1e-6);
@@ -246,19 +266,25 @@ fn test_gradient_tape_complex_computation() {
     // y = [0.5, 0.0]
 
     // grad_w2 = relu(w1 * x) = [0.5, 0.0]
-    let grad_w2_data = grad_w2_tensor.as_slice().unwrap();
+    let grad_w2_data = grad_w2_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
     assert!((grad_w2_data[0] - 0.5).abs() < 1e-6);
     assert!((grad_w2_data[1] - 0.0).abs() < 1e-6);
 
     // For grad_x and grad_w1, need to propagate through relu
     // grad_relu = w2 * (w1*x > 0) = [1.0, 0.0]
     // grad_x = w1 * grad_relu = [0.5, 0.0]
-    let grad_x_data = grad_x_tensor.as_slice().unwrap();
+    let grad_x_data = grad_x_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
     assert!((grad_x_data[0] - 0.5).abs() < 1e-6);
     assert!((grad_x_data[1] - 0.0).abs() < 1e-6);
 
     // grad_w1 = x * grad_relu = [1.0, 0.0]
-    let grad_w1_data = grad_w1_tensor.as_slice().unwrap();
+    let grad_w1_data = grad_w1_tensor
+        .as_slice()
+        .expect("tensor should be contiguous");
     assert!((grad_w1_data[0] - 1.0).abs() < 1e-6);
     assert!((grad_w1_data[1] - 0.0).abs() < 1e-6);
 }
@@ -292,13 +318,21 @@ fn test_gradient_tape_broadcasting() {
     assert_eq!(grad_b.as_ref().unwrap().shape().dims(), &[1, 2]);
 
     // grad_a should sum over the broadcasted dimension
-    let grad_a_data = grad_a.as_ref().unwrap().as_slice().unwrap();
+    let grad_a_data = grad_a
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
     assert!((grad_a_data[0] - 2.0).abs() < 1e-6); // sum of 1s across dim 1
     assert!((grad_a_data[1] - 2.0).abs() < 1e-6);
     assert!((grad_a_data[2] - 2.0).abs() < 1e-6);
 
     // grad_b should sum over the broadcasted dimension
-    let grad_b_data = grad_b.as_ref().unwrap().as_slice().unwrap();
+    let grad_b_data = grad_b
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
     assert!((grad_b_data[0] - 3.0).abs() < 1e-6); // sum of 1s across dim 0
     assert!((grad_b_data[1] - 3.0).abs() < 1e-6);
 }

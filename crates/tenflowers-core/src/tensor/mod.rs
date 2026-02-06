@@ -64,13 +64,14 @@ mod tests {
 
     #[test]
     fn test_arange() {
-        let arange = Tensor::<f32>::arange(0.0, 5.0, 1.0).unwrap();
+        let arange = Tensor::<f32>::arange(0.0, 5.0, 1.0).expect("arange creation should succeed");
         assert_eq!(arange.shape().dims(), &[5]);
         if let Some(data) = arange.as_slice() {
             assert_eq!(data, &[0.0, 1.0, 2.0, 3.0, 4.0]);
         }
 
-        let arange_step = Tensor::<f32>::arange(0.0, 3.0, 0.5).unwrap();
+        let arange_step =
+            Tensor::<f32>::arange(0.0, 3.0, 0.5).expect("arange with step should succeed");
         assert_eq!(arange_step.shape().dims(), &[6]);
         if let Some(data) = arange_step.as_slice() {
             assert_eq!(data, &[0.0, 0.5, 1.0, 1.5, 2.0, 2.5]);
@@ -79,13 +80,15 @@ mod tests {
 
     #[test]
     fn test_linspace() {
-        let linspace = Tensor::<f32>::linspace(0.0, 1.0, 5).unwrap();
+        let linspace =
+            Tensor::<f32>::linspace(0.0, 1.0, 5).expect("linspace creation should succeed");
         assert_eq!(linspace.shape().dims(), &[5]);
         if let Some(data) = linspace.as_slice() {
             assert_eq!(data, &[0.0, 0.25, 0.5, 0.75, 1.0]);
         }
 
-        let single_step = Tensor::<f32>::linspace(5.0, 10.0, 1).unwrap();
+        let single_step =
+            Tensor::<f32>::linspace(5.0, 10.0, 1).expect("single step linspace should succeed");
         assert_eq!(single_step.shape().dims(), &[1]);
         if let Some(data) = single_step.as_slice() {
             assert_eq!(data, &[5.0]);
@@ -116,22 +119,23 @@ mod tests {
 
     #[test]
     fn test_tensor_math_operations() {
-        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("tensor creation should succeed");
 
-        let abs_tensor = tensor.abs().unwrap();
+        let abs_tensor = tensor.abs().expect("abs operation should succeed");
         if let Some(data) = abs_tensor.as_slice() {
             assert_eq!(data, &[2.0, 1.0, 0.0, 1.0, 2.0]);
         }
 
-        let neg_tensor = tensor.neg().unwrap();
+        let neg_tensor = tensor.neg().expect("neg operation should succeed");
         if let Some(data) = neg_tensor.as_slice() {
             assert_eq!(data, &[2.0, 1.0, 0.0, -1.0, -2.0]);
         }
 
         let exp_tensor = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
-            .unwrap()
+            .expect("tensor creation should succeed")
             .exp()
-            .unwrap();
+            .expect("exp operation should succeed");
         if let Some(data) = exp_tensor.as_slice() {
             assert!((data[0] - 1.0).abs() < 1e-6);
             assert!((data[1] - std::f32::consts::E).abs() < 1e-6);
@@ -142,16 +146,17 @@ mod tests {
     fn test_trig_functions() {
         use std::f32::consts::PI;
 
-        let tensor = Tensor::<f32>::from_vec(vec![0.0, PI / 2.0, PI], &[3]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![0.0, PI / 2.0, PI], &[3])
+            .expect("tensor creation should succeed");
 
-        let sin_tensor = tensor.sin().unwrap();
+        let sin_tensor = tensor.sin().expect("sin operation should succeed");
         if let Some(data) = sin_tensor.as_slice() {
             assert!((data[0] - 0.0).abs() < 1e-6);
             assert!((data[1] - 1.0).abs() < 1e-6);
             assert!(data[2].abs() < 1e-6);
         }
 
-        let cos_tensor = tensor.cos().unwrap();
+        let cos_tensor = tensor.cos().expect("cos operation should succeed");
         if let Some(data) = cos_tensor.as_slice() {
             assert!((data[0] - 1.0).abs() < 1e-6);
             assert!(data[1].abs() < 1e-6);
@@ -167,15 +172,17 @@ mod tests {
 
     #[test]
     fn test_comparison_operations() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 2.0, 2.0], &[4]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 2.0, 2.0], &[4])
+            .expect("tensor creation should succeed");
 
-        let eq_result = a.eq(&b).unwrap();
+        let eq_result = a.eq(&b).expect("eq operation should succeed");
         if let Some(data) = eq_result.as_slice() {
             assert_eq!(data, &[false, true, false, false]);
         }
 
-        let ne_result = a.ne(&b).unwrap();
+        let ne_result = a.ne(&b).expect("ne operation should succeed");
         if let Some(data) = ne_result.as_slice() {
             assert_eq!(data, &[true, false, true, true]);
         }
@@ -185,17 +192,17 @@ mod tests {
             assert_eq!(data, &[false, false, true, true]);
         }
 
-        let ge_result = a.ge(&b).unwrap();
+        let ge_result = a.ge(&b).expect("ge operation should succeed");
         if let Some(data) = ge_result.as_slice() {
             assert_eq!(data, &[false, true, true, true]);
         }
 
-        let lt_result = a.lt(&b).unwrap();
+        let lt_result = a.lt(&b).expect("lt operation should succeed");
         if let Some(data) = lt_result.as_slice() {
             assert_eq!(data, &[true, false, false, false]);
         }
 
-        let le_result = a.le(&b).unwrap();
+        let le_result = a.le(&b).expect("le operation should succeed");
         if let Some(data) = le_result.as_slice() {
             assert_eq!(data, &[true, true, false, false]);
         }
@@ -203,10 +210,12 @@ mod tests {
 
     #[test]
     fn test_comparison_broadcasting() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0], &[1, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0], &[1, 2])
+            .expect("tensor creation should succeed");
 
-        let gt_result = a.gt(&b).unwrap();
+        let gt_result = a.gt(&b).expect("gt with broadcasting should succeed");
         assert_eq!(gt_result.shape().dims(), &[3, 2]);
 
         if let Some(data) = gt_result.as_slice() {
@@ -216,25 +225,27 @@ mod tests {
 
     #[test]
     fn test_logical_operations() {
-        let a = Tensor::<bool>::from_vec(vec![true, false, true, false], &[4]).unwrap();
-        let b = Tensor::<bool>::from_vec(vec![true, true, false, false], &[4]).unwrap();
+        let a = Tensor::<bool>::from_vec(vec![true, false, true, false], &[4])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<bool>::from_vec(vec![true, true, false, false], &[4])
+            .expect("tensor creation should succeed");
 
-        let and_result = a.logical_and(&b).unwrap();
+        let and_result = a.logical_and(&b).expect("logical_and should succeed");
         if let Some(data) = and_result.as_slice() {
             assert_eq!(data, &[true, false, false, false]);
         }
 
-        let or_result = a.logical_or(&b).unwrap();
+        let or_result = a.logical_or(&b).expect("logical_or should succeed");
         if let Some(data) = or_result.as_slice() {
             assert_eq!(data, &[true, true, true, false]);
         }
 
-        let not_result = a.logical_not().unwrap();
+        let not_result = a.logical_not().expect("logical_not should succeed");
         if let Some(data) = not_result.as_slice() {
             assert_eq!(data, &[false, true, false, true]);
         }
 
-        let xor_result = a.logical_xor(&b).unwrap();
+        let xor_result = a.logical_xor(&b).expect("logical_xor should succeed");
         if let Some(data) = xor_result.as_slice() {
             assert_eq!(data, &[false, true, true, false]);
         }
@@ -242,10 +253,14 @@ mod tests {
 
     #[test]
     fn test_logical_broadcasting() {
-        let a = Tensor::<bool>::from_vec(vec![true, false], &[2, 1]).unwrap();
-        let b = Tensor::<bool>::from_vec(vec![true, false], &[1, 2]).unwrap();
+        let a = Tensor::<bool>::from_vec(vec![true, false], &[2, 1])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<bool>::from_vec(vec![true, false], &[1, 2])
+            .expect("tensor creation should succeed");
 
-        let and_result = a.logical_and(&b).unwrap();
+        let and_result = a
+            .logical_and(&b)
+            .expect("logical_and with broadcasting should succeed");
         assert_eq!(and_result.shape().dims(), &[2, 2]);
 
         if let Some(data) = and_result.as_slice() {
@@ -255,26 +270,34 @@ mod tests {
 
     #[test]
     fn test_all_any_operations() {
-        let tensor =
-            Tensor::<bool>::from_vec(vec![true, false, true, true, false, true], &[2, 3]).unwrap();
+        let tensor = Tensor::<bool>::from_vec(vec![true, false, true, true, false, true], &[2, 3])
+            .expect("tensor creation should succeed");
 
-        let all_result = tensor.all(None, false).unwrap();
+        let all_result = tensor
+            .all(None, false)
+            .expect("all operation should succeed");
         if let Some(data) = all_result.as_slice() {
             assert_eq!(data, &[false]);
         }
 
-        let any_result = tensor.any(None, false).unwrap();
+        let any_result = tensor
+            .any(None, false)
+            .expect("any operation should succeed");
         if let Some(data) = any_result.as_slice() {
             assert_eq!(data, &[true]);
         }
 
-        let all_axis0 = tensor.all(Some(&[0]), false).unwrap();
+        let all_axis0 = tensor
+            .all(Some(&[0]), false)
+            .expect("all with axis should succeed");
         assert_eq!(all_axis0.shape().dims(), &[3]);
         if let Some(data) = all_axis0.as_slice() {
             assert_eq!(data, &[true, false, true]);
         }
 
-        let any_axis1 = tensor.any(Some(&[1]), false).unwrap();
+        let any_axis1 = tensor
+            .any(Some(&[1]), false)
+            .expect("any with axis should succeed");
         assert_eq!(any_axis1.shape().dims(), &[2]);
         if let Some(data) = any_axis1.as_slice() {
             assert_eq!(data, &[true, true]);
@@ -283,8 +306,11 @@ mod tests {
 
     #[test]
     fn test_clamp() {
-        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], &[6]).unwrap();
-        let clamped = tensor.clamp(-1.0, 2.0).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], &[6])
+            .expect("tensor creation should succeed");
+        let clamped = tensor
+            .clamp(-1.0, 2.0)
+            .expect("clamp operation should succeed");
 
         if let Some(data) = clamped.as_slice() {
             assert_eq!(data, &[-1.0, -1.0, 0.0, 1.0, 2.0, 2.0]);
@@ -293,25 +319,29 @@ mod tests {
 
     #[test]
     fn test_allclose() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![1.001, 2.001, 3.001], &[3]).unwrap();
-        let c = Tensor::<f32>::from_vec(vec![1.1, 2.1, 3.1], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<f32>::from_vec(vec![1.001, 2.001, 3.001], &[3])
+            .expect("tensor creation should succeed");
+        let c = Tensor::<f32>::from_vec(vec![1.1, 2.1, 3.1], &[3])
+            .expect("tensor creation should succeed");
 
         // Should be close with appropriate tolerances
-        assert!(a.allclose(&b, 1e-2, 1e-2).unwrap());
+        assert!(a.allclose(&b, 1e-2, 1e-2).expect("allclose should succeed"));
 
         // Should not be close with tight tolerances
-        assert!(!a.allclose(&c, 1e-3, 1e-3).unwrap());
+        assert!(!a.allclose(&c, 1e-3, 1e-3).expect("allclose should succeed"));
 
         // Different shapes should return false
-        let d = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-        assert!(!a.allclose(&d, 1e-2, 1e-2).unwrap());
+        let d =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("tensor creation should succeed");
+        assert!(!a.allclose(&d, 1e-2, 1e-2).expect("allclose should succeed"));
     }
 
     #[test]
     fn test_fill_() {
         let mut tensor = Tensor::<f32>::zeros(&[2, 3]);
-        tensor.fill_(5.0).unwrap();
+        tensor.fill_(5.0).expect("fill operation should succeed");
 
         if let Some(data) = tensor.as_slice() {
             assert_eq!(data, &[5.0, 5.0, 5.0, 5.0, 5.0, 5.0]);
@@ -321,12 +351,14 @@ mod tests {
     #[test]
     fn test_index_trait() {
         // Test 1D indexing
-        let tensor_1d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let tensor_1d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("tensor creation should succeed");
         assert_eq!(tensor_1d[0], 1.0);
         assert_eq!(tensor_1d[2], 3.0);
 
         // Test 2D indexing
-        let tensor_2d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let tensor_2d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("tensor creation should succeed");
         assert_eq!(tensor_2d[&[0usize, 0usize][..]], 1.0);
         assert_eq!(tensor_2d[&[0usize, 1usize][..]], 2.0);
         assert_eq!(tensor_2d[&[1usize, 0usize][..]], 3.0);
@@ -335,7 +367,8 @@ mod tests {
 
     #[test]
     fn test_tensor_utilities() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("tensor creation should succeed");
 
         // Test utility methods
         assert!(!tensor.is_empty());
@@ -359,27 +392,35 @@ mod tests {
 
     #[test]
     fn test_shape_operations() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2]).unwrap();
-        let c = Tensor::<f32>::from_vec(vec![9.0, 10.0, 11.0], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("tensor creation should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("tensor creation should succeed");
+        let c = Tensor::<f32>::from_vec(vec![9.0, 10.0, 11.0], &[3])
+            .expect("tensor creation should succeed");
 
         // Test same_shape
         assert!(a.same_shape(&b));
         assert!(!a.same_shape(&c));
 
         // Test broadcasting compatibility
-        let d = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1]).unwrap();
-        let e = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[1, 3]).unwrap();
+        let d = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1])
+            .expect("tensor creation should succeed");
+        let e = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[1, 3])
+            .expect("tensor creation should succeed");
         assert!(d.is_broadcastable_with(&e)); // [2,1] can broadcast with [1,3] -> [2,3]
 
-        let f = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-        let g = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[3]).unwrap();
+        let f =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("tensor creation should succeed");
+        let g = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[3])
+            .expect("tensor creation should succeed");
         assert!(!f.is_broadcastable_with(&g)); // [2] cannot broadcast with [3]
     }
 
     #[test]
     fn test_tensor_summary() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("tensor creation should succeed");
         let summary = tensor.summary();
 
         assert!(summary.contains("Tensor<f32>"));

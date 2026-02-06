@@ -15,13 +15,12 @@ description = "Data pipeline and dataset utilities for TenfloweRS"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.2" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-beta.1" }
 scirs2-core = { workspace = true, features = ["random"] }
-numrs2 = { workspace = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-bincode = { workspace = true, optional = true }
+oxicode = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 memmap2 = { workspace = true, optional = true }
 arrow = { workspace = true, optional = true }
@@ -58,9 +57,12 @@ criterion = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-default = ["parallel", "images", "serialize", "mmap", "parquet", "csv_format", "regex", "tfrecord", "msgpack", "hdf5", "audio", "download", "webdataset", "numa"]
+default = ["parallel", "images", "serialize", "mmap", "parquet", "csv_format", "regex", "tfrecord", "msgpack", "audio", "download", "webdataset", "numa"]
+# HDF5 support available as optional feature (requires native HDF5 C library)
+# Enable with: cargo build --features hdf5
+# Alternative: Use Zarr or Parquet formats (Pure Rust)
 parallel = ["dep:rayon"]
-serialize = ["dep:serde", "dep:serde_json", "dep:bincode", "dep:serde_yaml"]
+serialize = ["dep:serde", "dep:serde_json", "dep:oxicode", "dep:serde_yaml"]
 images = ["dep:image"]
 mmap = ["dep:memmap2"]
 parquet = ["dep:arrow", "dep:parquet"]

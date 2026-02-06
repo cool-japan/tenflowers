@@ -146,8 +146,14 @@ where
 
         match (&a.storage, &b.storage) {
             (TensorStorage::Cpu(a_arr), TensorStorage::Cpu(b_arr)) => {
-                let a_view = a_arr.view().into_dimensionality::<IxDyn>().unwrap();
-                let b_view = b_arr.view().into_dimensionality::<IxDyn>().unwrap();
+                let a_view = a_arr
+                    .view()
+                    .into_dimensionality::<IxDyn>()
+                    .expect("tensor must be convertible to dynamic dimensionality");
+                let b_view = b_arr
+                    .view()
+                    .into_dimensionality::<IxDyn>()
+                    .expect("tensor must be convertible to dynamic dimensionality");
 
                 let mut sum = T::zero();
                 for (a_val, b_val) in a_view.iter().zip(b_view.iter()) {

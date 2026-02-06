@@ -356,7 +356,8 @@ where
             use scirs2_core::random::Rng;
             let mut rng = scirs2_core::random::thread_rng();
             let keep_prob = 1.0 - self.config.prompt_dropout;
-            let inverted_dropout_scale = T::from(1.0 / keep_prob).unwrap();
+            let inverted_dropout_scale =
+                T::from(1.0 / keep_prob).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
 
             let mask_data: Vec<T> = (0..total_elements)
                 .map(|_| {
@@ -536,7 +537,10 @@ where
         // Initialize tokens with small random values
         let size = num_tokens * token_dim;
         let data: Vec<T> = (0..size)
-            .map(|i| T::from(init_std * (i % 100) as f64 / 100.0 - init_std * 0.5).unwrap())
+            .map(|i| {
+                T::from(init_std * (i % 100) as f64 / 100.0 - init_std * 0.5)
+                    .unwrap_or_else(|| T::zero())
+            })
             .collect();
         let tokens = Tensor::from_vec(data, &[num_tokens, token_dim])?;
         Ok(tokens)
@@ -565,11 +569,12 @@ where
         // Xavier initialization
         let fan_in = input_dim;
         let fan_out = output_dim;
-        let std = T::from((2.0 / (fan_in + fan_out) as f64).sqrt()).unwrap();
+        let std = T::from((2.0 / (fan_in + fan_out) as f64).sqrt())
+            .unwrap_or_else(|| T::from(0.1).unwrap_or(T::one()));
 
         // Initialize with Xavier initialization approximation
         let linear_data: Vec<T> = (0..(input_dim * output_dim))
-            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap() * std)
+            .map(|i| T::from((i % 100) as f64 * 0.01 - 0.5).unwrap_or_else(|| T::zero()) * std)
             .collect();
         let linear = Tensor::from_vec(linear_data, &[input_dim, output_dim])?;
         let bias = Some(Tensor::zeros(&[output_dim]));

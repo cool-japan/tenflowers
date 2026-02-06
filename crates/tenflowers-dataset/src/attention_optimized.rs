@@ -471,7 +471,11 @@ where
                 .collect());
         }
 
-        let device = self.config.device.as_ref().unwrap();
+        let device = self.config.device.as_ref().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "GPU device not configured for attention optimization".to_string(),
+            )
+        })?;
         let mut results = Vec::new();
 
         for sequence in batch {
@@ -874,7 +878,7 @@ mod tests {
         let dataset = builder.build().unwrap();
         assert_eq!(dataset.len(), 5);
 
-        let (features, label) = dataset.get(0).unwrap();
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[4]);
         assert_eq!(label.shape().dims(), &[1]);
     }

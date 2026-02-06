@@ -154,9 +154,10 @@ where
 {
     fn step(&mut self, model: &mut dyn Model<T>) -> Result<()> {
         // Convert constants to T
-        let beta1_t = T::from(self.beta1).unwrap();
-        let beta2_t = T::from(self.beta2).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
+        let beta1_t = T::from(self.beta1).expect("Failed to convert beta1 to tensor type");
+        let beta2_t = T::from(self.beta2).expect("Failed to convert beta2 to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
         let one_minus_beta1 = T::one() - beta1_t;
         let one_minus_beta2 = T::one() - beta2_t;
 
@@ -171,7 +172,8 @@ where
 
                 // Apply weight decay if specified (Lion typically uses decoupled weight decay)
                 let effective_grad = if self.weight_decay > 0.0 {
-                    let wd_t = T::from(self.weight_decay).unwrap();
+                    let wd_t = T::from(self.weight_decay)
+                        .expect("Failed to convert weight_decay to tensor type");
                     let weight_decay_term = param.scalar_mul(wd_t)?;
                     grad.add(&weight_decay_term)?
                 } else {
@@ -340,7 +342,7 @@ mod tests {
 
         // In a real scenario, gradients would be computed via backpropagation
         // For this test, we just ensure the optimizer can be called
-        let result = optimizer.zero_grad(&mut model);
+        optimizer.zero_grad(&mut model);
         // zero_grad doesn't return a Result, so no need to check
 
         // Note: Full step testing would require proper gradient computation

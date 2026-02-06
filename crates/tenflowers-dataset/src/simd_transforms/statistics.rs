@@ -104,7 +104,7 @@ where
             return (T::zero(), T::zero());
         }
 
-        let len = T::from(data.len()).unwrap();
+        let len = T::from(data.len()).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
         let sum = data.iter().fold(T::zero(), |acc, &x| acc + x);
         let mean = sum / len;
 

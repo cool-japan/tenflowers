@@ -249,7 +249,9 @@ impl ProductionBenchmarkSuite {
                 &benchmark_name,
                 || {
                     // Standard neural network forward pass
-                    let _output = network.forward(input.clone()).unwrap();
+                    let _output = network
+                        .forward(input.clone())
+                        .expect("network forward pass should succeed during benchmark");
                 },
                 false,
             )?;
@@ -259,7 +261,9 @@ impl ProductionBenchmarkSuite {
                 &benchmark_name,
                 || {
                     // Ultra-optimized forward pass
-                    let _output = network.forward(input.clone()).unwrap();
+                    let _output = network
+                        .forward(input.clone())
+                        .expect("network forward pass should succeed during benchmark");
                 },
                 true,
             )?;
@@ -491,7 +495,9 @@ impl ProductionBenchmarkSuite {
                 &benchmark_name,
                 || {
                     // Forward pass + gradient computation simulation
-                    let _output = network.forward(batch_input.clone()).unwrap();
+                    let _output = network
+                        .forward(batch_input.clone())
+                        .expect("network forward pass should succeed during benchmark");
                     // Simulate backward pass workload
                     let _grad = batch_input.t().dot(&batch_input);
                 },
@@ -502,7 +508,9 @@ impl ProductionBenchmarkSuite {
                 &benchmark_name,
                 || {
                     // Ultra-optimized training step
-                    let _output = network.forward(batch_input.clone()).unwrap();
+                    let _output = network
+                        .forward(batch_input.clone())
+                        .expect("network forward pass should succeed during benchmark");
                     let _grad = batch_input.t().dot(&batch_input);
                 },
                 true,

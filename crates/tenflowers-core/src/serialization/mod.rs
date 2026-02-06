@@ -41,7 +41,10 @@ mod tests {
 
         // Verify
         assert_eq!(original.shape().dims(), restored.shape().dims());
-        assert_eq!(original.as_slice().unwrap(), restored.as_slice().unwrap());
+        assert_eq!(
+            original.as_slice().expect("tensor should be contiguous"),
+            restored.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     #[test]
@@ -65,7 +68,10 @@ mod tests {
             BinarySerializer::deserialize(&mut cursor).unwrap();
 
         // Verify tensor data
-        assert_eq!(original.as_slice().unwrap(), restored.as_slice().unwrap());
+        assert_eq!(
+            original.as_slice().expect("tensor should be contiguous"),
+            restored.as_slice().expect("tensor should be contiguous")
+        );
 
         // Verify metadata
         assert!(meta.is_some());
@@ -93,6 +99,9 @@ mod tests {
         let mut cursor = Cursor::new(buffer);
         let (restored, _): (Tensor<f32>, _) = BinarySerializer::deserialize(&mut cursor).unwrap();
 
-        assert_eq!(original.as_slice().unwrap(), restored.as_slice().unwrap());
+        assert_eq!(
+            original.as_slice().expect("tensor should be contiguous"),
+            restored.as_slice().expect("tensor should be contiguous")
+        );
     }
 }

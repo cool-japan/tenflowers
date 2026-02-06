@@ -1,7 +1,7 @@
 # TenfloweRS Autograd Testing Guide
 
-**Version**: 0.1.0-alpha.2
-**Last Updated**: December 2025
+**Version**: 0.1.0-beta.1
+**Last Updated**: February 2026
 
 ---
 

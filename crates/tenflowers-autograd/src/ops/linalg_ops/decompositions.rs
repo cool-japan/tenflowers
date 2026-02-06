@@ -198,14 +198,14 @@ where
 
     // Step 2: Compute S_inv matrix for regularization
     // S_inv[i,j] = 1/(s_i - s_j) if i≠j and |s_i - s_j| > epsilon, 0 otherwise
-    let epsilon = T::from(1e-6).unwrap_or(T::zero());
+    let epsilon = T::from(1e-6).unwrap_or_else(|| T::zero());
     let mut s_inv_data = vec![T::zero(); k * k];
 
     for i in 0..k {
         for j in 0..k {
             if i != j {
-                let s_i = s.get(&[i]).unwrap_or(T::zero());
-                let s_j = s.get(&[j]).unwrap_or(T::zero());
+                let s_i = s.get(&[i]).unwrap_or_else(|| T::zero());
+                let s_j = s.get(&[j]).unwrap_or_else(|| T::zero());
                 let diff = s_i - s_j;
                 if diff.abs() > epsilon {
                     s_inv_data[i * k + j] = T::one() / diff;
@@ -221,7 +221,7 @@ where
     // Create diagonal matrix from F_s
     let mut f_s_diag_data = vec![T::zero(); k * k];
     for i in 0..k {
-        f_s_diag_data[i * k + i] = f_s.get(&[i]).unwrap_or(T::zero());
+        f_s_diag_data[i * k + i] = f_s.get(&[i]).unwrap_or_else(|| T::zero());
     }
     let f_s_diag = Tensor::from_vec(f_s_diag_data, &[k, k])?;
 
@@ -232,14 +232,14 @@ where
     // Apply symmetrization: sym(X) = (X + X^T) / 2
     let off_diag_sym = off_diag_term
         .add(&off_diag_term.transpose()?)?
-        .div(&Tensor::from_scalar(T::from(2).unwrap_or(T::one())))?;
+        .div(&Tensor::from_scalar(T::from(2).unwrap_or_else(|| T::one())))?;
 
     // Zero out diagonal elements to get only off-diagonal contributions
     let mut off_diag_data = vec![T::zero(); k * k];
     for i in 0..k {
         for j in 0..k {
             if i != j {
-                off_diag_data[i * k + j] = off_diag_sym.get(&[i, j]).unwrap_or(T::zero());
+                off_diag_data[i * k + j] = off_diag_sym.get(&[i, j]).unwrap_or_else(|| T::zero());
             }
         }
     }
@@ -272,7 +272,7 @@ where
 ///
 /// Algorithm:
 /// 1. Solve S = solve_triangular(L, grad_L, lower=True)
-/// 2. Set diagonal elements: S[i,i] = 0.5 * grad_L[i,i] / L[i,i]
+/// 2. Set diagonal elements: `S[i,i] = 0.5 * grad_L[i,i] / L[i,i]`
 /// 3. grad_A = S @ L^T + L @ S^T
 pub fn cholesky_backward<T>(grad_output: &Tensor<T>, input: &Tensor<T>) -> Result<Tensor<T>>
 where

@@ -76,7 +76,10 @@ impl MultiStreamGpuExecutor {
 
     /// Get next operation ID
     fn next_operation_id(&self) -> u64 {
-        let mut counter = self.operation_counter.lock().unwrap();
+        let mut counter = self
+            .operation_counter
+            .lock()
+            .expect("lock should not be poisoned");
         *counter += 1;
         *counter
     }
@@ -259,45 +262,50 @@ impl MultiStreamGpuExecutor {
         self.compute_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("compute stream lock should not be poisoned")
             .clear();
         self.transfer_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("transfer stream lock should not be poisoned")
             .clear();
         self.high_priority_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("high priority stream lock should not be poisoned")
             .clear();
         self.background_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("background stream lock should not be poisoned")
             .clear();
     }
 
     /// Get the number of pending operations across all streams
     pub fn pending_operations_count(&self) -> usize {
-        let compute_count = self.compute_stream.pending_operations.lock().unwrap().len();
+        let compute_count = self
+            .compute_stream
+            .pending_operations
+            .lock()
+            .expect("compute stream lock should not be poisoned")
+            .len();
         let transfer_count = self
             .transfer_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("transfer stream lock should not be poisoned")
             .len();
         let high_priority_count = self
             .high_priority_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("high priority stream lock should not be poisoned")
             .len();
         let background_count = self
             .background_stream
             .pending_operations
             .lock()
-            .unwrap()
+            .expect("background stream lock should not be poisoned")
             .len();
 
         compute_count + transfer_count + high_priority_count + background_count

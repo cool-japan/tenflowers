@@ -241,7 +241,10 @@ where
 
     /// Get the computed gradient, computing it if necessary
     pub fn get(&self) -> Result<Tensor<T>> {
-        let mut cached = self.cached_result.lock().unwrap();
+        let mut cached = self
+            .cached_result
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(result) = &*cached {
             return Ok(result.clone());
@@ -256,12 +259,18 @@ where
 
     /// Check if the gradient has been computed
     pub fn is_computed(&self) -> bool {
-        self.cached_result.lock().unwrap().is_some()
+        self.cached_result
+            .lock()
+            .expect("lock should not be poisoned")
+            .is_some()
     }
 
     /// Clear cached result to free memory
     pub fn clear_cache(&self) {
-        *self.cached_result.lock().unwrap() = None;
+        *self
+            .cached_result
+            .lock()
+            .expect("lock should not be poisoned") = None;
     }
 
     /// Check if this is an expensive computation
@@ -336,7 +345,9 @@ where
 
         if let Some(acc_grad) = &self.accumulated_gradient {
             if self.count > 0 {
-                let count_scalar = Tensor::from_scalar(T::from(self.count).unwrap());
+                let count_scalar = Tensor::from_scalar(
+                    T::from(self.count).expect("count should convert to float"),
+                );
                 let avg_grad = acc_grad.div(&count_scalar)?;
                 Ok(Some(avg_grad))
             } else {

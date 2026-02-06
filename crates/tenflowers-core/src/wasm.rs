@@ -836,7 +836,15 @@ impl WebGpuBackend {
         };
 
         // Create bind group
-        let device = self.device.as_ref().unwrap();
+        let device = self
+            .device
+            .as_ref()
+            .ok_or_else(|| TensorError::ComputeError {
+                operation: "wasm_gpu_operation".to_string(),
+                details: "WebGPU device not initialized".to_string(),
+                retry_possible: false,
+                context: None,
+            })?;
         let bind_group_layout = pipeline.get_bind_group_layout(0);
 
         let bind_group_entries = js_sys::Array::new();
@@ -998,7 +1006,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {{
         let pipeline = self.create_compute_pipeline(&shader, "main")?;
 
         // Execute compute pass (similar to add_gpu implementation)
-        let device = self.device.as_ref().unwrap();
+        let device = self
+            .device
+            .as_ref()
+            .expect("WASM device should be initialized");
         let bind_group_layout = pipeline.get_bind_group_layout(0);
 
         let bind_group_entries = js_sys::Array::new();

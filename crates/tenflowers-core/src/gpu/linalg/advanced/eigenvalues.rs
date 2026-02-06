@@ -86,7 +86,7 @@ impl GpuLinalgContext {
         let metadata = LinalgMetadata::new(n, n)
             .with_tolerance(
                 T::from(1e-10)
-                    .unwrap_or_else(|| T::from(0.0).unwrap())
+                    .unwrap_or_else(|| T::from(0.0).expect("fallback value computation failed"))
                     .to_f64() as f32,
             )
             .with_max_iterations(100 * n as u32);

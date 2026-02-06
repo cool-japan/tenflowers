@@ -1,3 +1,15 @@
+//! Global pooling gradient operations
+//!
+//! This module provides gradients for global pooling operations.
+
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -278,8 +290,10 @@ where
     }
 
     // Calculate fractional adaptive pooling parameters
-    let stride_h = T::from_usize(input_h).unwrap() / T::from_usize(output_h).unwrap();
-    let stride_w = T::from_usize(input_w).unwrap() / T::from_usize(output_w).unwrap();
+    let stride_h = T::from_usize(input_h).expect("height should convert to float")
+        / T::from_usize(output_h).expect("output height should convert to float");
+    let stride_w = T::from_usize(input_w).expect("width should convert to float")
+        / T::from_usize(output_w).expect("output width should convert to float");
 
     let grad_output_data = grad_output.as_slice().ok_or_else(|| {
         TensorError::invalid_argument("Could not access grad_output data".to_string())
@@ -293,43 +307,47 @@ where
             for out_h in 0..output_h {
                 for out_w in 0..output_w {
                     // Calculate fractional input region for this output position
-                    let center_h =
-                        (T::from_usize(out_h).unwrap() + T::from(0.5).unwrap()) * stride_h;
-                    let center_w =
-                        (T::from_usize(out_w).unwrap() + T::from(0.5).unwrap()) * stride_w;
+                    let center_h = (T::from_usize(out_h)
+                        .expect("output height should convert to float")
+                        + float_const!(0.5, T))
+                        * stride_h;
+                    let center_w = (T::from_usize(out_w)
+                        .expect("output width should convert to float")
+                        + float_const!(0.5, T))
+                        * stride_w;
 
                     // Calculate fractional pooling region size
                     let region_h = stride_h * (T::one() + alpha);
                     let region_w = stride_w * (T::one() + alpha);
 
-                    let start_h = center_h - region_h / T::from(2.0).unwrap();
-                    let end_h = center_h + region_h / T::from(2.0).unwrap();
-                    let start_w = center_w - region_w / T::from(2.0).unwrap();
-                    let end_w = center_w + region_w / T::from(2.0).unwrap();
+                    let start_h = center_h - region_h / float_const!(2.0, T);
+                    let end_h = center_h + region_h / float_const!(2.0, T);
+                    let start_w = center_w - region_w / float_const!(2.0, T);
+                    let end_w = center_w + region_w / float_const!(2.0, T);
 
                     // Convert to integer bounds with fractional weighting
                     let start_h_int = start_h
                         .floor()
                         .max(T::zero())
-                        .min(T::from_usize(input_h - 1).unwrap())
+                        .min(T::from_usize(input_h - 1).expect("height should convert to float"))
                         .to_usize()
                         .unwrap_or(0);
                     let end_h_int = end_h
                         .ceil()
                         .max(T::one())
-                        .min(T::from_usize(input_h).unwrap())
+                        .min(T::from_usize(input_h).expect("height should convert to float"))
                         .to_usize()
                         .unwrap_or(input_h);
                     let start_w_int = start_w
                         .floor()
                         .max(T::zero())
-                        .min(T::from_usize(input_w - 1).unwrap())
+                        .min(T::from_usize(input_w - 1).expect("width should convert to float"))
                         .to_usize()
                         .unwrap_or(0);
                     let end_w_int = end_w
                         .ceil()
                         .max(T::one())
-                        .min(T::from_usize(input_w).unwrap())
+                        .min(T::from_usize(input_w).expect("width should convert to float"))
                         .to_usize()
                         .unwrap_or(input_w);
 
@@ -339,14 +357,18 @@ where
                     // First pass: calculate total weight
                     for in_h in start_h_int..end_h_int {
                         for in_w in start_w_int..end_w_int {
-                            let h_pos = T::from_usize(in_h).unwrap() + T::from(0.5).unwrap();
-                            let w_pos = T::from_usize(in_w).unwrap() + T::from(0.5).unwrap();
+                            let h_pos = T::from_usize(in_h)
+                                .expect("height position should convert to float")
+                                + float_const!(0.5, T);
+                            let w_pos = T::from_usize(in_w)
+                                .expect("width position should convert to float")
+                                + float_const!(0.5, T);
 
                             // Calculate fractional overlap weight
                             let h_overlap = T::one()
-                                - (h_pos - center_h).abs() / (region_h / T::from(2.0).unwrap());
+                                - (h_pos - center_h).abs() / (region_h / float_const!(2.0, T));
                             let w_overlap = T::one()
-                                - (w_pos - center_w).abs() / (region_w / T::from(2.0).unwrap());
+                                - (w_pos - center_w).abs() / (region_w / float_const!(2.0, T));
 
                             let weight = h_overlap.max(T::zero()) * w_overlap.max(T::zero());
                             total_weight = total_weight + weight;
@@ -361,14 +383,18 @@ where
                     if total_weight > T::zero() {
                         for in_h in start_h_int..end_h_int {
                             for in_w in start_w_int..end_w_int {
-                                let h_pos = T::from_usize(in_h).unwrap() + T::from(0.5).unwrap();
-                                let w_pos = T::from_usize(in_w).unwrap() + T::from(0.5).unwrap();
+                                let h_pos = T::from_usize(in_h)
+                                    .expect("Height index should be convertible to float type")
+                                    + float_const!(0.5, T);
+                                let w_pos = T::from_usize(in_w)
+                                    .expect("Width index should be convertible to float type")
+                                    + float_const!(0.5, T);
 
                                 // Calculate fractional overlap weight
                                 let h_overlap = T::one()
-                                    - (h_pos - center_h).abs() / (region_h / T::from(2.0).unwrap());
+                                    - (h_pos - center_h).abs() / (region_h / float_const!(2.0, T));
                                 let w_overlap = T::one()
-                                    - (w_pos - center_w).abs() / (region_w / T::from(2.0).unwrap());
+                                    - (w_pos - center_w).abs() / (region_w / float_const!(2.0, T));
 
                                 let weight = h_overlap.max(T::zero()) * w_overlap.max(T::zero());
                                 let normalized_weight = weight / total_weight;
@@ -561,7 +587,7 @@ mod tests {
         assert_eq!(grad_input.shape().dims(), input_shape);
 
         // Check that gradients are distributed with fractional weights
-        let grad_input_data = grad_input.as_slice().unwrap();
+        let grad_input_data = grad_input.as_slice().expect("tensor should be contiguous");
 
         // The sum of gradients should be preserved (energy conservation)
         let total_input_grad: f32 = grad_input_data.iter().sum();

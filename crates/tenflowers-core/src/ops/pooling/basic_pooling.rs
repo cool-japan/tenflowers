@@ -259,7 +259,8 @@ where
 
                     let out_idx = ((b * output_height + oh) * output_width + ow) * channels + c;
                     if count > 0 {
-                        output_data[out_idx] = sum / T::from(count).unwrap();
+                        output_data[out_idx] = sum
+                            / T::from(count).expect("count must be convertible to tensor dtype");
                     } else {
                         output_data[out_idx] = T::zero();
                     }
@@ -452,7 +453,9 @@ where
                             + oh * output_width
                             + ow;
                         if count > 0 {
-                            output_data[out_idx] = sum / T::from(count).unwrap();
+                            output_data[out_idx] = sum
+                                / T::from(count)
+                                    .expect("count must be convertible to tensor dtype");
                         } else {
                             output_data[out_idx] = T::zero();
                         }

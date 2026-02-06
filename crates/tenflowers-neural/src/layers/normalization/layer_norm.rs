@@ -93,7 +93,7 @@ where
         let variance = squared.mean(Some(&axes), true)?;
 
         // Normalize: (x - mean) / sqrt(var + epsilon)
-        let eps = T::from(self.epsilon).unwrap();
+        let eps = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
         let eps_tensor = Tensor::from_scalar(eps);
         let std = variance.add(&eps_tensor)?.sqrt()?;
         let normalized = centered.div(&std)?;

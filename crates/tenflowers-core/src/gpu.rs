@@ -519,7 +519,7 @@ where
 }
 
 /// GPU comparison operation dispatch function
-/// Returns a GpuBuffer<u8> where 0 represents false and 1 represents true
+/// Returns a `GpuBuffer<u8>` where 0 represents false and 1 represents true
 pub fn gpu_comparison_op_dispatch<T>(
     input_a: &GpuBuffer<T>,
     input_b: &GpuBuffer<T>,

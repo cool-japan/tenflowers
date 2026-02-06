@@ -437,7 +437,11 @@ where
         }
 
         let chunk_data = self.load_chunk(chunk_index)?;
-        let device = self.config.device.as_ref().unwrap();
+        let device = self.config.device.as_ref().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "GPU device not configured for streaming optimization".to_string(),
+            )
+        })?;
 
         // Move loaded data to GPU
         let mut gpu_data = Vec::new();

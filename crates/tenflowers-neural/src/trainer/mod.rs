@@ -12,8 +12,9 @@ pub mod metrics;
 pub use callbacks::{Callback, EarlyStopping, LearningRateReduction, ModelCheckpoint};
 pub use metrics::{CallbackAction, TrainingMetrics, TrainingState};
 
-#[cfg(feature = "tensorboard")]
-pub use callbacks::TensorboardCallback;
+// Tensorboard feature temporarily removed in v0.1.0-beta.1 (RUSTSEC-2024-0437)
+// #[cfg(feature = "tensorboard")]
+// pub use callbacks::TensorboardCallback;
 
 use crate::{optimizers::Optimizer, Model};
 use tenflowers_core::{Result, Tensor};

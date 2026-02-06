@@ -138,7 +138,7 @@ where
                 (0..length)
                     .map(|_| {
                         let noise_sample = rng.random::<f64>() * 2.0 - 1.0; // Range [-1, 1]
-                        T::from(noise_sample * self.noise_level).unwrap()
+                        T::from(noise_sample * self.noise_level).unwrap_or(T::zero())
                     })
                     .collect()
             }
@@ -168,7 +168,8 @@ where
                         + white_sample * 0.5362;
                     filter_state[6] = white_sample * 0.115926;
 
-                    pink_noise.push(T::from(pink_sample * self.noise_level * 0.11).unwrap());
+                    pink_noise
+                        .push(T::from(pink_sample * self.noise_level * 0.11).unwrap_or(T::zero()));
                 }
 
                 pink_noise
@@ -185,7 +186,8 @@ where
                     // Prevent accumulator from growing too large
                     accumulator *= 0.999;
 
-                    brown_noise.push(T::from(accumulator * self.noise_level * 0.1).unwrap());
+                    brown_noise
+                        .push(T::from(accumulator * self.noise_level * 0.1).unwrap_or(T::zero()));
                 }
 
                 brown_noise
@@ -290,7 +292,8 @@ where
                 self.mean + self.std * z1
             };
 
-            let noisy_value = T::from(value).unwrap() + T::from(noise).unwrap();
+            let noisy_value =
+                T::from(value).unwrap_or(T::zero()) + T::from(noise).unwrap_or(T::zero());
             noisy_data.push(noisy_value);
         }
 

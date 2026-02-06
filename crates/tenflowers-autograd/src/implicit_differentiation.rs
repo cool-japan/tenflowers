@@ -255,7 +255,10 @@ impl ImplicitDifferentiator {
 
             // Newton step: y_new = y - (∂F/∂y)^(-1) * F(x, y)
             // For simplicity, use a damped update
-            let damping_scalar = Tensor::from_scalar(T::from_f64(self.config.damping).unwrap());
+            let damping_scalar = Tensor::from_scalar(
+                T::from_f64(self.config.damping)
+                    .expect("conversion of damping parameter should succeed"),
+            );
             let update = f_val.tensor.mul(&damping_scalar)?;
             let new_tensor = y.tensor.sub(&update)?;
 
@@ -655,7 +658,8 @@ pub mod examples {
             // g(x, y) = 0.5 * (y + x/y) - Babylonian method for sqrt
             let x_over_y = x.div(y)?;
             let sum = y.add(&x_over_y)?;
-            let half_tensor = Tensor::from_scalar(T::from_f64(0.5).unwrap());
+            let half_tensor =
+                Tensor::from_scalar(T::from_f64(0.5).expect("conversion of 0.5 should succeed"));
             let tape = GradientTape::new();
             let half = tape.watch(half_tensor);
             sum.mul(&half)

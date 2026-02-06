@@ -159,7 +159,9 @@ pub struct DeterministicContext {
 impl DeterministicContext {
     /// Create a new deterministic context with the given seed
     pub fn new(seed: u64) -> Self {
-        let mut state = DETERMINISTIC_STATE.write().unwrap();
+        let mut state = DETERMINISTIC_STATE
+            .write()
+            .expect("write lock should not be poisoned");
         let previous_enabled = state.enabled;
         let previous_seed = state.global_seed;
 
@@ -175,7 +177,9 @@ impl DeterministicContext {
 
     /// Create a new deterministic context with the given configuration
     pub fn with_config(config: DeterministicConfig) -> Self {
-        let mut state = DETERMINISTIC_STATE.write().unwrap();
+        let mut state = DETERMINISTIC_STATE
+            .write()
+            .expect("write lock should not be poisoned");
         let previous_enabled = state.enabled;
         let previous_seed = state.global_seed;
 
@@ -192,7 +196,9 @@ impl DeterministicContext {
 
 impl Drop for DeterministicContext {
     fn drop(&mut self) {
-        let mut state = DETERMINISTIC_STATE.write().unwrap();
+        let mut state = DETERMINISTIC_STATE
+            .write()
+            .expect("write lock should not be poisoned");
         state.enabled = self.previous_enabled;
         state.global_seed = self.previous_seed;
         if !self.previous_enabled {
@@ -203,7 +209,9 @@ impl Drop for DeterministicContext {
 
 /// Enable or disable deterministic mode globally
 pub fn set_deterministic(enabled: bool, seed: Option<u64>) {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     state.enabled = enabled;
     state.global_seed = seed;
     if enabled {
@@ -213,24 +221,34 @@ pub fn set_deterministic(enabled: bool, seed: Option<u64>) {
 
 /// Check if deterministic mode is currently enabled
 pub fn is_deterministic() -> bool {
-    DETERMINISTIC_STATE.read().unwrap().enabled
+    DETERMINISTIC_STATE
+        .read()
+        .expect("read lock should not be poisoned")
+        .enabled
 }
 
 /// Get the current global seed (if any)
 pub fn get_global_seed() -> Option<u64> {
-    DETERMINISTIC_STATE.read().unwrap().global_seed
+    DETERMINISTIC_STATE
+        .read()
+        .expect("read lock should not be poisoned")
+        .global_seed
 }
 
 /// Set the global seed without changing deterministic mode
 pub fn set_global_seed(seed: u64) {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     state.global_seed = Some(seed);
     state.reset();
 }
 
 /// Get or create a deterministic seed for a specific operation
 pub fn get_operation_seed(operation_id: &str) -> Option<u64> {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     if state.enabled {
         Some(state.get_or_create_operation_seed(operation_id))
     } else {
@@ -240,25 +258,35 @@ pub fn get_operation_seed(operation_id: &str) -> Option<u64> {
 
 /// Set a specific seed for an operation
 pub fn set_operation_seed(operation_id: &str, seed: u64) {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     state.operation_seeds.insert(operation_id.to_string(), seed);
 }
 
 /// Clear all operation-specific seeds
 pub fn clear_operation_seeds() {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     state.operation_seeds.clear();
 }
 
 /// Reset the deterministic state (clears all operation seeds and counter)
 pub fn reset_deterministic_state() {
-    let mut state = DETERMINISTIC_STATE.write().unwrap();
+    let mut state = DETERMINISTIC_STATE
+        .write()
+        .expect("write lock should not be poisoned");
     state.reset();
 }
 
 /// Get the number of unique operations that have been seeded
 pub fn get_seeded_operation_count() -> usize {
-    DETERMINISTIC_STATE.read().unwrap().operation_seeds.len()
+    DETERMINISTIC_STATE
+        .read()
+        .expect("read lock should not be poisoned")
+        .operation_seeds
+        .len()
 }
 
 /// Seed manager for gradient tape operations
@@ -289,11 +317,11 @@ impl SeedManager {
 
     /// Get or create a seed for an operation
     pub fn get_seed(&self, operation_id: &str) -> u64 {
-        let mut seeds = self.seeds.lock().unwrap();
+        let mut seeds = self.seeds.lock().expect("lock should not be poisoned");
         if let Some(&seed) = seeds.get(operation_id) {
             seed
         } else {
-            let mut counter = self.counter.lock().unwrap();
+            let mut counter = self.counter.lock().expect("lock should not be poisoned");
             let seed = self.base_seed.wrapping_add(*counter);
             *counter = counter.wrapping_add(1);
             seeds.insert(operation_id.to_string(), seed);
@@ -303,7 +331,7 @@ impl SeedManager {
 
     /// Get the next sequential seed
     pub fn next_seed(&self) -> u64 {
-        let mut counter = self.counter.lock().unwrap();
+        let mut counter = self.counter.lock().expect("lock should not be poisoned");
         let seed = self.base_seed.wrapping_add(*counter);
         *counter = counter.wrapping_add(1);
         seed
@@ -311,15 +339,15 @@ impl SeedManager {
 
     /// Reset the seed counter
     pub fn reset(&self) {
-        let mut counter = self.counter.lock().unwrap();
+        let mut counter = self.counter.lock().expect("lock should not be poisoned");
         *counter = 0;
-        let mut seeds = self.seeds.lock().unwrap();
+        let mut seeds = self.seeds.lock().expect("lock should not be poisoned");
         seeds.clear();
     }
 
     /// Get the number of seeds generated
     pub fn seed_count(&self) -> u64 {
-        *self.counter.lock().unwrap()
+        *self.counter.lock().expect("lock should not be poisoned")
     }
 }
 
@@ -438,7 +466,9 @@ pub trait DeterministicOperation {
     fn get_seed(&self) -> Option<u64> {
         if is_deterministic() {
             Some(get_operation_seed(&self.operation_id()).unwrap_or_else(|| {
-                let mut state = DETERMINISTIC_STATE.write().unwrap();
+                let mut state = DETERMINISTIC_STATE
+                    .write()
+                    .expect("write lock should not be poisoned");
                 state.next_seed()
             }))
         } else {

@@ -368,7 +368,10 @@ mod tests {
         assert!(dense.bias().is_some());
 
         // Check that weights are not all zeros (they should be randomly initialized)
-        let weight_data = dense.weight().as_slice().unwrap();
+        let weight_data = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = weight_data.iter().all(|&x| x == 0.0);
         assert!(
             !all_zeros,
@@ -383,7 +386,10 @@ mod tests {
         assert!(dense.bias().is_none());
 
         // Check that weights are not all zeros
-        let weight_data = dense.weight().as_slice().unwrap();
+        let weight_data = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = weight_data.iter().all(|&x| x == 0.0);
         assert!(!all_zeros, "He initialized weights should not all be zero");
     }
@@ -394,7 +400,10 @@ mod tests {
         assert_eq!(dense.weight().shape().dims(), &[3, 3]);
 
         // Check that weights are not all zeros and roughly centered around mean
-        let weight_data = dense.weight().as_slice().unwrap();
+        let weight_data = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = weight_data.iter().all(|&x| x == 0.0);
         assert!(
             !all_zeros,
@@ -411,14 +420,20 @@ mod tests {
         let mut dense = Dense::<f32>::new(2, 2, false);
 
         // Initially should be zeros
-        let initial_weights = dense.weight().as_slice().unwrap();
+        let initial_weights = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         assert!(initial_weights.iter().all(|&x| x == 0.0));
 
         // Reinitialize with Xavier
         dense.reinit_xavier();
 
         // Should no longer be all zeros
-        let new_weights = dense.weight().as_slice().unwrap();
+        let new_weights = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = new_weights.iter().all(|&x| x == 0.0);
         assert!(
             !all_zeros,
@@ -434,7 +449,10 @@ mod tests {
         dense.reinit_he();
 
         // Should not be all zeros
-        let weights = dense.weight().as_slice().unwrap();
+        let weights = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = weights.iter().all(|&x| x == 0.0);
         assert!(
             !all_zeros,
@@ -450,7 +468,10 @@ mod tests {
         dense.reinit_normal(1.0, 0.2);
 
         // Should not be all zeros
-        let weights = dense.weight().as_slice().unwrap();
+        let weights = dense
+            .weight()
+            .as_slice()
+            .expect("tensor should be contiguous");
         let all_zeros = weights.iter().all(|&x| x == 0.0);
         assert!(
             !all_zeros,
@@ -483,7 +504,10 @@ mod tests {
 
         for _ in 0..10 {
             let dense = Dense::<f32>::new_xavier(10, 5, false);
-            let weights = dense.weight().as_slice().unwrap();
+            let weights = dense
+                .weight()
+                .as_slice()
+                .expect("tensor should be contiguous");
 
             let mean: f32 = weights.iter().sum::<f32>() / weights.len() as f32;
             let variance: f32 =

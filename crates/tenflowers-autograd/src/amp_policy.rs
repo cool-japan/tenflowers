@@ -622,7 +622,10 @@ mod tests {
         let scaled = policy.scale_loss(&loss).unwrap();
 
         // Should be unchanged
-        assert_eq!(scaled.as_slice().unwrap()[0], loss.as_slice().unwrap()[0]);
+        assert_eq!(
+            scaled.as_slice().expect("tensor should be contiguous")[0],
+            loss.as_slice().expect("tensor should be contiguous")[0]
+        );
     }
 
     #[test]
@@ -637,7 +640,10 @@ mod tests {
         let scaled = policy.scale_loss(&loss).unwrap();
 
         // Should be scaled by 1024
-        assert_eq!(scaled.as_slice().unwrap()[0], 1024.0);
+        assert_eq!(
+            scaled.as_slice().expect("tensor should be contiguous")[0],
+            1024.0
+        );
     }
 
     #[test]

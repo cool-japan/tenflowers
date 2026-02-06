@@ -38,7 +38,10 @@ impl ActivationRegistry {
     pub fn record_function(&self, name: &str, elements: usize, duration_ns: u64) {
         // Update function counter
         {
-            let mut counters = self.function_counters.lock().unwrap();
+            let mut counters = self
+                .function_counters
+                .lock()
+                .expect("lock should not be poisoned");
             counters
                 .entry(name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
@@ -64,7 +67,10 @@ impl ActivationRegistry {
     }
 
     pub fn get_analytics(&self) -> ActivationAnalytics {
-        let counters = self.function_counters.lock().unwrap();
+        let counters = self
+            .function_counters
+            .lock()
+            .expect("lock should not be poisoned");
         let function_counts: std::collections::HashMap<String, u64> = counters
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))

@@ -20,8 +20,14 @@ fn test_autograd_binary_operations_comprehensive() {
     assert_eq!(grads_sub.len(), 2);
     let grad_a = grads_sub[0].as_ref().unwrap();
     let grad_b = grads_sub[1].as_ref().unwrap();
-    assert_eq!(grad_a.as_slice().unwrap(), &[1.0, 1.0]); // grad w.r.t a
-    assert_eq!(grad_b.as_slice().unwrap(), &[-1.0, -1.0]); // grad w.r.t b
+    assert_eq!(
+        grad_a.as_slice().expect("tensor should be contiguous"),
+        &[1.0, 1.0]
+    ); // grad w.r.t a
+    assert_eq!(
+        grad_b.as_slice().expect("tensor should be contiguous"),
+        &[-1.0, -1.0]
+    ); // grad w.r.t b
 
     // Reset tape for next operation
     let tape = GradientTape::new();
@@ -35,11 +41,19 @@ fn test_autograd_binary_operations_comprehensive() {
     // For d = a / b: dd/da = 1/b, dd/db = -a/(b^2)
     assert_eq!(grads_div.len(), 2);
     assert_eq!(
-        grads_div[0].as_ref().unwrap().as_slice().unwrap(),
+        grads_div[0]
+            .as_ref()
+            .unwrap()
+            .as_slice()
+            .expect("tensor should be contiguous"),
         &[0.5, 0.25]
     ); // 1/2, 1/4  (grad w.r.t a)
     assert_eq!(
-        grads_div[1].as_ref().unwrap().as_slice().unwrap(),
+        grads_div[1]
+            .as_ref()
+            .unwrap()
+            .as_slice()
+            .expect("tensor should be contiguous"),
         &[-1.5, -0.5]
     ); // -6/4, -8/16 (grad w.r.t b)
 }
@@ -64,7 +78,11 @@ fn test_autograd_power_operation() {
     // Expected gradients for a=[2,3], b=[3,2]:
     // dc/da = [3*2^(3-1), 2*3^(2-1)] = [3*4, 2*3] = [12, 6]
     let expected_grad_a = &[12.0, 6.0];
-    let actual_grad_a = grads_pow[0].as_ref().unwrap().as_slice().unwrap();
+    let actual_grad_a = grads_pow[0]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     // Check gradients with tolerance for floating point precision
     for (expected, actual) in expected_grad_a.iter().zip(actual_grad_a.iter()) {
@@ -93,7 +111,11 @@ fn test_autograd_activation_functions() {
 
     // For sigmoid: d(sigmoid(x))/dx = sigmoid(x) * (1 - sigmoid(x))
     assert_eq!(sigmoid_grads.len(), 1);
-    let grad_data = sigmoid_grads[0].as_ref().unwrap().as_slice().unwrap();
+    let grad_data = sigmoid_grads[0]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
     // sigmoid(0) = 0.5, gradient = 0.5 * 0.5 = 0.25
     assert!((grad_data[0] - 0.25).abs() < 1e-6);
 
@@ -115,7 +137,11 @@ fn test_autograd_tanh_function() {
 
     // For tanh: d(tanh(x))/dx = 1 - tanh^2(x)
     assert_eq!(tanh_grads.len(), 1);
-    let grad_data = tanh_grads[0].as_ref().unwrap().as_slice().unwrap();
+    let grad_data = tanh_grads[0]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
     // tanh(0) = 0, gradient = 1 - 0^2 = 1
     assert!((grad_data[0] - 1.0).abs() < 1e-6);
 
@@ -136,7 +162,11 @@ fn test_autograd_softmax_function() {
 
     // Softmax gradients should sum to approximately 0 (due to sum-to-1 constraint)
     assert_eq!(softmax_grads.len(), 1);
-    let grad_data = softmax_grads[0].as_ref().unwrap().as_slice().unwrap();
+    let grad_data = softmax_grads[0]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous");
     // For softmax, the sum of gradients should be approximately 0
     let grad_sum: f32 = grad_data.iter().sum();
     assert!(
@@ -171,11 +201,19 @@ fn test_autograd_complex_computation() {
     // Just verify that gradients exist and have reasonable values
     assert_eq!(grads.len(), 2);
 
-    let grad_val_x = grads[0].as_ref().unwrap().as_slice().unwrap()[0];
+    let grad_val_x = grads[0]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous")[0];
     assert!(grad_val_x.is_finite());
     assert!(!grad_val_x.is_nan());
 
-    let grad_val_y = grads[1].as_ref().unwrap().as_slice().unwrap()[0];
+    let grad_val_y = grads[1]
+        .as_ref()
+        .unwrap()
+        .as_slice()
+        .expect("tensor should be contiguous")[0];
     assert!(grad_val_y.is_finite());
     assert!(!grad_val_y.is_nan());
 }
@@ -227,7 +265,7 @@ fn test_autograd_chained_operations() {
     assert_eq!(grads.len(), 1);
     let grad_tensor = grads[0].as_ref().unwrap();
     assert_eq!(grad_tensor.shape().dims(), &[2]);
-    let grad_data = grad_tensor.as_slice().unwrap();
+    let grad_data = grad_tensor.as_slice().expect("tensor should be contiguous");
 
     // For x = [1, 2]:
     // x^2 = [1, 4]

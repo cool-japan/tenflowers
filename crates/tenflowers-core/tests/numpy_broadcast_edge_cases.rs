@@ -174,14 +174,20 @@ fn test_broadcasting_preservation() {
     let a = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
     let b = Tensor::<f32>::from_vec(vec![10.0], &[1]).unwrap();
 
-    let original_a_data = a.as_slice().unwrap().to_vec();
-    let original_b_data = b.as_slice().unwrap().to_vec();
+    let original_a_data = a.as_slice().expect("tensor should be contiguous").to_vec();
+    let original_b_data = b.as_slice().expect("tensor should be contiguous").to_vec();
 
     let _result = basic::add(&a, &b).unwrap();
 
     // Original tensors should be unchanged
-    assert_eq!(a.as_slice().unwrap(), &original_a_data);
-    assert_eq!(b.as_slice().unwrap(), &original_b_data);
+    assert_eq!(
+        a.as_slice().expect("tensor should be contiguous"),
+        &original_a_data
+    );
+    assert_eq!(
+        b.as_slice().expect("tensor should be contiguous"),
+        &original_b_data
+    );
 }
 
 #[test]

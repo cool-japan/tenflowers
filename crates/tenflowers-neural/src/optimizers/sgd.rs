@@ -69,8 +69,10 @@ where
 
                 // Apply decoupled weight decay if specified
                 if self.weight_decay > 0.0 {
-                    let lr_t = T::from(self.learning_rate).unwrap();
-                    let wd_t = T::from(self.weight_decay).unwrap();
+                    let lr_t = T::from(self.learning_rate)
+                        .expect("Failed to convert learning_rate to tensor type");
+                    let wd_t = T::from(self.weight_decay)
+                        .expect("Failed to convert weight_decay to tensor type");
                     let weight_decay_factor = T::one() - lr_t * wd_t;
                     let param_decayed = param.mul(&Tensor::from_scalar(weight_decay_factor))?;
                     *param = param_decayed;
@@ -88,8 +90,10 @@ where
                         .or_insert_with(|| Tensor::zeros(param.shape().dims()));
 
                     // Update velocity: v = momentum * v - lr * grad
-                    let momentum_t = T::from(momentum).unwrap();
-                    let lr_t = T::from(self.learning_rate).unwrap();
+                    let momentum_t =
+                        T::from(momentum).expect("Failed to convert momentum to tensor type");
+                    let lr_t = T::from(self.learning_rate)
+                        .expect("Failed to convert learning_rate to tensor type");
 
                     // v = momentum * v - lr * grad
                     let momentum_term = velocity.mul(&Tensor::from_scalar(momentum_t))?;
@@ -102,7 +106,8 @@ where
                     *param = new_param;
                 } else {
                     // Standard SGD: param = param - lr * grad
-                    let lr_t = T::from(self.learning_rate).unwrap();
+                    let lr_t = T::from(self.learning_rate)
+                        .expect("Failed to convert learning_rate to tensor type");
                     let lr_grad = grad.mul(&Tensor::from_scalar(lr_t))?;
                     let new_param = param.sub(&lr_grad)?;
                     *param = new_param;

@@ -262,7 +262,10 @@ where
 
     /// Get pipeline metrics
     pub fn get_metrics(&self) -> PipelineMetrics {
-        self.metrics.lock().unwrap().clone()
+        self.metrics
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 }
 
@@ -362,7 +365,7 @@ impl PipelineScheduler {
             .retain(|&id| id != micro_batch_id);
 
         // Update metrics
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
         metrics.forward_passes += 1;
     }
 }
@@ -502,7 +505,10 @@ pub mod pipeline_utils {
         }
 
         // Find bottleneck stage (slowest)
-        let max_stage_time = stage_times.iter().max().unwrap();
+        let max_stage_time = stage_times
+            .iter()
+            .max()
+            .expect("collection should not be empty for max()");
         let total_sequential_time: Duration = layer_compute_times.iter().sum();
 
         // Pipeline efficiency = total work / (bottleneck * num_stages)

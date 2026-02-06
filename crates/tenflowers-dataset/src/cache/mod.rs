@@ -85,11 +85,11 @@ mod tests {
         assert_eq!(cached_dataset.len(), 3);
 
         // First access - should be cache miss
-        let (features1, _label1) = cached_dataset.get(0).unwrap();
+        let (features1, _label1) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features1.shape().dims(), &[2]);
 
         // Second access to same index - should be cache hit
-        let (features2, _label2) = cached_dataset.get(0).unwrap();
+        let (features2, _label2) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features2.shape().dims(), &[2]);
 
         let stats = cached_dataset.cache_stats().unwrap();
@@ -111,8 +111,8 @@ mod tests {
             .unwrap();
 
         // These should be cache hits since we pre-warmed indices 0 and 1
-        let _ = cached_dataset.get(0).unwrap();
-        let _ = cached_dataset.get(1).unwrap();
+        let _ = cached_dataset.get(0).expect("index should be in bounds");
+        let _ = cached_dataset.get(1).expect("index should be in bounds");
 
         let stats = cached_dataset.cache_stats().unwrap();
         assert!(stats.hits >= 2);
@@ -217,11 +217,11 @@ mod tests {
         let cached_dataset = PersistentlyCachedDataset::new(dataset, &cache_dir, 2).unwrap();
 
         // First access - should be cache miss
-        let (features1, _) = cached_dataset.get(0).unwrap();
+        let (features1, _) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features1.shape().dims(), &[2]);
 
         // Second access to same index - should be cache hit now that serialization works
-        let (features2, _) = cached_dataset.get(0).unwrap();
+        let (features2, _) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features2.shape().dims(), &[2]);
 
         let stats = cached_dataset.cache_stats().unwrap();

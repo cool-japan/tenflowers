@@ -13,21 +13,30 @@ fn test_binary_ops_i8() {
     let result = add(&a, &b).unwrap();
     let expected_add = vec![5i8, 7i8, 9i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_add);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_add
+        );
     }
 
     // Test subtraction
     let result = sub(&a, &b).unwrap();
     let expected_sub = vec![-3i8, -3i8, -3i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_sub);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_sub
+        );
     }
 
     // Test multiplication
     let result = mul(&a, &b).unwrap();
     let expected_mul = vec![4i8, 10i8, 18i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_mul);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_mul
+        );
     }
 }
 
@@ -41,21 +50,30 @@ fn test_binary_ops_u8() {
     let result = add(&a, &b).unwrap();
     let expected_add = vec![15u8, 30u8, 32u8]; // 10+5, 20+10, 17+15
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_add);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_add
+        );
     }
 
     // Test subtraction
     let result = sub(&a, &b).unwrap();
     let expected_sub = vec![5u8, 10u8, 2u8]; // 10-5, 20-10, 17-15
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_sub);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_sub
+        );
     }
 
     // Test multiplication
     let result = mul(&a, &b).unwrap();
     let expected_mul = vec![50u8, 200u8, 255u8]; // 10*5, 20*10, 17*15=255
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected_mul);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected_mul
+        );
     }
 }
 
@@ -71,7 +89,10 @@ fn test_broadcast_i8() {
     // Expected: [[5, 6], [6, 7], [7, 8]]
     let expected = vec![5i8, 6i8, 6i8, 7i8, 7i8, 8i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected
+        );
     }
 }
 
@@ -87,7 +108,10 @@ fn test_broadcast_u8() {
     // Expected: [[10, 20, 30], [20, 40, 60]]
     let expected = vec![10u8, 20u8, 30u8, 20u8, 40u8, 60u8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected
+        );
     }
 }
 
@@ -115,7 +139,10 @@ fn test_division_edge_cases_i8() {
     let result = div(&a, &b).unwrap();
     let expected = vec![3i8, 2i8, 2i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected
+        );
     }
 }
 
@@ -134,7 +161,7 @@ fn test_large_tensor_i8() {
 
     // Verify some values
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        let slice = arr.as_slice().unwrap();
+        let slice = arr.as_slice().expect("tensor should be contiguous");
         assert_eq!(slice[0], 1i8); // 0 + 1
         assert_eq!(slice[1], 3i8); // 1 + 2
         assert_eq!(slice[10], 21i8); // 10 + 11
@@ -157,7 +184,7 @@ fn test_large_tensor_u8() {
 
     // Verify some values
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        let slice = arr.as_slice().unwrap();
+        let slice = arr.as_slice().expect("tensor should be contiguous");
         assert_eq!(slice[0], 1u8); // 0 + 1
         assert_eq!(slice[1], 2u8); // 1 + 1
         assert_eq!(slice[254], 255u8); // 254 + 1
@@ -176,7 +203,10 @@ fn test_edge_cases_i8() {
 
     let expected = vec![5i8, 10i8, 15i8, 20i8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected
+        );
     }
 }
 
@@ -192,7 +222,10 @@ fn test_edge_cases_u8() {
 
     let expected = vec![5u8, 10u8, 15u8];
     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage {
-        assert_eq!(arr.as_slice().unwrap(), &expected);
+        assert_eq!(
+            arr.as_slice().expect("tensor should be contiguous"),
+            &expected
+        );
     }
 }
 
@@ -220,7 +253,10 @@ mod gpu_extended_dtype_tests {
                     let cpu_result = result.to(Device::Cpu).unwrap();
                     let expected = vec![5i8, 7i8, 9i8];
                     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &cpu_result.storage {
-                        assert_eq!(arr.as_slice().unwrap(), &expected);
+                        assert_eq!(
+                            arr.as_slice().expect("tensor should be contiguous"),
+                            &expected
+                        );
                     }
                     println!("GPU i8 binary operation test passed");
                 }
@@ -252,7 +288,10 @@ mod gpu_extended_dtype_tests {
                     let cpu_result = result.to(Device::Cpu).unwrap();
                     let expected = vec![50u8, 200u8, 255u8]; // 10*5, 20*10, 17*15=255
                     if let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &cpu_result.storage {
-                        assert_eq!(arr.as_slice().unwrap(), &expected);
+                        assert_eq!(
+                            arr.as_slice().expect("tensor should be contiguous"),
+                            &expected
+                        );
                     }
                     println!("GPU u8 binary operation test passed");
                 }

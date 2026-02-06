@@ -213,7 +213,8 @@ where
     }
 
     // Calculate scaling factor
-    let scale_factor = T::from(max_norm / grad_norm).unwrap();
+    let scale_factor = T::from(max_norm / grad_norm)
+        .expect("conversion of scaling factor should succeed for float types");
     let scale_tensor = Tensor::from_scalar(scale_factor);
 
     // Scale the gradient
@@ -262,7 +263,9 @@ where
         _output: &Tensor<T>,
     ) -> Result<Vec<Tensor<T>>> {
         // Scale the gradient
-        let scale_tensor = Tensor::from_scalar(T::from(self.scale).unwrap());
+        let scale_tensor = Tensor::from_scalar(
+            T::from(self.scale).expect("conversion of scale to tensor type should succeed"),
+        );
         let scaled_grad = grad_output.mul(&scale_tensor)?;
         Ok(vec![scaled_grad])
     }

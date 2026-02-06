@@ -84,7 +84,7 @@ fn demonstrate_scalar_broadcast() -> std::result::Result<(), Box<dyn std::error:
     println!("-----------------------------------");
 
     // Create scalar and large array for broadcasting
-    let scalar = Tensor::from_vec(vec![3.14f32], &[1])?;
+    let scalar = Tensor::from_vec(vec![3.15f32], &[1])?;
     let array_size = 100000;
     let array_data: Vec<f32> = (0..array_size).map(|i| i as f32).collect();
     let array = Tensor::from_vec(array_data, &[array_size])?;

@@ -414,7 +414,9 @@ where
             .inputs
             .iter()
             .map(|&id| {
-                let idx = node_value_indices.get(&id).unwrap();
+                let idx = node_value_indices
+                    .get(&id)
+                    .expect("node value index must exist in indices map");
                 if *idx < inputs.len() {
                     // This is an original input
                     inputs[*idx]
@@ -732,7 +734,9 @@ lazy_static::lazy_static! {
 
 /// Record a fusion opportunity
 pub fn record_fusion_opportunity(graph: &FusionGraph) {
-    let mut stats = GLOBAL_FUSION_STATS.lock().unwrap();
+    let mut stats = GLOBAL_FUSION_STATS
+        .lock()
+        .expect("lock should not be poisoned");
     stats.opportunities_identified += 1;
     if graph.is_fusible() {
         stats.fusions_applied += 1;
@@ -749,12 +753,17 @@ pub fn record_fusion_opportunity(graph: &FusionGraph) {
 
 /// Get current fusion statistics
 pub fn get_fusion_stats() -> FusionStats {
-    GLOBAL_FUSION_STATS.lock().unwrap().clone()
+    GLOBAL_FUSION_STATS
+        .lock()
+        .expect("lock should not be poisoned")
+        .clone()
 }
 
 /// Reset fusion statistics
 pub fn reset_fusion_stats() {
-    *GLOBAL_FUSION_STATS.lock().unwrap() = FusionStats::default();
+    *GLOBAL_FUSION_STATS
+        .lock()
+        .expect("lock should not be poisoned") = FusionStats::default();
 }
 
 /// Print fusion statistics report

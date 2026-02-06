@@ -138,7 +138,7 @@ impl LargeModelOptimizer {
 
         // Update stats
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().expect("lock should not be poisoned");
             stats.total_parameters = total_parameters;
         }
 
@@ -177,7 +177,10 @@ impl LargeModelOptimizer {
         };
 
         // Store partitions
-        *self.partitions.write().unwrap() = partitions;
+        *self
+            .partitions
+            .write()
+            .expect("write lock should not be poisoned") = partitions;
 
         Ok(plan)
     }
@@ -368,12 +371,12 @@ impl LargeModelOptimizer {
 
         self.checkpoints
             .write()
-            .unwrap()
+            .expect("checkpoints write lock should not be poisoned")
             .insert(layer_index, checkpoint);
 
         // Update stats
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().expect("lock should not be poisoned");
             stats.memory_saved_by_checkpointing_mb += memory_usage * 0.7; // Estimate 70% savings
         }
 
@@ -405,12 +408,12 @@ impl LargeModelOptimizer {
 
         self.offloaded_parameters
             .write()
-            .unwrap()
+            .expect("offloaded parameters write lock should not be poisoned")
             .insert(name.to_string(), offloaded);
 
         // Update stats
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().expect("lock should not be poisoned");
             stats.memory_saved_by_offloading_mb += memory_size;
         }
 
@@ -419,15 +422,30 @@ impl LargeModelOptimizer {
 
     /// Get optimization statistics
     pub fn get_optimization_stats(&self) -> MemoryOptimizationStats {
-        self.stats.lock().unwrap().clone()
+        self.stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Generate optimization report
     pub fn generate_optimization_report(&self) -> LargeModelOptimizationReport {
         let stats = self.get_optimization_stats();
-        let partitions = self.partitions.read().unwrap().clone();
-        let checkpoint_count = self.checkpoints.read().unwrap().len();
-        let offloaded_count = self.offloaded_parameters.read().unwrap().len();
+        let partitions = self
+            .partitions
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone();
+        let checkpoint_count = self
+            .checkpoints
+            .read()
+            .expect("read lock should not be poisoned")
+            .len();
+        let offloaded_count = self
+            .offloaded_parameters
+            .read()
+            .expect("read lock should not be poisoned")
+            .len();
 
         let total_memory_saved_mb = stats.memory_saved_by_checkpointing_mb
             + stats.memory_saved_by_offloading_mb

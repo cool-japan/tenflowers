@@ -61,7 +61,7 @@ impl SliceSpec {
 }
 
 /// Backward pass for slice operation
-/// For y = x[slice_spec], grad_x = zeros(x.shape) with grad_y placed at slice positions
+/// For `y = x[slice_spec]`, `grad_x = zeros(x.shape)` with `grad_y` placed at slice positions
 pub fn slice_backward<T>(
     grad_output: &Tensor<T>,
     input_shape: &[usize],

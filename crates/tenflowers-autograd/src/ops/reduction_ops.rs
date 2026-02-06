@@ -54,7 +54,7 @@ where
     // For mean, the gradient is the output gradient divided by number of elements
     let numel: usize = input_shape.iter().product();
     let numel_scalar =
-        T::from_usize(numel).unwrap_or_else(|| panic!("Cannot convert {numel} to type T"));
+        T::from_usize(numel).expect("number of elements should convert to tensor type");
 
     // Create a scalar tensor and divide
     let numel_tensor = Tensor::<T>::from_scalar(numel_scalar);
@@ -238,11 +238,10 @@ where
     } else {
         numel
     };
-    let denom_scalar =
-        T::from_usize(denom).unwrap_or_else(|| panic!("Cannot convert {denom} to type T"));
+    let denom_scalar = T::from_usize(denom).expect("denominator should convert to tensor type");
 
     // grad_x = grad_y * 2 * (x - mean) / n
-    let two = T::from_u8(2).unwrap();
+    let two = T::from_u8(2).expect("constant 2 should convert to float type");
     let two_tensor = Tensor::from_scalar(two);
     let denom_tensor = Tensor::from_scalar(denom_scalar);
 
@@ -292,7 +291,7 @@ where
     let std_val = var_val.sqrt()?;
 
     // Compute 1 / (2 * std)
-    let two = T::from_u8(2).unwrap();
+    let two = T::from_u8(2).expect("constant 2 should convert to float type");
     let two_tensor = Tensor::from_scalar(two);
     let two_std = two_tensor.mul(&std_val)?;
     let grad_scale = grad_output.div(&two_std)?;

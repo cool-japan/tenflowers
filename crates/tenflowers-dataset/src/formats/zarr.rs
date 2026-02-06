@@ -501,7 +501,10 @@ where
     pub fn load_chunk(&self, chunk_coords: &[usize]) -> Result<Vec<T>> {
         // Check cache first
         {
-            let cache = self.chunk_cache.lock().unwrap();
+            let cache = self
+                .chunk_cache
+                .lock()
+                .expect("lock should not be poisoned");
             if let Some(cached_data) = cache.get(chunk_coords) {
                 return Ok(cached_data.clone());
             }
@@ -512,7 +515,10 @@ where
 
         // Cache the loaded chunk
         {
-            let mut cache = self.chunk_cache.lock().unwrap();
+            let mut cache = self
+                .chunk_cache
+                .lock()
+                .expect("lock should not be poisoned");
             cache.insert(chunk_coords.to_vec(), chunk_data.clone());
         }
 

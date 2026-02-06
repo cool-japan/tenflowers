@@ -156,7 +156,10 @@ impl MemoryAliasDetector {
 
     /// Check if a new view would create an alias
     pub fn check_alias(&self, buffer_id: usize, offset: usize, size: usize) -> bool {
-        let active_views = self.active_views.lock().unwrap();
+        let active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(views) = active_views.get(&buffer_id) {
             for &(view_offset, view_size) in views {
@@ -178,7 +181,10 @@ impl MemoryAliasDetector {
 
     /// Register a new view
     pub fn register_view(&self, buffer_id: usize, offset: usize, size: usize) {
-        let mut active_views = self.active_views.lock().unwrap();
+        let mut active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
         active_views
             .entry(buffer_id)
             .or_default()
@@ -187,7 +193,10 @@ impl MemoryAliasDetector {
 
     /// Unregister a view
     pub fn unregister_view(&self, buffer_id: usize, offset: usize, size: usize) {
-        let mut active_views = self.active_views.lock().unwrap();
+        let mut active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
         if let Some(views) = active_views.get_mut(&buffer_id) {
             views.retain(|&(view_offset, view_size)| view_offset != offset || view_size != size);
             if views.is_empty() {
@@ -203,7 +212,10 @@ impl MemoryAliasDetector {
         offset: usize,
         size: usize,
     ) -> Vec<(usize, usize, usize)> {
-        let active_views = self.active_views.lock().unwrap();
+        let active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
         let mut aliases = Vec::new();
 
         if let Some(views) = active_views.get(&buffer_id) {
@@ -228,7 +240,10 @@ impl MemoryAliasDetector {
 
     /// Check if a memory region would create partial aliases (useful for optimization decisions)
     pub fn check_partial_alias(&self, buffer_id: usize, offset: usize, size: usize) -> bool {
-        let active_views = self.active_views.lock().unwrap();
+        let active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
 
         if let Some(views) = active_views.get(&buffer_id) {
             for &(view_offset, view_size) in views {
@@ -256,7 +271,10 @@ impl MemoryAliasDetector {
 
     /// Get statistics about active memory views
     pub fn get_alias_statistics(&self) -> (usize, usize) {
-        let active_views = self.active_views.lock().unwrap();
+        let active_views = self
+            .active_views
+            .lock()
+            .expect("lock should not be poisoned");
         let total_buffers = active_views.len();
         let total_views: usize = active_views.values().map(|v| v.len()).sum();
         (total_buffers, total_views)

@@ -239,7 +239,10 @@ impl<T> DispatchRegistry<T> {
 
     /// Register a new operation
     pub fn register_operation(&self, descriptor: OperationDescriptor) -> Result<()> {
-        let mut ops = self.operations.write().unwrap();
+        let mut ops = self
+            .operations
+            .write()
+            .expect("write lock should not be poisoned");
 
         if ops.contains_key(&descriptor.name) {
             return Err(TensorError::invalid_argument(format!(
@@ -261,7 +264,10 @@ impl<T> DispatchRegistry<T> {
         operation_name: &str,
         kernel: KernelImplementation<T>,
     ) -> Result<()> {
-        let mut ops = self.operations.write().unwrap();
+        let mut ops = self
+            .operations
+            .write()
+            .expect("write lock should not be poisoned");
 
         let op = ops.get_mut(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -276,7 +282,10 @@ impl<T> DispatchRegistry<T> {
 
     /// Dispatch a unary operation
     pub fn dispatch_unary(&self, operation_name: &str, input: &Tensor<T>) -> Result<Tensor<T>> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
 
         let op = ops.get(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -319,7 +328,10 @@ impl<T> DispatchRegistry<T> {
             ));
         }
 
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
 
         let op = ops.get(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -348,19 +360,28 @@ impl<T> DispatchRegistry<T> {
 
     /// Get operation descriptor
     pub fn get_operation(&self, name: &str) -> Option<OperationDescriptor> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
         ops.get(name).map(|op| op.descriptor.clone())
     }
 
     /// List all registered operations
     pub fn list_operations(&self) -> Vec<String> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
         ops.keys().cloned().collect()
     }
 
     /// Get available backends for an operation
     pub fn available_backends(&self, operation_name: &str) -> Vec<BackendType> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
 
         if let Some(op) = ops.get(operation_name) {
             op.kernels
@@ -380,19 +401,19 @@ macro_rules! register_operation {
     ($registry:expr, $name:expr, $category:expr) => {
         $registry.register_operation(
             $crate::OperationDescriptor::new($name, $category)
-        ).unwrap();
+        ).expect("operation registration should succeed");
     };
     ($registry:expr, $name:expr, $category:expr, dtypes: [$($dtype:expr),*]) => {
         $registry.register_operation(
             $crate::OperationDescriptor::new($name, $category)
                 .with_dtypes(vec![$($dtype),*])
-        ).unwrap();
+        ).expect("operation registration with dtypes should succeed");
     };
     ($registry:expr, $name:expr, $category:expr, rank: $min:expr, $max:expr) => {
         $registry.register_operation(
             $crate::OperationDescriptor::new($name, $category)
                 .with_rank_range(Some($min), Some($max))
-        ).unwrap();
+        ).expect("operation registration with rank range should succeed");
     };
 }
 
@@ -405,7 +426,7 @@ macro_rules! register_unary_kernel {
                 $op_name,
                 $crate::KernelImplementation::unary($backend, $func),
             )
-            .unwrap();
+            .expect("unary kernel registration should succeed");
     };
 }
 
@@ -418,7 +439,7 @@ macro_rules! register_binary_kernel {
                 $op_name,
                 $crate::KernelImplementation::binary($backend, $func),
             )
-            .unwrap();
+            .expect("binary kernel registration should succeed");
     };
 }
 

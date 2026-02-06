@@ -182,7 +182,8 @@ where
                 let val = n.as_f64().ok_or_else(|| {
                     TensorError::invalid_argument("Cannot convert number to f64".to_string())
                 })?;
-                let tensor_val = T::from(val as f32).unwrap();
+                let tensor_val =
+                    T::from(val as f32).expect("numeric value should convert to tensor type");
                 Ok(Tensor::from_scalar(tensor_val))
             }
             serde_json::Value::Array(arr) => {
@@ -202,7 +203,8 @@ where
                 let val = s.parse::<f64>().map_err(|_| {
                     TensorError::invalid_argument(format!("Cannot parse string '{s}' as number"))
                 })?;
-                let tensor_val = T::from(val as f32).unwrap();
+                let tensor_val =
+                    T::from(val as f32).expect("numeric value should convert to tensor type");
                 Ok(Tensor::from_scalar(tensor_val))
             }
             _ => Err(TensorError::invalid_argument(
@@ -219,7 +221,9 @@ where
                     let val = n.as_f64().ok_or_else(|| {
                         TensorError::invalid_argument("Cannot convert number to f64".to_string())
                     })?;
-                    data.push(T::from(val as f32).unwrap());
+                    data.push(
+                        T::from(val as f32).expect("numeric value should convert to tensor type"),
+                    );
                 }
                 serde_json::Value::Array(nested_arr) => {
                     Self::flatten_json_array(nested_arr, data)?;
@@ -230,7 +234,9 @@ where
                             "Cannot parse string '{s}' as number"
                         ))
                     })?;
-                    data.push(T::from(val as f32).unwrap());
+                    data.push(
+                        T::from(val as f32).expect("numeric value should convert to tensor type"),
+                    );
                 }
                 _ => {
                     return Err(TensorError::invalid_argument(
@@ -418,7 +424,9 @@ where
         self.ensure_loaded()?;
 
         let samples_ref = self.cached_samples.borrow();
-        let samples = samples_ref.as_ref().unwrap();
+        let samples = samples_ref
+            .as_ref()
+            .expect("samples should be loaded after ensure_loaded");
         let sample_count = samples.len();
         let feature_shape = if !samples.is_empty() {
             Some(samples[0].0.shape().dims().to_vec())
@@ -460,7 +468,9 @@ where
         self.ensure_loaded()?;
 
         let samples_ref = self.cached_samples.borrow();
-        let samples = samples_ref.as_ref().unwrap();
+        let samples = samples_ref
+            .as_ref()
+            .expect("samples should be loaded after ensure_loaded");
         if index >= samples.len() {
             return Err(TensorError::invalid_argument(format!(
                 "Index {} out of bounds for dataset of length {}",
@@ -615,7 +625,7 @@ mod tests {
 
         assert_eq!(dataset.len(), 2);
 
-        let (features, label) = dataset.get(0).unwrap();
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]);
         assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
     }
@@ -635,7 +645,7 @@ mod tests {
 
         assert_eq!(dataset.len(), 3);
 
-        let (features, label) = dataset.get(0).unwrap();
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]);
         assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
     }
@@ -673,7 +683,7 @@ mod tests {
 
         assert_eq!(dataset.len(), 1);
 
-        let (features, _) = dataset.get(0).unwrap();
+        let (features, _) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[4]); // Flattened
     }
 

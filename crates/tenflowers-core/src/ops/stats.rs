@@ -17,6 +17,14 @@ use scirs2_core::numeric::{Float, ToPrimitive};
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 // Ultra-performance SciRS2 ecosystem integration
 use scirs2_core::metrics::MetricsRegistry;
 
@@ -141,7 +149,9 @@ where
     T: Float + Default + Send + Sync + 'static + ToPrimitive + bytemuck::Pod + bytemuck::Zeroable,
 {
     let start_time = Instant::now();
-    let config = STATS_CONFIG.read().unwrap();
+    let config = STATS_CONFIG
+        .read()
+        .expect("read lock should not be poisoned");
 
     match &x.storage {
         TensorStorage::Cpu(arr) => {
@@ -255,11 +265,11 @@ where
     T: Float + Default + Send + Sync + 'static,
 {
     let mut bin_edges = Vec::with_capacity(bins + 1);
-    let bin_width = (max_val - min_val) / T::from(bins).unwrap();
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
 
     // Vectorized bin edge computation
     for i in 0..=bins {
-        bin_edges.push(min_val + T::from(i).unwrap() * bin_width);
+        bin_edges.push(min_val + float_const!(i, T) * bin_width);
     }
 
     bin_edges
@@ -277,7 +287,7 @@ where
     T: Float + Default + Send + Sync + 'static + ToPrimitive,
 {
     let mut counts = vec![0usize; bins];
-    let bin_width = (max_val - min_val) / T::from(bins).unwrap();
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
 
     // SIMD-optimized histogram computation
     let chunk_size = 8; // SIMD width
@@ -307,7 +317,7 @@ where
 {
     use rayon::prelude::*;
 
-    let bin_width = (max_val - min_val) / T::from(bins).unwrap();
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
     let chunk_size = data.len() / rayon::current_num_threads().max(1);
     let chunk_size = chunk_size.max(1000);
 
@@ -350,7 +360,7 @@ where
     T: Float + Default + Send + Sync + 'static + ToPrimitive,
 {
     let mut counts = vec![0usize; bins];
-    let bin_width = (max_val - min_val) / T::from(bins).unwrap();
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
 
     // Cache-friendly sequential computation
     for &value in data {
@@ -395,7 +405,10 @@ fn record_stats_metrics(
 
 /// Get current statistical operations configuration
 pub fn get_stats_config() -> StatsConfig {
-    STATS_CONFIG.read().unwrap().clone()
+    STATS_CONFIG
+        .read()
+        .expect("read lock should not be poisoned")
+        .clone()
 }
 
 /// Update statistical operations configuration
@@ -407,7 +420,10 @@ pub fn set_stats_config(config: StatsConfig) {
 
 /// Get performance metrics for statistical operations
 pub fn get_performance_metrics() -> Vec<StatisticalMetrics> {
-    PERFORMANCE_METRICS.read().unwrap().clone()
+    PERFORMANCE_METRICS
+        .read()
+        .expect("read lock should not be poisoned")
+        .clone()
 }
 
 /// Clear performance metrics history
@@ -538,9 +554,15 @@ where
                                 ));
                             }
 
-                            let index = quantile * T::from(axis_size - 1).unwrap();
-                            let lower_index = index.floor().to_usize().unwrap();
-                            let upper_index = index.ceil().to_usize().unwrap();
+                            let index = quantile * float_const!(axis_size - 1, T);
+                            let lower_index = index
+                                .floor()
+                                .to_usize()
+                                .expect("numeric conversion to usize should succeed");
+                            let upper_index = index
+                                .ceil()
+                                .to_usize()
+                                .expect("numeric conversion to usize should succeed");
 
                             let value = if lower_index == upper_index {
                                 axis_data[lower_index]
@@ -576,9 +598,15 @@ where
                         ));
                     }
 
-                    let index = quantile * T::from(n - 1).unwrap();
-                    let lower_index = index.floor().to_usize().unwrap();
-                    let upper_index = index.ceil().to_usize().unwrap();
+                    let index = quantile * float_const!(n - 1, T);
+                    let lower_index = index
+                        .floor()
+                        .to_usize()
+                        .expect("numeric conversion to usize should succeed");
+                    let upper_index = index
+                        .ceil()
+                        .to_usize()
+                        .expect("numeric conversion to usize should succeed");
 
                     let value = if lower_index == upper_index {
                         flat_data[lower_index]
@@ -621,7 +649,9 @@ where
     T: Float + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let start_time = Instant::now();
-    let config = STATS_CONFIG.read().unwrap();
+    let config = STATS_CONFIG
+        .read()
+        .expect("read lock should not be poisoned");
 
     match &x.storage {
         TensorStorage::Cpu(arr) => {
@@ -685,7 +715,7 @@ where
     T: Float + Default + Send + Sync + 'static,
 {
     let mut means = vec![T::zero(); n_features];
-    let n_samples_t = T::from(n_samples).unwrap();
+    let n_samples_t = float_const!(n_samples, T);
 
     // SIMD-optimized computation of means
     for j in 0..n_features {
@@ -719,7 +749,7 @@ where
 {
     use rayon::prelude::*;
 
-    let n_samples_t = T::from(n_samples).unwrap();
+    let n_samples_t = float_const!(n_samples, T);
 
     // Parallel computation of means across features
     (0..n_features)
@@ -747,7 +777,7 @@ where
     T: Float + Default + Send + Sync + 'static,
 {
     let mut means = vec![T::zero(); n_features];
-    let n_samples_t = T::from(n_samples).unwrap();
+    let n_samples_t = float_const!(n_samples, T);
 
     // Cache-friendly sequential computation
     for i in 0..n_samples {
@@ -779,9 +809,9 @@ where
 {
     let mut cov_matrix = vec![T::zero(); n_features * n_features];
     let divisor = if bias {
-        T::from(n_samples).unwrap()
+        float_const!(n_samples, T)
     } else {
-        T::from(n_samples - 1).unwrap()
+        float_const!(n_samples - 1, T)
     };
 
     // SIMD-optimized covariance computation
@@ -824,9 +854,9 @@ where
     use rayon::prelude::*;
 
     let divisor = if bias {
-        T::from(n_samples).unwrap()
+        float_const!(n_samples, T)
     } else {
-        T::from(n_samples - 1).unwrap()
+        float_const!(n_samples - 1, T)
     };
 
     // Parallel computation of covariance matrix elements
@@ -867,9 +897,9 @@ where
 {
     let mut cov_matrix = vec![T::zero(); n_features * n_features];
     let divisor = if bias {
-        T::from(n_samples).unwrap()
+        float_const!(n_samples, T)
     } else {
-        T::from(n_samples - 1).unwrap()
+        float_const!(n_samples - 1, T)
     };
 
     // Cache-friendly sequential computation
@@ -926,7 +956,7 @@ where
                 }
             }
 
-            let n_samples_t = T::from(n_samples).unwrap();
+            let n_samples_t = float_const!(n_samples, T);
             for mean in &mut means {
                 *mean = *mean / n_samples_t;
             }
@@ -938,7 +968,7 @@ where
                     let diff = arr[[i, j]] - means[j];
                     var = var + diff * diff;
                 }
-                var = var / T::from(n_samples - 1).unwrap();
+                var = var / float_const!(n_samples - 1, T);
                 stds[j] = var.sqrt();
             }
 
@@ -958,7 +988,7 @@ where
                             covariance = covariance + xi * xj;
                         }
 
-                        covariance = covariance / T::from(n_samples - 1).unwrap();
+                        covariance = covariance / float_const!(n_samples - 1, T);
                         let correlation = covariance / (stds[i] * stds[j]);
                         corr_matrix[i * n_features + j] = correlation;
                     }
@@ -986,7 +1016,7 @@ pub fn median<T>(x: &Tensor<T>, axis: Option<i32>) -> Result<Tensor<T>>
 where
     T: Float + Default + Send + Sync + 'static + PartialOrd + bytemuck::Pod + bytemuck::Zeroable,
 {
-    let q = vec![T::from(0.5).unwrap()];
+    let q = vec![float_const!(0.5, T)];
     quantile(x, &q, axis)
 }
 
@@ -1132,12 +1162,12 @@ where
     let buffer_slice = result_buffer.slice(..);
     let (sender, receiver) = futures::channel::oneshot::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        sender.send(result).unwrap();
+        sender.send(result).expect("channel send should succeed");
     });
 
     gpu_context.device.poll(wgpu::Maintain::Wait);
     futures::executor::block_on(receiver)
-        .unwrap()
+        .expect("GPU async receiver should not be dropped before sending")
         .map_err(|e| {
             TensorError::device_error_simple(format!("GPU buffer async error: {:?}", e))
         })?;
@@ -1151,9 +1181,9 @@ where
     let hist_counts_usize: Vec<usize> = hist_counts.into_iter().map(|x| x as usize).collect();
 
     // Create bin edges
-    let bin_width = (max_val - min_val) / T::from(bins).unwrap();
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
     let bin_edges: Vec<T> = (0..=bins)
-        .map(|i| min_val + bin_width * T::from(i).unwrap())
+        .map(|i| min_val + bin_width * float_const!(i, T))
         .collect();
 
     // Create result tensors
@@ -1226,7 +1256,7 @@ where
     // Convert percentiles to quantiles (percentile / 100)
     let quantiles: Vec<T> = percentiles
         .iter()
-        .map(|&p| p / T::from(100.0).unwrap())
+        .map(|&p| p / float_const!(100.0, T))
         .collect();
 
     quantile(x, &quantiles, axis)
@@ -1298,7 +1328,7 @@ where
 
             // Compute mean
             let mean =
-                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / T::from(n).unwrap();
+                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / float_const!(n, T);
 
             // Compute second and third central moments
             let mut m2 = T::zero();
@@ -1314,9 +1344,9 @@ where
             }
 
             let divisor = if bias {
-                T::from(n).unwrap()
+                float_const!(n, T)
             } else {
-                T::from(n - 1).unwrap()
+                float_const!(n - 1, T)
             };
             m2 = m2 / divisor;
             m3 = m3 / divisor;
@@ -1383,7 +1413,7 @@ where
 
             // Compute mean
             let mean =
-                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / T::from(n).unwrap();
+                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / float_const!(n, T);
 
             // Compute central moments
             let mut m2 = T::zero();
@@ -1399,9 +1429,9 @@ where
             }
 
             let divisor = if bias {
-                T::from(n).unwrap()
+                float_const!(n, T)
             } else {
-                T::from(n - 1).unwrap()
+                float_const!(n - 1, T)
             };
             m2 = m2 / divisor;
             m4 = m4 / divisor;
@@ -1415,7 +1445,7 @@ where
 
             // Apply Fisher correction if requested (subtract 3 for normal distribution = 0)
             let result = if fisher {
-                kurt - T::from(3.0).unwrap()
+                kurt - float_const!(3.0, T)
             } else {
                 kurt
             };
@@ -1475,7 +1505,7 @@ where
 
             // Compute mean
             let mean =
-                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / T::from(n).unwrap();
+                flat_data.iter().cloned().fold(T::zero(), |acc, x| acc + x) / float_const!(n, T);
 
             // Compute central moment
             let mut moment_sum = T::zero();
@@ -1493,9 +1523,9 @@ where
             }
 
             let divisor = if bias {
-                T::from(n).unwrap()
+                float_const!(n, T)
             } else {
-                T::from(n - 1).unwrap()
+                float_const!(n - 1, T)
             };
             let moment_val = moment_sum / divisor;
 
@@ -1517,14 +1547,15 @@ mod tests {
 
     #[test]
     fn test_histogram_basic() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test tensor creation should succeed");
         let (counts, edges) = histogram(&x, 5, Some((0.0, 6.0))).unwrap();
 
         assert_eq!(counts.shape().dims(), &[5]);
         assert_eq!(edges.shape().dims(), &[6]);
 
-        let counts_vals = counts.as_slice().unwrap();
-        let edges_vals = edges.as_slice().unwrap();
+        let counts_vals = counts.as_slice().expect("tensor should be contiguous");
+        let edges_vals = edges.as_slice().expect("tensor should be contiguous");
 
         // Each bin should have 1 count
         assert_eq!(counts_vals, &[1, 1, 1, 1, 1]);
@@ -1536,13 +1567,14 @@ mod tests {
 
     #[test]
     fn test_quantile_basic() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test tensor creation should succeed");
         let q = vec![0.0, 0.25, 0.5, 0.75, 1.0];
         let result = quantile(&x, &q, None).unwrap();
 
         assert_eq!(result.shape().dims(), &[5]);
 
-        let vals = result.as_slice().unwrap();
+        let vals = result.as_slice().expect("tensor should be contiguous");
         assert_relative_eq!(vals[0], 1.0, epsilon = 1e-10); // min
         assert_relative_eq!(vals[2], 3.0, epsilon = 1e-10); // median
         assert_relative_eq!(vals[4], 5.0, epsilon = 1e-10); // max
@@ -1550,23 +1582,29 @@ mod tests {
 
     #[test]
     fn test_median() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test tensor creation should succeed");
         let result = median(&x, None).unwrap();
 
         assert_eq!(result.shape().dims(), &[1]);
-        assert_relative_eq!(result.as_slice().unwrap()[0], 3.0, epsilon = 1e-10);
+        assert_relative_eq!(
+            result.as_slice().expect("tensor should be contiguous")[0],
+            3.0,
+            epsilon = 1e-10
+        );
     }
 
     #[test]
     fn test_covariance_basic() {
         // Simple 2x2 data matrix
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test tensor creation should succeed");
 
         let result = covariance(&x, false).unwrap();
 
         assert_eq!(result.shape().dims(), &[2, 2]);
 
-        let vals = result.as_slice().unwrap();
+        let vals = result.as_slice().expect("tensor should be contiguous");
         // For this simple case, covariance should be positive
         assert!(vals[0] > 0.0); // var(x1)
         assert!(vals[3] > 0.0); // var(x2)
@@ -1576,13 +1614,14 @@ mod tests {
     #[test]
     fn test_correlation_basic() {
         // Perfect correlation case
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2])
+            .expect("test tensor creation should succeed");
 
         let result = correlation(&x).unwrap();
 
         assert_eq!(result.shape().dims(), &[2, 2]);
 
-        let vals = result.as_slice().unwrap();
+        let vals = result.as_slice().expect("tensor should be contiguous");
         // Diagonal should be 1.0
         assert_relative_eq!(vals[0], 1.0, epsilon = 1e-10);
         assert_relative_eq!(vals[3], 1.0, epsilon = 1e-10);
@@ -1603,7 +1642,7 @@ mod tests {
         let result = percentile(&x, &percentiles, None).unwrap();
 
         assert_eq!(result.shape().dims(), &[5]);
-        let vals = result.as_slice().unwrap();
+        let vals = result.as_slice().expect("tensor should be contiguous");
 
         // Check approximate values
         assert_relative_eq!(vals[0], 1.0, epsilon = 1e-6); // 0th percentile (min)
@@ -1613,11 +1652,12 @@ mod tests {
 
     #[test]
     fn test_range() {
-        let x = Tensor::<f32>::from_vec(vec![1.0, 5.0, 2.0, 8.0, 3.0], &[5]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0, 5.0, 2.0, 8.0, 3.0], &[5])
+            .expect("test tensor creation should succeed");
         let result = range(&x, None).unwrap();
 
         assert_eq!(result.shape().dims(), &[] as &[usize]);
-        let val = result.as_slice().unwrap()[0];
+        let val = result.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(val, 7.0, epsilon = 1e-6); // 8.0 - 1.0
     }
 
@@ -1625,18 +1665,22 @@ mod tests {
     fn test_skewness() {
         // Test with symmetric data (should have skewness near 0)
         let symmetric_data = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
-        let x = Tensor::<f64>::from_vec(symmetric_data, &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(symmetric_data, &[5])
+            .expect("test tensor creation should succeed");
         let result = skewness(&x, None, false).unwrap();
 
-        let val = result.as_slice().unwrap()[0];
+        let val = result.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(val, 0.0, epsilon = 1e-6);
 
         // Test with right-skewed data
         let skewed_data = vec![1.0, 2.0, 3.0, 4.0, 10.0];
-        let x_skewed = Tensor::<f64>::from_vec(skewed_data, &[5]).unwrap();
+        let x_skewed = Tensor::<f64>::from_vec(skewed_data, &[5])
+            .expect("test tensor creation should succeed");
         let result_skewed = skewness(&x_skewed, None, false).unwrap();
 
-        let val_skewed = result_skewed.as_slice().unwrap()[0];
+        let val_skewed = result_skewed
+            .as_slice()
+            .expect("tensor should be contiguous")[0];
         assert!(val_skewed > 0.0); // Should be positive for right-skewed data
     }
 
@@ -1644,15 +1688,20 @@ mod tests {
     fn test_kurtosis() {
         // Test with normal-like data
         let normal_data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let x = Tensor::<f64>::from_vec(normal_data, &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(normal_data, &[5])
+            .expect("test tensor creation should succeed");
 
         // Fisher's definition (normal = 0)
         let result_fisher = kurtosis(&x, None, false, true).unwrap();
-        let val_fisher = result_fisher.as_slice().unwrap()[0];
+        let val_fisher = result_fisher
+            .as_slice()
+            .expect("tensor should be contiguous")[0];
 
         // Pearson's definition (normal = 3)
         let result_pearson = kurtosis(&x, None, false, false).unwrap();
-        let val_pearson = result_pearson.as_slice().unwrap()[0];
+        let val_pearson = result_pearson
+            .as_slice()
+            .expect("tensor should be contiguous")[0];
 
         // Fisher = Pearson - 3
         assert_relative_eq!(val_fisher, val_pearson - 3.0, epsilon = 1e-10);
@@ -1660,16 +1709,17 @@ mod tests {
 
     #[test]
     fn test_moment() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test tensor creation should succeed");
 
         // First moment should be 0 (by definition of central moment)
         let m1 = moment(&x, 1, None, false).unwrap();
-        let val1 = m1.as_slice().unwrap()[0];
+        let val1 = m1.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(val1, 0.0, epsilon = 1e-10);
 
         // Second moment should be variance
         let m2 = moment(&x, 2, None, false).unwrap();
-        let val2 = m2.as_slice().unwrap()[0];
+        let val2 = m2.as_slice().expect("tensor should be contiguous")[0];
 
         // Manual variance calculation: E[(X - μ)²]
         let mean = 3.0; // (1+2+3+4+5)/5
@@ -1689,11 +1739,13 @@ mod tests {
         assert!(moment(&empty, 2, None, false).is_err());
 
         // Test insufficient data for skewness
-        let too_few = Tensor::<f64>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
+        let too_few = Tensor::<f64>::from_vec(vec![1.0, 2.0], &[2])
+            .expect("test tensor creation should succeed");
         assert!(skewness(&too_few, None, false).is_err());
 
         // Test insufficient data for kurtosis
-        let too_few_kurt = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
+        let too_few_kurt = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test tensor creation should succeed");
         assert!(kurtosis(&too_few_kurt, None, false, true).is_err());
     }
 }

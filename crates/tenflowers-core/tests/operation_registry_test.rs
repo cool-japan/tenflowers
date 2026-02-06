@@ -75,7 +75,10 @@ fn test_kernel_execution_f32() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test kernel execution with f64
@@ -98,7 +101,10 @@ fn test_kernel_execution_f64() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test kernel execution with integer types
@@ -121,7 +127,10 @@ fn test_kernel_execution_i32() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test kernel execution with extended dtype support
@@ -144,7 +153,10 @@ fn test_kernel_execution_i8() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test kernel execution with u8 type
@@ -167,7 +179,10 @@ fn test_kernel_execution_u8() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test error handling for invalid inputs
@@ -296,7 +311,10 @@ fn test_registry_broadcasting() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    assert_eq!(arr.as_slice().unwrap(), &expected);
+    assert_eq!(
+        arr.as_slice().expect("tensor should be contiguous"),
+        &expected
+    );
 }
 
 /// Test performance with larger tensors through registry
@@ -332,7 +350,7 @@ fn test_registry_performance() {
     let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
         panic!("Expected CPU storage in test");
     };
-    let slice = arr.as_slice().unwrap();
+    let slice = arr.as_slice().expect("tensor should be contiguous");
     assert_eq!(slice[0], 1.0); // 0 + 1
     assert_eq!(slice[100], 201.0); // 100 + 101
     assert_eq!(slice[size - 1], (2 * size - 1) as f32); // (size-1) + size

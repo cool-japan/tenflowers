@@ -309,7 +309,8 @@ pub fn global_async_executor() -> &'static AsyncBinaryOperationExecutor {
             // Fallback to CPU-only if GPU initialization fails
             #[cfg(not(feature = "gpu"))]
             {
-                AsyncBinaryOperationExecutor::new(0).unwrap()
+                AsyncBinaryOperationExecutor::new(0)
+                    .expect("CPU-only async binary executor initialization must succeed")
             }
             #[cfg(feature = "gpu")]
             {
@@ -533,7 +534,10 @@ mod tests {
         let expected = vec![5.0, 7.0, 9.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {
-            assert_eq!(arr.as_slice().unwrap(), &expected);
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
         }
     }
 

@@ -252,9 +252,11 @@ impl GpuMemoryTracker {
         if size > self.global_stats.largest_allocation {
             self.global_stats.largest_allocation = size;
         }
-        if self.global_stats.smallest_allocation.is_none()
-            || size < self.global_stats.smallest_allocation.unwrap()
-        {
+        if let Some(smallest) = self.global_stats.smallest_allocation {
+            if size < smallest {
+                self.global_stats.smallest_allocation = Some(size);
+            }
+        } else {
             self.global_stats.smallest_allocation = Some(size);
         }
 
@@ -555,7 +557,7 @@ lazy_static::lazy_static! {
 pub fn record_gpu_allocation(size: usize, device_id: usize, operation: String) -> AllocationId {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .unwrap()
+        .expect("GPU memory tracker mutex poisoned")
         .record_allocation(size, device_id, operation)
 }
 
@@ -563,23 +565,32 @@ pub fn record_gpu_allocation(size: usize, device_id: usize, operation: String) -
 pub fn record_gpu_deallocation(id: AllocationId) {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .unwrap()
+        .expect("GPU memory tracker mutex poisoned")
         .record_deallocation(id);
 }
 
 /// Convenience function to get current GPU memory usage
 pub fn current_gpu_memory_usage() -> usize {
-    GLOBAL_GPU_MEMORY_TRACKER.lock().unwrap().current_usage()
+    GLOBAL_GPU_MEMORY_TRACKER
+        .lock()
+        .expect("lock should not be poisoned")
+        .current_usage()
 }
 
 /// Convenience function to get peak GPU memory usage
 pub fn peak_gpu_memory_usage() -> usize {
-    GLOBAL_GPU_MEMORY_TRACKER.lock().unwrap().peak_usage()
+    GLOBAL_GPU_MEMORY_TRACKER
+        .lock()
+        .expect("lock should not be poisoned")
+        .peak_usage()
 }
 
 /// Convenience function to generate memory report
 pub fn generate_gpu_memory_report() -> MemoryReport {
-    GLOBAL_GPU_MEMORY_TRACKER.lock().unwrap().generate_report()
+    GLOBAL_GPU_MEMORY_TRACKER
+        .lock()
+        .expect("lock should not be poisoned")
+        .generate_report()
 }
 
 /// Convenience function to print memory report

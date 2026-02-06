@@ -217,7 +217,7 @@ impl Graph {
     #[cfg(feature = "serialize")]
     pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), TensorError> {
         let graph_def = self.to_graph_def();
-        let serialized = bincode::serialize(&graph_def)
+        let serialized = oxicode::serde::encode_to_vec(&graph_def, oxicode::config::standard())
             .map_err(|e| TensorError::invalid_argument(format!("Serialization failed: {}", e)))?;
 
         std::fs::write(path, serialized)
@@ -232,8 +232,12 @@ impl Graph {
         let data = std::fs::read(path)
             .map_err(|e| TensorError::invalid_argument(format!("Failed to read file: {}", e)))?;
 
-        let graph_def: GraphDef = bincode::deserialize(&data)
-            .map_err(|e| TensorError::invalid_argument(format!("Deserialization failed: {}", e)))?;
+        let graph_def: GraphDef =
+            oxicode::serde::decode_owned_from_slice(&data, oxicode::config::standard())
+                .map_err(|e| {
+                    TensorError::invalid_argument(format!("Deserialization failed: {}", e))
+                })?
+                .0;
 
         Self::from_graph_def(&graph_def)
     }

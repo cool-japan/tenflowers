@@ -122,7 +122,7 @@ where
         let mean_squared = squared.mean(Some(&axes), true)?;
 
         // Step 3: Add epsilon for numerical stability: mean(x^2) + epsilon
-        let eps = T::from(self.epsilon).unwrap();
+        let eps = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
         let eps_tensor = Tensor::from_scalar(eps);
         let variance_with_eps = mean_squared.add(&eps_tensor)?;
 

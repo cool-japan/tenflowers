@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     fn test_field_value_conversions() {
-        let value = FieldValue::Float32(3.14);
+        let value = FieldValue::Float32(3.15);
         assert_eq!(value.dtype(), DType::Float32);
 
         let bytes = value.to_bytes(4);
@@ -666,7 +666,7 @@ mod tests {
 
         let recovered = FieldValue::from_bytes(&bytes, DType::Float32).unwrap();
         if let FieldValue::Float32(v) = recovered {
-            assert!((v - 3.14).abs() < 1e-6);
+            assert!((v - 3.15).abs() < 1e-6);
         } else {
             panic!("Wrong type recovered");
         }

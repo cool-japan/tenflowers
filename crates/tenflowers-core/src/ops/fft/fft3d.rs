@@ -203,7 +203,8 @@ where
                             ifft_width.process(&mut row_buffer);
 
                             // Normalize by width
-                            let width_t = T::from(width).unwrap();
+                            let width_t =
+                                T::from(width).expect("width should convert to float type");
                             for val in &mut row_buffer {
                                 *val = *val / width_t;
                             }
@@ -222,7 +223,8 @@ where
                             ifft_height.process(&mut col_buffer);
 
                             // Normalize by height
-                            let height_t = T::from(height).unwrap();
+                            let height_t =
+                                T::from(height).expect("height should convert to float type");
                             for val in &mut col_buffer {
                                 *val = *val / height_t;
                             }
@@ -243,7 +245,8 @@ where
                             ifft_depth.process(&mut depth_buffer);
 
                             // Normalize by depth
-                            let depth_t = T::from(depth).unwrap();
+                            let depth_t =
+                                T::from(depth).expect("depth should convert to float type");
                             for val in &mut depth_buffer {
                                 *val = *val / depth_t;
                             }

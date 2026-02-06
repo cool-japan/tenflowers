@@ -505,7 +505,8 @@ where
     /// Helper methods for gradient analysis
     fn compute_tensor_norm(&self, tensor: &Tensor<T>) -> Result<f64> {
         // Compute L2 norm
-        let two_tensor = Tensor::from_scalar(T::from(2.0).unwrap());
+        let two_tensor =
+            Tensor::from_scalar(T::from(2.0).expect("constant 2.0 should convert to float"));
         let squared = tensor.pow(&two_tensor)?;
         let sum = squared.sum(None, false)?.to_scalar()?;
         Ok(sum.sqrt().to_f64().unwrap_or(0.0))
@@ -519,9 +520,11 @@ where
 
     fn compute_tensor_std(&self, tensor: &Tensor<T>) -> Result<f64> {
         let mean = self.compute_tensor_mean(tensor)?;
-        let mean_tensor = Tensor::from_scalar(T::from(mean).unwrap());
+        let mean_tensor =
+            Tensor::from_scalar(T::from(mean).expect("mean value should convert to float"));
         let centered = tensor.sub(&mean_tensor)?;
-        let two_tensor = Tensor::from_scalar(T::from(2.0).unwrap());
+        let two_tensor =
+            Tensor::from_scalar(T::from(2.0).expect("constant 2.0 should convert to float"));
         let squared = centered.pow(&two_tensor)?;
         let variance = self.compute_tensor_mean(&squared)?;
         Ok(variance.sqrt())
@@ -529,7 +532,7 @@ where
 
     fn compute_sparsity_ratio(&self, tensor: &Tensor<T>) -> Result<f64> {
         let total_elements = tensor.shape().dims().iter().product::<usize>();
-        let zero_threshold = T::from(1e-10).unwrap();
+        let zero_threshold = T::from(1e-10).expect("threshold constant should convert to float");
 
         // Count near-zero elements (simplified)
         let tensor_data = tensor.to_vec()?;
@@ -559,7 +562,8 @@ where
 
     fn detect_dead_neurons(&self, gradient: &Tensor<T>) -> Result<Vec<usize>> {
         let mut dead_neurons = Vec::new();
-        let threshold = T::from(self.analysis_config.dead_neuron_threshold).unwrap();
+        let threshold = T::from(self.analysis_config.dead_neuron_threshold)
+            .expect("threshold should convert to float");
 
         if gradient.shape().dims().len() == 2 {
             let dims = gradient.shape().dims();

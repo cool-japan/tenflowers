@@ -97,8 +97,8 @@ fn test_amp_policy_disabled() {
     let scaled = policy.scale_loss(&loss).unwrap();
 
     assert_eq!(
-        scaled.as_slice().unwrap()[0],
-        loss.as_slice().unwrap()[0],
+        scaled.as_slice().expect("tensor should be contiguous")[0],
+        loss.as_slice().expect("tensor should be contiguous")[0],
         "Should not scale when disabled"
     );
 
@@ -120,7 +120,7 @@ fn test_loss_scaling() {
     let scaled_loss = policy.scale_loss(&loss).unwrap();
 
     assert_eq!(
-        scaled_loss.as_slice().unwrap()[0],
+        scaled_loss.as_slice().expect("tensor should be contiguous")[0],
         1024.0,
         "Loss should be scaled by 1024"
     );
@@ -441,8 +441,18 @@ fn test_disabled_vs_enabled_comparison() {
     let disabled_scaled = disabled_policy.scale_loss(&loss).unwrap();
     let enabled_scaled = enabled_policy.scale_loss(&loss).unwrap();
 
-    assert_eq!(disabled_scaled.as_slice().unwrap()[0], 1.0);
-    assert_eq!(enabled_scaled.as_slice().unwrap()[0], 2048.0);
+    assert_eq!(
+        disabled_scaled
+            .as_slice()
+            .expect("tensor should be contiguous")[0],
+        1.0
+    );
+    assert_eq!(
+        enabled_scaled
+            .as_slice()
+            .expect("tensor should be contiguous")[0],
+        2048.0
+    );
 
     println!("✓ Disabled vs enabled behavior differs as expected");
 }

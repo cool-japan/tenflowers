@@ -13,7 +13,7 @@ use tenflowers_core::{Result, Tensor, TensorError};
 ///
 /// References:
 /// - "Sharpness-Aware Minimization for Efficiently Improving Generalization"
-///   (https://arxiv.org/abs/2010.01412)
+///   (<https://arxiv.org/abs/2010.01412>)
 /// - Pierre Foret, Ariel Kleiner, Hossein Mobahi, Behnam Neyshabur (Google Research)
 #[derive(Debug)]
 pub enum SAMOptimizer<T> {

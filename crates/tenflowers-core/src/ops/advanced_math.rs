@@ -9,6 +9,14 @@ use bytemuck::{Pod, Zeroable};
 use scirs2_core::numeric::Float;
 use std::ops::{Add, Div, Mul, Sub};
 
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 // Note: logsumexp requires axis handling that doesn't match current API
 // TODO: Implement logsumexp when axis handling is unified
 
@@ -136,14 +144,14 @@ where
         + scirs2_core::Signed,
 {
     // Compute (x + 3) / 6
-    let three = Tensor::full(input.shape().dims(), T::from(3.0).unwrap());
-    let six = Tensor::full(input.shape().dims(), T::from(6.0).unwrap());
+    let three = Tensor::full(input.shape().dims(), float_const!(3.0, T));
+    let six = Tensor::full(input.shape().dims(), float_const!(6.0, T));
 
     let x_plus_3 = crate::ops::binary::add(input, &three)?;
     let scaled = crate::ops::binary::div(&x_plus_3, &six)?;
 
     // Clamp to [0, 1]
-    scaled.clamp(T::from(0.0).unwrap(), T::from(1.0).unwrap())
+    scaled.clamp(float_const!(0.0, T), float_const!(1.0, T))
 }
 
 /// Hard swish activation: x * hard_sigmoid(x)
@@ -227,7 +235,7 @@ where
         + Zeroable
         + scirs2_core::Signed,
 {
-    let half = Tensor::full(input.shape().dims(), T::from(0.5).unwrap());
+    let half = Tensor::full(input.shape().dims(), float_const!(0.5, T));
     let one = Tensor::ones(input.shape().dims());
 
     // Compute x^3
@@ -235,14 +243,14 @@ where
     let x_cubed = crate::ops::binary::mul(&x_squared, input)?;
 
     // Compute 0.044715 * x^3
-    let coef = Tensor::full(input.shape().dims(), T::from(0.044715).unwrap());
+    let coef = Tensor::full(input.shape().dims(), float_const!(0.044715, T));
     let term = crate::ops::binary::mul(&coef, &x_cubed)?;
 
     // Compute x + 0.044715 * x^3
     let sum = crate::ops::binary::add(input, &term)?;
 
     // Compute sqrt(2/π) ≈ 0.7978845608
-    let sqrt_2_pi = Tensor::full(input.shape().dims(), T::from(0.7978845608).unwrap());
+    let sqrt_2_pi = Tensor::full(input.shape().dims(), float_const!(0.7978845608, T));
     let scaled = crate::ops::binary::mul(&sqrt_2_pi, &sum)?;
 
     // Compute tanh(...)
@@ -282,7 +290,7 @@ where
         + Zeroable,
 {
     // Clamp input to (eps, 1-eps)
-    let one_minus_eps = T::from(1.0).unwrap() - eps;
+    let one_minus_eps = float_const!(1.0, T) - eps;
     let clipped = input.clamp(eps, one_minus_eps)?;
 
     // Compute 1 - p
@@ -347,8 +355,8 @@ where
         + Zeroable
         + scirs2_core::Signed,
 {
-    let scale = T::from(1.050_700_987_355_480_5).unwrap();
-    let alpha = T::from(1.673_263_242_354_377_2).unwrap();
+    let scale = float_const!(1.050_700_987_355_480_5, T);
+    let alpha = float_const!(1.673_263_242_354_377_2, T);
 
     // ELU part
     let elu = crate::ops::activation::elu(input, alpha)?;

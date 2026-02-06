@@ -117,20 +117,20 @@ where
             let h = if delta == T::zero() {
                 T::zero()
             } else if max_val == r {
-                let six = T::from(6.0).unwrap();
-                let sixty = T::from(60.0).unwrap();
+                let six = T::from(6.0).unwrap_or_else(|| T::from(6).unwrap_or(T::zero()));
+                let sixty = T::from(60.0).unwrap_or_else(|| T::from(60).unwrap_or(T::zero()));
                 sixty * (((g - b) / delta) % six)
             } else if max_val == g {
-                let two = T::from(2.0).unwrap();
-                let sixty = T::from(60.0).unwrap();
+                let two = T::from(2.0).unwrap_or_else(|| T::from(2).unwrap_or(T::zero()));
+                let sixty = T::from(60.0).unwrap_or_else(|| T::from(60).unwrap_or(T::zero()));
                 sixty * ((b - r) / delta + two)
             } else {
-                let four = T::from(4.0).unwrap();
-                let sixty = T::from(60.0).unwrap();
+                let four = T::from(4.0).unwrap_or_else(|| T::from(4).unwrap_or(T::zero()));
+                let sixty = T::from(60.0).unwrap_or_else(|| T::from(60).unwrap_or(T::zero()));
                 sixty * ((r - g) / delta + four)
             };
 
-            let three_sixty = T::from(360.0).unwrap();
+            let three_sixty = T::from(360.0).unwrap_or_else(|| T::from(360).unwrap_or(T::one()));
             let h_normalized = if h < T::zero() { h + three_sixty } else { h };
 
             rgb_data[base] = h_normalized / three_sixty; // Normalize H to [0,1]

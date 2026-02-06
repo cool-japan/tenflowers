@@ -69,7 +69,7 @@ impl CorrelationAnalyzer {
     where
         T: Clone + Default + scirs2_core::numeric::Zero + scirs2_core::numeric::Float,
     {
-        let _n = T::from(features.len()).unwrap();
+        let _n = T::from(features.len()).expect("feature count should convert to float");
         let mean_i = means[feature_i];
         let mean_j = means[feature_j];
 

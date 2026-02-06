@@ -317,7 +317,9 @@ where
         let scores = q.matmul(&k_transposed)?;
 
         // Scale by sqrt(head_dim)
-        let scaled_scores = scores.multiply_scalar(T::from_f64(self.scale_factor).unwrap())?;
+        let scaled_scores = scores.multiply_scalar(
+            T::from_f64(self.scale_factor).expect("Failed to convert scale_factor to tensor type"),
+        )?;
 
         // Apply softmax
         let attention_weights = scaled_scores.softmax(Some(-1))?;

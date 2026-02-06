@@ -48,7 +48,9 @@ impl<T> WorkStealingQueue<T> {
         let worker_id = self.next_worker.fetch_add(1, Ordering::Relaxed) % self.num_workers;
 
         {
-            let mut queue = self.worker_queues[worker_id].lock().unwrap();
+            let mut queue = self.worker_queues[worker_id]
+                .lock()
+                .expect("lock should not be poisoned");
             queue.push_back(item);
         }
 
@@ -56,7 +58,7 @@ impl<T> WorkStealingQueue<T> {
         self.total_tasks.fetch_add(1, Ordering::Relaxed);
         let (lock, cvar) = &*self.work_available;
         {
-            let mut available = lock.lock().unwrap();
+            let mut available = lock.lock().expect("lock should not be poisoned");
             *available = true;
         }
         cvar.notify_all();
@@ -68,7 +70,9 @@ impl<T> WorkStealingQueue<T> {
             return None;
         }
 
-        let mut queue = self.worker_queues[worker_id].lock().unwrap();
+        let mut queue = self.worker_queues[worker_id]
+            .lock()
+            .expect("lock should not be poisoned");
         let item = queue.pop_front();
         if item.is_some() {
             self.total_tasks.fetch_sub(1, Ordering::Relaxed);
@@ -91,7 +95,9 @@ impl<T> WorkStealingQueue<T> {
                 continue; // Skip self
             }
 
-            let mut queue = self.worker_queues[target_worker].lock().unwrap();
+            let mut queue = self.worker_queues[target_worker]
+                .lock()
+                .expect("lock should not be poisoned");
             // Steal from the back to minimize contention with the owner
             if let Some(item) = queue.pop_back() {
                 self.total_tasks.fetch_sub(1, Ordering::Relaxed);
@@ -127,7 +133,7 @@ impl<T> WorkStealingQueue<T> {
 
         // Wait for work to become available
         let (lock, cvar) = &*self.work_available;
-        let mut available = lock.lock().unwrap();
+        let mut available = lock.lock().expect("lock should not be poisoned");
 
         loop {
             // Check for shutdown signal
@@ -140,7 +146,7 @@ impl<T> WorkStealingQueue<T> {
             if let Some(item) = self.get_work(worker_id) {
                 return Some(item);
             }
-            available = lock.lock().unwrap();
+            available = lock.lock().expect("lock should not be poisoned");
 
             // If still no work and no tasks in the system, we're done
             if self.total_tasks.load(Ordering::Relaxed) == 0 {
@@ -152,13 +158,13 @@ impl<T> WorkStealingQueue<T> {
             available = if let Some(timeout) = timeout_ms {
                 let (guard, result) = cvar
                     .wait_timeout(available, std::time::Duration::from_millis(timeout))
-                    .unwrap();
+                    .expect("condvar wait_timeout should not fail");
                 if result.timed_out() {
                     return None;
                 }
                 guard
             } else {
-                cvar.wait(available).unwrap()
+                cvar.wait(available).expect("condvar wait should not fail")
             };
         }
     }
@@ -168,7 +174,7 @@ impl<T> WorkStealingQueue<T> {
         self.shutdown.store(true, Ordering::Relaxed);
         let (lock, cvar) = &*self.work_available;
         {
-            let mut available = lock.lock().unwrap();
+            let mut available = lock.lock().expect("lock should not be poisoned");
             *available = true;
         }
         cvar.notify_all();
@@ -188,7 +194,7 @@ impl<T> WorkStealingQueue<T> {
     pub fn queue_lengths(&self) -> Vec<usize> {
         self.worker_queues
             .iter()
-            .map(|queue| queue.lock().unwrap().len())
+            .map(|queue| queue.lock().expect("lock should not be poisoned").len())
             .collect()
     }
 
@@ -290,7 +296,10 @@ mod tests {
         queue.shutdown();
 
         // Collect results
-        let total_processed: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+        let total_processed: usize = handles
+            .into_iter()
+            .map(|h| h.join().expect("thread join should succeed"))
+            .sum();
 
         assert_eq!(total_processed, 100);
     }

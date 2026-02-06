@@ -182,13 +182,16 @@ impl TensorFlowMemoryProfiler {
         };
 
         // Store snapshot
-        self.snapshots.write().unwrap().push(snapshot.clone());
+        self.snapshots
+            .write()
+            .expect("write lock should not be poisoned")
+            .push(snapshot.clone());
 
         // Update baseline if we have TensorFlow data
         if let Some(tf_memory) = tensorflow_memory {
             self.baseline_memory_usage
                 .lock()
-                .unwrap()
+                .expect("baseline memory usage lock should not be poisoned")
                 .insert(operation.to_string(), tf_memory);
         }
 
@@ -509,7 +512,10 @@ print(f"{{memory_used:.2f}}")
 
     /// Generate optimization suggestions for high memory usage
     fn generate_optimization_suggestions(&self, snapshot: &MemorySnapshot) {
-        let mut suggestions = self.optimization_suggestions.write().unwrap();
+        let mut suggestions = self
+            .optimization_suggestions
+            .write()
+            .expect("write lock should not be poisoned");
 
         // Check for excessive memory usage
         if let Some(tf_memory) = snapshot.tensorflow_memory_mb {
@@ -553,12 +559,18 @@ print(f"{{memory_used:.2f}}")
 
     /// Get all memory snapshots
     pub fn get_snapshots(&self) -> Vec<MemorySnapshot> {
-        self.snapshots.read().unwrap().clone()
+        self.snapshots
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Get optimization suggestions
     pub fn get_optimization_suggestions(&self) -> Vec<MemoryOptimizationSuggestion> {
-        self.optimization_suggestions.read().unwrap().clone()
+        self.optimization_suggestions
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Generate comprehensive memory comparison report

@@ -76,7 +76,7 @@ use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Compute the full Hessian matrix
 ///
-/// Computes the matrix of second derivatives: H[i,j] = ∂²f/∂x[i]∂x[j]
+/// Computes the matrix of second derivatives: `H[i,j] = ∂²f/∂x[i]∂x[j]`
 ///
 /// # Arguments
 ///
@@ -165,7 +165,10 @@ pub fn compute_hessian(
         // Central differences: (f(x+h) - 2f(x) + f(x-h)) / h^2
         for j in 0..input_size {
             // Create perturbed inputs
-            let input_data = input.tensor().as_slice().unwrap();
+            let input_data = input
+                .tensor()
+                .as_slice()
+                .expect("tensor should be contiguous");
             let mut x_plus = input_data.to_vec();
             let mut x_minus = input_data.to_vec();
 
@@ -174,7 +177,9 @@ pub fn compute_hessian(
 
             // Compute gradients at perturbed points would require re-evaluation
             // For now, approximate using available first-order gradient
-            let grad_data = first_grad_flat.as_slice().unwrap();
+            let grad_data = first_grad_flat
+                .as_slice()
+                .expect("tensor should be contiguous");
             if i < grad_data.len() {
                 row_data[j] = grad_data[i] / eps; // Simplified approximation
             }
@@ -188,7 +193,7 @@ pub fn compute_hessian(
     // Create a 2D tensor from the rows
     let mut hessian_data = Vec::with_capacity(input_size * input_size);
     for row in &hessian_rows {
-        hessian_data.extend_from_slice(row.as_slice().unwrap());
+        hessian_data.extend_from_slice(row.as_slice().expect("tensor should be contiguous"));
     }
     let hessian = Tensor::from_vec(hessian_data, &[input_size, input_size])?;
 
@@ -207,7 +212,7 @@ pub fn compute_hessian(
 ///
 /// # Returns
 ///
-/// Diagonal of the Hessian: [∂²f/∂x[0]², ∂²f/∂x[1]², ...]
+/// Diagonal of the Hessian: `[∂²f/∂x[0]², ∂²f/∂x[1]², ...]`
 ///
 /// # Example
 ///
@@ -255,8 +260,11 @@ pub fn compute_hessian_diagonal(
     // For diagonal elements, we need ∂²f/∂x[i]²
     // Using finite differences: (g(x+h) - g(x-h)) / (2h)
     let eps = 1e-5_f32;
-    let input_data = input.tensor().as_slice().unwrap();
-    let grad_data = first_grad.as_slice().unwrap();
+    let input_data = input
+        .tensor()
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let grad_data = first_grad.as_slice().expect("tensor should be contiguous");
     let mut diag_data = vec![0.0_f32; input_size];
 
     for i in 0..input_size {
@@ -351,9 +359,12 @@ pub fn hessian_vector_product(
 
     // Approximate H*v using directional derivative of gradient
     // H*v = lim_{ε→0} (∇f(x + εv) - ∇f(x)) / ε
-    let input_data = input.tensor().as_slice().unwrap();
-    let vector_data = vector.as_slice().unwrap();
-    let grad_data = first_grad.as_slice().unwrap();
+    let input_data = input
+        .tensor()
+        .as_slice()
+        .expect("tensor should be contiguous");
+    let vector_data = vector.as_slice().expect("tensor should be contiguous");
+    let grad_data = first_grad.as_slice().expect("tensor should be contiguous");
 
     let mut hvp_data = vec![0.0_f32; input_data.len()];
 
@@ -371,7 +382,7 @@ pub fn hessian_vector_product(
 /// Compute the Laplacian (trace of Hessian)
 ///
 /// The Laplacian is the sum of the diagonal elements of the Hessian:
-/// Δf = ∂²f/∂x[0]² + ∂²f/∂x[1]² + ...
+/// `Δf = ∂²f/∂x[0]² + ∂²f/∂x[1]² + ...`
 ///
 /// # Arguments
 ///
@@ -413,7 +424,7 @@ pub fn compute_laplacian(
 
 /// Compute the Jacobian matrix for vector-valued functions
 ///
-/// For f: R^n -> R^m, computes the m×n Jacobian matrix J[i,j] = ∂f[i]/∂x[j]
+/// For f: R^n -> R^m, computes the m×n Jacobian matrix `J[i,j] = ∂f[i]/∂x[j]`
 ///
 /// # Arguments
 ///
@@ -488,7 +499,7 @@ pub fn compute_jacobian(
     // Stack rows to form Jacobian
     let mut jacobian_data = Vec::with_capacity(output_size * input_size);
     for row in &jacobian_rows {
-        jacobian_data.extend_from_slice(row.as_slice().unwrap());
+        jacobian_data.extend_from_slice(row.as_slice().expect("tensor should be contiguous"));
     }
     let jacobian = Tensor::from_vec(jacobian_data, &[output_size, input_size])?;
 

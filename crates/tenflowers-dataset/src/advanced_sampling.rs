@@ -75,7 +75,10 @@ impl CurriculumScheduler {
                     .enumerate()
                     .map(|(i, &score)| (i, score))
                     .collect();
-                indices.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                indices.sort_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
+                        .expect("partial_cmp should not return None for valid values")
+                });
                 indices.iter().take(num_samples).map(|(i, _)| *i).collect()
             }
             CurriculumStrategy::HardToEasy => {
@@ -85,7 +88,10 @@ impl CurriculumScheduler {
                     .enumerate()
                     .map(|(i, &score)| (i, score))
                     .collect();
-                indices.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                indices.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .expect("partial_cmp should not return None for valid values")
+                });
                 indices.iter().take(num_samples).map(|(i, _)| *i).collect()
             }
             CurriculumStrategy::Random => (0..num_samples).collect(),
@@ -289,7 +295,10 @@ impl HardNegativeMiner {
                     .zip(self.negative_scores.iter())
                     .map(|(&idx, &score)| (idx, score))
                     .collect();
-                scored_negatives.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                scored_negatives.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .expect("partial_cmp should not return None for valid values")
+                });
 
                 let num_to_mine = (self.positive_indices.len() * num_negatives_per_positive)
                     .min(scored_negatives.len());

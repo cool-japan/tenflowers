@@ -475,7 +475,10 @@ impl BottleneckDetector {
             .map(|p| (p.input_size as f64, p.execution_time_ms))
             .collect();
 
-        size_time_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        size_time_pairs.sort_by(|a, b| {
+            a.0.partial_cmp(&b.0)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let first = &size_time_pairs[0];
         let last = &size_time_pairs[size_time_pairs.len() - 1];

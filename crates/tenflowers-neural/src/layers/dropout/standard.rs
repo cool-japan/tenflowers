@@ -204,7 +204,7 @@ where
 {
     /// Create a dropout layer with 50% dropout rate
     fn default() -> Self {
-        Self::new(T::from(0.5).unwrap())
+        Self::new(T::from(0.5).expect("Failed to convert 0.5 to tensor type"))
     }
 }
 

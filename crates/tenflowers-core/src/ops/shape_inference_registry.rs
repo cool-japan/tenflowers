@@ -159,7 +159,10 @@ impl ShapeInferenceRegistry {
         inference_fn: ShapeInferenceFn,
         description: &str,
     ) -> Result<()> {
-        let mut ops = self.operations.write().unwrap();
+        let mut ops = self
+            .operations
+            .write()
+            .expect("write lock should not be poisoned");
 
         if ops.contains_key(name) {
             return Err(TensorError::invalid_argument(format!(
@@ -188,7 +191,10 @@ impl ShapeInferenceRegistry {
         inputs: &[Shape],
         metadata: &OperationMetadata,
     ) -> Result<Shape> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
 
         let op = ops.get(operation).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -214,7 +220,10 @@ impl ShapeInferenceRegistry {
 
     /// List all registered operations
     pub fn list_operations(&self) -> Vec<String> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
         let mut names: Vec<String> = ops.keys().cloned().collect();
         names.sort();
         names
@@ -222,7 +231,10 @@ impl ShapeInferenceRegistry {
 
     /// Get operations by category
     pub fn operations_by_category(&self, category: OperationCategory) -> Vec<String> {
-        let ops = self.operations.read().unwrap();
+        let ops = self
+            .operations
+            .read()
+            .expect("read lock should not be poisoned");
         let mut names: Vec<String> = ops
             .values()
             .filter(|op| op.category == category)
@@ -1167,13 +1179,13 @@ mod tests {
         metadata.insert("axis".to_string(), MetadataValue::Int(1));
         metadata.insert("keepdims".to_string(), MetadataValue::Bool(false));
 
-        let result = registry.infer("sum", &[shape.clone()], &metadata);
+        let result = registry.infer("sum", std::slice::from_ref(&shape), &metadata);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().dims(), &[2, 4]);
 
         // Reduce on axis 1, with keepdims
         metadata.insert("keepdims".to_string(), MetadataValue::Bool(true));
-        let result = registry.infer("sum", &[shape.clone()], &metadata);
+        let result = registry.infer("sum", std::slice::from_ref(&shape), &metadata);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().dims(), &[2, 1, 4]);
 

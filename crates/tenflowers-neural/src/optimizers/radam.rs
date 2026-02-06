@@ -91,10 +91,11 @@ where
         let t = self.t as f32;
 
         // Convert constants to T
-        let beta1_t = T::from(self.beta1).unwrap();
-        let beta2_t = T::from(self.beta2).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let eps_t = T::from(self.epsilon).unwrap();
+        let beta1_t = T::from(self.beta1).expect("Failed to convert beta1 to tensor type");
+        let beta2_t = T::from(self.beta2).expect("Failed to convert beta2 to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let eps_t = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
 
         // Compute rho_inf (infinite horizon length)
         let rho_inf = 2.0 / (1.0 - self.beta2) - 1.0;
@@ -130,12 +131,15 @@ where
                 // v_t = beta2 * v_{t-1} + (1 - beta2) * g_t^2
                 let one_minus_beta2 = Tensor::from_scalar(T::one() - beta2_t);
                 let beta2_v = v.mul(&Tensor::from_scalar(beta2_t))?;
-                let grad_squared = grad.pow(&Tensor::from_scalar(T::from(2.0).unwrap()))?;
+                let grad_squared = grad.pow(&Tensor::from_scalar(
+                    T::from(2.0).expect("Failed to convert 2.0 to tensor type"),
+                ))?;
                 let one_minus_beta2_g2 = grad_squared.mul(&one_minus_beta2)?;
                 *v = beta2_v.add(&one_minus_beta2_g2)?;
 
                 // Bias correction for first moment
-                let bias_correction1 = T::from(1.0 - self.beta1.powf(t)).unwrap();
+                let bias_correction1 = T::from(1.0 - self.beta1.powf(t))
+                    .expect("Failed to convert bias_correction1 to tensor type");
                 let m_hat = m.div(&Tensor::from_scalar(bias_correction1))?;
 
                 // Check if we should use adaptive or SGD-like update
@@ -143,7 +147,8 @@ where
                     // Use adaptive learning rate
 
                     // Bias correction for second moment
-                    let bias_correction2 = T::from(1.0 - self.beta2.powf(t)).unwrap();
+                    let bias_correction2 = T::from(1.0 - self.beta2.powf(t))
+                        .expect("Failed to convert bias_correction2 to tensor type");
                     let v_hat = v.div(&Tensor::from_scalar(bias_correction2))?;
 
                     // Compute variance rectification term
@@ -151,7 +156,9 @@ where
                         / ((rho_inf - 4.0) * (rho_inf - 2.0) * rho_t))
                         .sqrt();
 
-                    let r_t_tensor = Tensor::from_scalar(T::from(r_t).unwrap());
+                    let r_t_tensor = Tensor::from_scalar(
+                        T::from(r_t).expect("Failed to convert r_t to tensor type"),
+                    );
 
                     // Compute adaptive update
                     let sqrt_v_hat = v_hat.sqrt()?;

@@ -58,7 +58,7 @@ where
                 param.shape()
             );
             let tracked = {
-                let tape_ref = tape.lock().unwrap();
+                let tape_ref = tape.lock().expect("lock should not be poisoned");
                 tape_ref.watch((*param).clone())
             };
             println!(
@@ -107,7 +107,7 @@ where
                     "Debug: AutogradLayer forward - reshaped input shape: {:?}",
                     reshaped_tensor.shape()
                 );
-                let tape_ref = self.tape.lock().unwrap();
+                let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                 tape_ref.watch(reshaped_tensor)
             } else {
                 input.clone()
@@ -130,7 +130,7 @@ where
                 // Check if we can actually squeeze axis 0
                 if output.tensor.shape().dims()[0] == 1 {
                     let squeezed_tensor = output.tensor.squeeze(Some(&[0]))?;
-                    let tape_ref = self.tape.lock().unwrap();
+                    let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                     Ok(tape_ref.watch(squeezed_tensor))
                 } else {
                     // Cannot squeeze, return as-is
@@ -149,7 +149,7 @@ where
             layer_copy.set_training(self.training);
 
             let result = layer_copy.forward(&input.tensor)?;
-            let tape_ref = self.tape.lock().unwrap();
+            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
             Ok(tape_ref.watch(result))
         }
     }
@@ -190,7 +190,7 @@ where
                 let updated_param = current_param.sub(&scaled_gradient)?;
 
                 // Update tracked parameter
-                let tape_ref = self.tape.lock().unwrap();
+                let tape_ref = self.tape.lock().expect("lock should not be poisoned");
                 self.tracked_parameters[i] = tape_ref.watch(updated_param);
             }
         }

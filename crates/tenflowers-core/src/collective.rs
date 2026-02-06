@@ -308,7 +308,10 @@ impl CollectiveManager {
                 if let Some(data) = accumulated_tensor.as_slice() {
                     let mean_data: Vec<T> = data
                         .iter()
-                        .map(|&x| x / T::from(group_size).unwrap())
+                        .map(|&x| {
+                            x / T::from(group_size)
+                                .expect("group_size should convert to numeric type")
+                        })
                         .collect();
 
                     let mean_tensor =
@@ -469,7 +472,9 @@ static COLLECTIVE_MANAGER: Mutex<Option<CollectiveManager>> = Mutex::new(None);
 
 /// Initialize collective communication
 pub fn init_collective() -> Result<()> {
-    let mut manager = COLLECTIVE_MANAGER.lock().unwrap();
+    let mut manager = COLLECTIVE_MANAGER
+        .lock()
+        .expect("lock should not be poisoned");
     if manager.is_none() {
         *manager = Some(CollectiveManager::new());
     }
@@ -478,7 +483,9 @@ pub fn init_collective() -> Result<()> {
 
 /// Get the global collective manager
 pub fn get_collective_manager() -> Result<Arc<Mutex<CollectiveManager>>> {
-    let manager = COLLECTIVE_MANAGER.lock().unwrap();
+    let manager = COLLECTIVE_MANAGER
+        .lock()
+        .expect("lock should not be poisoned");
     if manager.is_none() {
         return Err(TensorError::invalid_argument(
             "Collective not initialized. Call init_collective() first".to_string(),
@@ -494,7 +501,7 @@ pub fn get_collective_manager() -> Result<Arc<Mutex<CollectiveManager>>> {
 pub fn create_process_group(name: String, devices: Vec<Device>) -> Result<()> {
     init_collective()?;
     let manager = get_collective_manager()?;
-    let mut mgr = manager.lock().unwrap();
+    let mut mgr = manager.lock().expect("lock should not be poisoned");
     mgr.create_group(name, devices)
 }
 
@@ -519,7 +526,7 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.all_reduce(tensor, op, group_name)
 }
 
@@ -540,7 +547,7 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.broadcast(tensor, src_device, group_name)
 }
 
@@ -557,7 +564,7 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.all_gather(tensor, group_name)
 }
 
@@ -581,7 +588,7 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.all_reduce_gradients(gradients, group_name)
 }
 
@@ -602,7 +609,7 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.sync_parameters(parameters, src_device, group_name)
 }
 
@@ -623,7 +630,7 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().unwrap();
+    let mgr = manager.lock().expect("lock should not be poisoned");
     mgr.ring_all_reduce(tensor, group_name)
 }
 

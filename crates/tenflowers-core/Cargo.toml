@@ -17,25 +17,20 @@ workspace = true
 [dependencies]
 # SciRS2 ecosystem - provides ndarray, random, etc.
 scirs2-core = { workspace = true, features = ["random", "memory_management", "memory_efficient", "parallel", "simd", "profiling"] }
-scirs2-autograd = { workspace = true }
-scirs2-neural = { workspace = true }
 scirs2-linalg = { workspace = true }
-numrs2 = { workspace = true }
-optirs = { workspace = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 bytemuck = { workspace = true }
 ndarray-linalg = { workspace = true, optional = true }
 lazy_static = "1.5"
 sys-info = "0.9"
 rustfft = "6.4"
 num-complex = "0.4"
-bincode = { workspace = true }
+oxicode = { workspace = true }
 num_cpus = { workspace = true }
 half = { workspace = true }
 petgraph = { workspace = true }
@@ -67,10 +62,10 @@ prost-types = { workspace = true, optional = true }
 # Platform-specific dependencies for memory tracking
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
-metal = { version = "0.32.0", optional = true }
+metal = { version = "0.33.0", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_ProcessStatus"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_ProcessStatus"] }
 
 [dev-dependencies]
 criterion = { workspace = true }

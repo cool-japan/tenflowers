@@ -140,14 +140,15 @@ where
         // Xavier initialization: sqrt(6 / (fan_in + fan_out))
         let fan_in = if shape.len() >= 2 { shape[0] } else { 1 };
         let fan_out = if shape.len() >= 2 { shape[1] } else { shape[0] };
-        let limit = T::from((6.0_f64 / (fan_in + fan_out) as f64).sqrt()).unwrap();
+        let limit = T::from((6.0_f64 / (fan_in + fan_out) as f64).sqrt())
+            .expect("Xavier init limit should convert from f64 to target type");
 
         // Generate uniform values in [-limit, limit]
         let total_elements = shape.iter().product::<usize>();
         let values: Vec<T> = (0..total_elements)
             .map(|_| {
                 let random_val = rng.gen_range(-1.0..1.0);
-                T::from(random_val).unwrap() * limit
+                T::from(random_val).expect("random value should convert to target type") * limit
             })
             .collect();
 
@@ -184,14 +185,15 @@ where
 
         // He initialization: sqrt(2 / fan_in)
         let fan_in = if shape.len() >= 2 { shape[0] } else { 1 };
-        let std = T::from((2.0_f64 / fan_in as f64).sqrt()).unwrap();
+        let std = T::from((2.0_f64 / fan_in as f64).sqrt())
+            .expect("He init std should convert from f64 to target type");
 
         // Generate normal values with std
         let total_elements = shape.iter().product::<usize>();
         let values: Vec<T> = (0..total_elements)
             .map(|_| {
                 let random_val = rng.gen_range(-1.0..1.0);
-                T::from(random_val).unwrap() * std
+                T::from(random_val).expect("random value should convert to target type") * std
             })
             .collect();
 

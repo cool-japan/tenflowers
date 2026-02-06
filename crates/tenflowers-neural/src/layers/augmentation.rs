@@ -46,7 +46,7 @@ impl Mixup {
     ///
     /// # Arguments
     /// * `samples` - Input batch tensor of shape [batch_size, ...]
-    /// * `labels` - Label batch tensor of shape [batch_size, num_classes] (one-hot) or [batch_size] (indices)
+    /// * `labels` - Label batch tensor of shape `[batch_size, num_classes]` (one-hot) or `[batch_size]` (indices)
     ///
     /// # Returns
     /// Tuple of (mixed_samples, mixed_labels, lambda)
@@ -560,7 +560,7 @@ mod tests {
         let (mixed_samples, mixed_labels, lambda) = result.unwrap();
         assert_eq!(mixed_samples.shape().dims(), samples.shape().dims());
         assert_eq!(mixed_labels.shape().dims(), labels.shape().dims());
-        assert!(lambda >= 0.0 && lambda <= 1.0);
+        assert!((0.0..=1.0).contains(&lambda));
     }
 
     #[test]
@@ -596,7 +596,7 @@ mod tests {
         let (mixed_images, mixed_labels, lambda) = result.unwrap();
         assert_eq!(mixed_images.shape().dims(), images.shape().dims());
         assert_eq!(mixed_labels.shape().dims(), labels.shape().dims());
-        assert!(lambda >= 0.0 && lambda <= 1.0);
+        assert!((0.0..=1.0).contains(&lambda));
     }
 
     #[test]

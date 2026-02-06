@@ -468,11 +468,11 @@ impl GpuLinalgContext {
         let buffer_slice = status_readback.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
+            tx.send(result).expect("channel send should succeed");
         });
 
         self.device().poll(wgpu::Maintain::Wait);
-        rx.recv().unwrap().map_err(|e| TensorError::ComputeError {
+        rx.recv().expect("channel recv should succeed").map_err(|e| TensorError::ComputeError {
             operation: "gpu_read_status".to_string(),
             details: format!("Failed to read status: {:?}", e),
             retry_possible: true,

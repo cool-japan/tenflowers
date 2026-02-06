@@ -2,7 +2,7 @@ use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Backward pass for boolean mask indexing
-/// For y = x[mask], where mask is a boolean tensor, gradient flows only to positions where mask is true
+/// For `y = x[mask]`, where mask is a boolean tensor, gradient flows only to positions where mask is true
 pub fn boolean_mask_backward<T>(
     grad_output: &Tensor<T>,
     mask: &Tensor<bool>,
@@ -405,7 +405,7 @@ where
 }
 
 /// Backward pass for integer array indexing
-/// For y = x[indices], gradient flows back to the indexed positions
+/// For `y = x[indices]`, gradient flows back to the indexed positions
 pub fn integer_array_indexing_backward<T>(
     grad_output: &Tensor<T>,
     indices: &Tensor<i64>,

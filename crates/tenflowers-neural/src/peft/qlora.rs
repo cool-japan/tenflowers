@@ -834,12 +834,14 @@ mod tests {
         let deq_data = dequantized.to_vec().unwrap();
 
         for (orig, deq) in original_data.iter().zip(deq_data.iter()) {
-            let diff = (orig.to_f32().unwrap() - deq.to_f32().unwrap()).abs();
+            let diff = (orig.to_f32().expect("numeric conversion should succeed")
+                - deq.to_f32().expect("numeric conversion should succeed"))
+            .abs();
             assert!(
                 diff < 0.2,
                 "Quantization error too large: {} vs {}",
-                orig.to_f32().unwrap(),
-                deq.to_f32().unwrap()
+                orig.to_f32().expect("numeric conversion should succeed"),
+                deq.to_f32().expect("numeric conversion should succeed")
             );
         }
     }

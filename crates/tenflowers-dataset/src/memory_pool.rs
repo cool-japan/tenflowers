@@ -197,12 +197,14 @@ impl MemoryPool {
 
     /// Return a memory block to the pool
     fn deallocate(&self, block: MemoryBlock, class_index: Option<usize>) {
-        let mut stats = self.stats.lock().unwrap();
+        let mut stats = self.stats.lock().expect("lock should not be poisoned");
         stats.deallocations += 1;
 
         if let Some(class_index) = class_index {
             if class_index < self.pools.len() {
-                let mut pool = self.pools[class_index].lock().unwrap();
+                let mut pool = self.pools[class_index]
+                    .lock()
+                    .expect("lock should not be poisoned");
 
                 if pool.len() < self.max_blocks_per_size {
                     stats.current_size += block.size;
@@ -218,16 +220,19 @@ impl MemoryPool {
 
     /// Get current pool statistics
     pub fn stats(&self) -> PoolStats {
-        self.stats.lock().unwrap().clone()
+        self.stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Clear all cached blocks
     pub fn clear(&self) {
         for pool in &self.pools {
-            pool.lock().unwrap().clear();
+            pool.lock().expect("lock should not be poisoned").clear();
         }
 
-        let mut stats = self.stats.lock().unwrap();
+        let mut stats = self.stats.lock().expect("lock should not be poisoned");
         stats.current_size = 0;
     }
 }
@@ -265,17 +270,26 @@ impl PooledMemory {
 
     /// Get a mutable slice view of the memory
     pub fn as_slice_mut(&mut self) -> &mut [u8] {
-        self.block.as_mut().unwrap().as_slice_mut()
+        self.block
+            .as_mut()
+            .expect("block should exist for valid PooledMemory")
+            .as_slice_mut()
     }
 
     /// Get the raw pointer
     pub fn as_ptr(&self) -> *mut u8 {
-        self.block.as_ref().unwrap().as_ptr()
+        self.block
+            .as_ref()
+            .expect("block should exist for valid PooledMemory")
+            .as_ptr()
     }
 
     /// Convert to a `Vec<u8>` (consumes the pooled memory)
     pub fn into_vec(mut self) -> Vec<u8> {
-        let block = self.block.take().unwrap();
+        let block = self
+            .block
+            .take()
+            .expect("block should exist for valid PooledMemory");
         let size = block.size;
         let ptr = block.as_ptr();
 

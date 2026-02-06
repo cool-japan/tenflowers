@@ -185,7 +185,7 @@ where
 
         // Calculate average loss
         let avg_loss = if count > 0 {
-            total_loss / T::from_usize(count).unwrap_or_else(T::one)
+            total_loss / T::from_usize(count).unwrap_or_else(|| T::one())
         } else {
             T::zero()
         };
@@ -256,7 +256,7 @@ where
         let _target_argmax = targets; // Would compute argmax
 
         // Return placeholder accuracy
-        Ok(T::from_f64(0.95).unwrap_or_else(T::zero))
+        Ok(T::from_f64(0.95).unwrap_or_else(|| T::zero()))
     }
 
     /// Early stopping check

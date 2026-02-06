@@ -15,7 +15,10 @@ where
     let mut grads = Vec::new();
 
     for (input_idx, input) in inputs.iter().enumerate() {
-        let input_data = input.as_slice().unwrap().to_vec();
+        let input_data = input
+            .as_slice()
+            .expect("tensor should be contiguous")
+            .to_vec();
         let mut grad_data = vec![0.0; input_data.len()];
 
         for i in 0..input_data.len() {
@@ -40,8 +43,8 @@ where
             let f_minus = f(&inputs_minus);
 
             // Extract scalar values (assuming output is scalar)
-            let val_plus = f_plus.as_slice().unwrap()[0];
-            let val_minus = f_minus.as_slice().unwrap()[0];
+            let val_plus = f_plus.as_slice().expect("tensor should be contiguous")[0];
+            let val_minus = f_minus.as_slice().expect("tensor should be contiguous")[0];
 
             grad_data[i] = (val_plus - val_minus) / (2.0 * eps);
         }
@@ -68,8 +71,8 @@ fn compare_gradients(
     );
 
     for (i, (anal, num)) in analytical.iter().zip(numerical.iter()).enumerate() {
-        let anal_slice = anal.as_slice().unwrap();
-        let num_slice = num.as_slice().unwrap();
+        let anal_slice = anal.as_slice().expect("tensor should be contiguous");
+        let num_slice = num.as_slice().expect("tensor should be contiguous");
 
         assert_eq!(
             anal_slice.len(),

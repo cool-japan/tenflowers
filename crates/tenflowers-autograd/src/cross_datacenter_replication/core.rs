@@ -93,7 +93,7 @@ impl CrossDatacenterReplicator {
         for (datacenter_id, info) in &self.topology.datacenters {
             if datacenter_id != &self.datacenter_id {
                 let connection = DatacenterConnection::new(datacenter_id.clone(), info.endpoints.clone()).await?;
-                self.connections.write().unwrap().insert(datacenter_id.clone(), connection);
+                self.connections.write().expect("write lock should not be poisoned").insert(datacenter_id.clone(), connection);
             }
         }
         Ok(())
@@ -178,7 +178,7 @@ impl CrossDatacenterReplicator {
     // Helper methods for synchronization operations
 
     fn generate_operation_id(&self) -> String {
-        format!("{}_{}", self.datacenter_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
+        format!("{}_{}", self.datacenter_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("duration calculation should succeed").as_nanos())
     }
 
     async fn broadcast_prepare(&self, _operation_id: String, _parameters: Vec<TrackedTensor<f32>>) -> Result<Vec<PrepareResult>, TensorError> {

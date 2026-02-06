@@ -131,15 +131,19 @@ where
                 if let Some(accumulated) = self.accumulated_gradients.get_mut(&param_key) {
                     // Add to existing accumulation
                     let weighted_grad = if weight != 1.0 {
-                        grad.mul(&Tensor::from_scalar(T::from_f32(weight).unwrap()))?
+                        grad.mul(&Tensor::from_scalar(
+                            T::from_f32(weight).expect("Failed to convert weight to tensor type"),
+                        ))?
                     } else {
                         grad.clone()
                     };
 
                     match self.strategy {
                         AccumulationStrategy::ExponentialMovingAverage { alpha } => {
-                            let alpha_t = T::from_f32(alpha).unwrap();
-                            let one_minus_alpha = T::from_f32(1.0 - alpha).unwrap();
+                            let alpha_t =
+                                T::from_f32(alpha).expect("Failed to convert alpha to tensor type");
+                            let one_minus_alpha = T::from_f32(1.0 - alpha)
+                                .expect("Failed to convert one_minus_alpha to tensor type");
 
                             let new_part = weighted_grad.mul(&Tensor::from_scalar(alpha_t))?;
                             let old_part =
@@ -153,7 +157,9 @@ where
                 } else {
                     // First accumulation for this parameter
                     let weighted_grad = if weight != 1.0 {
-                        grad.mul(&Tensor::from_scalar(T::from_f32(weight).unwrap()))?
+                        grad.mul(&Tensor::from_scalar(
+                            T::from_f32(weight).expect("Failed to convert weight to tensor type"),
+                        ))?
                     } else {
                         grad.clone()
                     };
@@ -188,7 +194,8 @@ where
 
         // Apply scaling based on strategy
         let scale_factor = match self.strategy {
-            AccumulationStrategy::Average => T::from_usize(self.accumulation_steps).unwrap(),
+            AccumulationStrategy::Average => T::from_usize(self.accumulation_steps)
+                .expect("Failed to convert accumulation_steps to tensor type"),
             AccumulationStrategy::Sum => T::one(),
             AccumulationStrategy::ExponentialMovingAverage { .. } => T::one(),
             AccumulationStrategy::Weighted => {

@@ -233,7 +233,11 @@ impl TransformProfiler {
 
         // Sort by throughput (descending)
         let mut sorted_stats: Vec<_> = stats.iter().collect();
-        sorted_stats.sort_by(|a, b| b.1.throughput.partial_cmp(&a.1.throughput).unwrap());
+        sorted_stats.sort_by(|a, b| {
+            b.1.throughput
+                .partial_cmp(&a.1.throughput)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         for (name, stat) in sorted_stats {
             report.push_str(&format!("\n{}: \n", name));

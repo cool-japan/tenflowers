@@ -398,13 +398,13 @@ where
     /// SIMD-accelerated GELU activation
     fn ultra_gelu(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         if self.config.enable_simd_acceleration && input.numel() > self.config.simd_threshold {
-            let sqrt_2_over_pi = T::from(0.7978845608028654).unwrap(); // sqrt(2/π)
+            let sqrt_2_over_pi = T::from(0.7978845608028654).expect("Failed to convert sqrt(2/π) to tensor type"); // sqrt(2/π)
             if let Ok(result) = auto_vectorize(
                 input.data().as_slice(),
                 &vec![T::zero(); input.numel()],
                 |x, _| {
-                    let tanh_input = sqrt_2_over_pi * (x + T::from(0.044715).unwrap() * x.powi(3));
-                    T::from(0.5).unwrap() * x * (T::one() + tanh_input.tanh())
+                    let tanh_input = sqrt_2_over_pi * (x + T::from(0.044715).expect("Failed to convert 0.044715 to tensor type") * x.powi(3));
+                    T::from(0.5).expect("Failed to convert 0.5 to tensor type") * x * (T::one() + tanh_input.tanh())
                 }
             ) {
                 Tensor::from_vec(&result, input.shape().dims())
@@ -488,7 +488,7 @@ where
         // He initialization: std = sqrt(2 / fan_in)
         let fan_in = shape[0] as f64;
         let std = (2.0 / fan_in).sqrt();
-        let std_t = T::from(std).unwrap();
+        let std_t = T::from(std).expect("Failed to convert std to tensor type");
 
         // For now, create zeros (would implement proper random initialization)
         Ok(Tensor::zeros(shape))
@@ -499,7 +499,7 @@ where
         let fan_in = shape[0] as f64;
         let fan_out = shape[1] as f64;
         let std = (2.0 / (fan_in + fan_out)).sqrt();
-        let std_t = T::from(std).unwrap();
+        let std_t = T::from(std).expect("Failed to convert std to tensor type");
 
         // For now, create zeros (would implement proper random initialization)
         Ok(Tensor::zeros(shape))

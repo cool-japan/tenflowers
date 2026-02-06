@@ -343,7 +343,7 @@ mod tests {
 
         // Check negative values are scaled
         assert_relative_eq!(output[0], -2.0 * negative_slope, epsilon = 1e-6);
-        assert_relative_eq!(output[1], -1.0 * negative_slope, epsilon = 1e-6);
+        assert_relative_eq!(output[1], -negative_slope, epsilon = 1e-6);
     }
 
     #[test]

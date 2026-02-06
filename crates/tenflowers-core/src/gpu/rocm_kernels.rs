@@ -720,7 +720,15 @@ impl RocmDevice {
             self.kernel_cache.insert(kernel_name.to_string(), kernel);
         }
 
-        Ok(*self.kernel_cache.get(kernel_name).unwrap())
+        self.kernel_cache
+            .get(kernel_name)
+            .copied()
+            .ok_or_else(|| TensorError::ComputeError {
+                operation: "get_kernel".to_string(),
+                details: format!("Kernel not found in cache: {}", kernel_name),
+                retry_possible: false,
+                context: None,
+            })
     }
 
     fn get_kernel_source(&self, kernel_name: &str) -> Result<String> {

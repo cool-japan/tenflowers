@@ -29,8 +29,14 @@ impl InPlaceOptimizer {
 
     /// Check if a tensor can be safely modified in-place
     pub fn can_modify_inplace(&self, tensor_id: TensorId) -> bool {
-        let ref_counts = self.tensor_ref_counts.lock().unwrap();
-        let safe_tensors = self.safe_inplace_tensors.lock().unwrap();
+        let ref_counts = self
+            .tensor_ref_counts
+            .lock()
+            .expect("lock should not be poisoned");
+        let safe_tensors = self
+            .safe_inplace_tensors
+            .lock()
+            .expect("lock should not be poisoned");
 
         // A tensor can be modified in-place if:
         // 1. It has only one reference (not shared)
@@ -45,19 +51,28 @@ impl InPlaceOptimizer {
 
     /// Mark a tensor as safe for in-place operations
     pub fn mark_safe_inplace(&self, tensor_id: TensorId) {
-        let mut safe_tensors = self.safe_inplace_tensors.lock().unwrap();
+        let mut safe_tensors = self
+            .safe_inplace_tensors
+            .lock()
+            .expect("lock should not be poisoned");
         safe_tensors.insert(tensor_id, true);
     }
 
     /// Increment reference count for a tensor
     pub fn increment_ref_count(&self, tensor_id: TensorId) {
-        let mut ref_counts = self.tensor_ref_counts.lock().unwrap();
+        let mut ref_counts = self
+            .tensor_ref_counts
+            .lock()
+            .expect("lock should not be poisoned");
         *ref_counts.entry(tensor_id).or_insert(0) += 1;
     }
 
     /// Decrement reference count for a tensor
     pub fn decrement_ref_count(&self, tensor_id: TensorId) {
-        let mut ref_counts = self.tensor_ref_counts.lock().unwrap();
+        let mut ref_counts = self
+            .tensor_ref_counts
+            .lock()
+            .expect("lock should not be poisoned");
         if let Some(count) = ref_counts.get_mut(&tensor_id) {
             *count = count.saturating_sub(1);
         }
@@ -65,8 +80,14 @@ impl InPlaceOptimizer {
 
     /// Clear all tracking data
     pub fn clear(&self) {
-        self.safe_inplace_tensors.lock().unwrap().clear();
-        self.tensor_ref_counts.lock().unwrap().clear();
+        self.safe_inplace_tensors
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        self.tensor_ref_counts
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
     }
 }
 

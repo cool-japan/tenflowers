@@ -49,7 +49,7 @@ impl MemoryManager {
     /// Get or create a memory pool for a specific device
     #[cfg(feature = "gpu")]
     pub fn get_pool(&self, device: Device) -> crate::Result<Arc<MemoryPool>> {
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
 
         if let Some(pool) = pools.get(&device) {
             // For now, return a simple wrapper since we can't clone MemoryPool directly
@@ -77,7 +77,10 @@ impl MemoryManager {
             }
         };
 
-        let mut pools = self.pools.write().unwrap();
+        let mut pools = self
+            .pools
+            .write()
+            .expect("write lock should not be poisoned");
         pools.insert(device, pool);
 
         // Return reference (in real implementation this would be Arc<MemoryPool>)
@@ -93,7 +96,10 @@ impl MemoryManager {
         device_id: usize,
         num_streams: usize,
     ) -> crate::Result<Arc<MultiStreamMemoryManager>> {
-        let managers = self.multi_stream_managers.read().unwrap();
+        let managers = self
+            .multi_stream_managers
+            .read()
+            .expect("read lock should not be poisoned");
 
         if managers.contains_key(&device_id) {
             return Err(TensorError::unsupported_operation_simple(
@@ -107,7 +113,10 @@ impl MemoryManager {
         let stream_pool_size = self.default_pool_size / num_streams;
         let manager = MultiStreamMemoryManager::new(device_id, num_streams, stream_pool_size)?;
 
-        let mut managers = self.multi_stream_managers.write().unwrap();
+        let mut managers = self
+            .multi_stream_managers
+            .write()
+            .expect("write lock should not be poisoned");
         managers.insert(device_id, manager);
 
         Err(TensorError::unsupported_operation_simple(
@@ -151,7 +160,7 @@ impl MemoryManager {
         let mut stats = MemoryStatistics::new();
 
         // Aggregate pool statistics
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         for (device, pool) in pools.iter() {
             let pool_stats = pool.stats();
             stats.add_device_stats(*device, pool_stats);
@@ -184,7 +193,7 @@ impl MemoryManager {
 
         // Memory pools
         report.push_str("Memory Pools:\n");
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         for (device, pool) in pools.iter() {
             let stats = pool.stats();
             report.push_str(&format!("  Device {:?}:\n", device));
@@ -203,7 +212,10 @@ impl MemoryManager {
 
         // Multi-stream managers
         report.push_str("Multi-Stream Managers:\n");
-        let managers = self.multi_stream_managers.read().unwrap();
+        let managers = self
+            .multi_stream_managers
+            .read()
+            .expect("read lock should not be poisoned");
         for (device_id, manager) in managers.iter() {
             report.push_str(&format!("  Device {}:\n", device_id));
             report.push_str(&format!("    Streams: {}\n", manager.num_streams()));
@@ -268,10 +280,16 @@ impl MemoryManager {
 
     /// Clear all memory pools and reset the manager
     pub fn clear(&self) {
-        let mut pools = self.pools.write().unwrap();
+        let mut pools = self
+            .pools
+            .write()
+            .expect("write lock should not be poisoned");
         pools.clear();
 
-        let mut managers = self.multi_stream_managers.write().unwrap();
+        let mut managers = self
+            .multi_stream_managers
+            .write()
+            .expect("write lock should not be poisoned");
         managers.clear();
 
         self.performance_monitor.clear();

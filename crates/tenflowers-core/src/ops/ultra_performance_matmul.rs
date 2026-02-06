@@ -269,8 +269,10 @@ where
         }
 
         // Create f32 arrays
-        let a_f32 = Array2::from_shape_vec((m, k), a_f32_data).unwrap();
-        let b_f32 = Array2::from_shape_vec((k, n), b_f32_data).unwrap();
+        let a_f32 = Array2::from_shape_vec((m, k), a_f32_data)
+            .expect("a_f32_data must match expected shape (m, k)");
+        let b_f32 = Array2::from_shape_vec((k, n), b_f32_data)
+            .expect("b_f32_data must match expected shape (k, n)");
 
         // Perform optimized f32 computation
         let result_f32 = ultra_matmul_f32_optimized(&a_f32.view(), &b_f32.view());

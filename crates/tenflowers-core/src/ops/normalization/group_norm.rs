@@ -109,7 +109,7 @@ where
                         }
                     }
 
-                    let mean = sum / T::from(count).unwrap();
+                    let mean = sum / T::from(count).expect("count should convert to numeric type");
 
                     // Calculate variance for this group
                     let mut var_sum = T::zero();
@@ -132,7 +132,8 @@ where
                         }
                     }
 
-                    let variance = var_sum / T::from(count).unwrap();
+                    let variance =
+                        var_sum / T::from(count).expect("count should convert to numeric type");
                     let std_dev = (variance + epsilon).sqrt();
 
                     // Normalize and scale for this group

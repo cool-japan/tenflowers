@@ -365,8 +365,9 @@ mod tests {
 
     #[test]
     fn test_config_watcher_creation() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let watcher = ConfigWatcher::new(temp_file.path()).unwrap();
+        let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
+        let watcher =
+            ConfigWatcher::new(temp_file.path()).expect("watcher creation should succeed");
         assert_eq!(watcher.path(), temp_file.path());
         assert_eq!(watcher.poll_interval(), Duration::from_secs(1));
     }
@@ -379,9 +380,10 @@ mod tests {
 
     #[test]
     fn test_custom_poll_interval() {
-        let temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
         let interval = Duration::from_millis(500);
-        let watcher = ConfigWatcher::with_poll_interval(temp_file.path(), interval).unwrap();
+        let watcher = ConfigWatcher::with_poll_interval(temp_file.path(), interval)
+            .expect("watcher creation should succeed");
         assert_eq!(watcher.poll_interval(), interval);
     }
 
@@ -389,7 +391,8 @@ mod tests {
     fn test_file_change_detection() {
         let mut temp_file = NamedTempFile::new().unwrap();
         let mut watcher =
-            ConfigWatcher::with_poll_interval(temp_file.path(), Duration::from_millis(10)).unwrap();
+            ConfigWatcher::with_poll_interval(temp_file.path(), Duration::from_millis(10))
+                .expect("watcher creation should succeed");
 
         // Initial check should return no changes
         let initial_check = watcher.check_changes().unwrap();
@@ -419,7 +422,8 @@ mod tests {
         writeln!(temp_file, "test content").unwrap();
         temp_file.flush().unwrap();
 
-        let watcher = ConfigWatcher::new(temp_file.path()).unwrap();
+        let watcher =
+            ConfigWatcher::new(temp_file.path()).expect("watcher creation should succeed");
         let file_info = watcher.file_info().unwrap();
 
         assert_eq!(file_info.path, temp_file.path());
@@ -435,14 +439,15 @@ mod tests {
 
     #[test]
     fn test_wait_for_change_timeout() {
-        let temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
         let mut watcher =
-            ConfigWatcher::with_poll_interval(temp_file.path(), Duration::from_millis(10)).unwrap();
+            ConfigWatcher::with_poll_interval(temp_file.path(), Duration::from_millis(10))
+                .expect("watcher creation should succeed");
 
         let start_time = SystemTime::now();
         let result = watcher
             .wait_for_change(Some(Duration::from_millis(50)))
-            .unwrap();
+            .expect("operation should succeed");
         let elapsed = start_time.elapsed().unwrap();
 
         assert!(result.is_none()); // Should timeout
@@ -516,8 +521,9 @@ mod tests {
 
     #[test]
     fn test_file_info_descriptions() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let watcher = ConfigWatcher::new(temp_file.path()).unwrap();
+        let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
+        let watcher =
+            ConfigWatcher::new(temp_file.path()).expect("watcher creation should succeed");
         let file_info = watcher.file_info().unwrap();
 
         let description = file_info.description();
@@ -531,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_watcher_state_management() {
-        let temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
         let mut watcher = ConfigWatcher::new(temp_file.path()).unwrap();
 
         assert!(!watcher.is_watching());

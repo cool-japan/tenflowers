@@ -385,7 +385,7 @@ impl NumericalChecker {
             });
         }
 
-        let numerator = result.unwrap();
+        let numerator = result.expect("result should be Some after processing all coefficients");
         let denom_shape: Vec<usize> = numerator.shape().dims().to_vec();
         let denom_array =
             scirs2_core::ndarray::ArrayD::from_elem(denom_shape, (60.0 * epsilon) as f32);
@@ -522,7 +522,10 @@ impl NumericalChecker {
         // Find worst errors
         let mut indexed_errors: Vec<(usize, f64)> =
             errors.iter().enumerate().map(|(i, &e)| (i, e)).collect();
-        indexed_errors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        indexed_errors.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let worst_count = errors.len().min(5);
         let worst_indices: Vec<usize> = indexed_errors[..worst_count]

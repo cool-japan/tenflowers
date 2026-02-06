@@ -186,7 +186,7 @@ impl MemoryPool {
         len: usize,
     ) -> Box<dyn TensorBuffer<Elem = T>> {
         let key = (device, std::mem::size_of::<T>());
-        let mut pools = self.pools.lock().unwrap();
+        let mut pools = self.pools.lock().expect("lock should not be poisoned");
 
         if let Some(pool) = pools.get_mut(&key) {
             // Try to find a suitable buffer in the pool
@@ -210,12 +210,18 @@ impl MemoryPool {
             #[cfg(feature = "gpu")]
             Device::Gpu(id) => {
                 use crate::gpu::buffer::GpuBuffer;
-                Box::new(GpuBuffer::<T>::zeros(len, id).unwrap())
+                match GpuBuffer::<T>::zeros(len, id) {
+                    Ok(buf) => Box::new(buf),
+                    Err(_) => Box::new(CpuBuffer::zeros(len)), // Fallback to CPU
+                }
             }
             #[cfg(feature = "rocm")]
             Device::Rocm(id) => {
                 use crate::gpu::buffer::GpuBuffer;
-                Box::new(GpuBuffer::<T>::zeros(len, id).unwrap())
+                match GpuBuffer::<T>::zeros(len, id) {
+                    Ok(buf) => Box::new(buf),
+                    Err(_) => Box::new(CpuBuffer::zeros(len)), // Fallback to CPU
+                }
             }
         }
     }
@@ -223,7 +229,7 @@ impl MemoryPool {
     /// Return a buffer to the pool for reuse
     pub fn deallocate<T: 'static>(&self, device: Device, buffer: Box<dyn std::any::Any + Send>) {
         let key = (device, std::mem::size_of::<T>());
-        let mut pools = self.pools.lock().unwrap();
+        let mut pools = self.pools.lock().expect("lock should not be poisoned");
 
         let pool = pools.entry(key).or_default();
         if pool.len() < self.max_pool_size {

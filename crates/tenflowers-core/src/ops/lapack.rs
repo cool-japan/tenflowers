@@ -1,17 +1,27 @@
 /*!
- * LAPACK integration for enhanced linear algebra performance
+ * Advanced linear algebra operations using SciRS2-linalg (Pure Rust via OxiBLAS)
  *
- * This module provides optimized linear algebra operations using LAPACK
- * when the appropriate feature flags are enabled.
+ * This module provides optimized linear algebra operations using scirs2-linalg,
+ * which uses OxiBLAS (Pure Rust BLAS/LAPACK implementation).
+ *
+ * **Migration Notice**: Legacy ndarray-linalg (blas-* features) is deprecated.
+ * All operations now use scirs2-linalg by default (Pure Rust, no C/Fortran dependencies).
  */
 
-#[cfg(feature = "blas")]
-use ndarray_linalg::{Cholesky, Determinant, Eig, Inverse, LeastSquaresSvd, Solve, QR, SVD, UPLO};
-#[cfg(feature = "blas")]
-use scirs2_core::ndarray::Array2;
-
 use crate::{Result, Tensor, TensorError};
+use scirs2_core::ndarray::Array2;
 use scirs2_core::numeric::{Float, One, Zero};
+
+// Note: scirs2-linalg functions will be used once public API is available
+// For now, these functions remain as wrappers that call linalg module functions
+
+// Deprecated: Legacy BLAS feature support
+#[cfg(feature = "blas")]
+#[deprecated(
+    since = "0.1.0-beta.1",
+    note = "blas-* features are deprecated. Default build now uses scirs2-linalg (Pure Rust via OxiBLAS). Remove blas-* features from your build."
+)]
+use ndarray_linalg as _legacy_linalg;
 
 /// Enhanced matrix multiplication using BLAS when available
 pub fn matmul_blas<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
@@ -410,7 +420,7 @@ where
             ));
         }
 
-        let input_data = input.as_slice().unwrap();
+        let input_data = input.as_slice().expect("tensor should be contiguous");
         let (q, r) = crate::ops::linalg::qr_decomposition(input_data, n)?;
 
         Ok((Tensor::from_vec(q, &[n, n])?, Tensor::from_vec(r, &[n, n])?))
@@ -620,13 +630,15 @@ where
         }
 
         // Threshold for numerical stability (relative to largest singular value)
-        let threshold = if let Some(max_s) = singular_values
-            .iter()
-            .max_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
-        {
-            max_s.abs() * T::from(1e-15).unwrap_or(T::from(1e-10).unwrap())
+        let threshold = if let Some(max_s) = singular_values.iter().max_by(|a, b| {
+            a.abs()
+                .partial_cmp(&b.abs())
+                .expect("partial_cmp should not return None for valid values")
+        }) {
+            max_s.abs()
+                * T::from(1e-15).unwrap_or(T::from(1e-10).expect("fallback epsilon should convert"))
         } else {
-            T::from(1e-15).unwrap_or(T::from(1e-10).unwrap())
+            T::from(1e-15).unwrap_or(T::from(1e-10).expect("fallback epsilon should convert"))
         };
 
         // Create pseudoinverse of sigma
@@ -715,12 +727,12 @@ mod tests {
         let result_lapack = matmul_blas(&a, &b).unwrap();
 
         // Results should be identical regardless of LAPACK availability
-        for (r, l) in result_regular
-            .as_slice()
-            .unwrap()
-            .iter()
-            .zip(result_lapack.as_slice().unwrap().iter())
-        {
+        for (r, l) in result_regular.as_slice().unwrap().iter().zip(
+            result_lapack
+                .as_slice()
+                .expect("tensor should be contiguous")
+                .iter(),
+        ) {
             assert_abs_diff_eq!(r, l, epsilon = 1e-6);
         }
     }
@@ -730,7 +742,10 @@ mod tests {
     fn test_determinant_consistency() {
         let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
 
-        let result_regular = crate::ops::det(&matrix).unwrap().as_slice().unwrap()[0];
+        let result_regular = crate::ops::det(&matrix)
+            .unwrap()
+            .as_slice()
+            .expect("tensor should be contiguous")[0];
 
         // LAPACK determinant is not yet implemented for generic types
         // This test is kept for future implementation

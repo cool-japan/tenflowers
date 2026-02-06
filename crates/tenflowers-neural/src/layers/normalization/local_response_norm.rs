@@ -94,8 +94,8 @@ where
     pub fn new_default() -> Self {
         Self::new(
             5,
-            T::from(0.0001).unwrap(),
-            T::from(0.75).unwrap(),
+            T::from(0.0001).expect("Failed to convert 0.0001 to tensor type"),
+            T::from(0.75).expect("Failed to convert 0.75 to tensor type"),
             T::one(),
         )
     }
@@ -104,8 +104,8 @@ where
     pub fn new_within_channel() -> Self {
         Self::new_with_mode(
             5,
-            T::from(0.0001).unwrap(),
-            T::from(0.75).unwrap(),
+            T::from(0.0001).expect("Failed to convert 0.0001 to tensor type"),
+            T::from(0.75).expect("Failed to convert 0.75 to tensor type"),
             T::one(),
             LocalResponseNormMode::WithinChannel,
         )

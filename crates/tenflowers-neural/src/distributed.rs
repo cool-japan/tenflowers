@@ -1148,6 +1148,35 @@ pub mod utils {
     }
 }
 
+/// Auto-detect available devices for distributed training
+fn auto_detect_available_devices() -> Vec<Device> {
+    let mut devices = vec![Device::Cpu]; // CPU is always available
+
+    #[cfg(feature = "gpu")]
+    {
+        // Try to detect GPU devices
+        // In a real implementation, this would query the GPU runtime
+        // For now, we'll use a simple heuristic
+
+        // Check if CUDA_VISIBLE_DEVICES is set
+        if std::env::var("CUDA_VISIBLE_DEVICES").is_ok() {
+            // Parse CUDA_VISIBLE_DEVICES to get available GPU IDs
+            if let Ok(cuda_devices) = std::env::var("CUDA_VISIBLE_DEVICES") {
+                for (i, device_id) in cuda_devices.split(',').enumerate() {
+                    if let Ok(_id) = device_id.trim().parse::<u32>() {
+                        devices.push(Device::Gpu(i));
+                    }
+                }
+            }
+        } else {
+            // Default: assume one GPU is available if GPU feature is enabled
+            devices.push(Device::Gpu(0));
+        }
+    }
+
+    devices
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1221,33 +1250,4 @@ mod tests {
             "Expected tensor result from collective operation"
         );
     }
-}
-
-/// Auto-detect available devices for distributed training
-fn auto_detect_available_devices() -> Vec<Device> {
-    let mut devices = vec![Device::Cpu]; // CPU is always available
-
-    #[cfg(feature = "gpu")]
-    {
-        // Try to detect GPU devices
-        // In a real implementation, this would query the GPU runtime
-        // For now, we'll use a simple heuristic
-
-        // Check if CUDA_VISIBLE_DEVICES is set
-        if std::env::var("CUDA_VISIBLE_DEVICES").is_ok() {
-            // Parse CUDA_VISIBLE_DEVICES to get available GPU IDs
-            if let Ok(cuda_devices) = std::env::var("CUDA_VISIBLE_DEVICES") {
-                for (i, device_id) in cuda_devices.split(',').enumerate() {
-                    if let Ok(_id) = device_id.trim().parse::<u32>() {
-                        devices.push(Device::Gpu(i));
-                    }
-                }
-            }
-        } else {
-            // Default: assume one GPU is available if GPU feature is enabled
-            devices.push(Device::Gpu(0));
-        }
-    }
-
-    devices
 }

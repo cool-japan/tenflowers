@@ -101,14 +101,17 @@ where
         let t = self.t;
 
         // Bias correction terms
-        let bias_correction1 = T::from(1.0 - self.beta1.powi(t as i32)).unwrap();
-        let bias_correction2 = T::from(1.0 - self.beta2.powi(t as i32)).unwrap();
+        let bias_correction1 = T::from(1.0 - self.beta1.powi(t as i32))
+            .expect("Failed to convert bias_correction1 to tensor type");
+        let bias_correction2 = T::from(1.0 - self.beta2.powi(t as i32))
+            .expect("Failed to convert bias_correction2 to tensor type");
 
         // Convert constants to T
-        let beta1_t = T::from(self.beta1).unwrap();
-        let beta2_t = T::from(self.beta2).unwrap();
-        let lr_t = T::from(self.learning_rate).unwrap();
-        let eps_t = T::from(self.epsilon).unwrap();
+        let beta1_t = T::from(self.beta1).expect("Failed to convert beta1 to tensor type");
+        let beta2_t = T::from(self.beta2).expect("Failed to convert beta2 to tensor type");
+        let lr_t =
+            T::from(self.learning_rate).expect("Failed to convert learning_rate to tensor type");
+        let eps_t = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
 
         // Update each parameter
         for param in model.parameters_mut() {
@@ -118,7 +121,8 @@ where
 
                 // Apply decoupled weight decay if specified
                 if self.weight_decay > 0.0 {
-                    let wd_t = T::from(self.weight_decay).unwrap();
+                    let wd_t = T::from(self.weight_decay)
+                        .expect("Failed to convert weight_decay to tensor type");
                     let weight_decay_factor = T::one() - lr_t * wd_t;
                     let param_decayed = param.mul(&Tensor::from_scalar(weight_decay_factor))?;
                     *param = param_decayed;

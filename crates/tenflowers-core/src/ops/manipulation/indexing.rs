@@ -250,7 +250,11 @@ where
             // In a full implementation, this would be optimized
             if indices_shape.dims().is_empty() {
                 // Scalar index
-                if let Some(&idx) = indices_arr.as_slice().unwrap().first() {
+                if let Some(&idx) = indices_arr
+                    .as_slice()
+                    .expect("tensor should be contiguous")
+                    .first()
+                {
                     if idx < 0 || idx as usize >= params_shape.dims()[axis] {
                         return Err(TensorError::invalid_argument(format!(
                             "Index {idx} out of bounds for axis {axis} of size {}",

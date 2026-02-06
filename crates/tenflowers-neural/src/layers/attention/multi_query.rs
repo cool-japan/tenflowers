@@ -22,7 +22,7 @@ use super::KVCache;
 /// This reduces the number of parameters and memory usage compared to standard multi-head attention.
 ///
 /// Based on: "Multi-Query Attention"
-/// https://arxiv.org/abs/1911.02150
+/// <https://arxiv.org/abs/1911.02150>
 #[derive(Debug)]
 pub struct MultiQueryAttention<T> {
     num_heads: usize,

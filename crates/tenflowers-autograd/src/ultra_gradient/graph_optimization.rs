@@ -111,8 +111,13 @@ impl GraphOptimizer {
             // Add dependencies based on parent relationships
             for &parent_id in &node.parents {
                 if let Some(parent_idx) = nodes.iter().position(|n| n.id == parent_id) {
-                    adj_list.get_mut(&parent_idx).unwrap().push(i);
-                    *in_degree.get_mut(&i).unwrap() += 1;
+                    adj_list
+                        .get_mut(&parent_idx)
+                        .expect("Parent index should exist in adjacency list")
+                        .push(i);
+                    *in_degree
+                        .get_mut(&i)
+                        .expect("Node index should exist in in-degree map") += 1;
                 }
             }
         }

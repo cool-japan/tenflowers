@@ -26,7 +26,22 @@ where
 {
     // Binary cross entropy: -[y*log(p) + (1-y)*log(1-p)]
     // We add a small epsilon for numerical stability
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
 
     // Clip predictions to avoid log(0)
     let p_clipped = predictions.add(&Tensor::from_scalar(epsilon))?;
@@ -180,7 +195,22 @@ where
 
     // Apply softmax and then log for log_softmax
     let probs = tenflowers_core::ops::softmax(predictions, Some(-1))?;
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
     let probs_safe = probs.add(&Tensor::from_scalar(epsilon))?;
     let log_probs = probs_safe.log()?;
 
@@ -230,7 +260,22 @@ where
         ));
     }
 
-    let epsilon = T::from(1e-7).unwrap();
+    let epsilon = T::from(1e-7).unwrap_or_else(|| {
+        // Fallback: 1 / 10_000_000
+        let ten = T::from(10).unwrap_or(
+            T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one()
+                + T::one(),
+        );
+        T::one() / (ten * ten * ten * ten * ten * ten * ten)
+    });
     let one = Tensor::from_scalar(T::one());
 
     // Clip predictions for numerical stability
@@ -303,7 +348,7 @@ where
 
 /// Negative Log Likelihood Loss
 /// For use with log-softmax outputs
-/// NLL(log_probs, targets) = -log_probs[targets]
+/// `NLL(log_probs, targets) = -log_probs[targets]`
 pub fn nll_loss<T>(log_probs: &Tensor<T>, targets: &Tensor<i64>) -> Result<Tensor<T>>
 where
     T: Float
@@ -535,7 +580,8 @@ where
         }
 
         let mut feature_loss = Tensor::from_scalar(T::zero());
-        let num_features = T::from(student_feats.len()).unwrap();
+        let num_features =
+            T::from(student_feats.len()).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
 
         // Compute MSE loss between corresponding feature maps
         for (student_feat, teacher_feat) in student_feats.iter().zip(teacher_feats.iter()) {

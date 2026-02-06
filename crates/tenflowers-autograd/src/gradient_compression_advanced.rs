@@ -108,7 +108,10 @@ pub fn topk_sparsification(
         .collect();
 
     // Sort by value (descending)
-    value_indices.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    value_indices.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .expect("partial_cmp should not return None for valid values")
+    });
 
     // Keep top K
     let mut sparse_data = vec![0.0f32; n];
@@ -556,7 +559,7 @@ mod tests {
         assert_eq!(stats.total_elements, 100);
         assert!(stats.compression_ratio > 1.0); // Compression should be effective
 
-        let sparse_data = sparse_grad.as_slice().unwrap();
+        let sparse_data = sparse_grad.as_slice().expect("tensor should be contiguous");
         // Verify the kept values are correct
         assert_eq!(sparse_data[10], 5.0);
         assert_eq!(sparse_data[25], -4.0);
@@ -576,7 +579,7 @@ mod tests {
         assert_eq!(max_val, 1.0);
         assert!(stats.compression_ratio > 1.0);
 
-        let quant_data = quant_grad.as_slice().unwrap();
+        let quant_data = quant_grad.as_slice().expect("tensor should be contiguous");
         // Values should be close to original after quantization/dequantization
         assert!((quant_data[0] - 0.0).abs() < 0.01);
         assert!((quant_data[2] - 1.0).abs() < 0.01);
@@ -596,7 +599,7 @@ mod tests {
             .unwrap();
 
         // First compression should return zeros
-        let compressed_data = compressed.as_slice().unwrap();
+        let compressed_data = compressed.as_slice().expect("tensor should be contiguous");
         assert_eq!(compressed_data, &[0.0, 0.0, 0.0]);
 
         // Error accumulator should now contain [1.0, 2.0, 3.0]
@@ -607,7 +610,7 @@ mod tests {
             .compress_with_feedback(&grad2, "param1", |g| Ok(g.clone()))
             .unwrap();
 
-        let compressed2_data = compressed2.as_slice().unwrap();
+        let compressed2_data = compressed2.as_slice().expect("tensor should be contiguous");
         // Should recover the lost information
         assert!((compressed2_data[0] - 1.0).abs() < 1e-5);
         assert!((compressed2_data[1] - 2.0).abs() < 1e-5);
@@ -624,7 +627,7 @@ mod tests {
         // Should keep 3 elements: 0.1, -0.05, 0.2
         assert_eq!(stats.num_nonzero, 3);
 
-        let sparse_data = sparse_grad.as_slice().unwrap();
+        let sparse_data = sparse_grad.as_slice().expect("tensor should be contiguous");
         assert_eq!(sparse_data[0], 0.0);
         assert_eq!(sparse_data[1], 0.1);
         assert_eq!(sparse_data[2], -0.05);

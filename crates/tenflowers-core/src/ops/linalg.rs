@@ -23,7 +23,9 @@ lazy_static! {
 async fn ensure_gpu_linalg_context() -> Result<()> {
     use crate::gpu::GpuContext;
 
-    let mut context_guard = GPU_LINALG_CONTEXT.lock().unwrap();
+    let mut context_guard = GPU_LINALG_CONTEXT
+        .lock()
+        .expect("lock should not be poisoned");
     if context_guard.is_none() {
         // Initialize GPU context
         let gpu_ctx = GpuContext::new().map_err(|e| TensorError::ComputeError {
@@ -63,7 +65,7 @@ where
 {
     let shape = input.shape().dims();
     let n = shape[0];
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
 
     let mut a = input_data.to_vec();
     let mut det = T::one();
@@ -130,7 +132,7 @@ where
         return Ok((Tensor::zeros(&[0]), Tensor::zeros(&[0, 0])));
     }
 
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
     let mut a = input_data.to_vec();
 
     // Initialize eigenvector matrix as identity
@@ -261,7 +263,7 @@ where
     }
 
     let (m, n) = (shape[0], shape[1]);
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
 
     // For SVD of A (m×n), we compute:
     // A = U Σ V^T where U is m×m, Σ is m×n (diagonal), V is n×n
@@ -282,8 +284,14 @@ where
     let ata_tensor = Tensor::from_vec(ata, &[n, n])?;
     let (eigenvalues, eigenvectors) = eig(&ata_tensor)?;
 
-    let sigma_squared = eigenvalues.as_slice().unwrap().to_vec();
-    let v_data = eigenvectors.as_slice().unwrap().to_vec();
+    let sigma_squared = eigenvalues
+        .as_slice()
+        .expect("tensor should be contiguous")
+        .to_vec();
+    let v_data = eigenvectors
+        .as_slice()
+        .expect("tensor should be contiguous")
+        .to_vec();
 
     // Sort eigenvalues and eigenvectors in descending order
     let mut indices: Vec<usize> = (0..n).collect();
@@ -412,8 +420,12 @@ where
             let gpu_result = rt.block_on(async {
                 ensure_gpu_linalg_context().await?;
 
-                let mut context_guard = GPU_LINALG_CONTEXT.lock().unwrap();
-                let context = context_guard.as_mut().unwrap();
+                let mut context_guard = GPU_LINALG_CONTEXT
+                    .lock()
+                    .expect("lock should not be poisoned");
+                let context = context_guard
+                    .as_mut()
+                    .expect("GPU linalg context must be initialized");
 
                 // Create output tensor with same shape and device
                 let mut output = Tensor::<T>::zeros(input.shape().dims());
@@ -448,7 +460,7 @@ where
     // Use CPU implementation (fallback or when GPU not available)
     // Create augmented matrix [A | I]
     let mut augmented = vec![T::zero(); n * 2 * n];
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
 
     // Initialize augmented matrix
     for i in 0..n {
@@ -525,7 +537,7 @@ where
     }
 
     let n = shape[0];
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
     let mut l = vec![T::zero(); n * n];
 
     // Cholesky decomposition algorithm
@@ -567,7 +579,7 @@ mod tests {
     fn test_det_2x2() {
         let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
         let det_result = det(&a).unwrap();
-        let det_val = det_result.as_slice().unwrap()[0];
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(det_val, -2.0, epsilon = 1e-10); // det = 1*4 - 2*3 = -2
     }
 
@@ -576,7 +588,7 @@ mod tests {
         let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0], &[3, 3])
             .unwrap();
         let det_result = det(&a).unwrap();
-        let det_val = det_result.as_slice().unwrap()[0];
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(det_val, 1.0, epsilon = 1e-10); // Computed manually
     }
 
@@ -584,7 +596,7 @@ mod tests {
     fn test_inv_2x2() {
         let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
         let inv_result = inv(&a).unwrap();
-        let inv_data = inv_result.as_slice().unwrap();
+        let inv_data = inv_result.as_slice().expect("tensor should be contiguous");
 
         // Expected inverse of [[1,2],[3,4]] is [[-2,1],[1.5,-0.5]]
         assert_relative_eq!(inv_data[0], -2.0, epsilon = 1e-10);
@@ -598,7 +610,7 @@ mod tests {
         // Test with a positive definite matrix [[4,2],[2,2]]
         let a = Tensor::<f64>::from_vec(vec![4.0, 2.0, 2.0, 2.0], &[2, 2]).unwrap();
         let chol_result = cholesky(&a).unwrap();
-        let chol_data = chol_result.as_slice().unwrap();
+        let chol_data = chol_result.as_slice().expect("tensor should be contiguous");
 
         // Expected Cholesky decomposition [[2,0],[1,1]]
         assert_relative_eq!(chol_data[0], 2.0, epsilon = 1e-10);
@@ -613,12 +625,12 @@ mod tests {
         let (l, u, _p) = lu(&a).unwrap();
 
         // Basic sanity check - L should be lower triangular with 1s on diagonal
-        let l_data = l.as_slice().unwrap();
+        let l_data = l.as_slice().expect("tensor should be contiguous");
         assert_relative_eq!(l_data[0], 1.0, epsilon = 1e-10); // L[0,0] = 1
         assert_relative_eq!(l_data[1], 0.0, epsilon = 1e-10); // L[0,1] = 0
 
         // U should be upper triangular
-        let u_data = u.as_slice().unwrap();
+        let u_data = u.as_slice().expect("tensor should be contiguous");
         assert!(u_data[0] != 0.0); // U[0,0] should be non-zero
     }
 
@@ -628,11 +640,14 @@ mod tests {
         // Eigenvalues should be 3 and 1
         let a = Tensor::<f64>::from_vec(vec![2.0, 1.0, 1.0, 2.0], &[2, 2]).unwrap();
         let (eigenvals, _eigenvecs) = eig(&a).unwrap();
-        let vals = eigenvals.as_slice().unwrap();
+        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
 
         // Sort the eigenvalues for comparison
         let mut sorted_vals = vals.to_vec();
-        sorted_vals.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted_vals.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         assert_relative_eq!(sorted_vals[0], 3.0, epsilon = 1e-8);
         assert_relative_eq!(sorted_vals[1], 1.0, epsilon = 1e-8);
@@ -643,11 +658,14 @@ mod tests {
         // Test with diagonal matrix - eigenvalues should be the diagonal elements
         let a = Tensor::<f64>::from_vec(vec![3.0, 0.0, 0.0, 5.0], &[2, 2]).unwrap();
         let (eigenvals, _eigenvecs) = eig(&a).unwrap();
-        let vals = eigenvals.as_slice().unwrap();
+        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
 
         // Sort the eigenvalues for comparison
         let mut sorted_vals = vals.to_vec();
-        sorted_vals.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted_vals.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         assert_relative_eq!(sorted_vals[0], 5.0, epsilon = 1e-8);
         assert_relative_eq!(sorted_vals[1], 3.0, epsilon = 1e-8);
@@ -683,7 +701,7 @@ mod tests {
         assert_eq!(v.shape().dims(), &[2, 2]);
 
         // For rank-1 matrix, one singular value should be much larger than the other
-        let sigma_data = sigma.as_slice().unwrap();
+        let sigma_data = sigma.as_slice().expect("tensor should be contiguous");
         let s1 = sigma_data[0]; // σ[0,0]
         let s2 = sigma_data[3]; // σ[1,1]
 
@@ -744,12 +762,12 @@ where
         return Ok(Tensor::from_scalar(T::one()));
     }
     if n == 1 {
-        let val = input.as_slice().unwrap()[0];
+        let val = input.as_slice().expect("tensor should be contiguous")[0];
         return Ok(Tensor::from_scalar(val));
     }
     if n == 2 {
         // For 2x2 matrix: det = ad - bc
-        let data = input.as_slice().unwrap();
+        let data = input.as_slice().expect("tensor should be contiguous");
         let det_val = data[0] * data[3] - data[1] * data[2];
         return Ok(Tensor::from_scalar(det_val));
     }
@@ -772,8 +790,12 @@ where
             let gpu_result: Result<Tensor<T>> = rt.block_on(async {
                 ensure_gpu_linalg_context().await?;
 
-                let mut context_guard = GPU_LINALG_CONTEXT.lock().unwrap();
-                let context = context_guard.as_mut().unwrap();
+                let mut context_guard = GPU_LINALG_CONTEXT
+                    .lock()
+                    .expect("lock should not be poisoned");
+                let context = context_guard
+                    .as_mut()
+                    .expect("GPU linalg context must be initialized");
 
                 // Get GPU buffer from tensor using pattern matching
                 match &input.storage {
@@ -847,8 +869,12 @@ where
     let gpu_result = rt.block_on(async {
         ensure_gpu_linalg_context().await?;
 
-        let mut context_guard = GPU_LINALG_CONTEXT.lock().unwrap();
-        let context = context_guard.as_mut().unwrap();
+        let mut context_guard = GPU_LINALG_CONTEXT
+            .lock()
+            .expect("lock should not be poisoned");
+        let context = context_guard
+            .as_mut()
+            .expect("GPU linalg context must be initialized");
 
         // GPU LU decomposition not yet implemented
         Err(TensorError::unsupported_operation_simple(
@@ -877,7 +903,7 @@ where
     let shape = input.shape().dims();
     let (m, n) = (shape[0], shape[1]);
     let min_dim = m.min(n);
-    let input_data = input.as_slice().unwrap();
+    let input_data = input.as_slice().expect("tensor should be contiguous");
 
     let mut a = input_data.to_vec();
     let mut p = vec![T::zero(); m * m];

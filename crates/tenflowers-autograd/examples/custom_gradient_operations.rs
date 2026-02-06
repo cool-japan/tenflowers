@@ -48,7 +48,11 @@ fn example_1_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Original gradients:");
     for (i, grad) in grads.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Clip by global norm
@@ -56,21 +60,33 @@ fn example_1_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nAfter clipping by global norm (max=10.0):");
     println!("  Original norm: {:.2}", original_norm);
     for (i, grad) in clipped.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Clip by value
     let clipped_values = clip_by_value(&grads, 25.0)?;
     println!("\nAfter clipping by value (max=25.0):");
     for (i, grad) in clipped_values.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Scale gradients
     let scaled = scale_gradients(&grads, 0.5)?;
     println!("\nAfter scaling by 0.5:");
     for (i, grad) in scaled.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     println!();
@@ -89,7 +105,11 @@ fn example_2_gradient_pipeline() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Original gradients:");
     for (i, grad) in grads.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Create a gradient processing pipeline
@@ -109,14 +129,18 @@ fn example_2_gradient_pipeline() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nProcessed gradients:");
     for (i, grad) in processed.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Verify all values are within [-2, 2]
     for grad in &processed {
-        for &val in grad.as_slice().unwrap() {
+        for &val in grad.as_slice().expect("tensor should be contiguous") {
             assert!(
-                val >= -2.0 && val <= 2.0,
+                (-2.0..=2.0).contains(&val),
                 "Value {} is outside [-2, 2]",
                 val
             );
@@ -140,7 +164,11 @@ fn example_3_statistics_and_validation() -> Result<(), Box<dyn std::error::Error
 
     println!("Gradients:");
     for (i, grad) in grads.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Compute statistics
@@ -186,7 +214,11 @@ fn example_4_privacy_preserving() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Original gradients:");
     for (i, grad) in grads.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Add Gaussian noise for differential privacy
@@ -195,12 +227,18 @@ fn example_4_privacy_preserving() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nAfter adding noise (stddev={}):", noise_stddev);
     for (i, grad) in noisy_grads.iter().enumerate() {
-        println!("  Gradient {}: {:?}", i, grad.as_slice().unwrap());
+        println!(
+            "  Gradient {}: {:?}",
+            i,
+            grad.as_slice().expect("tensor should be contiguous")
+        );
     }
 
     // Verify noise was added (values should be different)
-    let original_slice = grads[0].as_slice().unwrap();
-    let noisy_slice = noisy_grads[0].as_slice().unwrap();
+    let original_slice = grads[0].as_slice().expect("tensor should be contiguous");
+    let noisy_slice = noisy_grads[0]
+        .as_slice()
+        .expect("tensor should be contiguous");
     let all_different = original_slice
         .iter()
         .zip(noisy_slice.iter())
@@ -211,7 +249,9 @@ fn example_4_privacy_preserving() -> Result<(), Box<dyn std::error::Error>> {
 
     // Demonstrate reproducibility with seed
     let noisy_grads_2 = add_gradient_noise(&grads, noise_stddev, Some(42))?;
-    let noisy_slice_2 = noisy_grads_2[0].as_slice().unwrap();
+    let noisy_slice_2 = noisy_grads_2[0]
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     let all_same = noisy_slice
         .iter()
@@ -231,14 +271,22 @@ fn example_5_advanced_pipelines() -> Result<(), Box<dyn std::error::Error>> {
 
     let grads = vec![Tensor::from_data(vec![50.0f32, 100.0, 150.0, 200.0], &[4])?];
 
-    println!("Original gradients: {:?}", grads[0].as_slice().unwrap());
+    println!(
+        "Original gradients: {:?}",
+        grads[0].as_slice().expect("tensor should be contiguous")
+    );
 
     // Configuration 1: Conservative (for stable training)
     println!("\n--- Configuration 1: Conservative (Stable Training) ---");
     let conservative_pipeline = GradientPipeline::new().clip_by_norm(5.0).clip_by_value(1.0);
 
     let conservative_result = conservative_pipeline.apply(&grads)?;
-    println!("Result: {:?}", conservative_result[0].as_slice().unwrap());
+    println!(
+        "Result: {:?}",
+        conservative_result[0]
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
 
     // Configuration 2: Privacy-preserving
     println!("\n--- Configuration 2: Privacy-Preserving ---");
@@ -248,7 +296,12 @@ fn example_5_advanced_pipelines() -> Result<(), Box<dyn std::error::Error>> {
         .clip_by_value(5.0);
 
     let privacy_result = privacy_pipeline.apply(&grads)?;
-    println!("Result: {:?}", privacy_result[0].as_slice().unwrap());
+    println!(
+        "Result: {:?}",
+        privacy_result[0]
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
 
     // Configuration 3: Aggressive optimization
     println!("\n--- Configuration 3: Aggressive Optimization ---");
@@ -257,7 +310,12 @@ fn example_5_advanced_pipelines() -> Result<(), Box<dyn std::error::Error>> {
         .clip_by_norm(50.0); // Prevent explosion
 
     let aggressive_result = aggressive_pipeline.apply(&grads)?;
-    println!("Result: {:?}", aggressive_result[0].as_slice().unwrap());
+    println!(
+        "Result: {:?}",
+        aggressive_result[0]
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
 
     // Configuration 4: Multi-stage processing
     println!("\n--- Configuration 4: Multi-Stage Processing ---");
@@ -268,7 +326,12 @@ fn example_5_advanced_pipelines() -> Result<(), Box<dyn std::error::Error>> {
         .scale(0.1); // Stage 4: Learning rate scaling
 
     let multistage_result = multistage_pipeline.apply(&grads)?;
-    println!("Result: {:?}", multistage_result[0].as_slice().unwrap());
+    println!(
+        "Result: {:?}",
+        multistage_result[0]
+            .as_slice()
+            .expect("tensor should be contiguous")
+    );
 
     // Demonstrate pipeline reusability
     println!("\n--- Pipeline Reusability ---");
@@ -277,7 +340,7 @@ fn example_5_advanced_pipelines() -> Result<(), Box<dyn std::error::Error>> {
     let result2 = conservative_pipeline.apply(&grads2)?;
     println!(
         "Conservative pipeline on new gradients: {:?}",
-        result2[0].as_slice().unwrap()
+        result2[0].as_slice().expect("tensor should be contiguous")
     );
 
     println!();

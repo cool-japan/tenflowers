@@ -1,3 +1,15 @@
+//! Gradient operations for special mathematical functions
+//!
+//! This module provides automatic differentiation support for special functions.
+
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 use scirs2_core::numeric::Float;
 use std::f64::consts::PI;
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -68,8 +80,8 @@ where
     let exp_neg_x_squared = exp_function(&neg_x_squared)?;
 
     // Compute (2/√π) * exp(-x²)
-    let sqrt_pi = T::from(PI).unwrap().sqrt();
-    let two_over_sqrt_pi = T::from(2.0).unwrap() / sqrt_pi;
+    let sqrt_pi = float_const!(PI, T).sqrt();
+    let two_over_sqrt_pi = float_const!(2.0, T) / sqrt_pi;
     let derivative = exp_neg_x_squared.mul(&Tensor::from_scalar(two_over_sqrt_pi))?;
 
     // grad_x = grad_output * (2/√π) * exp(-x²)
@@ -298,7 +310,7 @@ fn safe_divide<T>(numerator: &Tensor<T>, denominator: &Tensor<T>) -> Result<Tens
 where
     T: Float + Clone + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
-    let eps = T::from(1e-15).unwrap();
+    let eps = float_const!(1e-15, T);
     let safe_denom_data = denominator
         .as_slice()
         .ok_or_else(|| TensorError::compute_error_simple("Cannot access tensor data".to_string()))?
@@ -328,17 +340,17 @@ fn gamma_lanczos_approx<T: Float>(x: T) -> T {
     // This is a very basic implementation - use a proper library in production
     if x < T::one() {
         // Use reflection formula: Γ(z)Γ(1-z) = π/sin(πz)
-        let pi = T::from(PI).unwrap();
+        let pi = float_const!(PI, T);
         let pi_z = pi * x;
         let sin_pi_z = pi_z.sin();
-        if sin_pi_z.abs() < T::from(1e-15).unwrap() {
+        if sin_pi_z.abs() < float_const!(1e-15, T) {
             T::infinity()
         } else {
             pi / (sin_pi_z * gamma_lanczos_approx(T::one() - x))
         }
     } else {
         // Stirling's approximation for large x
-        let two_pi = T::from(2.0 * PI).unwrap();
+        let two_pi = float_const!(2.0 * PI, T);
         let sqrt_two_pi = two_pi.sqrt();
         let x_minus_1 = x - T::one();
         sqrt_two_pi * x_minus_1.powf(x_minus_1) * (-x_minus_1).exp() / x_minus_1.sqrt()
@@ -348,14 +360,14 @@ fn gamma_lanczos_approx<T: Float>(x: T) -> T {
 fn digamma_approx<T: Float>(x: T) -> T {
     // Simple approximation of digamma function
     // For large x: ψ(x) ≈ ln(x) - 1/(2x) - 1/(12x²) + 1/(120x⁴)
-    if x > T::from(5.0).unwrap() {
+    if x > float_const!(5.0, T) {
         let ln_x = x.ln();
         let inv_x = T::one() / x;
         let inv_x2 = inv_x * inv_x;
         let inv_x4 = inv_x2 * inv_x2;
 
-        ln_x - T::from(0.5).unwrap() * inv_x - T::from(1.0 / 12.0).unwrap() * inv_x2
-            + T::from(1.0 / 120.0).unwrap() * inv_x4
+        ln_x - float_const!(0.5, T) * inv_x - float_const!(1.0 / 12.0, T) * inv_x2
+            + float_const!(1.0 / 120.0, T) * inv_x4
     } else {
         // Use recurrence relation for small x
         digamma_approx(x + T::one()) - T::one() / x
@@ -365,14 +377,14 @@ fn digamma_approx<T: Float>(x: T) -> T {
 fn trigamma_approx<T: Float>(x: T) -> T {
     // Simple approximation of trigamma function
     // For large x: ψ₁(x) ≈ 1/x + 1/(2x²) + 1/(6x³) - 1/(30x⁵)
-    if x > T::from(5.0).unwrap() {
+    if x > float_const!(5.0, T) {
         let inv_x = T::one() / x;
         let inv_x2 = inv_x * inv_x;
         let inv_x3 = inv_x2 * inv_x;
         let inv_x5 = inv_x3 * inv_x2;
 
-        inv_x + T::from(0.5).unwrap() * inv_x2 + T::from(1.0 / 6.0).unwrap() * inv_x3
-            - T::from(1.0 / 30.0).unwrap() * inv_x5
+        inv_x + float_const!(0.5, T) * inv_x2 + float_const!(1.0 / 6.0, T) * inv_x3
+            - float_const!(1.0 / 30.0, T) * inv_x5
     } else {
         // Use recurrence relation for small x
         trigamma_approx(x + T::one()) + T::one() / (x * x)
@@ -384,14 +396,14 @@ fn bessel_j0_approx<T: Float>(x: T) -> T {
     // For small x: J₀(x) ≈ 1 - x²/4 + x⁴/64
     // For large x: J₀(x) ≈ √(2/(πx)) * cos(x - π/4)
     let abs_x = x.abs();
-    if abs_x < T::from(3.0).unwrap() {
+    if abs_x < float_const!(3.0, T) {
         let x2 = x * x;
         let x4 = x2 * x2;
-        T::one() - x2 / T::from(4.0).unwrap() + x4 / T::from(64.0).unwrap()
+        T::one() - x2 / float_const!(4.0, T) + x4 / float_const!(64.0, T)
     } else {
-        let pi = T::from(PI).unwrap();
-        let sqrt_factor = (T::from(2.0).unwrap() / (pi * abs_x)).sqrt();
-        let phase = abs_x - pi / T::from(4.0).unwrap();
+        let pi = float_const!(PI, T);
+        let sqrt_factor = (float_const!(2.0, T) / (pi * abs_x)).sqrt();
+        let phase = abs_x - pi / float_const!(4.0, T);
         sqrt_factor * phase.cos()
     }
 }
@@ -401,15 +413,15 @@ fn bessel_j1_approx<T: Float>(x: T) -> T {
     // For small x: J₁(x) ≈ x/2 - x³/16 + x⁵/384
     // For large x: J₁(x) ≈ √(2/(πx)) * sin(x - 3π/4)
     let abs_x = x.abs();
-    if abs_x < T::from(3.0).unwrap() {
+    if abs_x < float_const!(3.0, T) {
         let x2 = x * x;
         let x3 = x2 * x;
         let x5 = x3 * x2;
-        x / T::from(2.0).unwrap() - x3 / T::from(16.0).unwrap() + x5 / T::from(384.0).unwrap()
+        x / float_const!(2.0, T) - x3 / float_const!(16.0, T) + x5 / float_const!(384.0, T)
     } else {
-        let pi = T::from(PI).unwrap();
-        let sqrt_factor = (T::from(2.0).unwrap() / (pi * abs_x)).sqrt();
-        let phase = abs_x - T::from(3.0).unwrap() * pi / T::from(4.0).unwrap();
+        let pi = float_const!(PI, T);
+        let sqrt_factor = (float_const!(2.0, T) / (pi * abs_x)).sqrt();
+        let phase = abs_x - float_const!(3.0, T) * pi / float_const!(4.0, T);
         let result = sqrt_factor * phase.sin();
         if x < T::zero() {
             -result

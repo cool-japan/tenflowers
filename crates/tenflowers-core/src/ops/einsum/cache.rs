@@ -61,7 +61,10 @@ where
         ));
     }
 
-    Ok(intermediate_tensors.into_iter().next().unwrap())
+    Ok(intermediate_tensors
+        .into_iter()
+        .next()
+        .expect("intermediate_tensors guaranteed to have exactly 1 element"))
 }
 
 /// Cache-optimized tensor contraction with intelligent loop ordering
@@ -314,7 +317,7 @@ where
 
         // Collect results from all threads
         for handle in handles {
-            let chunk_results = handle.join().unwrap();
+            let chunk_results = handle.join().expect("thread join should succeed");
             for (idx, value) in chunk_results {
                 result_data[idx] = value;
             }

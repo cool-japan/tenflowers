@@ -88,7 +88,7 @@ impl GpuProfiler {
     /// Enable GPU profiling
     pub fn enable(&self) {
         self.enabled.store(true, Ordering::Relaxed);
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.start_time = Some(Instant::now());
         inner.operations.clear();
         inner.memory_usage.clear();
@@ -118,7 +118,7 @@ impl GpuProfiler {
             return Ok(());
         }
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
 
         // Estimate occupancy (simplified calculation)
         let occupancy = self.estimate_occupancy(execution_time, memory_usage);
@@ -147,7 +147,7 @@ impl GpuProfiler {
 
     /// Get current profiling statistics
     pub fn get_stats(&self) -> Result<ProfileStats> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
 
         if inner.operations.is_empty() {
             return Ok(ProfileStats {
@@ -182,7 +182,7 @@ impl GpuProfiler {
 
     /// Get all recorded operations
     pub fn get_operations(&self) -> Vec<OperationProfile> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         inner.operations.clone()
     }
 
@@ -232,7 +232,7 @@ impl GpuProfiler {
 
     /// Clear all profiling data
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.operations.clear();
         inner.memory_usage.clear();
         inner.peak_memory = 0;
@@ -318,7 +318,7 @@ impl GpuProfiler {
             #[cfg(feature = "gpu")]
             Device::Gpu(_) => {
                 // Get GPU memory usage from PerformanceMonitor and internal tracking
-                let inner = self.inner.lock().unwrap();
+                let inner = self.inner.lock().expect("lock should not be poisoned");
                 let gpu_memory = inner.memory_usage.get(&device).copied().unwrap_or(0);
                 let global_memory = monitor.get_current_memory() as u64;
                 // Return GPU-specific memory or a portion of global memory for GPU device
@@ -327,7 +327,7 @@ impl GpuProfiler {
             #[cfg(feature = "rocm")]
             Device::Rocm(_) => {
                 // Get ROCM memory usage from PerformanceMonitor and internal tracking
-                let inner = self.inner.lock().unwrap();
+                let inner = self.inner.lock().expect("lock should not be poisoned");
                 let rocm_memory = inner.memory_usage.get(&device).copied().unwrap_or(0);
                 let global_memory = monitor.get_current_memory() as u64;
                 // Return ROCM-specific memory or a portion of global memory for ROCM device

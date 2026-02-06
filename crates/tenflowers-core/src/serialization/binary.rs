@@ -660,7 +660,12 @@ mod tests {
             BinarySerializer::deserialize(&mut cursor).unwrap();
 
         assert_eq!(tensor.shape().dims(), deserialized.shape().dims());
-        assert_eq!(tensor.as_slice().unwrap(), deserialized.as_slice().unwrap());
+        assert_eq!(
+            tensor.as_slice().expect("tensor should be contiguous"),
+            deserialized
+                .as_slice()
+                .expect("tensor should be contiguous")
+        );
     }
 
     #[test]
@@ -683,10 +688,15 @@ mod tests {
         assert!(meta.is_some());
         let meta = meta.unwrap();
         assert_eq!(meta.name, Some("test_tensor".to_string()));
-        assert_eq!(meta.requires_grad, true);
+        assert!(meta.requires_grad);
         assert_eq!(meta.fields.get("version"), Some(&"1.0".to_string()));
 
-        assert_eq!(tensor.as_slice().unwrap(), deserialized.as_slice().unwrap());
+        assert_eq!(
+            tensor.as_slice().expect("tensor should be contiguous"),
+            deserialized
+                .as_slice()
+                .expect("tensor should be contiguous")
+        );
     }
 
     #[test]

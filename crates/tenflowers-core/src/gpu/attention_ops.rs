@@ -174,8 +174,12 @@ impl GpuAttentionOps {
         let head_dim = query_shape.dims()[1];
 
         // Calculate scale factor
-        let scale_factor =
-            scale.unwrap_or_else(|| T::from(head_dim as f64).unwrap().sqrt().recip());
+        let scale_factor = scale.unwrap_or_else(|| {
+            T::from(head_dim as f64)
+                .expect("fallback value computation failed")
+                .sqrt()
+                .recip()
+        });
 
         // Create GPU buffers from tensor data
         let query_buffer = self.create_buffer_from_tensor(query, "Query Buffer")?;
@@ -208,7 +212,10 @@ impl GpuAttentionOps {
         let params = [
             seq_len as u32,
             head_dim as u32,
-            scale_factor.to_f32().unwrap().to_bits(),
+            scale_factor
+                .to_f32()
+                .expect("numeric conversion should succeed")
+                .to_bits(),
             if mask.is_some() { 1u32 } else { 0u32 },
         ];
         let params_buffer = self

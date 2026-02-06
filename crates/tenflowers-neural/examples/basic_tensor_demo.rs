@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Integer tensor: {:?}", int_tensor.to_vec());
 
     let float64_tensor =
-        Tensor::from_array(ArrayD::from_shape_vec(IxDyn(&[2]), vec![3.14f64, 2.71])?);
+        Tensor::from_array(ArrayD::from_shape_vec(IxDyn(&[2]), vec![3.15f64, 2.71])?);
     println!("Float64 tensor: {:?}", float64_tensor.to_vec());
 
     // Show tensor properties

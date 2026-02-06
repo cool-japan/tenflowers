@@ -572,7 +572,7 @@ mod tests {
         )
         .unwrap();
 
-        let hv_data = hv.as_slice().unwrap();
+        let hv_data = hv.as_slice().expect("tensor should be contiguous");
         // Hv should be approximately 2 * 1 = 2
         // Use a more relaxed tolerance for finite difference approximations
         assert!(
@@ -610,7 +610,7 @@ mod tests {
         ];
 
         let fisher_diag = fisher::diagonal_fisher(&grads).unwrap();
-        let fisher_data = fisher_diag.as_slice().unwrap();
+        let fisher_data = fisher_diag.as_slice().expect("tensor should be contiguous");
 
         // F[0,0] = (1^2 + 2^2) / 2 = 2.5
         // F[1,1] = (2^2 + 3^2) / 2 = 6.5

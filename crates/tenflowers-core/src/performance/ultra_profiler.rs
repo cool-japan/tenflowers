@@ -425,7 +425,7 @@ impl UltraHighPerformanceProfiler {
 
         // Store performance data
         {
-            let mut data = self.performance_data.write().unwrap();
+            let mut data = self.performance_data.write().expect("write lock should not be poisoned");
             data.operation_records
                 .entry(operation_name.to_string())
                 .or_insert_with(Vec::new)
@@ -473,7 +473,7 @@ impl UltraHighPerformanceProfiler {
 
     /// Generate comprehensive performance report
     pub fn generate_performance_report(&self) -> PerformanceReport {
-        let data = self.performance_data.read().unwrap();
+        let data = self.performance_data.read().expect("read lock should not be poisoned");
 
         // Analyze operation performance
         let operation_analysis = self.analyze_operation_performance(&data);
@@ -504,7 +504,7 @@ impl UltraHighPerformanceProfiler {
 
     /// Get real-time performance dashboard data
     pub fn get_dashboard_data(&self) -> DashboardData {
-        let data = self.performance_data.read().unwrap();
+        let data = self.performance_data.read().expect("read lock should not be poisoned");
 
         // Get recent operation metrics
         let recent_operations = self.get_recent_operations(&data, Duration::from_secs(60));
@@ -559,7 +559,7 @@ impl UltraHighPerformanceProfiler {
 
             // Update performance database
             {
-                let mut data = performance_data.write().unwrap();
+                let mut data = performance_data.write().expect("write lock should not be poisoned");
                 data.memory_timeline.push(memory_snapshot);
                 data.system_timeline.push(system_snapshot);
 
@@ -626,7 +626,7 @@ impl UltraHighPerformanceProfiler {
 
         // Store alerts
         if !alerts.is_empty() {
-            let mut data = self.performance_data.write().unwrap();
+            let mut data = self.performance_data.write().expect("write lock should not be poisoned");
             data.alerts.extend(alerts);
         }
 
@@ -898,7 +898,7 @@ mod tests {
             Ok(())
         }).unwrap();
 
-        let data = profiler.performance_data.read().unwrap();
+        let data = profiler.performance_data.read().expect("read lock should not be poisoned");
         assert!(!data.alerts.is_empty());
     }
 

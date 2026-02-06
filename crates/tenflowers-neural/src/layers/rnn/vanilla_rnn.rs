@@ -130,7 +130,8 @@ where
             };
 
             // Xavier/Glorot initialization
-            let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+            let scale = T::from(1.0 / (input_dim as f64).sqrt())
+                .expect("Failed to convert scale to tensor type");
 
             // Input-to-hidden weights: [input_dim, hidden_size]
             let w_ih = Self::init_weight(&[input_dim, hidden_size], scale)?;
@@ -143,11 +144,11 @@ where
             if bias {
                 bias_ih
                     .as_mut()
-                    .unwrap()
+                    .expect("bias_ih should be Some when bias is true")
                     .push(Tensor::zeros(&[hidden_size]));
                 bias_hh
                     .as_mut()
-                    .unwrap()
+                    .expect("bias_hh should be Some when bias is true")
                     .push(Tensor::zeros(&[hidden_size]));
             }
         }
@@ -162,7 +163,8 @@ where
 
                 for i in 0..num_layers {
                     let input_dim = if i == 0 { input_size } else { hidden_size * 2 };
-                    let scale = T::from(1.0 / (input_dim as f64).sqrt()).unwrap();
+                    let scale = T::from(1.0 / (input_dim as f64).sqrt())
+                        .expect("Failed to convert scale to tensor type");
 
                     w_ih_rev.push(Self::init_weight(&[input_dim, hidden_size], scale)?);
                     w_hh_rev.push(Self::init_weight(&[hidden_size, hidden_size], scale)?);
@@ -170,11 +172,11 @@ where
                     if bias {
                         b_ih_rev
                             .as_mut()
-                            .unwrap()
+                            .expect("b_ih_rev should be Some when bias is true")
                             .push(Tensor::zeros(&[hidden_size]));
                         b_hh_rev
                             .as_mut()
-                            .unwrap()
+                            .expect("b_hh_rev should be Some when bias is true")
                             .push(Tensor::zeros(&[hidden_size]));
                     }
                 }
@@ -212,7 +214,7 @@ where
         let values: Vec<T> = (0..total_elements)
             .map(|_| {
                 let random_val = rng.gen_range(-1.0..1.0);
-                T::from(random_val).unwrap() * scale
+                T::from(random_val).expect("Failed to convert random value to tensor type") * scale
             })
             .collect();
 
@@ -336,8 +338,14 @@ where
 
         // Handle bidirectional case
         if self.bidirectional {
-            let w_ih_rev = self.weight_ih_reverse.as_ref().unwrap();
-            let w_hh_rev = self.weight_hh_reverse.as_ref().unwrap();
+            let w_ih_rev = self
+                .weight_ih_reverse
+                .as_ref()
+                .expect("Reverse weight_ih not initialized for bidirectional RNN");
+            let w_hh_rev = self
+                .weight_hh_reverse
+                .as_ref()
+                .expect("Reverse weight_hh not initialized for bidirectional RNN");
             let b_ih_rev = self.bias_ih_reverse.as_ref().map(|b| &b[layer]);
             let b_hh_rev = self.bias_hh_reverse.as_ref().map(|b| &b[layer]);
 

@@ -50,8 +50,13 @@ where
         }
         #[cfg(feature = "rocm")]
         (Device::Rocm(_), Device::Rocm(_)) => {
-            // ROCm implementation would go here
-            todo!("ROCm binary operations not yet implemented")
+            // ROCm binary operations: Fallback to CPU implementation for now
+            // Future: Implement native ROCm kernels for binary operations
+            eprintln!("Warning: ROCm binary operations using CPU fallback - native implementation pending");
+
+            // Transfer tensors to CPU, perform operation, then return on CPU
+            // (ROCm Device type doesn't have actual storage yet)
+            cpu_binary_op(a, b, op, &broadcast_shape)
         }
         #[cfg(any(feature = "gpu", feature = "rocm"))]
         _ => {

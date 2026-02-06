@@ -575,7 +575,7 @@ mod tests {
         let updated_config = env_override.apply_overrides(config).unwrap();
 
         assert_eq!(updated_config.dataset.batch_size, 128);
-        assert_eq!(updated_config.dataset.shuffle, false);
+        assert!(!updated_config.dataset.shuffle);
         assert_eq!(updated_config.dataset.seed, Some(42));
 
         // Clean up
@@ -649,7 +649,7 @@ mod tests {
         let updated_config = env_override.apply_overrides(config).unwrap();
 
         assert_eq!(updated_config.performance.num_threads, 16);
-        assert_eq!(updated_config.performance.enable_mmap, false);
+        assert!(!updated_config.performance.enable_mmap);
         assert_eq!(updated_config.performance.memory_pool_size, 2048);
 
         // Clean up

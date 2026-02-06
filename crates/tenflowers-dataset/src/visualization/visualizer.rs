@@ -126,7 +126,7 @@ impl DatasetVisualizer {
             ));
         }
 
-        let n = T::from(valid_samples).unwrap();
+        let n = T::from(valid_samples).expect("sample count should convert to float");
 
         // Calculate feature statistics
         for i in 0..feature_dims {
@@ -241,9 +241,9 @@ impl DatasetVisualizer {
         // Create bins
         let range = max_val - min_val;
         let bin_width = if range > T::zero() {
-            range / T::from(bins).unwrap()
+            range / T::from(bins).expect("bin count should convert to float")
         } else {
-            T::from(1.0).unwrap()
+            T::from(1.0).expect("constant 1.0 should convert to float")
         };
 
         let mut bin_counts = vec![0; bins];
@@ -434,7 +434,9 @@ impl DatasetVisualizer {
         }
 
         let avg_change = if change_count > 0 {
-            total_change / T::from(change_count).unwrap_or(T::from(1.0).unwrap())
+            total_change
+                / T::from(change_count)
+                    .unwrap_or(T::from(1.0).expect("constant 1.0 should convert to float"))
         } else {
             T::zero()
         };
@@ -488,7 +490,8 @@ impl DatasetVisualizer {
             ));
         }
 
-        let n = T::from(total_elements).unwrap_or(T::from(1.0).unwrap());
+        let n = T::from(total_elements)
+            .unwrap_or(T::from(1.0).expect("constant 1.0 should convert to float"));
 
         let original_mean = original_sum / n;
         let transformed_mean = transformed_sum / n;
@@ -548,7 +551,8 @@ impl DatasetVisualizer {
                 }
             }
 
-            let n = T::from(data.len()).unwrap_or(T::from(1.0).unwrap());
+            let n = T::from(data.len())
+                .unwrap_or(T::from(1.0).expect("constant 1.0 should convert to float"));
             let mean = sum / n;
             let variance = (squared_sum / n) - (mean * mean);
             let std = variance.sqrt();
@@ -594,7 +598,8 @@ impl DatasetVisualizer {
                 total_change = total_change + diff * diff;
             }
 
-            let n = T::from(orig_data.len()).unwrap_or(T::from(1.0).unwrap());
+            let n = T::from(orig_data.len())
+                .unwrap_or(T::from(1.0).expect("constant 1.0 should convert to float"));
             Ok((total_change / n).sqrt()) // RMS change
         } else {
             Err(TensorError::device_error_simple(

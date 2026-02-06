@@ -298,7 +298,9 @@ where
     fn initialize_weights_optimized(shape: &[usize]) -> Result<Tensor<T>> {
         // He initialization for better convergence
         let fan_in = shape[1] * shape[2] * shape[3]; // input_channels * kernel_height * kernel_width
-        let std_dev = (T::from(2.0).unwrap() / T::from(fan_in).unwrap()).sqrt();
+        let std_dev = (T::from(2.0).expect("Failed to convert 2.0 to tensor type")
+            / T::from(fan_in).expect("Failed to convert fan_in to tensor type"))
+        .sqrt();
 
         // For simplicity, create zeros tensor (in real implementation would use proper random initialization)
         Ok(Tensor::zeros(shape))

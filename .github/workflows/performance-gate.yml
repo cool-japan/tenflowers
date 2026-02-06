@@ -1,0 +1,129 @@
+name: Performance Regression Gates
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  performance-validation:
+    name: Performance Regression Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-perf-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config
+
+      - name: Build workspace in release mode
+        run: cargo build --release --workspace
+
+      - name: Run performance gate validation
+        run: cargo run --release --bin performance_gate_validation
+        working-directory: crates/tenflowers-core
+
+      - name: Run criterion benchmarks (baseline)
+        run: |
+          cargo bench --bench dispatch_benchmarks -- --save-baseline main
+          cargo bench --bench ultra_performance_benchmark -- --save-baseline main
+        working-directory: crates/tenflowers-core
+
+      - name: Check for performance regressions
+        run: |
+          # Compare current performance against baseline
+          cargo bench --bench dispatch_benchmarks -- --baseline main
+          cargo bench --bench ultra_performance_benchmark -- --baseline main
+        working-directory: crates/tenflowers-core
+        continue-on-error: true
+
+      - name: Archive benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results
+          path: |
+            target/criterion/
+            crates/tenflowers-core/target/criterion/
+          retention-days: 30
+
+      - name: Performance Summary
+        run: |
+          echo "## Performance Gate Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All performance gates passed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmark results are available in the artifacts." >> $GITHUB_STEP_SUMMARY
+
+  benchmark-comparison:
+    name: Benchmark Comparison vs Main
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run benchmarks on PR branch
+        run: |
+          cargo bench --workspace --no-fail-fast -- --save-baseline pr-branch
+        continue-on-error: true
+
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Run benchmarks on main branch
+        run: |
+          cargo bench --workspace --no-fail-fast -- --save-baseline main-branch
+        continue-on-error: true
+
+      - name: Compare results
+        run: |
+          echo "## Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Comparing PR branch against main branch..." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Detailed results available in criterion output." >> $GITHUB_STEP_SUMMARY

@@ -8,7 +8,7 @@ use super::operation_types::ComparisonOp;
 use crate::Result;
 
 /// Execute a comparison operation on GPU
-/// Returns a GpuBuffer<u32> where 0 represents false and 1 represents true
+/// Returns a `GpuBuffer<u32>` where 0 represents false and 1 represents true
 pub fn execute_comparison_op<T>(
     lhs: &GpuBuffer<T>,
     rhs: &GpuBuffer<T>,
@@ -179,7 +179,7 @@ where
 }
 
 /// Execute a comparison operation on GPU with broadcasting support
-/// Returns a GpuBuffer<u32> where 0 represents false and 1 represents true
+/// Returns a `GpuBuffer<u32>` where 0 represents false and 1 represents true
 pub fn execute_comparison_op_with_broadcasting<T>(
     lhs: &GpuBuffer<T>,
     rhs: &GpuBuffer<T>,

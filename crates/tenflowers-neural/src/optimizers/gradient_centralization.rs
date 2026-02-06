@@ -11,7 +11,7 @@
 //! - Negligible computational overhead
 //!
 //! Reference: "Gradient Centralization: A New Optimization Technique for Deep Neural Networks" (Yong et al., 2020)
-//! https://arxiv.org/abs/2004.01461
+//! <https://arxiv.org/abs/2004.01461>
 
 use scirs2_core::num_traits::{Float, FromPrimitive, Zero};
 use tenflowers_core::{Result, Tensor};

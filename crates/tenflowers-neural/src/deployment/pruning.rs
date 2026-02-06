@@ -396,7 +396,10 @@ impl ModelPruner {
         }
 
         // Step 2: Sort and find global threshold
-        all_magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        all_magnitudes.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
         let threshold_index = (all_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
         let global_threshold = if threshold_index < all_magnitudes.len() {
             all_magnitudes[threshold_index]
@@ -435,7 +438,10 @@ impl ModelPruner {
             }
 
             // Step 2: Sort layer weights and find layer-specific threshold
-            layer_magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            layer_magnitudes.sort_by(|a, b| {
+                a.partial_cmp(b)
+                    .expect("partial_cmp should not return None for valid values")
+            });
             let threshold_index =
                 (layer_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
             let layer_threshold = if threshold_index < layer_magnitudes.len() {
@@ -525,7 +531,10 @@ impl ModelPruner {
             }
 
             // Step 2: Sort channels by importance (ascending for pruning least important)
-            channel_importance.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            channel_importance.sort_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .expect("partial_cmp should not return None for valid values")
+            });
 
             // Step 3: Determine channels to prune based on target sparsity
             let channels_to_prune = (in_channels as f32 * self.config.target_sparsity) as usize;
@@ -596,7 +605,10 @@ impl ModelPruner {
             }
 
             // Step 2: Sort neurons by importance (ascending for pruning least important)
-            neuron_importance.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            neuron_importance.sort_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .expect("partial_cmp should not return None for valid values")
+            });
 
             // Step 3: Determine neurons to prune based on target sparsity
             let neurons_to_prune = (output_size as f32 * self.config.target_sparsity) as usize;
@@ -846,7 +858,10 @@ impl ModelPruner {
                 }
 
                 // Find global threshold
-                all_magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                all_magnitudes.sort_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("partial_cmp should not return None for valid values")
+                });
                 let threshold_index =
                     (all_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
                 let global_threshold = if threshold_index < all_magnitudes.len() {
@@ -883,7 +898,10 @@ impl ModelPruner {
                     }
 
                     // Find layer-specific threshold
-                    layer_magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    layer_magnitudes.sort_by(|a, b| {
+                        a.partial_cmp(b)
+                            .expect("partial_cmp should not return None for valid values")
+                    });
                     let threshold_index =
                         (layer_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
                     let layer_threshold = if threshold_index < layer_magnitudes.len() {

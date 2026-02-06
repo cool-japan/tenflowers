@@ -377,7 +377,7 @@ impl GradientBufferManager {
                     .global_pool
                     .create_sub_pool(self.config.max_pool_size / 10)?;
                 pools.insert(type_id, Arc::new(new_pool));
-                pools.get(&type_id).unwrap().clone()
+                pools.get(&type_id).expect("Type ID should exist after insertion").clone()
             }
         };
 

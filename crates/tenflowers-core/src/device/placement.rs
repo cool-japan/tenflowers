@@ -328,7 +328,10 @@ impl DevicePlacement {
 
     /// Round-robin device placement
     fn round_robin_placement(&self) -> Result<Device> {
-        let mut counter = self.round_robin_counter.write().unwrap();
+        let mut counter = self
+            .round_robin_counter
+            .write()
+            .expect("write lock should not be poisoned");
         let device = self.available_devices[*counter % self.available_devices.len()];
         *counter += 1;
         Ok(device)
@@ -338,7 +341,10 @@ impl DevicePlacement {
     fn choose_best_gpu(&self) -> Option<Device> {
         #[cfg(feature = "gpu")]
         {
-            let loads = self.device_loads.read().unwrap();
+            let loads = self
+                .device_loads
+                .read()
+                .expect("read lock should not be poisoned");
 
             self.available_devices
                 .iter()
@@ -360,7 +366,10 @@ impl DevicePlacement {
 
     /// Load-balanced placement considering current device utilization
     fn load_balanced_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let loads = self.device_loads.read().unwrap();
+        let loads = self
+            .device_loads
+            .read()
+            .expect("read lock should not be poisoned");
 
         // Find device with minimum load
         let best_device = self
@@ -386,7 +395,10 @@ impl DevicePlacement {
 
     /// Memory-aware placement considering device memory constraints
     fn memory_aware_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let memory_usage = self.device_memory_usage.read().unwrap();
+        let memory_usage = self
+            .device_memory_usage
+            .read()
+            .expect("read lock should not be poisoned");
 
         // Find devices that can accommodate the operation
         let suitable_devices: Vec<_> = self
@@ -431,7 +443,10 @@ impl DevicePlacement {
 
     /// Performance-optimized placement using learned heuristics
     fn performance_optimized_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let history = self.performance_history.read().unwrap();
+        let history = self
+            .performance_history
+            .read()
+            .expect("read lock should not be poisoned");
 
         // Look up historical performance for this operation type
         if let Some(op_history) = history.get(&op_info.name) {
@@ -458,13 +473,19 @@ impl DevicePlacement {
 
     /// Update device load (for load balancing)
     pub fn update_device_load(&self, device: Device, load: f64) {
-        let mut loads = self.device_loads.write().unwrap();
+        let mut loads = self
+            .device_loads
+            .write()
+            .expect("write lock should not be poisoned");
         loads.insert(device, load);
     }
 
     /// Get current device loads
     pub fn get_device_loads(&self) -> HashMap<Device, f64> {
-        self.device_loads.read().unwrap().clone()
+        self.device_loads
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Get available devices
@@ -474,13 +495,19 @@ impl DevicePlacement {
 
     /// Update device memory usage
     pub fn update_device_memory(&self, device: Device, memory_usage: usize) {
-        let mut usage = self.device_memory_usage.write().unwrap();
+        let mut usage = self
+            .device_memory_usage
+            .write()
+            .expect("write lock should not be poisoned");
         usage.insert(device, memory_usage);
     }
 
     /// Record operation performance for learning
     pub fn record_performance(&self, op_name: &str, device: Device, execution_time: f64) {
-        let mut history = self.performance_history.write().unwrap();
+        let mut history = self
+            .performance_history
+            .write()
+            .expect("write lock should not be poisoned");
         history
             .entry(op_name.to_string())
             .or_default()
@@ -489,7 +516,10 @@ impl DevicePlacement {
 
     /// Get device memory usage
     pub fn get_device_memory_usage(&self) -> HashMap<Device, usize> {
-        self.device_memory_usage.read().unwrap().clone()
+        self.device_memory_usage
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Get device memory capacity
@@ -499,7 +529,10 @@ impl DevicePlacement {
 
     /// Check if device has sufficient memory for operation
     pub fn has_sufficient_memory(&self, device: Device, required_memory: usize) -> bool {
-        let usage = self.device_memory_usage.read().unwrap();
+        let usage = self
+            .device_memory_usage
+            .read()
+            .expect("read lock should not be poisoned");
         let current_usage = usage.get(&device).unwrap_or(&0);
         let capacity = self.device_memory_capacity.get(&device).unwrap_or(&0);
 
@@ -515,12 +548,16 @@ lazy_static::lazy_static! {
 
 /// Get the global device placement manager
 pub fn get_placement_manager() -> std::sync::RwLockReadGuard<'static, DevicePlacement> {
-    GLOBAL_PLACEMENT.read().unwrap()
+    GLOBAL_PLACEMENT
+        .read()
+        .expect("read lock should not be poisoned")
 }
 
 /// Set the global placement strategy
 pub fn set_placement_strategy(strategy: PlacementStrategy) -> Result<()> {
-    let mut placement = GLOBAL_PLACEMENT.write().unwrap();
+    let mut placement = GLOBAL_PLACEMENT
+        .write()
+        .expect("write lock should not be poisoned");
     *placement = DevicePlacement::new(strategy);
     Ok(())
 }
@@ -1039,7 +1076,7 @@ impl GraphPlacementOptimizer {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap();
+            .expect("dp table should have at least one device option");
 
         placements[n - 1] = available_devices[final_device_idx];
 
@@ -1198,8 +1235,8 @@ mod tests {
             },
             producer_devices: vec![Device::Cpu],
             consumer_devices: vec![Device::Cpu],
-            input_sizes: vec![1 * 3 * 224 * 224 * 4, 64 * 3 * 7 * 7 * 4],
-            output_sizes: vec![1 * 64 * 224 * 224 * 4],
+            input_sizes: vec![3 * 224 * 224 * 4, 64 * 3 * 7 * 7 * 4],
+            output_sizes: vec![64 * 224 * 224 * 4],
             is_critical_path: true,
             parallelizable: true,
             fusion_candidates: vec!["relu".to_string()],
@@ -1209,8 +1246,8 @@ mod tests {
             op_info: OpInfo {
                 name: "relu".to_string(),
                 input_shapes: vec![vec![1, 64, 224, 224]],
-                estimated_flops: 1 * 64 * 224 * 224,
-                memory_usage: 1 * 64 * 224 * 224 * 4,
+                estimated_flops: 64 * 224 * 224,
+                memory_usage: 64 * 224 * 224 * 4,
                 is_data_parallel: true,
                 preferred_device: None,
                 memory_bandwidth: 0,
@@ -1226,8 +1263,8 @@ mod tests {
             },
             producer_devices: vec![Device::Cpu],
             consumer_devices: vec![Device::Cpu],
-            input_sizes: vec![1 * 64 * 224 * 224 * 4],
-            output_sizes: vec![1 * 64 * 224 * 224 * 4],
+            input_sizes: vec![64 * 224 * 224 * 4],
+            output_sizes: vec![64 * 224 * 224 * 4],
             is_critical_path: true,
             parallelizable: true,
             fusion_candidates: vec![],

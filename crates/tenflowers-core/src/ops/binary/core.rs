@@ -95,7 +95,10 @@ impl BinaryOpRegistry {
     pub fn record_operation(&self, op_name: &str, elements: usize, duration_ns: u64) {
         // Increment operation counter
         {
-            let mut counters = self.op_counters.lock().unwrap();
+            let mut counters = self
+                .op_counters
+                .lock()
+                .expect("lock should not be poisoned");
             counters
                 .entry(op_name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
@@ -125,7 +128,10 @@ impl BinaryOpRegistry {
 
     /// Get performance analytics
     pub fn get_analytics(&self) -> BinaryOpAnalytics {
-        let counters = self.op_counters.lock().unwrap();
+        let counters = self
+            .op_counters
+            .lock()
+            .expect("lock should not be poisoned");
         let op_counts: std::collections::HashMap<String, u64> = counters
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))

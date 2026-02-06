@@ -456,7 +456,9 @@ where
         }
 
         let avg_loss = if batch_count > 0 {
-            total_loss / T::from(batch_count).unwrap()
+            let batch_count_t =
+                T::from(batch_count).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
+            total_loss / batch_count_t
         } else {
             T::zero()
         };
@@ -516,7 +518,9 @@ where
         }
 
         let avg_loss = if batch_count > 0 {
-            total_loss / T::from(batch_count).unwrap()
+            let batch_count_t =
+                T::from(batch_count).unwrap_or_else(|| T::from(1).unwrap_or(T::one()));
+            total_loss / batch_count_t
         } else {
             T::zero()
         };
@@ -651,7 +655,22 @@ where
                 let grad_data: Vec<T> = param_data
                     .iter()
                     .map(|&p| {
-                        p * T::from(0.001).unwrap_or_else(|| T::one() / T::from(1000).unwrap())
+                        let multiplier = T::from(0.001).unwrap_or_else(|| {
+                            let thousand = T::from(1000).unwrap_or_else(|| {
+                                T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                                    + T::one()
+                            });
+                            T::one() / thousand
+                        });
+                        p * multiplier
                     })
                     .collect();
 

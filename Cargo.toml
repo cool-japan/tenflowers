@@ -18,13 +18,13 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 authors = ["COOLJAPAN OU (Team KitaSan)"]
 edition = "2021"
 rust-version = "1.70"
 homepage = "https://github.com/cool-japan/tenflowers"
 repository = "https://github.com/cool-japan/tenflowers"
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 keywords = ["machine-learning", "neural-network", "tensor", "autograd", "gpu"]
 categories = ["science", "mathematics"]
 
@@ -63,24 +63,24 @@ thiserror = "2.0"
 anyhow = "1.0"
 
 # NumRS2 and SciRS2 ecosystem (using latest versions)
-numrs2 = "0.1.0-rc.3"
-scirs2-core = "0.1.0-rc.4"
-scirs2-autograd = "0.1.0-rc.4"
-scirs2-neural = "0.1.0-rc.4"
-scirs2-linalg = "0.1.0-rc.4"
-scirs2-numpy = "0.1.0-rc.4"
-optirs = "0.1.0-rc.2"
+numrs2 = "0.1.1"
+scirs2-core = "0.1.3"
+scirs2-autograd = "0.1.3"
+scirs2-neural = "0.1.3"
+scirs2-linalg = "0.1.3"
+scirs2-numpy = "0.1.3"
+optirs = "0.1.0"
 
 # GPU support
 wgpu = { version = "24.0", features = ["wgsl"] }
-bytemuck = { version = "1.24", features = ["derive"] }
+bytemuck = { version = "1.25", features = ["derive"] }
 futures = "0.3"
 pollster = "0.4"
 tokio = { version = "1.47", features = ["full"] }
 num_cpus = "1.17"
 
 # Serialization
-bincode = "1.3"
+oxicode = "0.1.1"
 serde_json = "1.0"
 rmp-serde = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
@@ -89,7 +89,7 @@ chrono = { version = "0.4", features = ["serde"] }
 pyo3 = { version = "0.27" }
 
 # Linear algebra (matching scirs2-linalg version)
-ndarray-linalg = { version = "0.18.0", default-features = false }
+ndarray-linalg = { version = "0.18.1", default-features = false }
 
 # Testing and benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -109,8 +109,9 @@ memmap2 = "0.9"
 regex = "1.12"
 csv = "1.4"
 
-# Tensorboard logging
-tensorboard-rs = "0.5"
+# Tensorboard logging - REMOVED for v0.1.0-beta.1 due to RUSTSEC-2024-0437 (protobuf 2.28.0 vulnerability)
+# Will be re-added once tensorboard-rs updates to protobuf >=3.7.2
+# tensorboard-rs = "0.5.9"
 
 # ONNX export
 prost = "0.14.1"
@@ -137,9 +138,9 @@ symphonia = { version = "0.5", features = ["wav", "mp3", "flac"] }
 rubato = "0.16"
 
 # Utilities
-uuid = { version = "1.19", features = ["v4"] }
+uuid = { version = "1.20", features = ["v4"] }
 async-trait = "0.1"
-tempfile = "3.23"
+tempfile = "3.24"
 
 [profile.release]
 lto = "fat"                    # Full LTO for maximum optimization

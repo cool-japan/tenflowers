@@ -366,8 +366,10 @@ fn test_cpu_gpu_parity() {
     let gpu_result_cpu = gpu_result.to_device(Device::Cpu).unwrap();
 
     // Compare results
-    let cpu_slice = cpu_result.as_slice().unwrap();
-    let gpu_slice = gpu_result_cpu.as_slice().unwrap();
+    let cpu_slice = cpu_result.as_slice().expect("tensor should be contiguous");
+    let gpu_slice = gpu_result_cpu
+        .as_slice()
+        .expect("tensor should be contiguous");
 
     assert_eq!(cpu_slice.len(), gpu_slice.len());
     for (i, (&cpu_val, &gpu_val)) in cpu_slice.iter().zip(gpu_slice.iter()).enumerate() {

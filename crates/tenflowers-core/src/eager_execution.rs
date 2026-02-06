@@ -544,7 +544,10 @@ impl MemoryPool {
 
         // Try to find available block
         {
-            let mut blocks = self.blocks.write().unwrap();
+            let mut blocks = self
+                .blocks
+                .write()
+                .expect("write lock should not be poisoned");
             let device_blocks = blocks.entry(*device).or_default();
 
             for block in device_blocks.iter_mut() {
@@ -562,7 +565,10 @@ impl MemoryPool {
 
         // Add to pool
         {
-            let mut blocks = self.blocks.write().unwrap();
+            let mut blocks = self
+                .blocks
+                .write()
+                .expect("write lock should not be poisoned");
             let device_blocks = blocks.entry(*device).or_default();
             device_blocks.push(MemoryBlock {
                 ptr,
@@ -576,7 +582,10 @@ impl MemoryPool {
     }
 
     fn deallocate(&self, device: &Device, ptr: *mut u8) -> Result<()> {
-        let mut blocks = self.blocks.write().unwrap();
+        let mut blocks = self
+            .blocks
+            .write()
+            .expect("write lock should not be poisoned");
         if let Some(device_blocks) = blocks.get_mut(device) {
             for block in device_blocks.iter_mut() {
                 if block.ptr == ptr {
@@ -593,7 +602,10 @@ impl MemoryPool {
         let threshold = Duration::from_secs(60); // 1 minute
         let now = Instant::now();
 
-        let mut blocks = self.blocks.write().unwrap();
+        let mut blocks = self
+            .blocks
+            .write()
+            .expect("write lock should not be poisoned");
         for device_blocks in blocks.values_mut() {
             device_blocks.retain(|block| {
                 if block.available && now.duration_since(block.last_used) > threshold {
@@ -609,7 +621,10 @@ impl MemoryPool {
     /// Pre-warm memory pool by pre-allocating blocks of the required size
     fn pre_warm(&self, device: &Device, size: usize, num_blocks: usize) -> Result<()> {
         let context = DEVICE_MANAGER.get_context(device)?;
-        let mut blocks = self.blocks.write().unwrap();
+        let mut blocks = self
+            .blocks
+            .write()
+            .expect("write lock should not be poisoned");
         let device_blocks = blocks.entry(*device).or_default();
 
         // Pre-allocate the specified number of blocks
@@ -732,7 +747,10 @@ impl EagerExecutionEngine {
             meets_target: total_overhead.as_nanos() <= self.config.target_overhead_ns as u128,
         };
 
-        self.metrics.lock().unwrap().push(metrics.clone());
+        self.metrics
+            .lock()
+            .expect("lock should not be poisoned")
+            .push(metrics.clone());
 
         // Check for fusion opportunities
         if self.config.enable_kernel_fusion {
@@ -769,7 +787,10 @@ impl EagerExecutionEngine {
 
     /// Check if operation is cached
     fn check_cache(&self, signature: &OpSignature) -> bool {
-        let cache = self.op_cache.read().unwrap();
+        let cache = self
+            .op_cache
+            .read()
+            .expect("read lock should not be poisoned");
         cache.contains_key(signature)
     }
 
@@ -780,7 +801,10 @@ impl EagerExecutionEngine {
         result: &Tensor<T>,
         execution_time: Duration,
     ) -> Result<()> {
-        let mut cache = self.op_cache.write().unwrap();
+        let mut cache = self
+            .op_cache
+            .write()
+            .expect("write lock should not be poisoned");
 
         // Check cache size limit
         if cache.len() >= self.config.max_cache_size {
@@ -1010,7 +1034,10 @@ impl EagerExecutionEngine {
 
         // Cache active context to avoid repeated lookups
         {
-            let mut contexts = self.active_contexts.write().unwrap();
+            let mut contexts = self
+                .active_contexts
+                .write()
+                .expect("write lock should not be poisoned");
             if let std::collections::hash_map::Entry::Vacant(e) = contexts.entry(device) {
                 let context = DEVICE_MANAGER.get_context(&device)?;
                 e.insert(context);
@@ -1029,7 +1056,10 @@ impl EagerExecutionEngine {
 
     /// Analyze potential fusion opportunities
     fn analyze_fusion_opportunity(&self, operation: &str, signature: &OpSignature) {
-        let mut opportunities = self.fusion_opportunities.write().unwrap();
+        let mut opportunities = self
+            .fusion_opportunities
+            .write()
+            .expect("write lock should not be poisoned");
 
         // Advanced fusion analysis based on operation patterns
         let fusion_speedup = match operation {
@@ -1235,12 +1265,18 @@ impl EagerExecutionEngine {
 
     /// Get execution metrics
     pub fn get_metrics(&self) -> Vec<ExecutionMetrics> {
-        self.metrics.lock().unwrap().clone()
+        self.metrics
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Get cache statistics
     pub fn get_cache_stats(&self) -> CacheStatistics {
-        let cache = self.op_cache.read().unwrap();
+        let cache = self
+            .op_cache
+            .read()
+            .expect("read lock should not be poisoned");
 
         let total_entries = cache.len();
         let total_hits = cache.values().map(|op| op.use_count).sum();
@@ -1368,7 +1404,10 @@ impl EagerExecutionEngine {
         let threshold = Duration::from_secs(300); // 5 minutes
         let now = Instant::now();
 
-        let mut cache = self.op_cache.write().unwrap();
+        let mut cache = self
+            .op_cache
+            .write()
+            .expect("write lock should not be poisoned");
         cache.retain(|_, cached_op| now.duration_since(cached_op.last_used) <= threshold);
     }
 }

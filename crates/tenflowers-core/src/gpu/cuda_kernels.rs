@@ -363,7 +363,17 @@ impl CudaDevice {
 
     fn compile_module(&mut self, source: &str, options: &[&str]) -> Result<CudaModule> {
         // Convert options to C strings
-        let c_options: Vec<CString> = options.iter().map(|&s| CString::new(s).unwrap()).collect();
+        let c_options: Vec<CString> = options
+            .iter()
+            .map(|&s| {
+                CString::new(s).map_err(|e| TensorError::ComputeError {
+                    operation: "compile_cuda_module".to_string(),
+                    details: format!("Invalid C string in CUDA options: {}", e),
+                    retry_possible: false,
+                    context: None,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         let option_ptrs: Vec<*const i8> = c_options.iter().map(|s| s.as_ptr()).collect();
 
         unsafe {
@@ -555,7 +565,12 @@ struct CudaModule {
 #[cfg(cuda_available)]
 impl CudaModule {
     fn get_function(&self, name: &str) -> Result<CudaKernel> {
-        let c_name = CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|e| TensorError::ComputeError {
+            operation: "get_cuda_function".to_string(),
+            details: format!("Invalid function name: {}", e),
+            retry_possible: false,
+            context: None,
+        })?;
         unsafe {
             let mut function = std::ptr::null_mut();
             cuda_module_get_function(&mut function, self.handle, c_name.as_ptr())?;

@@ -66,8 +66,10 @@ where
         }
 
         // Xavier/Glorot initialization: limit = sqrt(6 / (fan_in + fan_out))
-        let gate_limit = T::from((6.0_f64 / (input_dim + hidden_dim) as f64).sqrt()).unwrap();
-        let up_limit = T::from((6.0_f64 / (input_dim + hidden_dim) as f64).sqrt()).unwrap();
+        let gate_limit = T::from((6.0_f64 / (input_dim + hidden_dim) as f64).sqrt())
+            .expect("Failed to convert gate_limit to tensor type");
+        let up_limit = T::from((6.0_f64 / (input_dim + hidden_dim) as f64).sqrt())
+            .expect("Failed to convert up_limit to tensor type");
 
         // Initialize weights with Xavier/Glorot normal distribution
         let w_gate = create_random_tensor(&[input_dim, hidden_dim], gate_limit)?;
@@ -163,7 +165,7 @@ where
             ));
         }
 
-        let last_dim = *input_dims.last().unwrap();
+        let last_dim = *input_dims.last().expect("collection should not be empty");
         if last_dim != self.input_dim {
             return Err(tenflowers_core::TensorError::invalid_operation_simple(
                 format!(

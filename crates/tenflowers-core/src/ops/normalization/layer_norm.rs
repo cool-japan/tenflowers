@@ -125,7 +125,8 @@ where
                 for j in 0..norm_size {
                     sum = sum + reshaped_input[[i, j]];
                 }
-                let mean = sum / T::from(norm_size).unwrap();
+                let mean =
+                    sum / T::from(norm_size).expect("norm_size should convert to numeric type");
 
                 // Calculate variance
                 let mut var_sum = T::zero();
@@ -133,7 +134,8 @@ where
                     let diff = reshaped_input[[i, j]] - mean;
                     var_sum = var_sum + (diff * diff);
                 }
-                let variance = var_sum / T::from(norm_size).unwrap();
+                let variance =
+                    var_sum / T::from(norm_size).expect("norm_size should convert to numeric type");
                 let std_dev = (variance + epsilon).sqrt();
 
                 // Normalize and scale

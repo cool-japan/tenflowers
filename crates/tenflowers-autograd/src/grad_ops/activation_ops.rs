@@ -68,7 +68,8 @@ where
 {
     // For numerical stability, clamp sigmoid output to avoid exact 0 or 1 values
     // which would result in zero gradients and potential gradient vanishing
-    let eps = T::from(1e-7).unwrap_or_else(|| T::from(0.0000001).unwrap());
+    let eps = T::from(1e-7)
+        .unwrap_or_else(|| T::from(0.0000001).expect("fallback value computation failed"));
     let one_minus_eps = T::one() - eps;
 
     // Clamp output values: max(eps, min(1-eps, y))
@@ -149,10 +150,10 @@ where
     let x_cubed = x_squared.mul(input)?;
 
     // Constants
-    let sqrt_2_over_pi = T::from(0.7978845608_f64).unwrap(); // sqrt(2/π)
-    let alpha = T::from(0.044715_f64).unwrap();
-    let three_alpha = T::from(0.134145_f64).unwrap(); // 3 * 0.044715
-    let half = T::from(0.5_f64).unwrap();
+    let sqrt_2_over_pi = T::from(0.7978845608_f64).expect("constant should convert to float type"); // sqrt(2/π)
+    let alpha = T::from(0.044715_f64).expect("constant should convert to float type");
+    let three_alpha = T::from(0.134145_f64).expect("constant should convert to float type"); // 3 * 0.044715
+    let half = T::from(0.5_f64).expect("constant should convert to float type");
     let _one = T::one();
 
     // Compute inner term: sqrt(2/π) * (x + 0.044715 * x^3)

@@ -135,7 +135,7 @@ where
         Ok(TopKRouter {
             gate,
             k,
-            load_balance_loss_coeff: T::from(0.01).unwrap_or(T::from(0.01).unwrap()),
+            load_balance_loss_coeff: T::from(0.01).expect("Failed to convert 0.01 to tensor type"),
             noisy_gating: true,
             training: true,
             _phantom: PhantomData,

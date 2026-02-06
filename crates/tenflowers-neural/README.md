@@ -316,4 +316,4 @@ Priority areas for contribution:
 
 ## License
 
-Dual-licensed under MIT OR Apache-2.0
+Licensed under Apache-2.0

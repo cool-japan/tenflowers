@@ -115,7 +115,7 @@ impl JitGradientContext {
 
         let compiler = Self::get_compiler()?;
         let compiled_kernel = {
-            let compiler_guard = compiler.read().unwrap();
+            let compiler_guard = compiler.read().expect("read lock should not be poisoned");
             compiler_guard.compile_gradient_kernel(signature)?
         };
 
@@ -237,7 +237,10 @@ impl JitGradientContext {
         execution_time_us: f64,
         compile_time_ms: f64,
     ) {
-        let mut tracker = self.performance_tracker.write().unwrap();
+        let mut tracker = self
+            .performance_tracker
+            .write()
+            .expect("write lock should not be poisoned");
 
         let stats = tracker
             .entry(operation.to_string())
@@ -258,7 +261,10 @@ impl JitGradientContext {
 
     /// Get performance report for all executed kernels
     pub fn get_performance_report(&self) -> String {
-        let tracker = self.performance_tracker.read().unwrap();
+        let tracker = self
+            .performance_tracker
+            .read()
+            .expect("read lock should not be poisoned");
         let mut report = String::new();
 
         report.push_str("# JIT Kernel Performance Report\n\n");
@@ -289,12 +295,15 @@ impl JitGradientContext {
             return Ok(());
         }
 
-        let tracker = self.performance_tracker.read().unwrap();
+        let tracker = self
+            .performance_tracker
+            .read()
+            .expect("read lock should not be poisoned");
         let compiler = Self::get_compiler()?;
 
         for (operation, stats) in tracker.iter() {
             // If a kernel is significantly slower than estimated, recompile with different optimizations
-            let _compiler_guard = compiler.read().unwrap();
+            let _compiler_guard = compiler.read().expect("read lock should not be poisoned");
             // This would implement the auto-tuning logic
             if self.config.debug_output {
                 println!(
@@ -309,7 +318,10 @@ impl JitGradientContext {
 
     /// Clear performance statistics
     pub fn clear_performance_stats(&self) {
-        let mut tracker = self.performance_tracker.write().unwrap();
+        let mut tracker = self
+            .performance_tracker
+            .write()
+            .expect("write lock should not be poisoned");
         tracker.clear();
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Implements the additive attention mechanism from:
 //! "Neural Machine Translation by Jointly Learning to Align and Translate"
-//! https://arxiv.org/abs/1409.0473
+//! <https://arxiv.org/abs/1409.0473>
 //!
 //! This is also known as additive attention or content-based attention.
 
@@ -129,9 +129,12 @@ where
         }
 
         // Initialize weights using Xavier/Glorot initialization
-        let encoder_scale = T::from(1.0 / (encoder_hidden_size as f64).sqrt()).unwrap();
-        let decoder_scale = T::from(1.0 / (decoder_hidden_size as f64).sqrt()).unwrap();
-        let attention_scale = T::from(1.0 / (attention_size as f64).sqrt()).unwrap();
+        let encoder_scale = T::from(1.0 / (encoder_hidden_size as f64).sqrt())
+            .expect("Failed to convert encoder_scale to tensor type");
+        let decoder_scale = T::from(1.0 / (decoder_hidden_size as f64).sqrt())
+            .expect("Failed to convert decoder_scale to tensor type");
+        let attention_scale = T::from(1.0 / (attention_size as f64).sqrt())
+            .expect("Failed to convert attention_scale to tensor type");
 
         let w_encoder = Self::init_weight(&[encoder_hidden_size, attention_size], encoder_scale)?;
         let w_decoder = Self::init_weight(&[decoder_hidden_size, attention_size], decoder_scale)?;
@@ -183,7 +186,7 @@ where
         let values: Vec<T> = (0..total_elements)
             .map(|_| {
                 let random_val = rng.gen_range(-1.0..1.0);
-                T::from(random_val).unwrap() * scale
+                T::from(random_val).expect("Failed to convert random value to tensor type") * scale
             })
             .collect();
 

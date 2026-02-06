@@ -355,7 +355,10 @@ impl GradientCoverageAuditor {
 
     /// Initialize known gradient implementations
     fn initialize_known_gradients(&mut self) {
-        let mut ops = self.gradient_ops.lock().unwrap();
+        let mut ops = self
+            .gradient_ops
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Binary elementwise operations with gradients
         ops.insert("add".to_string());
@@ -394,7 +397,10 @@ impl GradientCoverageAuditor {
         ops.insert("permute".to_string());
 
         // Non-differentiable operations
-        let mut non_diff = self.non_differentiable_ops.lock().unwrap();
+        let mut non_diff = self
+            .non_differentiable_ops
+            .lock()
+            .expect("lock should not be poisoned");
         non_diff.insert("eq".to_string());
         non_diff.insert("ne".to_string());
         non_diff.insert("gt".to_string());
@@ -411,7 +417,7 @@ impl GradientCoverageAuditor {
     pub fn register_gradient(&self, operation: &str) {
         self.gradient_ops
             .lock()
-            .unwrap()
+            .expect("gradient ops lock should not be poisoned")
             .insert(operation.to_string());
     }
 
@@ -419,20 +425,23 @@ impl GradientCoverageAuditor {
     pub fn register_non_differentiable(&self, operation: &str) {
         self.non_differentiable_ops
             .lock()
-            .unwrap()
+            .expect("non-differentiable ops lock should not be poisoned")
             .insert(operation.to_string());
     }
 
     /// Check if an operation has gradient support
     pub fn has_gradient(&self, operation: &str) -> bool {
-        self.gradient_ops.lock().unwrap().contains(operation)
+        self.gradient_ops
+            .lock()
+            .expect("lock should not be poisoned")
+            .contains(operation)
     }
 
     /// Check if an operation is non-differentiable
     pub fn is_non_differentiable(&self, operation: &str) -> bool {
         self.non_differentiable_ops
             .lock()
-            .unwrap()
+            .expect("non-differentiable ops lock should not be poisoned")
             .contains(operation)
     }
 

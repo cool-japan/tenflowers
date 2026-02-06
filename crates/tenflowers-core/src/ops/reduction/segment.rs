@@ -75,8 +75,8 @@ where
             if data_flat.len() > 1000 {
                 // Use parallel processing for large inputs with SIMD optimization
                 let chunk_size = std::cmp::max(1, data_flat.len() / rayon::current_num_threads());
-                let data_slice = data_flat.as_slice().unwrap();
-                let ids_slice = ids_flat.as_slice().unwrap();
+                let data_slice = data_flat.as_slice().expect("tensor should be contiguous");
+                let ids_slice = ids_flat.as_slice().expect("tensor should be contiguous");
                 let chunks: Vec<_> = data_slice
                     .chunks(chunk_size)
                     .zip(ids_slice.chunks(chunk_size))
@@ -189,8 +189,8 @@ where
             if data_flat.len() > 1000 {
                 // Use parallel processing for large inputs with optimized accumulation
                 let chunk_size = std::cmp::max(1, data_flat.len() / rayon::current_num_threads());
-                let data_slice = data_flat.as_slice().unwrap();
-                let ids_slice = ids_flat.as_slice().unwrap();
+                let data_slice = data_flat.as_slice().expect("tensor should be contiguous");
+                let ids_slice = ids_flat.as_slice().expect("tensor should be contiguous");
                 let chunks: Vec<_> = data_slice
                     .chunks(chunk_size)
                     .zip(ids_slice.chunks(chunk_size))
@@ -316,8 +316,8 @@ where
             if data_flat.len() > 1000 {
                 // Use parallel processing for large inputs with optimized max finding
                 let chunk_size = std::cmp::max(1, data_flat.len() / rayon::current_num_threads());
-                let data_slice = data_flat.as_slice().unwrap();
-                let ids_slice = ids_flat.as_slice().unwrap();
+                let data_slice = data_flat.as_slice().expect("tensor should be contiguous");
+                let ids_slice = ids_flat.as_slice().expect("tensor should be contiguous");
                 let chunks: Vec<_> = data_slice
                     .chunks(chunk_size)
                     .zip(ids_slice.chunks(chunk_size))
@@ -1045,11 +1045,13 @@ mod tests {
 
     #[test]
     fn test_segment_sum_basic() {
-        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[6]).unwrap();
-        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6]).unwrap();
+        let data = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[6])
+            .expect("tensor creation should succeed");
+        let segment_ids = Tensor::from_vec(vec![0_i32, 0, 1, 1, 2, 2], &[6])
+            .expect("tensor creation should succeed");
 
-        let result = segment_sum(&data, &segment_ids, 3).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let result = segment_sum(&data, &segment_ids, 3).expect("segment_sum should succeed");
+        let result_data = result.to_vec().expect("to_vec should succeed");
 
         assert_eq!(result_data.len(), 3);
         assert!((result_data[0] - 3.0).abs() < 1e-6);

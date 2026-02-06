@@ -706,7 +706,9 @@ impl DevicePlacementOptimizer {
                         // Add transfer cost penalty
                         let transfer_penalty =
                             self.estimate_transfer_cost(input_device, device, 1024); // Estimate
-                        *device_scores.get_mut(device).unwrap() +=
+                        *device_scores
+                            .get_mut(device)
+                            .expect("Device should exist in device_scores map") +=
                             transfer_penalty * self.config.transfer_cost_weight;
                     }
                 }
@@ -890,7 +892,9 @@ impl DevicePlacementOptimizer {
             // Update actual device capabilities
             self.update_memory_usage(
                 &best_device,
-                *device_memory_usage.get(&best_device).unwrap(),
+                *device_memory_usage
+                    .get(&best_device)
+                    .expect("Device memory usage should exist after entry() call"),
             );
 
             decisions.push(PlacementDecision {

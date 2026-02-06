@@ -156,12 +156,19 @@ impl ThroughputBenchmarkHarness {
         let total_duration = start_time.elapsed();
 
         // Calculate statistics
-        let latencies = self.sample_latencies.lock().unwrap().clone();
+        let latencies = self
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
         let stats = calculate_latency_statistics(&latencies);
 
         // Calculate memory statistics if measured
         let memory_stats = if self.config.measure_memory {
-            let memory_samples = self.memory_samples.lock().unwrap();
+            let memory_samples = self
+                .memory_samples
+                .lock()
+                .expect("lock should not be poisoned");
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -180,7 +187,11 @@ impl ThroughputBenchmarkHarness {
         };
 
         // Get per-thread statistics if multi-threaded
-        let per_thread_stats = self.thread_stats.lock().unwrap().clone();
+        let per_thread_stats = self
+            .thread_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
 
         ThroughputBenchmarkResult {
             dataset_name,
@@ -227,12 +238,19 @@ impl ThroughputBenchmarkHarness {
         let total_duration = start_time.elapsed();
 
         // Calculate statistics
-        let latencies = self.sample_latencies.lock().unwrap().clone();
+        let latencies = self
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
         let stats = calculate_latency_statistics(&latencies);
 
         // Calculate memory statistics if measured
         let memory_stats = if self.config.measure_memory {
-            let memory_samples = self.memory_samples.lock().unwrap();
+            let memory_samples = self
+                .memory_samples
+                .lock()
+                .expect("lock should not be poisoned");
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -251,7 +269,11 @@ impl ThroughputBenchmarkHarness {
         };
 
         // Get per-thread statistics if multi-threaded
-        let per_thread_stats = self.thread_stats.lock().unwrap().clone();
+        let per_thread_stats = self
+            .thread_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
 
         ThroughputBenchmarkResult {
             dataset_name,
@@ -313,7 +335,10 @@ impl ThroughputBenchmarkHarness {
         self.warmup_phase(dataset, total_samples);
 
         // Clear thread stats
-        self.thread_stats.lock().unwrap().clear();
+        self.thread_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
 
         // Measurement phase with parallel execution
         let start_time = Instant::now();
@@ -347,7 +372,9 @@ impl ThroughputBenchmarkHarness {
                 let samples_per_second = samples_processed as f64 / thread_duration.as_secs_f64();
 
                 // Record thread statistics
-                let mut stats = thread_stats_mutex.lock().unwrap();
+                let mut stats = thread_stats_mutex
+                    .lock()
+                    .expect("lock should not be poisoned");
                 stats.push(ThreadStats {
                     thread_id: *thread_id,
                     samples_processed,
@@ -359,13 +386,20 @@ impl ThroughputBenchmarkHarness {
         let total_duration = start_time.elapsed();
 
         // Calculate statistics (using thread stats for latency approximation)
-        let thread_stats = self.thread_stats.lock().unwrap().clone();
+        let thread_stats = self
+            .thread_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
         let total_processed: usize = thread_stats.iter().map(|s| s.samples_processed).sum();
         let avg_latency_us = (total_duration.as_micros() as f64) / (total_processed as f64);
 
         // Calculate memory statistics if measured
         let memory_stats = if self.config.measure_memory {
-            let memory_samples = self.memory_samples.lock().unwrap();
+            let memory_samples = self
+                .memory_samples
+                .lock()
+                .expect("lock should not be poisoned");
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -403,9 +437,18 @@ impl ThroughputBenchmarkHarness {
 
     /// Reset collected metrics
     pub fn reset(&mut self) {
-        self.sample_latencies.lock().unwrap().clear();
-        self.memory_samples.lock().unwrap().clear();
-        self.thread_stats.lock().unwrap().clear();
+        self.sample_latencies
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        self.memory_samples
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
+        self.thread_stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clear();
     }
 
     /// Get current memory usage (platform-specific approximation)
@@ -420,7 +463,10 @@ impl ThroughputBenchmarkHarness {
     fn track_memory(&self) {
         if self.config.measure_memory {
             let mem = self.get_current_memory_usage();
-            self.memory_samples.lock().unwrap().push(mem);
+            self.memory_samples
+                .lock()
+                .expect("lock should not be poisoned")
+                .push(mem);
         }
     }
 
@@ -443,7 +489,10 @@ impl ThroughputBenchmarkHarness {
         T: Clone + Send + Sync + 'static,
         D: Dataset<T>,
     {
-        let mut latencies = self.sample_latencies.lock().unwrap();
+        let mut latencies = self
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned");
         latencies.clear();
 
         for _ in 0..self.config.measurement_iterations {
@@ -493,7 +542,10 @@ impl ThroughputBenchmarkHarness {
         T: Clone + Send + Sync + 'static,
         D: Dataset<T>,
     {
-        let mut latencies = self.sample_latencies.lock().unwrap();
+        let mut latencies = self
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned");
         latencies.clear();
 
         for _ in 0..self.config.measurement_iterations {
@@ -759,10 +811,18 @@ mod tests {
         });
 
         let _ = harness.benchmark(&dataset, "test1");
-        assert!(!harness.sample_latencies.lock().unwrap().is_empty());
+        assert!(!harness
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned")
+            .is_empty());
 
         harness.reset();
-        assert!(harness.sample_latencies.lock().unwrap().is_empty());
+        assert!(harness
+            .sample_latencies
+            .lock()
+            .expect("lock should not be poisoned")
+            .is_empty());
     }
 
     #[test]

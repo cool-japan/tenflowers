@@ -492,7 +492,10 @@ pub mod viz_utils {
         }
 
         let mut sorted = data.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let lower_idx = ((1.0 - confidence) / 2.0 * sorted.len() as f64) as usize;
         let upper_idx = ((1.0 + confidence) / 2.0 * sorted.len() as f64) as usize;
@@ -699,7 +702,8 @@ mod tests {
         let hist = Histogram::from_data(&data, 2);
         let cumulative = hist.cumulative();
 
-        assert!(cumulative.last().unwrap() - 1.0 < 0.01); // Should end at 1
+        assert!(cumulative.last().expect("collection should not be empty") - 1.0 < 0.01);
+        // Should end at 1
     }
 
     #[test]

@@ -68,8 +68,12 @@ where
             Activation::HardSwish => {
                 // HardSwish(x) = x * hard_sigmoid(x)
                 // where hard_sigmoid(x) = clamp((x + 3) / 6, 0, 1)
-                let three = Tensor::from_scalar(T::from(3.0).unwrap());
-                let six = Tensor::from_scalar(T::from(6.0).unwrap());
+                let three = Tensor::from_scalar(
+                    T::from(3.0).expect("Failed to convert 3.0 to tensor type"),
+                );
+                let six = Tensor::from_scalar(
+                    T::from(6.0).expect("Failed to convert 6.0 to tensor type"),
+                );
                 let zero = Tensor::from_scalar(T::zero());
                 let one = Tensor::from_scalar(T::one());
 
@@ -84,8 +88,12 @@ where
             }
             Activation::HardSigmoid => {
                 // HardSigmoid(x) = clamp((x + 3) / 6, 0, 1)
-                let three = Tensor::from_scalar(T::from(3.0).unwrap());
-                let six = Tensor::from_scalar(T::from(6.0).unwrap());
+                let three = Tensor::from_scalar(
+                    T::from(3.0).expect("Failed to convert 3.0 to tensor type"),
+                );
+                let six = Tensor::from_scalar(
+                    T::from(6.0).expect("Failed to convert 6.0 to tensor type"),
+                );
                 let zero = Tensor::from_scalar(T::zero());
                 let one = Tensor::from_scalar(T::one());
 
@@ -97,7 +105,9 @@ where
             }
             Activation::CELU { alpha } => {
                 // CELU(x) = max(0, x) + min(0, alpha * (exp(x / alpha) - 1))
-                let alpha_tensor = Tensor::from_scalar(T::from(*alpha).unwrap());
+                let alpha_tensor = Tensor::from_scalar(
+                    T::from(*alpha).expect("Failed to convert alpha to tensor type"),
+                );
                 let zero = Tensor::from_scalar(T::zero());
                 let one = Tensor::from_scalar(T::one());
 

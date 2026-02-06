@@ -15,10 +15,9 @@ description = "Automatic differentiation engine for TenfloweRS"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-alpha.2" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-beta.1" }
 scirs2-core = { workspace = true, features = ["memory_management", "memory_efficient", "parallel", "simd", "profiling"] }
 scirs2-autograd = { workspace = true }
-numrs2 = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -32,7 +31,7 @@ once_cell = "1.21"
 [dev-dependencies]
 approx = { workspace = true }
 criterion = { workspace = true }
-# tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-alpha.2" }
+# tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-beta.1" }
 
 [features]
 default = []

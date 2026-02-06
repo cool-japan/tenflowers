@@ -397,8 +397,14 @@ impl StageStatistics {
 
         let total: Duration = durations.iter().sum();
         let avg = total / durations.len() as u32;
-        let min = *durations.iter().min().unwrap();
-        let max = *durations.iter().max().unwrap();
+        let min = *durations
+            .iter()
+            .min()
+            .expect("collection should not be empty for min()");
+        let max = *durations
+            .iter()
+            .max()
+            .expect("collection should not be empty for max()");
 
         // Calculate standard deviation
         let variance: f64 = durations

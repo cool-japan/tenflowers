@@ -153,7 +153,7 @@ where
                     ifft.process(&mut buffer);
 
                     // Normalize by 1/N
-                    let n_t = T::from(n).unwrap();
+                    let n_t = T::from(n).expect("n must be convertible to float type");
                     for val in &mut buffer {
                         *val = *val / n_t;
                     }

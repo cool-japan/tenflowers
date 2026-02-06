@@ -195,7 +195,7 @@
 //!
 //! TenfloweRS is built on top of the SciRS2 ecosystem:
 //!
-//! ```
+//! ```text
 //! TenfloweRS (Deep Learning Framework)
 //!     ↓ builds upon
 //! OptiRS (ML Optimization)
@@ -214,13 +214,14 @@
 #![warn(clippy::all)]
 
 // Re-export all public APIs from subcrates
-pub use tenflowers_core as core;
 pub use tenflowers_autograd as autograd;
-pub use tenflowers_neural as neural;
+pub use tenflowers_core as core;
 pub use tenflowers_dataset as dataset;
+pub use tenflowers_neural as neural;
 
-#[cfg(feature = "python")]
-pub use tenflowers_ffi as ffi;
+// Python bindings excluded from v0.1.0-beta.1
+// #[cfg(feature = "python")]
+// pub use tenflowers_ffi as ffi;
 
 /// Prelude module for convenient imports
 ///
@@ -232,26 +233,24 @@ pub use tenflowers_ffi as ffi;
 /// ```
 pub mod prelude {
     // Core types
-    pub use crate::core::{Tensor, Device, dtype};
     pub use crate::core::ops;
+    pub use crate::core::{dtype, Device, Tensor};
 
     // Autograd
     pub use crate::autograd::{GradientTape, TrackedTensor};
 
     // Neural network layers
-    pub use crate::neural::layers::{Dense, Conv2D, MaxPool2D, Dropout, BatchNorm};
+    pub use crate::neural::layers::{BatchNorm, Conv2D, Dense, Dropout, MaxPool2D};
     pub use crate::neural::ActivationFunction;
 
     // Models
-    pub use crate::neural::{Sequential, Model};
+    pub use crate::neural::{Model, Sequential};
 
     // Optimizers
-    pub use crate::neural::{SGD, Adam, AdamW};
+    pub use crate::neural::{Adam, AdamW, SGD};
 
     // Loss functions
-    pub use crate::neural::{
-        mse, categorical_cross_entropy, binary_cross_entropy,
-    };
+    pub use crate::neural::{binary_cross_entropy, categorical_cross_entropy, mse};
 
     // Training utilities
     pub use crate::neural::{quick_train, Trainer};
@@ -261,14 +260,13 @@ pub mod prelude {
 
     // Dataset
     pub use crate::dataset::{
-        DataLoader, DataLoaderBuilder,
-        CsvDataset, CsvDatasetBuilder,
-        ImageFolderDataset, ImageFolderDatasetBuilder,
+        CsvDataset, CsvDatasetBuilder, DataLoader, DataLoaderBuilder, ImageFolderDataset,
+        ImageFolderDatasetBuilder,
     };
 
     // Common trait re-exports
-    pub use crate::neural::Layer;
     pub use crate::dataset::Dataset;
+    pub use crate::neural::Layer;
 }
 
 /// Common types and utilities

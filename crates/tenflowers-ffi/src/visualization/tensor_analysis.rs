@@ -55,7 +55,9 @@ impl PyTensorAnalyzer {
         py_dict.set_item("percentiles", PyDict::new(py))?;
 
         // Add percentiles
-        let percentiles_item = py_dict.get_item("percentiles")?.unwrap();
+        let percentiles_item = py_dict
+            .get_item("percentiles")?
+            .expect("percentiles key was just set");
         let percentiles_dict = percentiles_item.downcast::<PyDict>()?;
         for (percentile, value) in analysis.percentiles.iter() {
             percentiles_dict.set_item(percentile.to_string(), *value)?;
@@ -196,7 +198,10 @@ impl TensorAnalyzer {
         }
 
         let mut sorted_values = values.to_vec();
-        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_values.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let mean = values.iter().sum::<f32>() / values.len() as f32;
         let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / values.len() as f32;

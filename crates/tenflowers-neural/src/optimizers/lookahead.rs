@@ -10,7 +10,7 @@ use tenflowers_core::{Result, Tensor};
 /// average of the "fast weights" that are updated by the base optimizer.
 ///
 /// Reference: "Lookahead Optimizer: k steps forward, 1 step back"
-/// https://arxiv.org/abs/1907.08610
+/// <https://arxiv.org/abs/1907.08610>
 ///
 /// Algorithm:
 /// 1. Initialize slow weights φ = fast weights θ
@@ -114,7 +114,7 @@ impl<T, O: Optimizer<T>> Lookahead<T, O> {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let alpha_t = T::from(self.alpha).unwrap();
+        let alpha_t = T::from(self.alpha).expect("Failed to convert alpha to tensor type");
 
         for param in model.parameters_mut() {
             let param_ptr = param as *const Tensor<T>;

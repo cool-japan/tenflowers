@@ -76,7 +76,7 @@ impl GradientTape {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         inner.record_op(operation, result, &self.inner)
     }
 
@@ -85,7 +85,7 @@ impl GradientTape {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         let tensor_id = inner.next_id;
         inner.next_id += 1;
 
@@ -160,7 +160,7 @@ impl GradientTape {
     where
         F: FnOnce(&mut GradientTapeInner) -> R,
     {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().expect("lock should not be poisoned");
         f(&mut inner)
     }
 
@@ -264,7 +264,7 @@ impl GradientTape {
     /// Export the computation graph for visualization
     pub fn export_graph(&self) -> Result<String> {
         // Export the computation graph in DOT format for visualization
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         let mut dot_graph = String::from("digraph ComputationGraph {\n");
         dot_graph.push_str("  rankdir=TB;\n");
         dot_graph.push_str("  node [shape=ellipse];\n");

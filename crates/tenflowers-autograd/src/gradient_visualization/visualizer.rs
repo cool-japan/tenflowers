@@ -308,7 +308,7 @@ where
         let mut exploding_count = 0;
         let mut total_gradient_magnitude = T::zero();
         let mut max_gradient = T::zero();
-        let mut min_gradient = T::from_f64(f64::INFINITY).unwrap_or(T::zero());
+        let mut min_gradient = T::from_f64(f64::INFINITY).unwrap_or_else(|| T::zero());
 
         for (node_id, node) in &self.nodes {
             let grad_magnitude = self.compute_node_gradient_magnitude(&node.gradient_stats);
@@ -326,7 +326,7 @@ where
             };
 
             // Check for vanishing gradients
-            if grad_magnitude < T::from_f64(1e-6).unwrap_or(T::zero()) {
+            if grad_magnitude < T::from_f64(1e-6).unwrap_or_else(|| T::zero()) {
                 vanishing_count += 1;
                 let issue = GradientFlowIssue::new(
                     IssueType::VanishingGradients,
@@ -339,7 +339,11 @@ where
             }
 
             // Check for exploding gradients
-            if grad_magnitude > T::from_f64(10.0).unwrap_or(T::from_f64(f64::INFINITY).unwrap()) {
+            if grad_magnitude
+                > T::from_f64(10.0).unwrap_or_else(|| {
+                    T::from_f64(f64::INFINITY).expect("fallback infinity value should convert")
+                })
+            {
                 exploding_count += 1;
                 let issue = GradientFlowIssue::new(
                     IssueType::ExplodingGradients,
@@ -366,8 +370,8 @@ where
 
         // Update flow statistics
         if !self.nodes.is_empty() {
-            analysis.flow_statistics.avg_gradient_magnitude =
-                total_gradient_magnitude / T::from_usize(self.nodes.len()).unwrap_or(T::one());
+            analysis.flow_statistics.avg_gradient_magnitude = total_gradient_magnitude
+                / T::from_usize(self.nodes.len()).unwrap_or_else(|| T::one());
         }
         analysis.flow_statistics.max_gradient_magnitude = max_gradient;
         analysis.flow_statistics.min_gradient_magnitude = min_gradient;
@@ -399,17 +403,17 @@ where
 
         // Calculate basic statistics
         let sum = data.iter().fold(T::zero(), |acc, &x| acc + x);
-        let mean = sum / T::from_usize(total_elements).unwrap_or(T::one());
+        let mean = sum / T::from_usize(total_elements).unwrap_or_else(|| T::one());
 
         let variance = data.iter().fold(T::zero(), |acc, &x| {
             let diff = x - mean;
             acc + diff * diff
-        }) / T::from_usize(total_elements).unwrap_or(T::one());
+        }) / T::from_usize(total_elements).unwrap_or_else(|| T::one());
 
         let std = variance.sqrt();
 
         let min = data.iter().fold(
-            T::from_f64(f64::INFINITY).unwrap_or(T::zero()),
+            T::from_f64(f64::INFINITY).unwrap_or_else(|| T::zero()),
             |acc, &x| {
                 if x < acc {
                     x
@@ -420,7 +424,7 @@ where
         );
 
         let max = data.iter().fold(
-            T::from_f64(f64::NEG_INFINITY).unwrap_or(T::zero()),
+            T::from_f64(f64::NEG_INFINITY).unwrap_or_else(|| T::zero()),
             |acc, &x| {
                 if x > acc {
                     x
@@ -435,7 +439,7 @@ where
         let l2_norm = data.iter().fold(T::zero(), |acc, &x| acc + x * x).sqrt();
 
         // Calculate percentages
-        let zero_threshold = T::from_f64(1e-10).unwrap_or(T::zero());
+        let zero_threshold = T::from_f64(1e-10).unwrap_or_else(|| T::zero());
         let zero_count = data.iter().filter(|&&x| x.abs() < zero_threshold).count();
         let zero_percentage = (zero_count as f64 / total_elements as f64) * 100.0;
 
@@ -446,10 +450,15 @@ where
         let invalid_percentage = (invalid_count as f64 / total_elements as f64) * 100.0;
 
         // Determine if vanishing or exploding
-        let magnitude = l2_norm / T::from_usize(total_elements).unwrap_or(T::one()).sqrt();
-        let is_vanishing = magnitude < T::from_f64(1e-6).unwrap_or(T::zero());
-        let is_exploding =
-            magnitude > T::from_f64(10.0).unwrap_or(T::from_f64(f64::INFINITY).unwrap());
+        let magnitude = l2_norm
+            / T::from_usize(total_elements)
+                .unwrap_or_else(|| T::one())
+                .sqrt();
+        let is_vanishing = magnitude < T::from_f64(1e-6).unwrap_or_else(|| T::zero());
+        let is_exploding = magnitude
+            > T::from_f64(10.0).unwrap_or_else(|| {
+                T::from_f64(f64::INFINITY).expect("fallback infinity value should convert")
+            });
 
         Ok(GradientStats {
             mean,
@@ -476,17 +485,17 @@ where
 
         // Calculate basic statistics
         let sum = data.iter().fold(T::zero(), |acc, &x| acc + x);
-        let mean = sum / T::from_usize(total_elements).unwrap_or(T::one());
+        let mean = sum / T::from_usize(total_elements).unwrap_or_else(|| T::one());
 
         let variance = data.iter().fold(T::zero(), |acc, &x| {
             let diff = x - mean;
             acc + diff * diff
-        }) / T::from_usize(total_elements).unwrap_or(T::one());
+        }) / T::from_usize(total_elements).unwrap_or_else(|| T::one());
 
         let std = variance.sqrt();
 
         let min = data.iter().fold(
-            T::from_f64(f64::INFINITY).unwrap_or(T::zero()),
+            T::from_f64(f64::INFINITY).unwrap_or_else(|| T::zero()),
             |acc, &x| {
                 if x < acc {
                     x
@@ -497,7 +506,7 @@ where
         );
 
         let max = data.iter().fold(
-            T::from_f64(f64::NEG_INFINITY).unwrap_or(T::zero()),
+            T::from_f64(f64::NEG_INFINITY).unwrap_or_else(|| T::zero()),
             |acc, &x| {
                 if x > acc {
                     x
@@ -511,7 +520,7 @@ where
         let norm = data.iter().fold(T::zero(), |acc, &x| acc + x * x).sqrt();
 
         // Calculate sparsity (percentage of zero values)
-        let zero_threshold = T::from_f64(1e-10).unwrap_or(T::zero());
+        let zero_threshold = T::from_f64(1e-10).unwrap_or_else(|| T::zero());
         let zero_count = data.iter().filter(|&&x| x.abs() < zero_threshold).count();
         let sparsity = (zero_count as f64 / total_elements as f64) * 100.0;
 

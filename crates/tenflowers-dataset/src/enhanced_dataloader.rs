@@ -289,7 +289,7 @@ where
                 };
 
                 {
-                    let mut results_map = results.lock().unwrap();
+                    let mut results_map = results.lock().expect("lock should not be poisoned");
                     results_map.insert(task.task_id, work_result);
                 }
 
@@ -360,11 +360,11 @@ where
 
         loop {
             {
-                let mut results_map = self.results.lock().unwrap();
+                let mut results_map = self.results.lock().expect("lock should not be poisoned");
                 if let Some(result) = results_map.remove(&current_id) {
                     // Update statistics
                     {
-                        let mut stats = self.stats.lock().unwrap();
+                        let mut stats = self.stats.lock().expect("lock should not be poisoned");
                         stats.batches_processed += 1;
                         stats.total_processing_time += result.processing_time;
                         stats.average_batch_time =
@@ -405,7 +405,10 @@ where
 
     /// Get loader statistics
     pub fn get_stats(&self) -> LoaderStats {
-        self.stats.lock().unwrap().clone()
+        self.stats
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone()
     }
 
     /// Get work queue statistics

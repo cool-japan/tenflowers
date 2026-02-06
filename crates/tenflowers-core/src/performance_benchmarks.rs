@@ -120,7 +120,8 @@ impl PerformanceBenchmarkSuite {
                 size,
                 iterations,
                 || {
-                    SimdOptimizer::add_f32_optimized(&a, &b, &mut result_optimized).unwrap();
+                    SimdOptimizer::add_f32_optimized(&a, &b, &mut result_optimized)
+                        .expect("SIMD add operation should succeed");
                 },
                 || {
                     for i in 0..size {
@@ -137,7 +138,8 @@ impl PerformanceBenchmarkSuite {
                 size,
                 iterations,
                 || {
-                    SimdOptimizer::mul_f32_optimized(&a, &b, &mut result_optimized).unwrap();
+                    SimdOptimizer::mul_f32_optimized(&a, &b, &mut result_optimized)
+                        .expect("SIMD multiply operation should succeed");
                 },
                 || {
                     for i in 0..size {
@@ -154,7 +156,8 @@ impl PerformanceBenchmarkSuite {
                 size,
                 iterations,
                 || {
-                    SimdOptimizer::sub_f32_optimized(&a, &b, &mut result_optimized).unwrap();
+                    SimdOptimizer::sub_f32_optimized(&a, &b, &mut result_optimized)
+                        .expect("SIMD subtract operation should succeed");
                 },
                 || {
                     for i in 0..size {
@@ -171,7 +174,8 @@ impl PerformanceBenchmarkSuite {
                 size,
                 iterations,
                 || {
-                    SimdOptimizer::relu_f32_optimized(&a, &mut result_optimized).unwrap();
+                    SimdOptimizer::relu_f32_optimized(&a, &mut result_optimized)
+                        .expect("SIMD ReLU operation should succeed");
                 },
                 || {
                     for i in 0..size {
@@ -458,7 +462,11 @@ impl BenchmarkSuite {
             .chain(self.gpu_results.values())
             .collect();
 
-        all_results.sort_by(|a, b| b.speedup.partial_cmp(&a.speedup).unwrap());
+        all_results.sort_by(|a, b| {
+            b.speedup
+                .partial_cmp(&a.speedup)
+                .expect("partial_cmp should not return None for valid values")
+        });
         all_results
             .iter()
             .take(count)

@@ -253,7 +253,11 @@ impl FormatRegistry {
         }
 
         // Sort by confidence
-        detections.sort_by(|a, b| b.0.confidence.partial_cmp(&a.0.confidence).unwrap());
+        detections.sort_by(|a, b| {
+            b.0.confidence
+                .partial_cmp(&a.0.confidence)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         // Use highest confidence factory
         let (detection, factory) = &detections[0];

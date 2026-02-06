@@ -5,8 +5,6 @@
 //!
 //! Run with: `cargo run --example imagenet_example --features download,images`
 
-#[cfg(feature = "gpu")]
-use pollster;
 use std::path::Path;
 use tenflowers_core::Tensor;
 use tenflowers_dataset::{

@@ -263,7 +263,7 @@ impl AdvancedBenchmarkSuite {
 
             // Create test data
             let test_data: Vec<T> = (0..sample_size)
-                .map(|i| T::from(i as f64 / 1000.0).unwrap())
+                .map(|i| T::from(i as f64 / 1000.0).unwrap_or(T::zero()))
                 .collect();
 
             let features = Tensor::from_vec(test_data.clone(), &[sample_size])?;
@@ -481,11 +481,11 @@ impl AdvancedBenchmarkSuite {
             let fastest = loading_results
                 .iter()
                 .min_by_key(|r| r.timing.mean)
-                .unwrap();
+                .expect("non-empty loading_results should have minimum");
             let slowest = loading_results
                 .iter()
                 .max_by_key(|r| r.timing.mean)
-                .unwrap();
+                .expect("non-empty loading_results should have maximum");
 
             let fastest_name = &fastest.name;
             let fastest_mean = fastest.timing.mean;
@@ -509,11 +509,11 @@ impl AdvancedBenchmarkSuite {
             let fastest = transform_results
                 .iter()
                 .min_by_key(|r| r.timing.mean)
-                .unwrap();
+                .expect("non-empty transform_results should have minimum");
             let slowest = transform_results
                 .iter()
                 .max_by_key(|r| r.timing.mean)
-                .unwrap();
+                .expect("non-empty transform_results should have maximum");
 
             let fastest_name = &fastest.name;
             let fastest_mean = fastest.timing.mean;
@@ -560,7 +560,9 @@ impl AdvancedBenchmarkSuite {
 
                 if workers_throughput.len() > 1 {
                     let single_worker = workers_throughput[0].1;
-                    let max_workers = workers_throughput.last().unwrap();
+                    let max_workers = workers_throughput
+                        .last()
+                        .expect("collection should not be empty");
                     let scaling_efficiency = max_workers.1 / (single_worker * max_workers.0 as f64);
 
                     report.push_str(&format!(
@@ -684,7 +686,11 @@ impl CpuTracker {
     }
 
     pub fn finish(&self) -> CpuStats {
-        let samples = self.utilization_samples.lock().unwrap().clone();
+        let samples = self
+            .utilization_samples
+            .lock()
+            .expect("lock should not be poisoned")
+            .clone();
 
         if samples.is_empty() {
             return CpuStats {
@@ -875,9 +881,11 @@ mod tests {
 
         let dataset = TensorDataset::new(features, labels);
 
-        let mut config = BenchmarkConfig::default();
-        config.sample_sizes = vec![3]; // Small test size
-        config.measurement_iterations = 2;
+        let config = BenchmarkConfig {
+            sample_sizes: vec![3], // Small test size
+            measurement_iterations: 2,
+            ..Default::default()
+        };
 
         let mut suite = AdvancedBenchmarkSuite::new(config);
         let result = suite.benchmark_dataset_loading(dataset, "test_dataset");

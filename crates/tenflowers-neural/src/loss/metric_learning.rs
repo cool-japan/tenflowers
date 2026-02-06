@@ -87,7 +87,8 @@ where
     }
 
     let one = Tensor::from_scalar(T::one());
-    let half = Tensor::from_scalar(T::from(0.5).unwrap());
+    let half =
+        Tensor::from_scalar(T::from(0.5).unwrap_or_else(|| T::one() / (T::one() + T::one())));
     let margin_tensor = Tensor::from_scalar(margin);
 
     // Compute distance squared

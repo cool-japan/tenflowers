@@ -150,7 +150,8 @@ where
             .iter()
             .zip(label2_data.iter())
             .map(|(&l1, &l2)| {
-                l1 * T::from(actual_lambda).unwrap() + l2 * T::from(1.0 - actual_lambda).unwrap()
+                l1 * T::from(actual_lambda).expect("lambda should convert to float")
+                    + l2 * T::from(1.0 - actual_lambda).expect("1-lambda should convert to float")
             })
             .collect();
 
@@ -232,8 +233,8 @@ where
             0.5
         };
 
-        let lambda_t = T::from(lambda).unwrap();
-        let one_minus_lambda = T::from(1.0 - lambda).unwrap();
+        let lambda_t = T::from(lambda).expect("lambda should convert to float");
+        let one_minus_lambda = T::from(1.0 - lambda).expect("1-lambda should convert to float");
 
         // Mix features
         let data1 = features1.as_slice().ok_or_else(|| {
@@ -462,7 +463,7 @@ where
                     T::zero()
                 } else {
                     let sum = data.iter().fold(T::zero(), |acc, &x| acc + x);
-                    sum / T::from(data.len()).unwrap()
+                    sum / T::from(data.len()).expect("data length should convert to float")
                 }
             }
         }

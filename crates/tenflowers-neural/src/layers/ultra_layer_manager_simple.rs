@@ -494,7 +494,7 @@ where
     fn clone_wrapper(&self) -> Box<dyn LayerWrapper> {
         // Simplified clone for compatibility
         Box::new(ConcreteLayerWrapper {
-            layer: Box::new(UltraDense::<f32>::new(10, 10, true, UltraDenseConfig::default()).unwrap()),
+            layer: Box::new(UltraDense::<f32>::new(10, 10, true, UltraDenseConfig::default()).expect("layer creation should succeed in clone_wrapper")),
             layer_id: self.layer_id,
             metrics: LayerMetrics::default(),
             _phantom: std::marker::PhantomData,

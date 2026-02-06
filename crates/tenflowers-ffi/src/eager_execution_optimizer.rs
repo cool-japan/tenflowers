@@ -289,7 +289,7 @@ impl PyEagerExecutionOptimizer {
             self.optimization_config.target_overhead_microseconds = value.extract::<f64>()?;
             self.performance_tracker
                 .lock()
-                .unwrap()
+                .expect("Mutex should not be poisoned")
                 .target_overhead_microseconds = value.extract::<f64>()?;
         }
 
@@ -316,8 +316,14 @@ impl PyEagerExecutionOptimizer {
         inputs: &Bound<'_, PyList>,
     ) -> PyResult<PyObject> {
         let start_time = Instant::now();
-        let mut optimizer = self.inner.write().unwrap();
-        let mut tracker = self.performance_tracker.lock().unwrap();
+        let mut optimizer = self
+            .inner
+            .write()
+            .expect("write lock should not be poisoned");
+        let mut tracker = self
+            .performance_tracker
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Extract input information
         let input_shapes: Vec<Vec<usize>> = inputs
@@ -441,8 +447,11 @@ impl PyEagerExecutionOptimizer {
 
     /// Get comprehensive performance statistics
     pub fn get_performance_statistics(&self, py: Python) -> PyResult<PyObject> {
-        let optimizer = self.inner.read().unwrap();
-        let tracker = self.performance_tracker.lock().unwrap();
+        let optimizer = self.inner.read().expect("read lock should not be poisoned");
+        let tracker = self
+            .performance_tracker
+            .lock()
+            .expect("lock should not be poisoned");
         let py_dict = PyDict::new(py);
 
         // Overhead statistics
@@ -568,7 +577,10 @@ impl PyEagerExecutionOptimizer {
 
         // Update tracker
         {
-            let mut tracker = self.performance_tracker.lock().unwrap();
+            let mut tracker = self
+                .performance_tracker
+                .lock()
+                .expect("lock should not be poisoned");
             tracker.current_average_overhead_microseconds = avg_overhead_per_op;
             tracker.overhead_measurements.push(avg_overhead_per_op);
             tracker.throughput_measurements.push(throughput);
@@ -614,8 +626,11 @@ impl PyEagerExecutionOptimizer {
 
     /// Get optimization recommendations for improving eager execution performance
     pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<PyObject> {
-        let optimizer = self.inner.read().unwrap();
-        let tracker = self.performance_tracker.lock().unwrap();
+        let optimizer = self.inner.read().expect("read lock should not be poisoned");
+        let tracker = self
+            .performance_tracker
+            .lock()
+            .expect("lock should not be poisoned");
         let mut recommendations = Vec::new();
 
         let current_overhead = tracker.current_average_overhead_microseconds;

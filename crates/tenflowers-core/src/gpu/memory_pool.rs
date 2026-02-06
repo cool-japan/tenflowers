@@ -140,7 +140,10 @@ impl GpuMemoryPool {
 
         // Remove from active allocations and get metadata
         let entry = {
-            let mut active = self.active_allocations.lock().unwrap();
+            let mut active = self
+                .active_allocations
+                .lock()
+                .expect("lock should not be poisoned");
             active.remove(&buffer_ptr)
         };
 
@@ -158,7 +161,10 @@ impl GpuMemoryPool {
                 }
             } else {
                 // Buffer still has references, keep tracking
-                let mut active = self.active_allocations.lock().unwrap();
+                let mut active = self
+                    .active_allocations
+                    .lock()
+                    .expect("lock should not be poisoned");
                 active.insert(buffer_ptr, entry);
             }
         }
@@ -174,7 +180,10 @@ impl GpuMemoryPool {
         let mut freed_bytes = 0u64;
         let cutoff_time = Instant::now() - self.config.cleanup_interval;
 
-        let mut size_buckets = self.size_buckets.write().unwrap();
+        let mut size_buckets = self
+            .size_buckets
+            .write()
+            .expect("write lock should not be poisoned");
 
         for (_, bucket) in size_buckets.iter_mut() {
             let original_len = bucket.len();
@@ -189,7 +198,10 @@ impl GpuMemoryPool {
         }
 
         // Update cleanup time
-        *self.last_cleanup.lock().unwrap() = Instant::now();
+        *self
+            .last_cleanup
+            .lock()
+            .expect("lock should not be poisoned") = Instant::now();
 
         // Update stats
         self.update_stats_freed(freed_bytes);
@@ -202,7 +214,7 @@ impl GpuMemoryPool {
 
     /// Get current memory statistics
     pub fn get_stats(&self) -> MemoryStats {
-        let stats = self.stats.read().unwrap();
+        let stats = self.stats.read().expect("read lock should not be poisoned");
         stats.clone()
     }
 
@@ -212,7 +224,10 @@ impl GpuMemoryPool {
             return Ok(());
         }
 
-        let mut size_buckets = self.size_buckets.write().unwrap();
+        let mut size_buckets = self
+            .size_buckets
+            .write()
+            .expect("write lock should not be poisoned");
         let mut consolidated_bytes = 0u64;
 
         // Find fragmented buckets (many small buffers)
@@ -265,7 +280,10 @@ impl GpuMemoryPool {
         size_bucket: u64,
         usage: wgpu::BufferUsages,
     ) -> Option<wgpu::Buffer> {
-        let mut size_buckets = self.size_buckets.write().unwrap();
+        let mut size_buckets = self
+            .size_buckets
+            .write()
+            .expect("write lock should not be poisoned");
 
         if let Some(bucket) = size_buckets.get_mut(&size_bucket) {
             // Find buffer with compatible usage
@@ -316,7 +334,10 @@ impl GpuMemoryPool {
         };
 
         let buffer_ptr = buffer as *const wgpu::Buffer as usize;
-        let mut active = self.active_allocations.lock().unwrap();
+        let mut active = self
+            .active_allocations
+            .lock()
+            .expect("lock should not be poisoned");
         active.insert(buffer_ptr, entry);
 
         Ok(())
@@ -328,7 +349,10 @@ impl GpuMemoryPool {
         entry.ref_count = 0;
 
         let size_bucket = self.calculate_size_bucket(entry.size);
-        let mut size_buckets = self.size_buckets.write().unwrap();
+        let mut size_buckets = self
+            .size_buckets
+            .write()
+            .expect("write lock should not be poisoned");
 
         let bucket = size_buckets
             .entry(size_bucket)
@@ -353,7 +377,10 @@ impl GpuMemoryPool {
 
     /// Maybe run cleanup if enough time has passed
     fn maybe_run_cleanup(&self) -> Result<()> {
-        let last_cleanup = *self.last_cleanup.lock().unwrap();
+        let last_cleanup = *self
+            .last_cleanup
+            .lock()
+            .expect("lock should not be poisoned");
         if last_cleanup.elapsed() > self.config.cleanup_interval {
             self.cleanup()?;
         }
@@ -362,7 +389,10 @@ impl GpuMemoryPool {
 
     /// Update allocation statistics
     fn update_stats_allocated(&self, size: u64) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .expect("write lock should not be poisoned");
         stats.total_allocated += size;
         stats.current_usage += size;
         if stats.current_usage > stats.peak_usage {
@@ -372,26 +402,38 @@ impl GpuMemoryPool {
 
     /// Update deallocation statistics
     fn update_stats_freed(&self, size: u64) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .expect("write lock should not be poisoned");
         stats.total_freed += size;
         stats.current_usage = stats.current_usage.saturating_sub(size);
     }
 
     /// Update cache hit statistics
     fn update_stats_hit(&self) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .expect("write lock should not be poisoned");
         stats.cache_hits += 1;
     }
 
     /// Update cache miss statistics
     fn update_stats_miss(&self) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .expect("write lock should not be poisoned");
         stats.cache_misses += 1;
     }
 
     /// Update fragmentation statistics
     fn update_fragmentation_stats(&self) {
-        let size_buckets = self.size_buckets.read().unwrap();
+        let size_buckets = self
+            .size_buckets
+            .read()
+            .expect("read lock should not be poisoned");
         let mut total_buckets = 0;
         let mut fragmented_buckets = 0;
 
@@ -408,13 +450,16 @@ impl GpuMemoryPool {
             0.0
         };
 
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .expect("write lock should not be poisoned");
         stats.fragmentation_ratio = fragmentation_ratio;
     }
 
     /// Get cache hit ratio
     pub fn get_cache_hit_ratio(&self) -> f64 {
-        let stats = self.stats.read().unwrap();
+        let stats = self.stats.read().expect("read lock should not be poisoned");
         let total_requests = stats.cache_hits + stats.cache_misses;
         if total_requests > 0 {
             stats.cache_hits as f64 / total_requests as f64
@@ -425,7 +470,7 @@ impl GpuMemoryPool {
 
     /// Get memory efficiency ratio
     pub fn get_memory_efficiency(&self) -> f64 {
-        let stats = self.stats.read().unwrap();
+        let stats = self.stats.read().expect("read lock should not be poisoned");
         if stats.peak_usage > 0 {
             stats.current_usage as f64 / stats.peak_usage as f64
         } else {
@@ -450,14 +495,17 @@ impl GlobalMemoryManager {
 
     /// Get or create memory pool for device
     pub fn get_pool(&self, device_id: usize, device: Arc<wgpu::Device>) -> Arc<GpuMemoryPool> {
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         if let Some(pool) = pools.get(&device_id) {
             return Arc::clone(pool);
         }
         drop(pools);
 
         // Create new pool
-        let mut pools = self.pools.write().unwrap();
+        let mut pools = self
+            .pools
+            .write()
+            .expect("write lock should not be poisoned");
         let pool = Arc::new(GpuMemoryPool::new(device, PoolConfig::default()));
         pools.insert(device_id, Arc::clone(&pool));
         pool
@@ -465,7 +513,7 @@ impl GlobalMemoryManager {
 
     /// Get memory statistics for all devices
     pub fn get_global_stats(&self) -> HashMap<usize, MemoryStats> {
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         pools
             .iter()
             .map(|(device_id, pool)| (*device_id, pool.get_stats()))
@@ -474,7 +522,7 @@ impl GlobalMemoryManager {
 
     /// Cleanup all pools
     pub fn cleanup_all(&self) -> Result<()> {
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         for pool in pools.values() {
             pool.cleanup()?;
         }
@@ -483,7 +531,7 @@ impl GlobalMemoryManager {
 
     /// Defragment all pools
     pub fn defragment_all(&self) -> Result<()> {
-        let pools = self.pools.read().unwrap();
+        let pools = self.pools.read().expect("read lock should not be poisoned");
         for pool in pools.values() {
             pool.defragment()?;
         }

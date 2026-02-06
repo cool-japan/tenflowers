@@ -109,7 +109,7 @@ where
             let batch_var = squared.mean(Some(&axes), true)?;
 
             // Normalize
-            let eps = T::from(self.epsilon).unwrap();
+            let eps = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
             let eps_tensor = Tensor::from_scalar(eps);
             let std = batch_var.add(&eps_tensor)?.sqrt()?;
             let normalized = centered.div(&std)?;
@@ -118,7 +118,8 @@ where
             let output = normalized.mul(&self.gamma)?.add(&self.beta)?;
 
             // Update running statistics using exponential moving average
-            let momentum_t = T::from(self.momentum).unwrap();
+            let momentum_t =
+                T::from(self.momentum).expect("Failed to convert momentum to tensor type");
             let one_minus_momentum = T::one() - momentum_t;
             let momentum_tensor = Tensor::from_scalar(momentum_t);
             let one_minus_momentum_tensor = Tensor::from_scalar(one_minus_momentum);
@@ -142,7 +143,7 @@ where
             Ok(output)
         } else {
             // Inference mode: use running statistics
-            let eps = T::from(self.epsilon).unwrap();
+            let eps = T::from(self.epsilon).expect("Failed to convert epsilon to tensor type");
             let eps_tensor = Tensor::from_scalar(eps);
 
             // Normalize using running stats

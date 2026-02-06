@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)] // TensorError is large but necessary for comprehensive error handling
+
 use std::time::Instant;
 use tenflowers_core::ops::async_binary::{AsyncBinaryOperationExecutor, WorkPriority};
 use tenflowers_core::ops::binary::{AddOp, MulOp};

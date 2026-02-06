@@ -219,7 +219,10 @@ impl AsyncGpuExecutor {
 
     /// Check if any kernels are pending
     pub fn has_pending_kernels(&self) -> bool {
-        let pending = self.pending_kernels.lock().unwrap();
+        let pending = self
+            .pending_kernels
+            .lock()
+            .expect("lock should not be poisoned");
         !pending.is_empty()
     }
 }

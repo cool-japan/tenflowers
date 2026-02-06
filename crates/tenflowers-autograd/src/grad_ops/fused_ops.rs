@@ -4,6 +4,14 @@
 //! and backward pass of operations in a single call, optimizing memory usage
 //! and computational efficiency by reusing intermediate values.
 
+/// Helper macro to convert numeric constants without unwrap (no unwrap policy)
+macro_rules! float_const {
+    ($val:expr, $t:ty) => {
+        <$t as scirs2_core::num_traits::NumCast>::from($val)
+            .expect("float constant conversion should never fail for standard float types")
+    };
+}
+
 use crate::tensor_ext::TensorAutograd;
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::activation::tanh;
@@ -76,9 +84,9 @@ where
     let x_cubed = x_squared.mul(input)?;
 
     // Constants
-    let sqrt_2_over_pi = T::from(0.7978845608_f64).unwrap(); // sqrt(2/π)
-    let alpha = T::from(0.044715_f64).unwrap();
-    let half = T::from(0.5_f64).unwrap();
+    let sqrt_2_over_pi = float_const!(0.7978845608_f64, T); // sqrt(2/π)
+    let alpha = float_const!(0.044715_f64, T);
+    let half = float_const!(0.5_f64, T);
     let one = T::one();
 
     // Compute inner argument: sqrt(2/π) * (x + 0.044715 * x^3)
@@ -98,7 +106,7 @@ where
     let tanh_squared = tanh_term.mul(&tanh_term)?;
     let one_minus_tanh_squared = Tensor::from_scalar(one).sub(&tanh_squared)?;
 
-    let three_alpha = T::from(0.134145_f64).unwrap(); // 3 * 0.044715
+    let three_alpha = float_const!(0.134145_f64, T); // 3 * 0.044715
     let one_plus_three_alpha_x_squared =
         Tensor::from_scalar(one).add(&Tensor::from_scalar(three_alpha).mul(&x_squared)?)?;
 
@@ -318,7 +326,7 @@ where
 {
     let input_shape = input.shape().dims();
     let batch_size = input_shape[0] as f64;
-    let _batch_size_t = T::from(batch_size).unwrap();
+    let _batch_size_t = float_const!(batch_size, T);
 
     if config.training {
         // Training mode: compute batch statistics
@@ -472,7 +480,8 @@ where
     }
 
     // Training mode: apply dropout
-    let scale = T::from(1.0 / (1.0 - p)).unwrap();
+    let scale =
+        T::from(1.0 / (1.0 - p)).expect("dropout scale factor should convert to tensor type");
 
     match mask {
         Some(dropout_mask) => {

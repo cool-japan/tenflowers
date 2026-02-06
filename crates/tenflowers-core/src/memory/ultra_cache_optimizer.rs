@@ -724,7 +724,7 @@ impl UltraCacheOptimizer {
             b.priority.cmp(&a.priority).then(
                 b.expected_improvement
                     .partial_cmp(&a.expected_improvement)
-                    .unwrap(),
+                    .expect("expected_improvement must be valid float for comparison"),
             )
         });
 

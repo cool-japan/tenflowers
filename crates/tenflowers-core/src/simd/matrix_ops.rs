@@ -365,7 +365,7 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0, 4.0]; // [[1, 2], [3, 4]]
         let b = vec![5.0, 6.0, 7.0, 8.0]; // [[5, 6], [7, 8]]
         let mut c = vec![0.0; 4];
-        let expected = vec![19.0, 22.0, 43.0, 50.0]; // [[19, 22], [43, 50]]
+        let expected = [19.0, 22.0, 43.0, 50.0]; // [[19, 22], [43, 50]]
 
         MatrixOps::matmul_f32_blocked(&a, &b, &mut c, 2, 2, 2, 2).unwrap();
 
@@ -380,7 +380,7 @@ mod tests {
         let matrix = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // [[1, 2, 3], [4, 5, 6]]
         let vector = vec![1.0, 2.0, 3.0];
         let mut result = vec![0.0; 2];
-        let expected = vec![14.0, 32.0]; // [1*1 + 2*2 + 3*3, 4*1 + 5*2 + 6*3]
+        let expected = [14.0, 32.0]; // [1*1 + 2*2 + 3*3, 4*1 + 5*2 + 6*3]
 
         MatrixOps::matvec_f32_optimized(&matrix, &vector, &mut result, 2, 3).unwrap();
 
@@ -394,7 +394,7 @@ mod tests {
         // Test 2x3 matrix transpose to 3x2
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // [[1, 2, 3], [4, 5, 6]]
         let mut output = vec![0.0; 6];
-        let expected = vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]; // [[1, 4], [2, 5], [3, 6]]
+        let expected = [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]; // [[1, 4], [2, 5], [3, 6]]
 
         MatrixOps::transpose_f32_blocked(&input, &mut output, 2, 3, 2).unwrap();
 
@@ -408,7 +408,7 @@ mod tests {
         let a = vec![1.0, 2.0];
         let b = vec![3.0, 4.0, 5.0];
         let mut result = vec![0.0; 6];
-        let expected = vec![3.0, 4.0, 5.0, 6.0, 8.0, 10.0]; // [[3, 4, 5], [6, 8, 10]]
+        let expected = [3.0, 4.0, 5.0, 6.0, 8.0, 10.0]; // [[3, 4, 5], [6, 8, 10]]
 
         MatrixOps::outer_product_f32_optimized(&a, &b, &mut result).unwrap();
 
@@ -422,7 +422,7 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![5.0, 6.0, 7.0, 8.0];
         let mut result = vec![0.0; 4];
-        let expected = vec![6.0, 8.0, 10.0, 12.0];
+        let expected = [6.0, 8.0, 10.0, 12.0];
 
         MatrixOps::matrix_add_f32_optimized(&a, &b, &mut result).unwrap();
 
@@ -436,7 +436,7 @@ mod tests {
         let matrix = vec![1.0, 2.0, 3.0, 4.0];
         let scalar = 2.5;
         let mut result = vec![0.0; 4];
-        let expected = vec![2.5, 5.0, 7.5, 10.0];
+        let expected = [2.5, 5.0, 7.5, 10.0];
 
         MatrixOps::matrix_scale_f32_optimized(&matrix, scalar, &mut result).unwrap();
 

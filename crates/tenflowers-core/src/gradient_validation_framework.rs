@@ -370,7 +370,7 @@ impl GradientValidator {
     pub fn set_operation_config(&self, operation: &str, config: GradientCheckConfig) {
         self.configs
             .lock()
-            .unwrap()
+            .expect("Gradient config mutex poisoned")
             .insert(operation.to_string(), config);
     }
 
@@ -378,7 +378,7 @@ impl GradientValidator {
     fn get_config(&self, operation: &str) -> GradientCheckConfig {
         self.configs
             .lock()
-            .unwrap()
+            .expect("Gradient config mutex poisoned")
             .get(operation)
             .cloned()
             .unwrap_or_default()

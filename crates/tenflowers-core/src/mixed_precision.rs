@@ -305,7 +305,16 @@ impl MixedPrecisionState {
             return Ok(loss.clone());
         }
 
-        let scale_value = T::from(self.current_loss_scale).unwrap();
+        let scale_value =
+            T::from(self.current_loss_scale).ok_or_else(|| TensorError::ComputeError {
+                operation: "scale_loss".to_string(),
+                details: format!(
+                    "Failed to convert loss scale {} to target type",
+                    self.current_loss_scale
+                ),
+                retry_possible: false,
+                context: None,
+            })?;
         let scale_tensor = Tensor::from_scalar(scale_value);
         loss.mul(&scale_tensor)
     }
@@ -328,7 +337,16 @@ impl MixedPrecisionState {
             return Ok(());
         }
 
-        let scale_factor = T::from(1.0 / self.current_loss_scale).unwrap();
+        let scale_factor =
+            T::from(1.0 / self.current_loss_scale).ok_or_else(|| TensorError::ComputeError {
+                operation: "unscale_gradients".to_string(),
+                details: format!(
+                    "Failed to convert unscale factor {} to target type",
+                    1.0 / self.current_loss_scale
+                ),
+                retry_possible: false,
+                context: None,
+            })?;
         let scale_tensor = Tensor::from_scalar(scale_factor);
 
         for grad in gradients.iter_mut() {
@@ -840,13 +858,14 @@ mod tests {
         use crate::Tensor;
 
         // Test f32 to f16 conversion
-        let f32_tensor = Tensor::<f32>::from_vec(vec![1.0, 2.5, -3.14159], &[3]).unwrap();
+        let f32_tensor =
+            Tensor::<f32>::from_vec(vec![1.0, 2.5, -std::f32::consts::PI], &[3]).unwrap();
         let f16_tensor = to_half_f32(&f32_tensor).unwrap();
         let f32_back = from_half_f32(&f16_tensor).unwrap();
 
         // Check that conversion is reasonably close (f16 has limited precision)
-        let original_data = f32_tensor.as_slice().unwrap();
-        let converted_data = f32_back.as_slice().unwrap();
+        let original_data = f32_tensor.as_slice().expect("tensor should be contiguous");
+        let converted_data = f32_back.as_slice().expect("tensor should be contiguous");
         for (orig, conv) in original_data.iter().zip(converted_data.iter()) {
             assert!(
                 (orig - conv).abs() < 0.01,
@@ -861,7 +880,9 @@ mod tests {
         let f32_back_bf16 = from_bfloat16_f32(&bf16_tensor).unwrap();
 
         // bf16 should have better precision than f16 in this range
-        let bf16_data = f32_back_bf16.as_slice().unwrap();
+        let bf16_data = f32_back_bf16
+            .as_slice()
+            .expect("tensor should be contiguous");
         for (orig, conv) in original_data.iter().zip(bf16_data.iter()) {
             assert!(
                 (orig - conv).abs() < 0.001,
@@ -912,12 +933,14 @@ mod tests {
 
     #[test]
     fn test_mixed_precision_statistics() {
-        let mut stats = MixedPrecisionStatistics::default();
-        stats.total_steps = 100;
-        stats.overflow_steps = 5;
-        stats.scale_increases = 10;
-        stats.scale_decreases = 5;
-        stats.cumulative_scale = 6553600.0; // 100 steps * 65536 avg
+        let stats = MixedPrecisionStatistics {
+            total_steps: 100,
+            overflow_steps: 5,
+            scale_increases: 10,
+            scale_decreases: 5,
+            cumulative_scale: 6553600.0, // 100 steps * 65536 avg
+            ..Default::default()
+        };
 
         assert_eq!(stats.overflow_rate(), 0.05);
         assert_eq!(stats.average_scale(), 65536.0);

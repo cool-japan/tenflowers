@@ -88,7 +88,9 @@ impl GradientTape {
                 // For more complex forms, this would need more sophisticated analysis
                 let value = if i == j {
                     // Diagonal elements - assume quadratic form gives 2.0
-                    T::from_f64(2.0).unwrap_or_else(|| T::from_f32(2.0).unwrap())
+                    T::from_f64(2.0).unwrap_or_else(|| {
+                        T::from_f32(2.0).expect("fallback value computation failed")
+                    })
                 } else {
                     // Off-diagonal elements - assume separable variables give 0.0
                     T::zero()
@@ -235,7 +237,7 @@ impl GradientTape {
 
         // VJP is essentially the same as computing gradients with custom initial gradients
         // Instead of ones, we use the provided vectors
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().expect("lock should not be poisoned");
         let mut gradients: HashMap<TensorId, Tensor<T>> = HashMap::new();
 
         // Set gradients of outputs to provided vectors (instead of ones)

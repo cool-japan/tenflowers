@@ -305,7 +305,9 @@ impl<T, D: Dataset<T>> ShardedDataset<T, D> {
         classes.sort_unstable();
 
         for class in classes {
-            let mut indices = class_to_indices.remove(&class).unwrap();
+            let mut indices = class_to_indices
+                .remove(&class)
+                .expect("class should exist in map since we got it from keys()");
 
             // Deterministically shuffle within class
             if let Some(seed) = config.seed {
@@ -485,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_shard_config_creation() {
-        let config = ShardConfig::new(4, 0).unwrap();
+        let config = ShardConfig::new(4, 0).expect("config creation should succeed");
         assert_eq!(config.world_size, 4);
         assert_eq!(config.rank, 0);
         assert_eq!(config.strategy, ShardStrategy::RoundRobin);
@@ -505,13 +507,15 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             &[10, 1],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Shard into 3 workers
-        let config = ShardConfig::new(3, 0).unwrap();
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let config = ShardConfig::new(3, 0).expect("config creation should succeed");
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         // Rank 0 should get indices [0, 3, 6, 9]
         assert_eq!(sharded.len(), 4);
@@ -524,15 +528,17 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             &[10, 1],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Shard into 3 workers with contiguous strategy
         let config = ShardConfig::new(3, 1)
             .unwrap()
             .with_strategy(ShardStrategy::Contiguous);
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         // Rank 1 should get a contiguous block
         // 10 samples / 3 workers = 3 base + 1 extra for first worker
@@ -543,22 +549,26 @@ mod tests {
 
     #[test]
     fn test_shuffled_sharding_deterministic() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 100], &[100, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 100], &[100]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 100], &[100, 1])
+            .expect("tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![1.0; 100], &[100])
+            .expect("tensor creation should succeed");
         let dataset1 = TensorDataset::new(features.clone(), labels.clone());
         let dataset2 = TensorDataset::new(features, labels);
 
         let config1 = ShardConfig::new(4, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::ShuffledRoundRobin)
             .with_seed(42);
         let config2 = ShardConfig::new(4, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::ShuffledRoundRobin)
             .with_seed(42);
 
-        let sharded1 = ShardedDataset::new(dataset1, config1).unwrap();
-        let sharded2 = ShardedDataset::new(dataset2, config2).unwrap();
+        let sharded1 = ShardedDataset::new(dataset1, config1)
+            .expect("sharded dataset creation should succeed");
+        let sharded2 = ShardedDataset::new(dataset2, config2)
+            .expect("sharded dataset creation should succeed");
 
         // Same seed should produce same indices
         assert_eq!(sharded1.indices(), sharded2.indices());
@@ -566,12 +576,15 @@ mod tests {
 
     #[test]
     fn test_shard_statistics() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 100], &[100, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 100], &[100]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 100], &[100, 1])
+            .expect("tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![1.0; 100], &[100])
+            .expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let config = ShardConfig::new(3, 0).unwrap();
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let config = ShardConfig::new(3, 0).expect("config creation should succeed");
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         let stats = sharded.shard_stats();
         assert_eq!(stats.total_samples, 100);
@@ -582,91 +595,115 @@ mod tests {
 
     #[test]
     fn test_extension_trait_round_robin() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1])
+            .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let sharded = dataset.shard_round_robin(2, 0).unwrap();
+        let sharded = dataset
+            .shard_round_robin(2, 0)
+            .expect("shard_round_robin should succeed");
         assert_eq!(sharded.len(), 5);
     }
 
     #[test]
     fn test_extension_trait_contiguous() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1])
+            .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let sharded = dataset.shard_contiguous(2, 0).unwrap();
+        let sharded = dataset
+            .shard_contiguous(2, 0)
+            .expect("shard_contiguous should succeed");
         assert_eq!(sharded.len(), 5);
         assert_eq!(sharded.indices(), &[0, 1, 2, 3, 4]);
     }
 
     #[test]
     fn test_extension_trait_shuffled() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1])
+            .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let sharded = dataset.shard_shuffled(2, 0, 42).unwrap();
+        let sharded = dataset
+            .shard_shuffled(2, 0, 42)
+            .expect("shard_shuffled should succeed");
         assert_eq!(sharded.len(), 5);
     }
 
     #[test]
     fn test_shard_access() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6, 1]).unwrap();
-        let labels =
-            Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[6]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6, 1])
+            .expect("tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[6])
+            .expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let config = ShardConfig::new(2, 0).unwrap();
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let config = ShardConfig::new(2, 0).expect("config creation should succeed");
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         // Rank 0 should get indices [0, 2, 4]
-        let (f0, l0) = sharded.get(0).unwrap();
-        let (f1, l1) = sharded.get(1).unwrap();
-        let (f2, l2) = sharded.get(2).unwrap();
+        let (f0, l0) = sharded.get(0).expect("index should be in bounds");
+        let (f1, l1) = sharded.get(1).expect("index should be in bounds");
+        let (f2, l2) = sharded.get(2).expect("index should be in bounds");
 
         // Verify we're accessing the correct original indices
-        assert!((f0.to_vec().unwrap()[0] - 1.0).abs() < 1e-6);
-        assert!((l0.to_vec().unwrap()[0] - 10.0).abs() < 1e-6);
+        assert!((f0.to_vec().expect("to_vec should succeed")[0] - 1.0).abs() < 1e-6);
+        assert!((l0.to_vec().expect("to_vec should succeed")[0] - 10.0).abs() < 1e-6);
 
-        assert!((f1.to_vec().unwrap()[0] - 3.0).abs() < 1e-6);
-        assert!((l1.to_vec().unwrap()[0] - 30.0).abs() < 1e-6);
+        assert!((f1.to_vec().expect("to_vec should succeed")[0] - 3.0).abs() < 1e-6);
+        assert!((l1.to_vec().expect("to_vec should succeed")[0] - 30.0).abs() < 1e-6);
 
-        assert!((f2.to_vec().unwrap()[0] - 5.0).abs() < 1e-6);
-        assert!((l2.to_vec().unwrap()[0] - 50.0).abs() < 1e-6);
+        assert!((f2.to_vec().expect("to_vec should succeed")[0] - 5.0).abs() < 1e-6);
+        assert!((l2.to_vec().expect("to_vec should succeed")[0] - 50.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_shard_out_of_bounds() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 6], &[6, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 6], &[6]).unwrap();
+        let features =
+            Tensor::<f32>::from_vec(vec![1.0; 6], &[6, 1]).expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 6], &[6]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let sharded = dataset.shard_round_robin(2, 0).unwrap();
+        let sharded = dataset
+            .shard_round_robin(2, 0)
+            .expect("shard_round_robin should succeed");
         assert_eq!(sharded.len(), 3);
         assert!(sharded.get(3).is_err());
     }
 
     #[test]
     fn test_empty_dataset_sharding() {
-        let features = Tensor::<f32>::from_vec(vec![], &[0, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![], &[0]).unwrap();
+        let features =
+            Tensor::<f32>::from_vec(vec![], &[0, 1]).expect("empty tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![], &[0]).expect("empty tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let sharded = dataset.shard_round_robin(2, 0).unwrap();
+        let sharded = dataset
+            .shard_round_robin(2, 0)
+            .expect("shard_round_robin should succeed");
         assert_eq!(sharded.len(), 0);
     }
 
     #[test]
     fn test_shard_statistics_balanced() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 12], &[12, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 12], &[12]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 12], &[12, 1])
+            .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 12], &[12]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let config = ShardConfig::new(3, 0).unwrap(); // 12/3 = 4 each, perfectly balanced
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let config = ShardConfig::new(3, 0).expect("config creation should succeed"); // 12/3 = 4 each, perfectly balanced
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         let stats = sharded.shard_stats();
         assert!(stats.is_balanced());
@@ -675,12 +712,15 @@ mod tests {
 
     #[test]
     fn test_shard_statistics_report() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 10], &[10, 1])
+            .expect("tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let config = ShardConfig::new(3, 0).unwrap();
-        let sharded = ShardedDataset::new(dataset, config).unwrap();
+        let config = ShardConfig::new(3, 0).expect("config creation should succeed");
+        let sharded =
+            ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
 
         let report = sharded.shard_stats().report();
         assert!(report.contains("Total samples: 10"));
@@ -697,12 +737,12 @@ mod tests {
             ],
             &[12, 1],
         )
-        .unwrap();
+        .expect("tensor creation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0],
             &[12],
         )
-        .unwrap();
+        .expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Label extractor: extract the scalar value from label tensor
@@ -715,11 +755,12 @@ mod tests {
 
         // Shard into 2 workers with stratified strategy
         let config = ShardConfig::new(2, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::Stratified)
             .with_seed(42);
 
-        let sharded = ShardedDataset::new_stratified(dataset, config, label_extractor).unwrap();
+        let sharded = ShardedDataset::new_stratified(dataset, config, label_extractor)
+            .expect("stratified sharding should succeed");
 
         // Each worker should get balanced class distribution
         // With 4 samples of each class and 2 workers, each worker should get 2 of each class
@@ -727,7 +768,7 @@ mod tests {
 
         // Verify that we can access samples
         for i in 0..sharded.len() {
-            let (feature, label) = sharded.get(i).unwrap();
+            let (feature, label) = sharded.get(i).expect("get should succeed");
             assert!(feature.to_vec().is_ok());
             assert!(label.to_vec().is_ok());
         }
@@ -736,12 +777,14 @@ mod tests {
     #[test]
     fn test_stratified_sharding_balanced_classes() {
         // Create dataset with balanced classes
-        let features = Tensor::<f32>::from_vec(vec![1.0; 60], &[60, 1]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 60], &[60, 1])
+            .expect("tensor creation should succeed");
         // 20 samples each of class 0, 1, 2
         let mut label_data = vec![0.0; 20];
         label_data.extend(vec![1.0; 20]);
         label_data.extend(vec![2.0; 20]);
-        let labels = Tensor::<f32>::from_vec(label_data, &[60]).unwrap();
+        let labels =
+            Tensor::<f32>::from_vec(label_data, &[60]).expect("tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let label_extractor = |label_tensor: &Tensor<f32>| -> Result<usize> {
@@ -753,11 +796,12 @@ mod tests {
 
         // Shard into 3 workers
         let config = ShardConfig::new(3, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::Stratified)
             .with_seed(123);
 
-        let sharded = ShardedDataset::new_stratified(dataset, config, label_extractor).unwrap();
+        let sharded = ShardedDataset::new_stratified(dataset, config, label_extractor)
+            .expect("stratified sharding should succeed");
 
         // Each worker should get approximately 20 samples (60 / 3)
         // Due to round-robin distribution within classes, the exact count may vary slightly
@@ -776,7 +820,7 @@ mod tests {
             ],
             &[30],
         )
-        .unwrap();
+        .expect("tensor creation should succeed");
         let dataset1 = TensorDataset::new(features.clone(), labels.clone());
         let dataset2 = TensorDataset::new(features, labels);
 
@@ -796,17 +840,19 @@ mod tests {
 
         // Same seed should produce same results
         let config1 = ShardConfig::new(2, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::Stratified)
             .with_seed(999);
 
         let config2 = ShardConfig::new(2, 0)
-            .unwrap()
+            .expect("config creation should succeed")
             .with_strategy(ShardStrategy::Stratified)
             .with_seed(999);
 
-        let sharded1 = ShardedDataset::new_stratified(dataset1, config1, label_extractor1).unwrap();
-        let sharded2 = ShardedDataset::new_stratified(dataset2, config2, label_extractor2).unwrap();
+        let sharded1 = ShardedDataset::new_stratified(dataset1, config1, label_extractor1)
+            .expect("stratified sharding should succeed");
+        let sharded2 = ShardedDataset::new_stratified(dataset2, config2, label_extractor2)
+            .expect("stratified sharding should succeed");
 
         // Same seed should produce same indices
         assert_eq!(sharded1.indices(), sharded2.indices());

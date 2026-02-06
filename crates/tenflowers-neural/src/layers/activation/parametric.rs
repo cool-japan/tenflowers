@@ -33,7 +33,7 @@ where
 
     /// Create a new PReLU layer with default initialization (0.25)
     pub fn new_default(num_parameters: usize) -> Result<Self> {
-        let init_value = T::from(0.25).unwrap();
+        let init_value = T::from(0.25).expect("Failed to convert 0.25 to tensor type");
         Self::new(num_parameters, init_value)
     }
 }

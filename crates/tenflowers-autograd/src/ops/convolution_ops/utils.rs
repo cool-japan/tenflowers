@@ -19,7 +19,7 @@ where
 
     // For now, return a zero tensor with the same shape as input
     let zero_data = vec![T::zero(); input_shape.iter().product()];
-    Ok(Tensor::from_vec(zero_data, input_shape).unwrap())
+    Tensor::from_vec(zero_data, input_shape)
 }
 
 /// Helper function to compute Conv2D weight gradient
@@ -39,7 +39,7 @@ where
 
     // For now, return a zero tensor with the same shape as weight
     let zero_data = vec![T::zero(); weight_shape.iter().product()];
-    Ok(Tensor::from_vec(zero_data, weight_shape).unwrap())
+    Tensor::from_vec(zero_data, weight_shape)
 }
 
 /// Helper function to compute Conv3D input gradient using transposed convolution
@@ -56,7 +56,7 @@ where
     // This is a placeholder implementation for the 3D input gradient computation
     // For now, return a zero tensor with the same shape as input
     let zero_data = vec![T::zero(); input_shape.iter().product()];
-    Ok(Tensor::from_vec(zero_data, input_shape).unwrap())
+    Tensor::from_vec(zero_data, input_shape)
 }
 
 /// Helper function to compute Conv3D weight gradient
@@ -73,7 +73,7 @@ where
     // This is a placeholder implementation for the 3D weight gradient computation
     // For now, return a zero tensor with the same shape as weight
     let zero_data = vec![T::zero(); weight_shape.iter().product()];
-    Ok(Tensor::from_vec(zero_data, weight_shape).unwrap())
+    Tensor::from_vec(zero_data, weight_shape)
 }
 
 /// Helper function to compute ConvTranspose2D input gradient
@@ -161,7 +161,7 @@ where
     new_shape[1] = end - start; // Update channel dimension
 
     let zero_data = vec![T::zero(); new_shape.iter().product()];
-    Ok(Tensor::from_vec(zero_data, &new_shape).unwrap())
+    Tensor::from_vec(zero_data, &new_shape)
 }
 
 /// Helper function to concatenate tensors along specified axis

@@ -650,10 +650,22 @@ where
     /// Common preset for moderate color jittering
     pub fn moderate() -> Self {
         Self::new()
-            .with_brightness(T::from(0.8).unwrap(), T::from(1.2).unwrap())
-            .with_contrast(T::from(0.8).unwrap(), T::from(1.2).unwrap())
-            .with_saturation(T::from(0.8).unwrap(), T::from(1.2).unwrap())
-            .with_hue(T::from(-0.1).unwrap(), T::from(0.1).unwrap())
+            .with_brightness(
+                T::from(0.8).expect("constant should convert to T"),
+                T::from(1.2).expect("constant should convert to T"),
+            )
+            .with_contrast(
+                T::from(0.8).expect("constant should convert to T"),
+                T::from(1.2).expect("constant should convert to T"),
+            )
+            .with_saturation(
+                T::from(0.8).expect("constant should convert to T"),
+                T::from(1.2).expect("constant should convert to T"),
+            )
+            .with_hue(
+                T::from(-0.1).expect("constant should convert to T"),
+                T::from(0.1).expect("constant should convert to T"),
+            )
     }
 
     /// Apply brightness adjustment
@@ -668,10 +680,11 @@ where
 
     /// Apply contrast adjustment
     fn adjust_contrast(&self, pixel: (T, T, T), factor: T) -> (T, T, T) {
-        let gray = T::from(0.299).unwrap();
+        let gray = T::from(0.299).expect("luminance constant should convert to T");
         let (r, g, b) = pixel;
-        let luminance =
-            r * T::from(0.299).unwrap() + g * T::from(0.587).unwrap() + b * T::from(0.114).unwrap();
+        let luminance = r * T::from(0.299).expect("luminance constant should convert to T")
+            + g * T::from(0.587).expect("luminance constant should convert to T")
+            + b * T::from(0.114).expect("luminance constant should convert to T");
 
         let new_r = (luminance + (r - luminance) * factor)
             .min(T::one())
@@ -746,13 +759,19 @@ where
 
         // Generate random factors for this sample
         let brightness_factor = if let Some((min, max)) = self.brightness {
-            Some(rng.random_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
+            Some(rng.random_range(
+                min.to_f32().expect("numeric conversion should succeed")
+                    ..=max.to_f32().expect("numeric conversion should succeed"),
+            ))
         } else {
             None
         };
 
         let contrast_factor = if let Some((min, max)) = self.contrast {
-            Some(rng.random_range(min.to_f32().unwrap()..=max.to_f32().unwrap()))
+            Some(rng.random_range(
+                min.to_f32().expect("numeric conversion should succeed")
+                    ..=max.to_f32().expect("numeric conversion should succeed"),
+            ))
         } else {
             None
         };
@@ -788,12 +807,18 @@ where
 
                     // Apply brightness adjustment
                     if let Some(factor) = brightness_factor {
-                        pixel = self.adjust_brightness(pixel, T::from(factor).unwrap());
+                        pixel = self.adjust_brightness(
+                            pixel,
+                            T::from(factor).expect("brightness factor should convert to T"),
+                        );
                     }
 
                     // Apply contrast adjustment
                     if let Some(factor) = contrast_factor {
-                        pixel = self.adjust_contrast(pixel, T::from(factor).unwrap());
+                        pixel = self.adjust_contrast(
+                            pixel,
+                            T::from(factor).expect("contrast factor should convert to T"),
+                        );
                     }
 
                     adjusted_data[r_idx] = pixel.0;

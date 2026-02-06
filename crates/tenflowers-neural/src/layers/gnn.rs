@@ -5,7 +5,7 @@ use tenflowers_core::{Result, Tensor, TensorError};
 /// Graph Convolutional Network (GCN) layer for graph neural networks
 ///
 /// Implements the GCN layer from "Semi-Supervised Classification with Graph Convolutional Networks"
-/// https://arxiv.org/abs/1609.02907
+/// <https://arxiv.org/abs/1609.02907>
 ///
 /// The GCN layer applies the following transformation:
 /// H^(l+1) = σ(D^(-1/2) A D^(-1/2) H^(l) W^(l))
@@ -152,7 +152,7 @@ where
         let degrees = adj_with_self_loops.sum(Some(&[1i32]), false)?;
 
         // D^(-1/2) - simplified implementation
-        let sqrt_inv_half = T::from_f32(-0.5).unwrap();
+        let sqrt_inv_half = T::from_f32(-0.5).expect("Failed to convert -0.5 to tensor type");
         let degrees_sqrt_inv = degrees.pow(&Tensor::from_scalar(sqrt_inv_half))?;
 
         // For simplified implementation, use degrees_sqrt_inv directly
@@ -212,7 +212,7 @@ where
 /// GraphSAGE (Graph Sample and Aggregate) layer
 ///
 /// Implements GraphSAGE from "Inductive Representation Learning on Large Graphs"
-/// https://arxiv.org/abs/1706.02216
+/// <https://arxiv.org/abs/1706.02216>
 ///
 /// GraphSAGE learns node embeddings by sampling and aggregating features from neighbors
 #[derive(Debug, Clone)]
@@ -360,7 +360,7 @@ where
         // Normalize if required - simplified L2 normalization
         if self.normalize {
             // Simplified normalization: divide by a constant for now
-            let norm_factor = T::from_f32(2.0).unwrap();
+            let norm_factor = T::from_f32(2.0).expect("Failed to convert 2.0 to tensor type");
             let norm_tensor = Tensor::from_scalar(norm_factor);
             output.div(&norm_tensor)
         } else {
@@ -445,7 +445,7 @@ where
 /// Graph Attention Network (GAT) layer
 ///
 /// Implements GAT from "Graph Attention Networks"
-/// https://arxiv.org/abs/1710.10903
+/// <https://arxiv.org/abs/1710.10903>
 ///
 /// GAT uses self-attention mechanisms to learn the importance of neighbors
 #[derive(Debug, Clone)]
@@ -602,7 +602,7 @@ where
         let attention_score = combined_features.matmul(&self.attention_weights)?;
 
         // Apply LeakyReLU activation
-        let leaky_slope = T::from_f32(0.2).unwrap();
+        let leaky_slope = T::from_f32(0.2).expect("Failed to convert 0.2 to tensor type");
         attention_score.leaky_relu(leaky_slope)
     }
 }

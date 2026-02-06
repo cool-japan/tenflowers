@@ -192,7 +192,9 @@ where
         for &val in data {
             let rounded = val.round();
             let diff = (val - rounded).abs();
-            let tolerance = T::from(1e-6).unwrap_or_else(|| T::from(0.000001).unwrap());
+            let tolerance = T::from(1e-6)
+                .or_else(|| T::from(0.000001))
+                .expect("conversion of tolerance value should succeed for float types");
             if diff > tolerance {
                 return Ok(false);
             }
@@ -274,7 +276,8 @@ where
 {
     // For numerical stability, handle values near 1 specially
     let one_tensor = Tensor::ones(a.shape().dims());
-    let two_tensor = Tensor::from_scalar(T::from(2.0).unwrap());
+    let two_tensor =
+        Tensor::from_scalar(T::from(2.0).expect("conversion of 2.0 to tensor type should succeed"));
 
     // Use the approximation ln(x) ≈ 2 * (x - 1) / (x + 1) for all x > 0
     // This is reasonably accurate for x in (0.5, 2.0) and stable

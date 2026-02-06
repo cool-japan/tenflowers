@@ -226,7 +226,7 @@ impl GpuGradientPlanner {
             b.priority.cmp(&a.priority).then_with(|| {
                 b.estimated_speedup
                     .partial_cmp(&a.estimated_speedup)
-                    .unwrap()
+                    .expect("Speedup values should be comparable")
             })
         });
 

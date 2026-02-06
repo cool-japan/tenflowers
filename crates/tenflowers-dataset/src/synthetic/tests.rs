@@ -30,7 +30,7 @@ mod tests {
         let dataset = DatasetGenerator::make_moons(config).unwrap();
 
         assert_eq!(dataset.len(), 100);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -41,7 +41,7 @@ mod tests {
         let dataset = DatasetGenerator::make_circles(config, 0.5).unwrap();
 
         assert_eq!(dataset.len(), 50);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -59,7 +59,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(dataset.len(), 150);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[4]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -77,7 +77,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(dataset.len(), 100);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[10]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -96,7 +96,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(dataset.len(), 100);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[5]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -107,7 +107,7 @@ mod tests {
         let dataset = DatasetGenerator::make_s_curve(config, 0.1).unwrap();
 
         assert_eq!(dataset.len(), 100);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[3]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -118,7 +118,7 @@ mod tests {
         let dataset = DatasetGenerator::make_swiss_roll(config, 0.1).unwrap();
 
         assert_eq!(dataset.len(), 100);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[3]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -130,7 +130,7 @@ mod tests {
         let dataset = DatasetGenerator::make_time_series(config, pattern, 20).unwrap();
 
         assert_eq!(dataset.len(), 50);
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[20]);
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }
@@ -144,8 +144,8 @@ mod tests {
         let dataset2 = DatasetGenerator::make_moons(config2).unwrap();
 
         // With same seed, should generate identical datasets
-        let (features1, _) = dataset1.get(0).unwrap();
-        let (features2, _) = dataset2.get(0).unwrap();
+        let (features1, _) = dataset1.get(0).expect("index should be in bounds");
+        let (features2, _) = dataset2.get(0).expect("index should be in bounds");
 
         let data1 = features1.to_vec().unwrap();
         let data2 = features2.to_vec().unwrap();
@@ -166,7 +166,7 @@ mod tests {
         let dataset = DatasetGenerator::make_text_corpus(config).unwrap();
         assert!(dataset.len() > 0);
 
-        let (features, labels) = dataset.get(0).unwrap();
+        let (features, labels) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[15]); // max_sequence_length
         assert_eq!(labels.shape().dims(), &[] as &[usize]);
     }

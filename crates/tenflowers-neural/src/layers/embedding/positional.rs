@@ -81,8 +81,9 @@ where
 
         for pos in 0..max_len {
             for i in 0..(d_model / 2) {
-                let div_term = T::from(10000.0_f64.powf(2.0 * i as f64 / d_model as f64)).unwrap();
-                let pos_t = T::from(pos as f64).unwrap();
+                let div_term = T::from(10000.0_f64.powf(2.0 * i as f64 / d_model as f64))
+                    .expect("Failed to convert div_term to tensor type");
+                let pos_t = T::from(pos as f64).expect("Failed to convert position to tensor type");
 
                 // sin(pos / 10000^(2i/d_model))
                 let sin_val = (pos_t / div_term).sin();
@@ -96,8 +97,9 @@ where
             // Handle odd d_model dimensions
             if d_model % 2 == 1 {
                 let div_term =
-                    T::from(10000.0_f64.powf(2.0 * (d_model / 2) as f64 / d_model as f64)).unwrap();
-                let pos_t = T::from(pos as f64).unwrap();
+                    T::from(10000.0_f64.powf(2.0 * (d_model / 2) as f64 / d_model as f64))
+                        .expect("Failed to convert div_term to tensor type");
+                let pos_t = T::from(pos as f64).expect("Failed to convert position to tensor type");
                 let sin_val = (pos_t / div_term).sin();
                 pe_data.push(sin_val);
             }
@@ -514,7 +516,7 @@ where
         let mut freqs = Vec::with_capacity(half_d);
         for i in 0..half_d {
             let freq = 1.0 / base.powf(2.0 * i as f64 / d_model as f64);
-            freqs.push(T::from(freq).unwrap());
+            freqs.push(T::from(freq).expect("Failed to convert frequency to tensor type"));
         }
 
         let mut cos_data = Vec::with_capacity(max_len * half_d);
@@ -528,7 +530,8 @@ where
             };
 
             for &freq in &freqs {
-                let angle = T::from(position).unwrap() * freq;
+                let angle =
+                    T::from(position).expect("Failed to convert position to tensor type") * freq;
                 cos_data.push(angle.cos());
                 sin_data.push(angle.sin());
             }

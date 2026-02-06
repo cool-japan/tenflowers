@@ -394,7 +394,7 @@ impl GpuMemoryDiagnostics {
 
     /// Run comprehensive diagnostics
     pub fn run_diagnostics(&self) -> DiagnosticReport {
-        let tracker = self.tracker.lock().unwrap();
+        let tracker = self.tracker.lock().expect("lock should not be poisoned");
 
         // Get base statistics
         let memory_stats = tracker.global_stats().clone();
@@ -526,7 +526,7 @@ impl GpuMemoryDiagnostics {
 
     /// Check for memory leaks
     pub fn check_for_leaks(&self) -> LeakDetectionResult {
-        let tracker = self.tracker.lock().unwrap();
+        let tracker = self.tracker.lock().expect("lock should not be poisoned");
         let suspected_leaks = tracker
             .find_potential_leaks(self.config.leak_detection_threshold)
             .into_iter()
@@ -537,17 +537,26 @@ impl GpuMemoryDiagnostics {
 
     /// Get current memory usage
     pub fn current_usage(&self) -> usize {
-        self.tracker.lock().unwrap().current_usage()
+        self.tracker
+            .lock()
+            .expect("lock should not be poisoned")
+            .current_usage()
     }
 
     /// Get peak memory usage
     pub fn peak_usage(&self) -> usize {
-        self.tracker.lock().unwrap().peak_usage()
+        self.tracker
+            .lock()
+            .expect("lock should not be poisoned")
+            .peak_usage()
     }
 
     /// Reset diagnostics
     pub fn reset(&self) {
-        self.tracker.lock().unwrap().reset();
+        self.tracker
+            .lock()
+            .expect("lock should not be poisoned")
+            .reset();
     }
 }
 
@@ -621,7 +630,7 @@ mod tests {
 
         // Add some allocations
         {
-            let mut t = tracker.lock().unwrap();
+            let mut t = tracker.lock().expect("lock should not be poisoned");
             t.record_allocation(1024, 0, "test_op".to_string());
             t.record_allocation(2048, 0, "test_op".to_string());
         }

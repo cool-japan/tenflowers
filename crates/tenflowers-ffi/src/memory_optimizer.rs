@@ -216,7 +216,7 @@ impl PyMemoryOptimizer {
     /// Perform comprehensive memory optimization
     pub fn optimize_memory(&mut self, py: Python) -> PyResult<PyObject> {
         let start_time = Instant::now();
-        let mut optimizer = self.inner.lock().unwrap();
+        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
 
         let initial_memory = optimizer.allocation_tracker.total_allocated;
         let mut optimization_results = HashMap::new();
@@ -343,7 +343,7 @@ impl PyMemoryOptimizer {
 
     /// Get comprehensive memory statistics
     pub fn get_memory_statistics(&self, py: Python) -> PyResult<PyObject> {
-        let optimizer = self.inner.lock().unwrap();
+        let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let py_dict = PyDict::new(py);
 
         // Current memory usage
@@ -421,7 +421,7 @@ impl PyMemoryOptimizer {
 
     /// Generate memory optimization recommendations
     pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<PyObject> {
-        let optimizer = self.inner.lock().unwrap();
+        let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let mut recommendations = Vec::new();
 
         // Analyze current memory patterns
@@ -484,7 +484,7 @@ impl PyMemoryOptimizer {
         operation_name: &str,
         operation: PyObject,
     ) -> PyResult<PyObject> {
-        let mut optimizer = self.inner.lock().unwrap();
+        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
 
         // Take snapshot before operation
         let before_memory = optimizer.allocation_tracker.total_allocated;
@@ -498,7 +498,7 @@ impl PyMemoryOptimizer {
         std::thread::sleep(Duration::from_millis(10));
 
         let execution_time = start_time.elapsed();
-        let mut optimizer = self.inner.lock().unwrap();
+        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
         let after_memory = optimizer.allocation_tracker.total_allocated;
 
         // Calculate memory impact
@@ -557,7 +557,7 @@ impl PyMemoryOptimizer {
 
     /// Get detailed memory fragmentation analysis
     pub fn analyze_fragmentation(&self, py: Python) -> PyResult<PyObject> {
-        let optimizer = self.inner.lock().unwrap();
+        let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let fragmentation_ratio = optimizer.allocation_tracker.fragmentation_ratio;
 
         let analysis = PyDict::new(py);

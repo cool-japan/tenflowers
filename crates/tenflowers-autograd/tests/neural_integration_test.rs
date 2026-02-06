@@ -99,7 +99,7 @@ fn test_autograd_layer_integration() {
     // Create input data
     let input_data = Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn();
     let input_tensor = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(input_data))
     };
 
@@ -128,7 +128,7 @@ fn test_autograd_optimizer_sgd() {
     // Create a parameter
     let param_data = Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn();
     let mut param = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(param_data))
     };
 
@@ -162,7 +162,7 @@ fn test_autograd_optimizer_adam() {
     // Create a parameter
     let param_data = Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn();
     let mut param = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(param_data))
     };
 
@@ -199,12 +199,12 @@ fn test_autograd_trainer_basic() {
     let target_data = Array1::from_vec(vec![3.0f32]).into_dyn();
 
     let input_tensor = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(input_data))
     };
 
     let target_tensor = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(target_data))
     };
 
@@ -400,22 +400,22 @@ fn test_simple_training_loop() {
 
     let inputs = vec![
         {
-            let tape_ref = tape.lock().unwrap();
+            let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(input_data1))
         },
         {
-            let tape_ref = tape.lock().unwrap();
+            let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(input_data2))
         },
     ];
 
     let targets = vec![
         {
-            let tape_ref = tape.lock().unwrap();
+            let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(target_data1))
         },
         {
-            let tape_ref = tape.lock().unwrap();
+            let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(target_data2))
         },
     ];
@@ -459,14 +459,14 @@ fn test_gradient_accumulation_integration() {
     // Create a parameter
     let param_data = Array1::from_vec(vec![1.0f32, 2.0, 3.0]).into_dyn();
     let param = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(param_data))
     };
 
     // Create target for loss computation
     let target_data = Array1::from_vec(vec![0.0f32, 1.0, 2.0]).into_dyn();
     let target = {
-        let tape_ref = tape.lock().unwrap();
+        let tape_ref = tape.lock().expect("lock should not be poisoned");
         tape_ref.watch(Tensor::from_array(target_data))
     };
 

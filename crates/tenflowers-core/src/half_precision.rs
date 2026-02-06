@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_f16_conversion() {
-        let value = 3.14159f32;
+        let value = std::f32::consts::PI;
         let f16_val = f16::from_f32(value);
         let converted_back = f16_val.to_f32();
 
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_bf16_conversion() {
-        let value = 3.14159f32;
+        let value = std::f32::consts::PI;
         let bf16_val = bf16::from_f32(value);
         let converted_back = bf16_val.to_f32();
 

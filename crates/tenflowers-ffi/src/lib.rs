@@ -263,7 +263,9 @@ fn get_memory_profiling_lock() -> &'static RwLock<MemoryProfilingState> {
 /// Device management functions
 #[pyfunction]
 fn get_default_device() -> String {
-    let device = get_default_device_lock().read().unwrap();
+    let device = get_default_device_lock()
+        .read()
+        .expect("read lock should not be poisoned");
     match *device {
         Device::Cpu => "cpu".to_string(),
         #[cfg(feature = "gpu")]
@@ -302,26 +304,34 @@ fn set_default_device(device_str: &str) -> PyResult<()> {
         }
     };
 
-    *get_default_device_lock().write().unwrap() = device;
+    *get_default_device_lock()
+        .write()
+        .expect("write lock should not be poisoned") = device;
     Ok(())
 }
 
 /// Memory profiling functions
 #[pyfunction]
 fn enable_memory_profiling() {
-    let mut state = get_memory_profiling_lock().write().unwrap();
+    let mut state = get_memory_profiling_lock()
+        .write()
+        .expect("write lock should not be poisoned");
     state.enabled = true;
 }
 
 #[pyfunction]
 fn disable_memory_profiling() {
-    let mut state = get_memory_profiling_lock().write().unwrap();
+    let mut state = get_memory_profiling_lock()
+        .write()
+        .expect("write lock should not be poisoned");
     state.enabled = false;
 }
 
 #[pyfunction]
 fn get_memory_info() -> PyResult<(usize, usize)> {
-    let state = get_memory_profiling_lock().read().unwrap();
+    let state = get_memory_profiling_lock()
+        .read()
+        .expect("read lock should not be poisoned");
     Ok((state.current_memory, state.peak_memory))
 }
 

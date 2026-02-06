@@ -222,7 +222,8 @@ where
                         + oh * output_width
                         + ow;
                     if count > 0 {
-                        output_data[out_idx] = sum / T::from(count).unwrap();
+                        output_data[out_idx] = sum
+                            / T::from(count).expect("count must be convertible to tensor dtype");
                     } else {
                         output_data[out_idx] = T::zero();
                     }
@@ -251,7 +252,7 @@ fn generate_pooling_regions_random(
     // Generate random split points for rows
     let mut row_splits = vec![0];
     for _ in 0..output_height {
-        let last_split = *row_splits.last().unwrap();
+        let last_split = *row_splits.last().expect("collection should not be empty");
         let remaining_height = input_height - last_split;
         let remaining_outputs = output_height - (row_splits.len() - 1);
 
@@ -279,7 +280,7 @@ fn generate_pooling_regions_random(
     // Generate random split points for columns
     let mut col_splits = vec![0];
     for _ in 0..output_width {
-        let last_split = *col_splits.last().unwrap();
+        let last_split = *col_splits.last().expect("collection should not be empty");
         let remaining_width = input_width - last_split;
         let remaining_outputs = output_width - (col_splits.len() - 1);
 
@@ -337,7 +338,7 @@ where
     let mut row_splits = vec![0];
     #[allow(clippy::needless_range_loop)]
     for i in 0..output_height {
-        let last_split = *row_splits.last().unwrap();
+        let last_split = *row_splits.last().expect("collection should not be empty");
         let remaining_height = input_height - last_split;
         let remaining_outputs = output_height - (row_splits.len() - 1);
 
@@ -362,7 +363,7 @@ where
     let mut col_splits = vec![0];
     #[allow(clippy::needless_range_loop)]
     for i in 0..output_width {
-        let last_split = *col_splits.last().unwrap();
+        let last_split = *col_splits.last().expect("collection should not be empty");
         let remaining_width = input_width - last_split;
         let remaining_outputs = output_width - (col_splits.len() - 1);
 

@@ -324,7 +324,10 @@ where
             return Ok((features, labels));
         }
 
-        let mut privacy_manager = self.privacy_manager.lock().unwrap();
+        let mut privacy_manager = self
+            .privacy_manager
+            .lock()
+            .expect("lock should not be poisoned");
         let noisy_features =
             privacy_manager.add_noise_tensor(&features, &self.config.privacy_config, 1.0)?;
 
@@ -377,7 +380,10 @@ where
 
         // Compute means with differential privacy
         let mut private_means = Vec::new();
-        let mut privacy_manager = self.privacy_manager.lock().unwrap();
+        let mut privacy_manager = self
+            .privacy_manager
+            .lock()
+            .expect("lock should not be poisoned");
 
         for i in 0..feature_dim {
             let mean = if feature_counts[i] > 0 {
@@ -981,13 +987,13 @@ mod tests {
         assert_eq!(client_dataset.len(), 2);
         assert_eq!(client_dataset.indices(), &[0, 2]);
 
-        let (features, labels) = client_dataset.get(0).unwrap();
-        let features_slice = features.as_slice().unwrap();
+        let (features, labels) = client_dataset.get(0).expect("index should be in bounds");
+        let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[1.0, 2.0]); // First sample
         assert_eq!(labels.get(&[]).unwrap(), 0.0);
 
-        let (features, labels) = client_dataset.get(1).unwrap();
-        let features_slice = features.as_slice().unwrap();
+        let (features, labels) = client_dataset.get(1).expect("index should be in bounds");
+        let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[5.0, 6.0]); // Third sample (index 2)
         assert_eq!(labels.get(&[]).unwrap(), 0.0);
     }

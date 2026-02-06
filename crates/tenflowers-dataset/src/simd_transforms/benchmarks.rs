@@ -27,7 +27,7 @@ impl SimdBenchmark {
 
         // Create test data
         let test_data: Vec<T> = (0..size * features)
-            .map(|i| T::from(i as f64 / 1000.0).unwrap())
+            .map(|i| T::from(i as f64 / 1000.0).unwrap_or(T::zero()))
             .collect();
 
         let shape = vec![size, features];

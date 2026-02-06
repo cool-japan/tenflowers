@@ -529,7 +529,7 @@ mod tests {
         let dataset = BenchmarkDatasets::synthetic_mnist(100, Some(42)).unwrap();
         assert_eq!(dataset.len(), 100);
 
-        let (image, label) = dataset.get(0).unwrap();
+        let (image, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(image.shape().dims(), &[784]); // 28*28
         assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
 
@@ -543,7 +543,7 @@ mod tests {
         let dataset = BenchmarkDatasets::synthetic_cifar10(50, Some(42)).unwrap();
         assert_eq!(dataset.len(), 50);
 
-        let (image, label) = dataset.get(0).unwrap();
+        let (image, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(image.shape().dims(), &[3, 32, 32]); // RGB 32x32
         assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
 
@@ -558,7 +558,7 @@ mod tests {
         let dataset = BenchmarkDatasets::synthetic_iris(150, Some(42)).unwrap();
         assert_eq!(dataset.len(), 150);
 
-        let (features, label) = dataset.get(0).unwrap();
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[4]); // 4 features
         assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
 
@@ -581,8 +581,8 @@ mod tests {
         let dataset2 = BenchmarkDatasets::synthetic_mnist(10, Some(123)).unwrap();
 
         // With same seed, datasets should be identical
-        let (img1, label1) = dataset1.get(0).unwrap();
-        let (img2, label2) = dataset2.get(0).unwrap();
+        let (img1, label1) = dataset1.get(0).expect("index should be in bounds");
+        let (img2, label2) = dataset2.get(0).expect("index should be in bounds");
 
         assert_eq!(img1.shape(), img2.shape());
         assert_eq!(label1.shape(), label2.shape());
@@ -597,14 +597,14 @@ mod tests {
     fn test_pattern_generation() {
         // Test that pattern functions don't panic and return valid values
         let circle = create_circle_pattern(14, 14, 28);
-        assert!(circle >= 0.0 && circle <= 1.0);
+        assert!((0.0..=1.0).contains(&circle));
 
         let line = create_vertical_line_pattern(10, 14, 28);
-        assert!(line >= 0.0 && line <= 1.0);
+        assert!((0.0..=1.0).contains(&line));
 
         let (r, g, b) = create_rgb_gradient(16, 16, 32);
-        assert!(r >= 0.0 && r <= 1.0);
-        assert!(g >= 0.0 && g <= 1.0);
-        assert!(b >= 0.0 && b <= 1.0);
+        assert!((0.0..=1.0).contains(&r));
+        assert!((0.0..=1.0).contains(&g));
+        assert!((0.0..=1.0).contains(&b));
     }
 }

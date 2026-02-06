@@ -100,7 +100,7 @@ impl Sampler for RandomSampler {
         let seed = self.seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time before UNIX_EPOCH")
                 .as_secs()
         });
 
@@ -241,7 +241,7 @@ impl Sampler for DistributedSampler {
             let seed = self.seed.unwrap_or_else(|| {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .expect("system time before UNIX_EPOCH")
                     .as_secs()
             });
 
@@ -372,7 +372,7 @@ impl Sampler for StratifiedSampler {
         let seed = self.seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time before UNIX_EPOCH")
                 .as_secs()
         });
 
@@ -554,7 +554,7 @@ impl Sampler for ImportanceSampler {
         let seed = self.seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time before UNIX_EPOCH")
                 .as_secs()
         });
 

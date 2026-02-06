@@ -163,7 +163,9 @@ where
                 sorted_axes.sort_by(|a, b| b.cmp(a));
 
                 for &axis in &sorted_axes {
-                    result = result.mean_axis(Axis(axis)).unwrap();
+                    result = result
+                        .mean_axis(Axis(axis))
+                        .expect("axis should be valid for mean reduction");
                     if keepdims {
                         result = result.insert_axis(Axis(axis));
                     }
@@ -551,7 +553,9 @@ where
 
                 for &axis in &sorted_axes {
                     // Calculate mean for this axis
-                    let mean = result.mean_axis(Axis(axis)).unwrap();
+                    let mean = result
+                        .mean_axis(Axis(axis))
+                        .expect("axis should be valid for variance mean calculation");
 
                     // Calculate variance: mean of squared deviations
                     let mut variance_result = ArrayD::zeros(mean.raw_dim());

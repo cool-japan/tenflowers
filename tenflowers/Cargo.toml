@@ -14,13 +14,13 @@ readme = "README.md"
 
 [dependencies]
 # Re-export all TenfloweRS subcrates
-tenflowers-core = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-core" }
-tenflowers-autograd = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-autograd" }
-tenflowers-neural = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-neural" }
-tenflowers-dataset = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-dataset" }
+tenflowers-core = { version = "0.1.0-beta.1", path = "../crates/tenflowers-core" }
+tenflowers-autograd = { version = "0.1.0-beta.1", path = "../crates/tenflowers-autograd" }
+tenflowers-neural = { version = "0.1.0-beta.1", path = "../crates/tenflowers-neural" }
+tenflowers-dataset = { version = "0.1.0-beta.1", path = "../crates/tenflowers-dataset" }
 
-# Optional Python bindings
-tenflowers-ffi = { version = "0.1.0-alpha.2", path = "../crates/tenflowers-ffi", optional = true }
+# Optional Python bindings - EXCLUDED from v0.1.0-beta.1 (requires Python environment)
+# tenflowers-ffi = { version = "0.1.0-beta.1", path = "../crates/tenflowers-ffi", optional = true }
 
 [features]
 default = ["std", "parallel"]
@@ -58,14 +58,14 @@ onnx = ["tenflowers-core/onnx"]
 # Autograd
 autograd = ["tenflowers-core/autograd"]
 
-# Python bindings
-python = ["tenflowers-ffi"]
+# Python bindings - EXCLUDED from v0.1.0-beta.1
+# python = ["tenflowers-ffi"]
 
 # Benchmarking
 benchmark = ["tenflowers-core/benchmark"]
 
-# All features
-full = ["gpu", "blas-openblas", "simd", "serialize", "compression", "onnx", "autograd", "python"]
+# All features (python excluded in v0.1.0-beta.1)
+full = ["gpu", "blas-openblas", "simd", "serialize", "compression", "onnx", "autograd"]
 
 [lints]
 workspace = true

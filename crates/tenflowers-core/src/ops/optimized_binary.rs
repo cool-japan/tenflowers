@@ -471,7 +471,11 @@ where
 {
     if shape_a.size() == 1 && shape_b.size() > 1 {
         // a is scalar, b is array
-        let scalar_val = &arr_a.iter().next().unwrap().clone();
+        let scalar_val = &arr_a
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element")
+            .clone();
         let mut result = ArrayD::zeros(arr_b.raw_dim());
 
         if let (Some(b_slice), Some(out_slice)) = (arr_b.as_slice(), result.as_slice_mut()) {
@@ -497,7 +501,11 @@ where
         Ok(Tensor::from_array(result))
     } else if shape_b.size() == 1 && shape_a.size() > 1 {
         // b is scalar, a is array
-        let scalar_val = &arr_b.iter().next().unwrap().clone();
+        let scalar_val = &arr_b
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element")
+            .clone();
         let mut result = ArrayD::zeros(arr_a.raw_dim());
 
         if let (Some(a_slice), Some(out_slice)) = (arr_a.as_slice(), result.as_slice_mut()) {
@@ -523,8 +531,16 @@ where
         Ok(Tensor::from_array(result))
     } else {
         // Both are scalars
-        let a_val = arr_a.iter().next().unwrap().clone();
-        let b_val = arr_b.iter().next().unwrap().clone();
+        let a_val = arr_a
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element")
+            .clone();
+        let b_val = arr_b
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element")
+            .clone();
         let result_val = op.apply(a_val, b_val);
         Ok(Tensor::from_array(ArrayD::from_elem(
             IxDyn(&[1]),
@@ -547,7 +563,10 @@ where
 {
     if shape_a.size() == 1 && shape_b.size() > 1 {
         // a is scalar, b is array
-        let scalar_val = *arr_a.iter().next().unwrap();
+        let scalar_val = *arr_a
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element");
         let mut result = ArrayD::zeros(arr_b.raw_dim());
 
         if let (Some(b_slice), Some(out_slice)) = (arr_b.as_slice(), result.as_slice_mut()) {
@@ -573,7 +592,10 @@ where
         Ok(Tensor::from_array(result))
     } else if shape_b.size() == 1 && shape_a.size() > 1 {
         // b is scalar, a is array
-        let scalar_val = *arr_b.iter().next().unwrap();
+        let scalar_val = *arr_b
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element");
         let mut result = ArrayD::zeros(arr_a.raw_dim());
 
         if let (Some(a_slice), Some(out_slice)) = (arr_a.as_slice(), result.as_slice_mut()) {
@@ -599,8 +621,14 @@ where
         Ok(Tensor::from_array(result))
     } else {
         // Both are scalars
-        let a_val = *arr_a.iter().next().unwrap();
-        let b_val = *arr_b.iter().next().unwrap();
+        let a_val = *arr_a
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element");
+        let b_val = *arr_b
+            .iter()
+            .next()
+            .expect("scalar tensor must have at least one element");
         let result_val = op.apply(a_val, b_val);
         Ok(Tensor::from_array(ArrayD::from_elem(
             IxDyn(&[1]),

@@ -81,7 +81,9 @@ where
             let grad_squared = grad.mul(grad)?;
             let norm_squared = tenflowers_core::ops::sum(&grad_squared, None, false)?;
             if let Some(norm_data) = norm_squared.as_slice() {
-                total_norm_squared = total_norm_squared + T::from(norm_data[0]).unwrap();
+                total_norm_squared = total_norm_squared
+                    + T::from(norm_data[0])
+                        .expect("numeric conversion should succeed for gradient norm computation");
             }
         }
     }
@@ -139,7 +141,9 @@ where
             let grad_squared = grad.mul(grad)?;
             let norm_squared = tenflowers_core::ops::sum(&grad_squared, None, false)?;
             if let Some(norm_data) = norm_squared.as_slice() {
-                total_norm_squared = total_norm_squared + T::from(norm_data[0]).unwrap();
+                total_norm_squared = total_norm_squared
+                    + T::from(norm_data[0])
+                        .expect("numeric conversion should succeed for gradient norm computation");
             }
         }
     }
@@ -192,7 +196,9 @@ where
             let param_squared = param.mul(param)?;
             let param_norm_squared = tenflowers_core::ops::sum(&param_squared, None, false)?;
             let param_norm = if let Some(norm_data) = param_norm_squared.as_slice() {
-                T::from(norm_data[0]).unwrap().sqrt()
+                T::from(norm_data[0])
+                    .expect("numeric conversion should succeed for parameter norm")
+                    .sqrt()
             } else {
                 T::one()
             };
@@ -201,7 +207,9 @@ where
             let grad_squared = grad.mul(grad)?;
             let grad_norm_squared = tenflowers_core::ops::sum(&grad_squared, None, false)?;
             let grad_norm = if let Some(norm_data) = grad_norm_squared.as_slice() {
-                T::from(norm_data[0]).unwrap().sqrt()
+                T::from(norm_data[0])
+                    .expect("numeric conversion should succeed for gradient norm")
+                    .sqrt()
             } else {
                 T::one()
             };

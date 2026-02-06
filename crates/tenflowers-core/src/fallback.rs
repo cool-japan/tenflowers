@@ -51,7 +51,10 @@ pub fn get_fallback_config() -> FallbackConfig {
         FALLBACK_CONFIG_INIT.call_once(|| {
             GLOBAL_FALLBACK_CONFIG = Some(FallbackConfig::default());
         });
-        GLOBAL_FALLBACK_CONFIG.as_ref().unwrap().clone()
+        GLOBAL_FALLBACK_CONFIG
+            .as_ref()
+            .expect("Fallback config should be initialized")
+            .clone()
     }
 }
 

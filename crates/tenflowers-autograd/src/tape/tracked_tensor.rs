@@ -37,7 +37,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -60,7 +60,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -83,7 +83,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -106,7 +106,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -129,7 +129,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -152,7 +152,7 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -172,7 +172,7 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Relu { input: self.id };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -192,7 +192,7 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Sigmoid { input: self.id };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -212,7 +212,7 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Tanh { input: self.id };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -242,7 +242,7 @@ where
                 input: self.id,
                 axis,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -266,7 +266,7 @@ where
                 axes,
                 keepdims,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -286,7 +286,7 @@ where
     {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.mean(axes.as_deref(), keepdims)?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(
                 Operation::Mean {
                     input: self.id,
@@ -308,7 +308,7 @@ where
         if let Some(tape) = self.tape.upgrade() {
             let original_shape = self.tensor.shape().dims().to_vec();
             let result_tensor = self.tensor.reshape(new_shape)?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(
                 Operation::Reshape {
                     input: self.id,
@@ -329,7 +329,7 @@ where
     pub fn transpose(&self, axes: Option<Vec<usize>>) -> Result<TrackedTensor<T>> {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.transpose()?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(
                 Operation::Transpose {
                     input: self.id,
@@ -350,7 +350,7 @@ where
         if let Some(tape) = self.tape.upgrade() {
             let original_shape = self.tensor.shape().dims().to_vec();
             let result_tensor = self.tensor.squeeze(axes.as_deref())?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(
                 Operation::Squeeze {
                     input: self.id,
@@ -371,7 +371,7 @@ where
     pub fn unsqueeze(&self, axes: Vec<usize>) -> Result<TrackedTensor<T>> {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.unsqueeze(&axes)?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(
                 Operation::Unsqueeze {
                     input: self.id,
@@ -422,7 +422,7 @@ where
                 stride,
                 padding: padding.to_string(),
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -451,7 +451,7 @@ where
             &beta.tensor,
             &running_mean.tensor,
             &running_var.tensor,
-            T::from(epsilon).unwrap_or_default(),
+            T::from(epsilon).unwrap_or_else(|| T::default()),
             training,
         )?;
 
@@ -466,7 +466,7 @@ where
                 epsilon,
                 training,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -492,7 +492,7 @@ where
             &gamma.tensor,
             &beta.tensor,
             &normalized_shape,
-            T::from(epsilon).unwrap_or_default(),
+            T::from(epsilon).unwrap_or_else(|| T::default()),
         )?;
 
         // Record the operation in the tape if we have one
@@ -504,7 +504,7 @@ where
                 normalized_shape,
                 epsilon,
             };
-            let mut tape_guard = tape_inner.lock().unwrap();
+            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -567,7 +567,7 @@ where
             };
 
             // Record in the tape
-            let mut inner = tape_arc.lock().unwrap();
+            let mut inner = tape_arc.lock().expect("lock should not be poisoned");
             Ok(inner.record_op(operation, result, &tape_arc))
         } else {
             // No gradient tracking needed
@@ -587,7 +587,7 @@ impl TrackedTensor<f32> {
         if let Some(tape) = self.tape.upgrade() {
             // Implement SVD-based pseudoinverse with gradient recording
             let result_tensor = self.compute_svd_pinv()?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(Operation::Pinv { input: self.id }, result_tensor, &tape))
         } else {
             // No tape available, perform operation without tracking
@@ -675,7 +675,7 @@ impl TrackedTensor<f64> {
         if let Some(tape) = self.tape.upgrade() {
             // Implement SVD-based pseudoinverse with gradient recording
             let result_tensor = self.compute_svd_pinv()?;
-            let mut tape_guard = tape.lock().unwrap();
+            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
             Ok(tape_guard.record_op(Operation::Pinv { input: self.id }, result_tensor, &tape))
         } else {
             // No tape available, perform operation without tracking

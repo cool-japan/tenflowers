@@ -234,7 +234,7 @@ impl AdvancedKernelRegistry {
             b.performance_profile
                 .expected_throughput
                 .partial_cmp(&a.performance_profile.expected_throughput)
-                .unwrap()
+                .expect("Throughput values must be valid floating-point numbers")
         });
 
         Ok(())
@@ -265,7 +265,10 @@ impl AdvancedKernelRegistry {
             .collect();
 
         // Sort by score (highest first)
-        scored_kernels.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        scored_kernels.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         if let Some((score, kernel)) = scored_kernels.first() {
             if *score > 0.0 {

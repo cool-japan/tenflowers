@@ -141,7 +141,10 @@ impl StatisticalSummary {
             return None;
         }
 
-        self.samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        self.samples.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        });
 
         let count = self.samples.len();
         let sum: f64 = self.samples.iter().sum();
@@ -308,19 +311,28 @@ impl BenchmarkSuite {
         };
 
         // Store result
-        self.results.write().unwrap().push(result.clone());
+        self.results
+            .write()
+            .expect("write lock should not be poisoned")
+            .push(result.clone());
 
         Ok(result)
     }
 
     /// Get all benchmark results
     pub fn results(&self) -> Vec<BenchmarkResult> {
-        self.results.read().unwrap().clone()
+        self.results
+            .read()
+            .expect("read lock should not be poisoned")
+            .clone()
     }
 
     /// Clear all benchmark results
     pub fn clear_results(&self) {
-        self.results.write().unwrap().clear();
+        self.results
+            .write()
+            .expect("write lock should not be poisoned")
+            .clear();
     }
 
     /// Generate a performance report
@@ -1098,7 +1110,11 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        suite.results.write().unwrap().push(slow_result);
+        suite
+            .results
+            .write()
+            .expect("write lock should not be poisoned")
+            .push(slow_result);
 
         // Detect regressions with 50% threshold
         let regressions = suite.detect_regressions(&baseline_results, 0.5);
@@ -1137,7 +1153,11 @@ mod tests {
                 throughput: Some(i as f64 * 1000.0),
                 metadata: HashMap::new(),
             };
-            suite.results.write().unwrap().push(result);
+            suite
+                .results
+                .write()
+                .expect("write lock should not be poisoned")
+                .push(result);
         }
 
         let stats = suite.generate_statistics();

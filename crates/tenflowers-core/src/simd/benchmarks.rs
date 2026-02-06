@@ -109,7 +109,7 @@ impl Benchmarks {
     pub fn benchmark_relu_performance(size: usize, iterations: usize) -> BenchmarkResult {
         use scirs2_core::random::Random;
         let mut rng = Random::seed(42);
-        let input: Vec<f32> = (0..size).map(|_| rng.random_range(-5.0, 5.0)).collect();
+        let input: Vec<f32> = (0..size).map(|_| rng.random_range(-5.0..5.0)).collect();
         let mut result_optimized = vec![0.0f32; size];
         let mut result_standard = vec![0.0f32; size];
 
@@ -120,7 +120,7 @@ impl Benchmarks {
                 &input,
                 &mut result_optimized,
             )
-            .unwrap();
+            .expect("optimized ReLU should not fail during benchmarking");
         }
         let optimized_time = start.elapsed();
 
@@ -150,7 +150,8 @@ impl Benchmarks {
         // Benchmark optimized implementation
         let start = Instant::now();
         for _ in 0..iterations {
-            let _ = super::matrix_ops::MatrixOps::dot_product_f32_optimized(&a, &b).unwrap();
+            let _ = super::matrix_ops::MatrixOps::dot_product_f32_optimized(&a, &b)
+                .expect("optimized dot product should not fail during benchmarking");
         }
         let optimized_time = start.elapsed();
 
@@ -201,7 +202,7 @@ impl Benchmarks {
     pub fn benchmark_exp_performance(size: usize, iterations: usize) -> BenchmarkResult {
         use scirs2_core::random::Random;
         let mut rng = Random::seed(42);
-        let input: Vec<f32> = (0..size).map(|_| rng.random_range(-2.0, 2.0)).collect();
+        let input: Vec<f32> = (0..size).map(|_| rng.random_range(-2.0..2.0)).collect();
         let mut result_optimized = vec![0.0f32; size];
         let mut result_standard = vec![0.0f32; size];
 
@@ -209,7 +210,7 @@ impl Benchmarks {
         let start = Instant::now();
         for _ in 0..iterations {
             super::math_functions::MathFunctions::exp_f32_optimized(&input, &mut result_optimized)
-                .unwrap();
+                .expect("optimized exp should not fail during benchmarking");
         }
         let optimized_time = start.elapsed();
 

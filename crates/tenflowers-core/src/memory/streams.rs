@@ -34,13 +34,19 @@ impl MultiStreamMemoryManager {
 
     /// Get the appropriate memory pool for an operation
     pub fn get_pool(&self, operation_id: usize) -> Result<&MemoryPool> {
-        let stream_assignment = self.stream_assignment.lock().unwrap();
+        let stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
 
         let stream_id = if let Some(&stream_id) = stream_assignment.get(&operation_id) {
             stream_id
         } else {
             // Assign to current stream and rotate
-            let mut current_stream = self.current_stream.lock().unwrap();
+            let mut current_stream = self
+                .current_stream
+                .lock()
+                .expect("lock should not be poisoned");
             let stream_id = *current_stream;
             *current_stream = (*current_stream + 1) % self.pools.len();
             stream_id
@@ -61,20 +67,29 @@ impl MultiStreamMemoryManager {
             )));
         }
 
-        let mut stream_assignment = self.stream_assignment.lock().unwrap();
+        let mut stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         stream_assignment.insert(operation_id, stream_id);
         Ok(())
     }
 
     /// Remove an operation's stream assignment
     pub fn unassign_operation(&self, operation_id: usize) {
-        let mut stream_assignment = self.stream_assignment.lock().unwrap();
+        let mut stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         stream_assignment.remove(&operation_id);
     }
 
     /// Get the stream ID for a specific operation
     pub fn get_operation_stream(&self, operation_id: usize) -> Option<usize> {
-        let stream_assignment = self.stream_assignment.lock().unwrap();
+        let stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         stream_assignment.get(&operation_id).copied()
     }
 
@@ -157,7 +172,10 @@ impl MultiStreamMemoryManager {
             total_allocated / self.pools.len()
         };
 
-        let mut stream_assignment = self.stream_assignment.lock().unwrap();
+        let mut stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
 
         // Identify overloaded and underloaded streams
         let mut overloaded_streams = Vec::new();
@@ -225,7 +243,10 @@ impl MultiStreamMemoryManager {
         }
 
         // Operation assignments
-        let stream_assignment = self.stream_assignment.lock().unwrap();
+        let stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         if !stream_assignment.is_empty() {
             report.push_str("Operation Assignments:\n");
             for (op_id, stream_id) in stream_assignment.iter() {
@@ -238,13 +259,19 @@ impl MultiStreamMemoryManager {
 
     /// Clear all operation assignments
     pub fn clear_assignments(&self) {
-        let mut stream_assignment = self.stream_assignment.lock().unwrap();
+        let mut stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         stream_assignment.clear();
     }
 
     /// Get operation count per stream
     pub fn get_operation_counts(&self) -> Vec<usize> {
-        let stream_assignment = self.stream_assignment.lock().unwrap();
+        let stream_assignment = self
+            .stream_assignment
+            .lock()
+            .expect("lock should not be poisoned");
         let mut counts = vec![0; self.pools.len()];
 
         for &stream_id in stream_assignment.values() {
@@ -341,12 +368,8 @@ mod tests {
         assert_eq!(tolerance, 100);
 
         // Test deviation calculation
-        let stream_load = 1150;
-        let deviation = if stream_load > target_load {
-            stream_load - target_load
-        } else {
-            target_load - stream_load
-        };
+        let stream_load: usize = 1150;
+        let deviation = stream_load.abs_diff(target_load);
         assert_eq!(deviation, 150);
         assert!(deviation > tolerance); // This stream would be considered unbalanced
     }

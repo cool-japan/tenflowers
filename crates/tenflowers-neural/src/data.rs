@@ -280,10 +280,19 @@ mod tests {
 
         // Test that features and labels are actually transferred
         assert_eq!(
-            cpu_batch.features.as_slice().unwrap(),
+            cpu_batch
+                .features
+                .as_slice()
+                .expect("tensor should be contiguous"),
             &[1.0, 2.0, 3.0, 4.0]
         );
-        assert_eq!(cpu_batch.labels.as_slice().unwrap(), &[0.0, 1.0]);
+        assert_eq!(
+            cpu_batch
+                .labels
+                .as_slice()
+                .expect("tensor should be contiguous"),
+            &[0.0, 1.0]
+        );
 
         // GPU transfer test is conditional on GPU availability
         #[cfg(feature = "gpu")]

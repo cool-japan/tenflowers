@@ -175,10 +175,14 @@ impl Graph {
         // Update node edge lists
         self.nodes
             .get_mut(&from_node)
-            .unwrap()
+            .expect("Source node must exist after validation")
             .outputs
             .push(edge_id);
-        self.nodes.get_mut(&to_node).unwrap().inputs.push(edge_id);
+        self.nodes
+            .get_mut(&to_node)
+            .expect("Destination node must exist after validation")
+            .inputs
+            .push(edge_id);
 
         self.topological_order = None; // Invalidate cached order
         self.version += 1;

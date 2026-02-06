@@ -1,7 +1,7 @@
 # GPU Kernel Expansion Priorities for TenfloweRS Core
 
-**Version:** 0.1.0-alpha.2
-**Last Updated:** 2025-11-10
+**Version:** 0.1.0-beta.1
+**Last Updated:** 2026-02-02
 **Status:** Active Planning Document
 
 ## Executive Summary

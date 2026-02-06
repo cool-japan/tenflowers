@@ -20,7 +20,7 @@ rustflags = [
 [target.'cfg(target_arch = "aarch64")']
 rustflags = [
     "-C", "target-cpu=native",
-    "-C", "target-feature=+neon,+fp-armv8,+crc",
+    "-C", "target-feature=+neon,+crc",
 ]
 
 # Profile-guided optimization hints
@@ -33,4 +33,3 @@ rustflags = [
 [unstable]
 # Enable unstable features for maximum performance
 build-std = ["std", "panic_abort"]     # Build std library with optimizations
-build-std-features = ["panic_immediate_abort"]

@@ -35,8 +35,12 @@ impl Graph {
         // Add edges between included nodes
         for edge in self.edges.values() {
             if node_set.contains(&edge.from_node) && node_set.contains(&edge.to_node) {
-                let new_from = *id_mapping.get(&edge.from_node).unwrap();
-                let new_to = *id_mapping.get(&edge.to_node).unwrap();
+                let new_from = *id_mapping
+                    .get(&edge.from_node)
+                    .expect("Node ID must exist in mapping after insertion");
+                let new_to = *id_mapping
+                    .get(&edge.to_node)
+                    .expect("Node ID must exist in mapping after insertion");
 
                 subgraph.add_edge(
                     new_from,

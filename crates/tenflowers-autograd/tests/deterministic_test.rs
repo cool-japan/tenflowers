@@ -175,8 +175,8 @@ fn test_reproducibility_same_seed() {
 
     // With same seed and deterministic mode, results should be identical
     assert_eq!(
-        x1.tensor().as_slice().unwrap(),
-        x2.tensor().as_slice().unwrap()
+        x1.tensor().as_slice().expect("tensor should be contiguous"),
+        x2.tensor().as_slice().expect("tensor should be contiguous")
     );
 
     println!("✓ Same seed produces identical results");
@@ -304,7 +304,10 @@ fn test_deterministic_training_workflow() {
 
     println!(
         "  Initial params: {:?}",
-        params1.tensor().as_slice().unwrap()
+        params1
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous")
     );
 
     // Simulate some training steps
@@ -320,13 +323,22 @@ fn test_deterministic_training_workflow() {
 
     println!(
         "  Initial params: {:?}",
-        params2.tensor().as_slice().unwrap()
+        params2
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous")
     );
 
     // With same seed, should get identical results
     assert_eq!(
-        params1.tensor().as_slice().unwrap(),
-        params2.tensor().as_slice().unwrap(),
+        params1
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous"),
+        params2
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous"),
         "Same seed should produce identical initialization"
     );
 
@@ -341,7 +353,10 @@ fn test_deterministic_training_workflow() {
 
     println!(
         "  Initial params: {:?}",
-        params3.tensor().as_slice().unwrap()
+        params3
+            .tensor()
+            .as_slice()
+            .expect("tensor should be contiguous")
     );
 
     // Different seed configured (results would differ if random init was used)

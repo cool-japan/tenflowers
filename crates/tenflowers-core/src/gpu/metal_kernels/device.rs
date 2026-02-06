@@ -89,7 +89,14 @@ impl MetalDevice {
                 .insert(kernel_name.to_string(), pipeline_state);
         }
 
-        Ok(self.pipeline_cache.get(kernel_name).unwrap())
+        self.pipeline_cache
+            .get(kernel_name)
+            .ok_or_else(|| TensorError::ComputeError {
+                operation: "get_pipeline".to_string(),
+                details: format!("Pipeline not found in cache: {}", kernel_name),
+                retry_possible: false,
+                context: None,
+            })
     }
 
     /// Calculate optimal dispatch configuration for given tensor shapes

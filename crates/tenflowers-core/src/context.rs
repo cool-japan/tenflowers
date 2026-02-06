@@ -65,7 +65,10 @@ impl Context {
     pub fn get_device_context(&self, device: &Device) -> Result<Arc<dyn DeviceContext>> {
         // Check cache first
         {
-            let contexts = self.device_contexts.read().unwrap();
+            let contexts = self
+                .device_contexts
+                .read()
+                .expect("read lock should not be poisoned");
             if let Some(ctx) = contexts.get(device) {
                 return Ok(Arc::clone(ctx));
             }
@@ -76,7 +79,10 @@ impl Context {
 
         // Cache it
         {
-            let mut contexts = self.device_contexts.write().unwrap();
+            let mut contexts = self
+                .device_contexts
+                .write()
+                .expect("write lock should not be poisoned");
             contexts.insert(*device, Arc::clone(&ctx));
         }
 
@@ -85,13 +91,19 @@ impl Context {
 
     /// Set a context attribute
     pub fn set_attribute(&self, key: String, value: String) {
-        let mut attrs = self.attributes.write().unwrap();
+        let mut attrs = self
+            .attributes
+            .write()
+            .expect("write lock should not be poisoned");
         attrs.insert(key, value);
     }
 
     /// Get a context attribute
     pub fn get_attribute(&self, key: &str) -> Option<String> {
-        let attrs = self.attributes.read().unwrap();
+        let attrs = self
+            .attributes
+            .read()
+            .expect("read lock should not be poisoned");
         attrs.get(key).cloned()
     }
 }
@@ -103,7 +115,9 @@ lazy_static::lazy_static! {
 
 /// Get the current global context
 pub fn get_context() -> Result<Arc<Context>> {
-    let ctx_opt = GLOBAL_CONTEXT.read().unwrap();
+    let ctx_opt = GLOBAL_CONTEXT
+        .read()
+        .expect("read lock should not be poisoned");
     if let Some(ctx) = ctx_opt.as_ref() {
         Ok(Arc::clone(ctx))
     } else {
@@ -111,7 +125,9 @@ pub fn get_context() -> Result<Arc<Context>> {
 
         // Create new context
         let ctx = Arc::new(Context::new()?);
-        let mut ctx_opt = GLOBAL_CONTEXT.write().unwrap();
+        let mut ctx_opt = GLOBAL_CONTEXT
+            .write()
+            .expect("write lock should not be poisoned");
         *ctx_opt = Some(Arc::clone(&ctx));
         Ok(ctx)
     }
@@ -119,7 +135,9 @@ pub fn get_context() -> Result<Arc<Context>> {
 
 /// Set the global context
 pub fn set_context(ctx: Arc<Context>) {
-    let mut ctx_opt = GLOBAL_CONTEXT.write().unwrap();
+    let mut ctx_opt = GLOBAL_CONTEXT
+        .write()
+        .expect("write lock should not be poisoned");
     *ctx_opt = Some(ctx);
 }
 
@@ -162,7 +180,12 @@ impl Clone for Context {
         Self {
             default_device: self.default_device,
             device_contexts: RwLock::new(HashMap::new()), // Don't clone cache
-            attributes: RwLock::new(self.attributes.read().unwrap().clone()),
+            attributes: RwLock::new(
+                self.attributes
+                    .read()
+                    .expect("read lock should not be poisoned")
+                    .clone(),
+            ),
             eager_mode: self.eager_mode,
             profiling_enabled: self.profiling_enabled,
         }

@@ -572,7 +572,7 @@ mod tests {
         let a = vec![5.0, 4.0, 3.0, 2.0, 1.0];
         let b = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let mut result = vec![0.0; 5];
-        let expected = vec![4.0, 2.0, 0.0, -2.0, -4.0];
+        let expected = [4.0, 2.0, 0.0, -2.0, -4.0];
 
         MathFunctions::sub_f32_optimized(&a, &b, &mut result).unwrap();
 
@@ -586,7 +586,7 @@ mod tests {
         let a = vec![6.0, 8.0, 10.0, 12.0];
         let b = vec![2.0, 4.0, 5.0, 3.0];
         let mut result = vec![0.0; 4];
-        let expected = vec![3.0, 2.0, 2.0, 4.0];
+        let expected = [3.0, 2.0, 2.0, 4.0];
 
         MathFunctions::div_f32_optimized(&a, &b, &mut result).unwrap();
 
@@ -599,7 +599,7 @@ mod tests {
     fn test_reciprocal_f32_optimized() {
         let input = vec![1.0, 2.0, 4.0, 5.0, 10.0];
         let mut output = vec![0.0; 5];
-        let expected = vec![1.0, 0.5, 0.25, 0.2, 0.1];
+        let expected = [1.0, 0.5, 0.25, 0.2, 0.1];
 
         MathFunctions::reciprocal_f32_optimized(&input, &mut output).unwrap();
 
@@ -614,7 +614,7 @@ mod tests {
         let mut output = vec![0.0; 6];
         let min_val = -2.0;
         let max_val = 3.0;
-        let expected = vec![-2.0, -1.0, 0.0, 1.0, 3.0, 3.0];
+        let expected = [-2.0, -1.0, 0.0, 1.0, 3.0, 3.0];
 
         MathFunctions::clamp_f32_optimized(&input, &mut output, min_val, max_val).unwrap();
 

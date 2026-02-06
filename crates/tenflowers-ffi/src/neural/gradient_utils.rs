@@ -57,7 +57,10 @@ pub fn clip_grad_norm(
             let max_val = grad_data
                 .iter()
                 .map(|x| x.abs())
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .max_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("partial_cmp should not return None for valid values")
+                })
                 .unwrap_or(0.0);
             total_norm = total_norm.max(max_val);
         } else {
@@ -196,12 +199,18 @@ pub fn gradient_stats(gradient: &PyTensor, py: Python) -> PyResult<Py<pyo3::type
     let min = grad_data
         .iter()
         .copied()
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .min_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        })
         .unwrap_or(0.0);
     let max = grad_data
         .iter()
         .copied()
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .max_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("partial_cmp should not return None for valid values")
+        })
         .unwrap_or(0.0);
 
     // L2 Norm
@@ -253,7 +262,10 @@ pub fn normalize_gradient(gradient: &PyTensor, norm_type: Option<f32>) -> PyResu
         grad_data
             .iter()
             .map(|x| x.abs())
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .max_by(|a, b| {
+                a.partial_cmp(b)
+                    .expect("partial_cmp should not return None for valid values")
+            })
             .unwrap_or(0.0)
     } else {
         let sum: f32 = grad_data.iter().map(|x| x.abs().powf(norm_type)).sum();

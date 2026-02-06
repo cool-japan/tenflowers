@@ -7,8 +7,8 @@
 ## Policy Version
 - **Version**: 2.0.0 (Enhanced - Full SciRS2 Ecosystem Alignment)
 - **Based on**: SciRS2 Ecosystem Policy v3.0.0
-- **Effective Date**: TenfloweRS v0.1.0-alpha.2
-- **Last Updated**: 2025-10-04
+- **Effective Date**: TenfloweRS v0.1.0-beta.1
+- **Last Updated**: 2026-02-02
 - **Status**: Active - Full Compliance Required
 
 ## Core Integration Principles

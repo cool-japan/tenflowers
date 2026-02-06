@@ -199,7 +199,8 @@ where
         + PartialOrd
         + std::ops::Mul<Output = T>,
 {
-    let momentum = momentum.unwrap_or_else(|| T::from(0.1).unwrap());
+    let momentum =
+        momentum.unwrap_or_else(|| T::from(0.1).expect("fallback value computation failed"));
     let element_count = batch_size * spatial_size;
 
     // Step 1: Compute local batch statistics
@@ -216,7 +217,8 @@ where
                 }
             }
         }
-        let local_mean = sum / T::from(element_count).unwrap();
+        let local_mean =
+            sum / T::from(element_count).expect("element_count should convert to numeric type");
         local_means.push(local_mean);
 
         // Calculate variance for channel c
@@ -229,7 +231,8 @@ where
                 }
             }
         }
-        let local_var = var_sum / T::from(element_count).unwrap();
+        let local_var =
+            var_sum / T::from(element_count).expect("element count should convert to float type");
         local_vars.push(local_var);
     }
 
@@ -242,8 +245,10 @@ where
 
     // For variance, we need to be more careful. We synchronize the sum of squared differences
     // and divide by the total number of elements across all devices
-    let element_count_tensor =
-        Tensor::from_vec(vec![T::from(element_count).unwrap(); channels], &[channels])?;
+    let element_count_tensor = Tensor::from_vec(
+        vec![T::from(element_count).expect("element count should convert to float type"); channels],
+        &[channels],
+    )?;
     let var_sum_tensor = crate::ops::binary::mul(&local_var_tensor, &element_count_tensor)?;
     let synced_var_sum = all_reduce(&var_sum_tensor, ReductionOp::Sum, group_name)?;
     let total_count_tensor = all_reduce(&element_count_tensor, ReductionOp::Sum, group_name)?;
@@ -338,7 +343,8 @@ where
     use crate::tensor::TensorStorage;
     use wgpu::util::DeviceExt;
 
-    let momentum = momentum.unwrap_or_else(|| T::from(0.1).unwrap());
+    let momentum =
+        momentum.unwrap_or_else(|| T::from(0.1).expect("fallback value computation failed"));
 
     if let (
         TensorStorage::Gpu(input_gpu),
@@ -389,7 +395,11 @@ where
         let synced_mean_tensor = all_reduce(&local_mean_tensor, ReductionOp::Mean, group_name)?;
 
         // For variance synchronization, create element count tensor
-        let element_count_data = vec![T::from(element_count).unwrap(); channels];
+        let element_count_data = vec![
+            T::from(element_count)
+                .expect("element count should convert to float type");
+            channels
+        ];
         let element_count_tensor =
             Tensor::from_vec(element_count_data, &[channels])?.to_device(input.device().clone())?;
 

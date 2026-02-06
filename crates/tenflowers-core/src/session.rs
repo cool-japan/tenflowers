@@ -147,7 +147,7 @@ impl DefaultSession {
 
     /// Create execution plan for the given fetches
     fn create_execution_plan(&self, fetches: &[FetchSpec]) -> Result<ExecutionPlan, TensorError> {
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().expect("read lock should not be poisoned");
 
         // Find all nodes that need to be executed
         let mut required_nodes = std::collections::HashSet::new();
@@ -202,7 +202,10 @@ impl DefaultSession {
         // Since we can't clone RwLockReadGuard, we'll call it on the original graph
         let full_topo_order = {
             drop(graph); // Release the read lock
-            let mut graph_write = self.graph.write().unwrap();
+            let mut graph_write = self
+                .graph
+                .write()
+                .expect("write lock should not be poisoned");
             graph_write.compute_topological_order()?.to_vec()
         };
         let execution_order: Vec<NodeId> = full_topo_order
@@ -212,7 +215,7 @@ impl DefaultSession {
             .collect();
 
         // Create input mapping (placeholders)
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().expect("read lock should not be poisoned");
         let mut input_mapping = HashMap::new();
         for node in graph.nodes() {
             if let NodeType::Placeholder { .. } = node.op_type {
@@ -234,7 +237,7 @@ impl DefaultSession {
         node_values: &mut HashMap<NodeId, Vec<Tensor<f32>>>,
         feed_dict: &FeedDict,
     ) -> Result<(), TensorError> {
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().expect("read lock should not be poisoned");
         let node = graph
             .get_node(node_id)
             .ok_or_else(|| TensorError::invalid_argument(format!("Node {node_id} not found")))?;

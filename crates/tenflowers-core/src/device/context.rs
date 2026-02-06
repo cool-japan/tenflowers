@@ -245,7 +245,10 @@ impl DeviceManager {
     pub fn get_context(&self, device: &Device) -> Result<Arc<dyn DeviceContext>> {
         // Check cache first
         {
-            let contexts = self.contexts.read().unwrap();
+            let contexts = self
+                .contexts
+                .read()
+                .expect("read lock should not be poisoned");
             if let Some(ctx) = contexts.get(device) {
                 return Ok(Arc::clone(ctx));
             }
@@ -262,7 +265,10 @@ impl DeviceManager {
 
         // Cache it
         {
-            let mut contexts = self.contexts.write().unwrap();
+            let mut contexts = self
+                .contexts
+                .write()
+                .expect("write lock should not be poisoned");
             contexts.insert(*device, Arc::clone(&context));
         }
 
