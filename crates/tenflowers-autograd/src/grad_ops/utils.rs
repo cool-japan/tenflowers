@@ -241,11 +241,13 @@ mod tests {
     #[test]
     fn test_check_broadcast_compatible() {
         // Compatible shapes
-        let result = check_broadcast_compatible(&[3, 1, 5], &[1, 4, 5]).unwrap();
+        let result = check_broadcast_compatible(&[3, 1, 5], &[1, 4, 5])
+            .expect("test: type conversion should succeed");
         assert_eq!(result, vec![3, 4, 5]);
 
         // Same shapes
-        let result = check_broadcast_compatible(&[2, 3], &[2, 3]).unwrap();
+        let result = check_broadcast_compatible(&[2, 3], &[2, 3])
+            .expect("test: type conversion should succeed");
         assert_eq!(result, vec![2, 3]);
 
         // Incompatible shapes should fail

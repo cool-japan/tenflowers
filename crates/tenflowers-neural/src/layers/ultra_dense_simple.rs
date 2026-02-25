@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_forward_pass() {
-        let layer = ultra_dense::<f32>(10, 5).unwrap();
+        let layer = ultra_dense::<f32>(10, 5).expect("test: operation should succeed");
         let input = Tensor::<f32>::ones(&[32, 10]); // batch_size=32, input_dim=10
         let output = layer.forward(&input);
 
@@ -557,13 +557,13 @@ mod tests {
         }
         assert!(output.is_ok(), "Forward pass failed: {:?}", output.err());
 
-        let output = output.unwrap();
+        let output = output.expect("test: operation should succeed");
         assert_eq!(output.shape().dims(), &[32, 5]); // batch_size=32, output_dim=5
     }
 
     #[test]
     fn test_parameter_count() {
-        let layer = ultra_dense::<f32>(100, 50).unwrap();
+        let layer = ultra_dense::<f32>(100, 50).expect("test: operation should succeed");
         let params = layer.parameters();
         assert_eq!(params.len(), 2); // weights + bias tensors
 
@@ -576,14 +576,14 @@ mod tests {
 
     #[test]
     fn test_performance_metrics() {
-        let layer = ultra_dense::<f32>(256, 128).unwrap();
+        let layer = ultra_dense::<f32>(256, 128).expect("test: operation should succeed");
         let metrics = layer.get_performance_metrics();
         assert!(metrics.flops_per_second > 0.0);
     }
 
     #[test]
     fn test_batch_optimization() {
-        let mut layer = ultra_dense::<f32>(64, 32).unwrap();
+        let mut layer = ultra_dense::<f32>(64, 32).expect("test: operation should succeed");
         let result = layer.optimize_for_batch_size(64);
         assert!(result.is_ok());
     }

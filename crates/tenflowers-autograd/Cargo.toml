@@ -10,12 +10,14 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Automatic differentiation engine for TenfloweRS"
+documentation = "https://docs.rs/tenflowers-autograd"
+readme = "README.md"
 
 [lints]
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-beta.1" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-rc.1" }
 scirs2-core = { workspace = true, features = ["memory_management", "memory_efficient", "parallel", "simd", "profiling"] }
 scirs2-autograd = { workspace = true }
 thiserror = { workspace = true }
@@ -26,12 +28,12 @@ futures = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 num_cpus = { workspace = true, optional = true }
 bytemuck = { workspace = true }
-once_cell = "1.21"
+once_cell = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
 criterion = { workspace = true }
-# tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-beta.1" }
+# tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-rc.1" }
 
 [features]
 default = []

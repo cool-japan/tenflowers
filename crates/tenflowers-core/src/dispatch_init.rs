@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_sum_cpu_fallback() {
         let input = Tensor::from_array(array![1.0f32, 2.0, 3.0, 4.0, 5.0].into_dyn());
-        let result = sum_f32_cpu(&input).unwrap();
+        let result = sum_f32_cpu(&input).expect("test: sum_f32_cpu should succeed");
 
         // Sum should be 15.0
         assert_eq!(result.data()[0], 15.0);
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_mean_cpu_fallback() {
         let input = Tensor::from_array(array![1.0f32, 2.0, 3.0, 4.0, 5.0].into_dyn());
-        let result = mean_f32_cpu(&input).unwrap();
+        let result = mean_f32_cpu(&input).expect("test: mean_f32_cpu should succeed");
 
         // Mean should be 3.0
         assert_eq!(result.data()[0], 3.0);

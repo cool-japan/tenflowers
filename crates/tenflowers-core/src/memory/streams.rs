@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn test_least_loaded_stream_selection() {
         // Test logic for finding least loaded stream
-        let stream_loads = vec![1200, 800, 1000];
+        let stream_loads = [1200, 800, 1000];
 
         let mut min_load = usize::MAX;
         let mut best_stream = 0;
@@ -431,7 +431,7 @@ mod tests {
     #[test]
     fn test_most_free_memory_selection() {
         // Test logic for finding stream with most free memory
-        let stream_free_memory = vec![500, 1200, 800];
+        let stream_free_memory = [500, 1200, 800];
 
         let mut max_free = 0;
         let mut best_stream = 0;

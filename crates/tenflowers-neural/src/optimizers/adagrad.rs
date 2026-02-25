@@ -132,7 +132,8 @@ mod tests {
             let mut param = Tensor::<f32>::ones(&[2, 2]);
             // Set a mock gradient
             param.set_grad(Some(
-                Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[2, 2]).unwrap(),
+                Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[2, 2])
+                    .expect("test: tensor creation should succeed"),
             ));
 
             Self { param }
@@ -194,18 +195,23 @@ mod tests {
         let initial_param = model.param.clone();
 
         // Perform optimization step
-        optimizer.step(&mut model).unwrap();
+        optimizer
+            .step(&mut model)
+            .expect("test: step should succeed");
 
         // Parameter should have changed
         assert_ne!(model.param.as_slice(), initial_param.as_slice());
 
         // Second step should use accumulated gradients
         model.param.set_grad(Some(
-            Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[2, 2]).unwrap(),
+            Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[2, 2])
+                .expect("test: tensor creation should succeed"),
         ));
 
         let after_first_step = model.param.clone();
-        optimizer.step(&mut model).unwrap();
+        optimizer
+            .step(&mut model)
+            .expect("test: step should succeed");
 
         // Parameter should change again, but with smaller updates due to accumulated gradients
         assert_ne!(model.param.as_slice(), after_first_step.as_slice());

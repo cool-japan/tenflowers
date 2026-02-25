@@ -483,20 +483,30 @@ mod tests {
     #[test]
     fn test_onnx_dtype_conversion() {
         assert_eq!(
-            OnnxDataType::from_dtype(DType::Float32).unwrap(),
+            OnnxDataType::from_dtype(DType::Float32).expect("test: from_dtype should succeed"),
             OnnxDataType::Float
         );
         assert_eq!(
-            OnnxDataType::from_dtype(DType::Float64).unwrap(),
+            OnnxDataType::from_dtype(DType::Float64).expect("test: from_dtype should succeed"),
             OnnxDataType::Double
         );
         assert_eq!(
-            OnnxDataType::from_dtype(DType::Int32).unwrap(),
+            OnnxDataType::from_dtype(DType::Int32).expect("test: from_dtype should succeed"),
             OnnxDataType::Int32
         );
 
-        assert_eq!(OnnxDataType::Float.to_dtype().unwrap(), DType::Float32);
-        assert_eq!(OnnxDataType::Double.to_dtype().unwrap(), DType::Float64);
+        assert_eq!(
+            OnnxDataType::Float
+                .to_dtype()
+                .expect("test: to_dtype should succeed"),
+            DType::Float32
+        );
+        assert_eq!(
+            OnnxDataType::Double
+                .to_dtype()
+                .expect("test: to_dtype should succeed"),
+            DType::Float64
+        );
     }
 
     #[test]
@@ -522,7 +532,8 @@ mod tests {
         let data = array![[1.0f32, 2.0], [3.0, 4.0]];
         let tensor = Tensor::from_array(data.into_dyn());
 
-        let proto = serialize_tensor_onnx(&tensor, Some("weights".to_string())).unwrap();
+        let proto = serialize_tensor_onnx(&tensor, Some("weights".to_string()))
+            .expect("test: operation should succeed");
 
         assert_eq!(proto.name, "weights");
         assert_eq!(proto.dims, vec![2, 2]);
@@ -536,8 +547,10 @@ mod tests {
         let data = array![[1.0f32, 2.0], [3.0, 4.0]];
         let tensor = Tensor::from_array(data.into_dyn());
 
-        let proto = serialize_tensor_onnx(&tensor, None).unwrap();
-        let deserialized = deserialize_tensor_onnx::<f32>(&proto).unwrap();
+        let proto = serialize_tensor_onnx(&tensor, None)
+            .expect("test: serialize_tensor_onnx should succeed");
+        let deserialized =
+            deserialize_tensor_onnx::<f32>(&proto).expect("test: operation should succeed");
 
         assert_eq!(tensor.shape(), deserialized.shape());
         assert_eq!(tensor.data(), deserialized.data());
@@ -560,8 +573,10 @@ mod tests {
         let data = array![[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]];
         let tensor = Tensor::from_array(data.into_dyn());
 
-        let bytes = serialize_f32_tensor_onnx(&tensor, Some("test".to_string())).unwrap();
-        let deserialized = deserialize_f32_tensor_onnx(&bytes).unwrap();
+        let bytes = serialize_f32_tensor_onnx(&tensor, Some("test".to_string()))
+            .expect("test: operation should succeed");
+        let deserialized = deserialize_f32_tensor_onnx(&bytes)
+            .expect("test: deserialize_f32_tensor_onnx should succeed");
 
         assert_eq!(tensor.shape(), deserialized.shape());
         assert_eq!(tensor.data(), deserialized.data());

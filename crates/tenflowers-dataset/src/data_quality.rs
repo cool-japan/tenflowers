@@ -652,12 +652,16 @@ mod tests {
 
     #[test]
     fn test_empty_dataset_quality() {
-        let features = Tensor::<f32>::from_vec(vec![], &[0, 1]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![], &[0]).unwrap();
+        let features =
+            Tensor::<f32>::from_vec(vec![], &[0, 1]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![], &[0]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let analyzer = DataQualityAnalyzer::default();
-        let metrics = analyzer.analyze(&dataset, "test_dataset").unwrap();
+        let metrics = analyzer
+            .analyze(&dataset, "test_dataset")
+            .expect("test: operation should succeed");
 
         assert_eq!(metrics.total_samples, 0);
         assert_eq!(metrics.overall_quality_score, 0.0);
@@ -666,11 +670,15 @@ mod tests {
 
     #[test]
     fn test_quality_extension_trait() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let metrics = dataset.analyze_quality("test_dataset").unwrap();
+        let metrics = dataset
+            .analyze_quality("test_dataset")
+            .expect("test: operation should succeed");
         assert_eq!(metrics.total_samples, 2);
         assert!(metrics.overall_quality_score > 0.0);
     }

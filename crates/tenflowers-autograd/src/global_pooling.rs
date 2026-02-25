@@ -549,10 +549,12 @@ mod tests {
         let input_shape = [1, 2, 3, 3];
 
         // Output gradient shape [1, 2, 1, 1]
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2, 1, 1]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2, 1, 1])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Compute backward pass
-        let grad_input = global_avg_pool2d_backward(&grad_output, &input_shape).unwrap();
+        let grad_input = global_avg_pool2d_backward(&grad_output, &input_shape)
+            .expect("test: gradient computation should succeed");
 
         // Check that gradients are properly scaled and broadcasted
         assert_eq!(grad_input.shape().dims(), input_shape);
@@ -577,11 +579,12 @@ mod tests {
 
         // Create a simple grad_output
         let grad_output_data = vec![1.0f32, 2.0, 3.0, 4.0];
-        let grad_output = Tensor::from_vec(grad_output_data, &[1, 1, 2, 2]).unwrap();
+        let grad_output = Tensor::from_vec(grad_output_data, &[1, 1, 2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let grad_input =
             fractional_adaptive_avg_pool2d_backward(&grad_output, &input_shape, output_size, alpha)
-                .unwrap();
+                .expect("test: operation should succeed");
 
         // Check that the output has the right shape
         assert_eq!(grad_input.shape().dims(), input_shape);
@@ -608,11 +611,12 @@ mod tests {
         let output_size = (2, 2);
 
         // Output gradient shape [1, 1, 2, 2]
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 1, 2, 2]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 1, 2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Compute backward pass
-        let grad_input =
-            adaptive_avg_pool2d_backward(&grad_output, &input_shape, output_size).unwrap();
+        let grad_input = adaptive_avg_pool2d_backward(&grad_output, &input_shape, output_size)
+            .expect("test: gradient computation should succeed");
 
         // Check shape
         assert_eq!(grad_input.shape().dims(), input_shape);

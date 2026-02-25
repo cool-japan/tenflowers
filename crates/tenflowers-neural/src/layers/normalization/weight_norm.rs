@@ -199,7 +199,7 @@ mod tests {
         let result = weight_norm.get_normalized_weight();
         assert!(result.is_ok());
 
-        let normalized_weight = result.unwrap();
+        let normalized_weight = result.expect("test: result should be valid");
         assert_eq!(normalized_weight.shape().dims(), &[2, 2]);
     }
 

@@ -242,14 +242,20 @@ mod tests {
 
     impl TestModel {
         fn new() -> Self {
-            let mut param1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-            let mut param2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap();
+            let mut param1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2])
+                .expect("test: tensor creation should succeed");
+            let mut param2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+                .expect("test: tensor creation should succeed");
 
             // Set gradients for testing
             param1.set_grad(Some(
-                Tensor::<f32>::from_vec(vec![2.0, -3.0], &[2]).unwrap(),
+                Tensor::<f32>::from_vec(vec![2.0, -3.0], &[2])
+                    .expect("test: tensor creation should succeed"),
             ));
-            param2.set_grad(Some(Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap()));
+            param2.set_grad(Some(
+                Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+                    .expect("test: tensor creation should succeed"),
+            ));
 
             TestModel {
                 params: vec![param1, param2],
@@ -291,7 +297,7 @@ mod tests {
         let mut model = TestModel::new();
 
         // Clip gradients by value
-        clip_gradients_by_value(&mut model, 1.5).unwrap();
+        clip_gradients_by_value(&mut model, 1.5).expect("test: gradient operation should succeed");
 
         // Check that gradients are clipped
         for param in model.parameters() {
@@ -311,7 +317,7 @@ mod tests {
         let mut model = TestModel::new();
 
         // Clip gradients by norm (original norm should be sqrt(2^2 + 3^2 + 3^2 + 4^2) = sqrt(38) ≈ 6.16)
-        clip_gradients_by_norm(&mut model, 3.0).unwrap();
+        clip_gradients_by_norm(&mut model, 3.0).expect("test: gradient operation should succeed");
 
         // Check that gradients are scaled down
         let expected_scale = 3.0 / (38.0_f32.sqrt());
@@ -331,7 +337,8 @@ mod tests {
         let mut model = TestModel::new();
 
         // Clip gradients by global norm
-        let global_norm = clip_gradients_by_global_norm(&mut model, 3.0).unwrap();
+        let global_norm = clip_gradients_by_global_norm(&mut model, 3.0)
+            .expect("test: gradient operation should succeed");
 
         // Check that global norm is calculated correctly (should be sqrt(38) ≈ 6.16)
         assert!((global_norm - 38.0_f32.sqrt()).abs() < 1e-5);

@@ -803,9 +803,10 @@ mod tests {
 
     #[test]
     fn test_erfc_property() {
-        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, -1.0, 2.0], &[4]).unwrap();
-        let erf_result = erf(&x).unwrap();
-        let erfc_result = erfc(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, -1.0, 2.0], &[4])
+            .expect("test: from_vec should succeed");
+        let erf_result = erf(&x).expect("test: erf should succeed");
+        let erfc_result = erfc(&x).expect("test: erfc should succeed");
 
         // Property: erf(x) + erfc(x) = 1
         for i in 0..4 {
@@ -817,8 +818,9 @@ mod tests {
 
     #[test]
     fn test_gamma_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 0.5], &[5]).unwrap();
-        let result = gamma(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 0.5], &[5])
+            .expect("test: from_vec should succeed");
+        let result = gamma(&x).expect("test: gamma should succeed");
         let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values
@@ -831,9 +833,10 @@ mod tests {
 
     #[test]
     fn test_lgamma_property() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let gamma_result = gamma(&x).unwrap();
-        let lgamma_result = lgamma(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+        let gamma_result = gamma(&x).expect("test: gamma should succeed");
+        let lgamma_result = lgamma(&x).expect("test: lgamma should succeed");
 
         // Property: lgamma(x) = ln(gamma(x)) for positive x
         for i in 0..4 {
@@ -849,11 +852,13 @@ mod tests {
 
     #[test]
     fn test_digamma_recurrence() {
-        let x = Tensor::<f64>::from_vec(vec![2.0, 3.0, 4.0], &[3]).unwrap();
-        let digamma_result = digamma(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![2.0, 3.0, 4.0], &[3])
+            .expect("test: from_vec should succeed");
+        let digamma_result = digamma(&x).expect("test: digamma should succeed");
 
-        let x_plus_1 = Tensor::<f64>::from_vec(vec![3.0, 4.0, 5.0], &[3]).unwrap();
-        let digamma_plus_1 = digamma(&x_plus_1).unwrap();
+        let x_plus_1 = Tensor::<f64>::from_vec(vec![3.0, 4.0, 5.0], &[3])
+            .expect("test: from_vec should succeed");
+        let digamma_plus_1 = digamma(&x_plus_1).expect("test: digamma should succeed");
 
         // Property: ψ(x+1) = ψ(x) + 1/x
         for i in 0..3 {
@@ -871,8 +876,9 @@ mod tests {
 
     #[test]
     fn test_bessel_j0_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, 5.0, 10.0], &[5]).unwrap();
-        let result = bessel_j0(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, 5.0, 10.0], &[5])
+            .expect("test: from_vec should succeed");
+        let result = bessel_j0(&x).expect("test: bessel_j0 should succeed");
         let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values for J0 (approximately) - adjusted tolerances for polynomial approximations
@@ -885,8 +891,9 @@ mod tests {
 
     #[test]
     fn test_bessel_j1_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, -1.0], &[4]).unwrap();
-        let result = bessel_j1(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![0.0, 1.0, 2.0, -1.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = bessel_j1(&x).expect("test: bessel_j1 should succeed");
         let values = result.as_slice().expect("tensor should be contiguous");
 
         // Known values for J1 (approximately) - adjusted tolerances for polynomial approximations
@@ -898,8 +905,9 @@ mod tests {
 
     #[test]
     fn test_bessel_y0_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4]).unwrap();
-        let result = bessel_y0(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = bessel_y0(&x).expect("test: bessel_y0 should succeed");
         let values = result.as_slice().expect("tensor should be contiguous");
 
         // Reference values for Y0 (Bessel function of second kind)
@@ -920,8 +928,9 @@ mod tests {
 
     #[test]
     fn test_bessel_y1_known_values() {
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4]).unwrap();
-        let result = bessel_y1(&x).unwrap();
+        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 5.0, 10.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = bessel_y1(&x).expect("test: bessel_y1 should succeed");
         let values = result.as_slice().expect("tensor should be contiguous");
 
         // Reference values for Y1 (Bessel function of second kind)
@@ -942,9 +951,10 @@ mod tests {
 
     #[test]
     fn test_bessel_y_negative_input() {
-        let x_neg = Tensor::<f64>::from_vec(vec![-1.0, 0.0], &[2]).unwrap();
-        let result_y0 = bessel_y0(&x_neg).unwrap();
-        let result_y1 = bessel_y1(&x_neg).unwrap();
+        let x_neg =
+            Tensor::<f64>::from_vec(vec![-1.0, 0.0], &[2]).expect("test: from_vec should succeed");
+        let result_y0 = bessel_y0(&x_neg).expect("test: bessel_y0 should succeed");
+        let result_y1 = bessel_y1(&x_neg).expect("test: bessel_y1 should succeed");
 
         let values_y0 = result_y0.as_slice().expect("tensor should be contiguous");
         let values_y1 = result_y1.as_slice().expect("tensor should be contiguous");
@@ -959,22 +969,29 @@ mod tests {
     #[test]
     fn test_bessel_orthogonality_property() {
         // Test the property: J0'(x) = -J1(x)
-        let x = Tensor::<f64>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
+        let x =
+            Tensor::<f64>::from_vec(vec![1.0, 2.0], &[2]).expect("test: from_vec should succeed");
         let dx = 1e-8;
 
-        let x_plus_dx = x.add(&Tensor::from_scalar(dx)).unwrap();
-        let x_minus_dx = x.sub(&Tensor::from_scalar(dx)).unwrap();
+        let x_plus_dx = x
+            .add(&Tensor::from_scalar(dx))
+            .expect("test: operation should succeed");
+        let x_minus_dx = x
+            .sub(&Tensor::from_scalar(dx))
+            .expect("test: operation should succeed");
 
-        let j0_plus = bessel_j0(&x_plus_dx).unwrap();
-        let j0_minus = bessel_j0(&x_minus_dx).unwrap();
+        let j0_plus = bessel_j0(&x_plus_dx).expect("test: bessel_j0 should succeed");
+        let j0_minus = bessel_j0(&x_minus_dx).expect("test: bessel_j0 should succeed");
         let derivative_numerical = j0_plus
             .sub(&j0_minus)
-            .unwrap()
+            .expect("test: operation should succeed")
             .div(&Tensor::from_scalar(2.0 * dx))
             .expect("operation should succeed");
 
-        let j1_vals = bessel_j1(&x).unwrap();
-        let negative_j1 = j1_vals.mul(&Tensor::from_scalar(-1.0)).unwrap();
+        let j1_vals = bessel_j1(&x).expect("test: bessel_j1 should succeed");
+        let negative_j1 = j1_vals
+            .mul(&Tensor::from_scalar(-1.0))
+            .expect("test: operation should succeed");
 
         // Check that J0'(x) ≈ -J1(x) - relaxed tolerance for numerical differentiation
         if let (Some(deriv_vals), Some(neg_j1_vals)) =

@@ -419,11 +419,15 @@ mod tests {
 
         // Test basic accumulation
         let grad1 = Tensor::ones(&[2, 2]);
-        let result1 = accumulator.accumulate("param1", grad1).unwrap();
+        let result1 = accumulator
+            .accumulate("param1", grad1)
+            .expect("test: gradient computation should succeed");
 
         // Test momentum accumulation
         let grad2 = Tensor::ones(&[2, 2]);
-        let result2 = accumulator.accumulate("param1", grad2).unwrap();
+        let result2 = accumulator
+            .accumulate("param1", grad2)
+            .expect("test: gradient computation should succeed");
 
         assert!(accumulator.step_count == 2);
     }
@@ -432,10 +436,13 @@ mod tests {
     fn test_gradient_clipping() {
         let gradients = vec![
             Tensor::ones(&[2, 2]),
-            Tensor::from_scalar(2.0f32).broadcast_to(&[2, 2]).unwrap(),
+            Tensor::from_scalar(2.0f32)
+                .broadcast_to(&[2, 2])
+                .expect("test: type conversion should succeed"),
         ];
 
-        let clipped = gradient_clipping::clip_by_global_norm(&gradients, 1.0).unwrap();
+        let clipped = gradient_clipping::clip_by_global_norm(&gradients, 1.0)
+            .expect("test: gradient computation should succeed");
 
         // Check that gradients were clipped
         assert_eq!(clipped.len(), 2);

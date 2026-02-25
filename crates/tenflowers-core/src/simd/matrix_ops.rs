@@ -354,7 +354,8 @@ mod tests {
         let b = vec![2.0, 3.0, 4.0, 5.0];
         let expected = 1.0 * 2.0 + 2.0 * 3.0 + 3.0 * 4.0 + 4.0 * 5.0; // 40.0
 
-        let result = MatrixOps::dot_product_f32_optimized(&a, &b).unwrap();
+        let result = MatrixOps::dot_product_f32_optimized(&a, &b)
+            .expect("test: dot_product_f32_optimized should succeed");
 
         assert_relative_eq!(result, expected, epsilon = 1e-6);
     }
@@ -367,7 +368,8 @@ mod tests {
         let mut c = vec![0.0; 4];
         let expected = [19.0, 22.0, 43.0, 50.0]; // [[19, 22], [43, 50]]
 
-        MatrixOps::matmul_f32_blocked(&a, &b, &mut c, 2, 2, 2, 2).unwrap();
+        MatrixOps::matmul_f32_blocked(&a, &b, &mut c, 2, 2, 2, 2)
+            .expect("test: matmul_f32_blocked should succeed");
 
         for (i, &val) in c.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -382,7 +384,8 @@ mod tests {
         let mut result = vec![0.0; 2];
         let expected = [14.0, 32.0]; // [1*1 + 2*2 + 3*3, 4*1 + 5*2 + 6*3]
 
-        MatrixOps::matvec_f32_optimized(&matrix, &vector, &mut result, 2, 3).unwrap();
+        MatrixOps::matvec_f32_optimized(&matrix, &vector, &mut result, 2, 3)
+            .expect("test: matvec_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -396,7 +399,8 @@ mod tests {
         let mut output = vec![0.0; 6];
         let expected = [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]; // [[1, 4], [2, 5], [3, 6]]
 
-        MatrixOps::transpose_f32_blocked(&input, &mut output, 2, 3, 2).unwrap();
+        MatrixOps::transpose_f32_blocked(&input, &mut output, 2, 3, 2)
+            .expect("test: transpose_f32_blocked should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -410,7 +414,8 @@ mod tests {
         let mut result = vec![0.0; 6];
         let expected = [3.0, 4.0, 5.0, 6.0, 8.0, 10.0]; // [[3, 4, 5], [6, 8, 10]]
 
-        MatrixOps::outer_product_f32_optimized(&a, &b, &mut result).unwrap();
+        MatrixOps::outer_product_f32_optimized(&a, &b, &mut result)
+            .expect("test: outer_product_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -424,7 +429,8 @@ mod tests {
         let mut result = vec![0.0; 4];
         let expected = [6.0, 8.0, 10.0, 12.0];
 
-        MatrixOps::matrix_add_f32_optimized(&a, &b, &mut result).unwrap();
+        MatrixOps::matrix_add_f32_optimized(&a, &b, &mut result)
+            .expect("test: matrix_add_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -438,7 +444,8 @@ mod tests {
         let mut result = vec![0.0; 4];
         let expected = [2.5, 5.0, 7.5, 10.0];
 
-        MatrixOps::matrix_scale_f32_optimized(&matrix, scalar, &mut result).unwrap();
+        MatrixOps::matrix_scale_f32_optimized(&matrix, scalar, &mut result)
+            .expect("test: matrix_scale_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);

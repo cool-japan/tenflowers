@@ -214,7 +214,7 @@ mod tests {
         let a = Tensor::from_array(array![1.0, 2.0, 3.0].into_dyn());
         let b = Tensor::from_array(array![4.0, 5.0].into_dyn());
 
-        let result = outer(&a, &b).unwrap();
+        let result = outer(&a, &b).expect("test: outer should succeed");
         let expected_data = array![[4.0, 5.0], [8.0, 10.0], [12.0, 15.0]];
 
         // Extract result data for comparison
@@ -222,7 +222,7 @@ mod tests {
             let result_2d = result_arr
                 .view()
                 .into_dimensionality::<scirs2_core::ndarray::Ix2>()
-                .unwrap();
+                .expect("test: operation should succeed");
             assert_eq!(result_2d, expected_data);
         } else {
             panic!("Expected CPU tensor");

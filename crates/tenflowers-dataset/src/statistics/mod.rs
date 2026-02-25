@@ -45,14 +45,17 @@ mod tests {
     #[test]
     fn test_dataset_statistics_computation() {
         // Create test dataset
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
         // Compute statistics
-        let stats = dataset.compute_statistics().unwrap();
+        let stats = dataset
+            .compute_statistics()
+            .expect("test: compute statistics should succeed");
 
         assert_eq!(stats.sample_count(), 3);
         assert_eq!(stats.feature_count(), 2);
@@ -61,7 +64,7 @@ mod tests {
         assert!(stats.has_min_max());
 
         // Check mean values
-        let mean = stats.mean.unwrap();
+        let mean = stats.mean.expect("test: operation should succeed");
         assert_eq!(mean.len(), 2);
         assert!((mean[0] - 3.0).abs() < 1e-6); // (1+3+5)/3 = 3
         assert!((mean[1] - 4.0).abs() < 1e-6); // (2+4+6)/3 = 4
@@ -70,8 +73,10 @@ mod tests {
     #[test]
     fn test_dataset_statistics_with_config() {
         // Create test dataset
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
@@ -85,7 +90,9 @@ mod tests {
             histogram_bins: 10,
         };
 
-        let stats = dataset.compute_statistics_with_config(config).unwrap();
+        let stats = dataset
+            .compute_statistics_with_config(config)
+            .expect("test: compute statistics should succeed");
 
         assert!(stats.has_mean());
         assert!(!stats.has_std());
@@ -94,21 +101,25 @@ mod tests {
         assert!(stats.has_class_distribution());
 
         // Check class distribution
-        let class_dist = stats.class_distribution.unwrap();
+        let class_dist = stats
+            .class_distribution
+            .expect("test: operation should succeed");
         assert_eq!(class_dist.len(), 2);
     }
 
     #[test]
     fn test_correlation_analysis() {
         // Create test dataset with correlated features
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
         // Compute correlation matrix
-        let correlation_matrix = CorrelationAnalyzer::compute_correlation_matrix(&dataset).unwrap();
+        let correlation_matrix = CorrelationAnalyzer::compute_correlation_matrix(&dataset)
+            .expect("test: correlation computation should succeed");
 
         assert_eq!(correlation_matrix.len(), 2);
         assert_eq!(correlation_matrix[0].len(), 2);
@@ -209,13 +220,16 @@ pub mod advanced_statistics_tests {
             4.2, 3.8, 7.6, 5.7, 4.8, 9.6, 7.2, 5.8, 11.6, 8.7,
         ];
 
-        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, n_features]).unwrap();
+        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, n_features])
+            .expect("test: tensor creation should succeed");
         let labels = Tensor::<f32>::zeros(&[n_samples]);
 
         let dataset = TensorDataset::new(features, labels);
 
         // Test multivariate statistics
-        let multivariate_stats = dataset.compute_multivariate_statistics().unwrap();
+        let multivariate_stats = dataset
+            .compute_multivariate_statistics()
+            .expect("test: multivariate statistics should succeed");
         assert_eq!(multivariate_stats.n_features, n_features);
         assert_eq!(multivariate_stats.n_samples, n_samples);
         assert_eq!(multivariate_stats.covariance_matrix.len(), n_features);
@@ -245,12 +259,15 @@ pub mod advanced_statistics_tests {
             4.2, 3.1, 6.2, 4.1, 8.2, 5.1, 10.2, 6.1, 12.2,
         ];
 
-        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, 2]).unwrap();
+        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, 2])
+            .expect("test: tensor creation should succeed");
         let labels = Tensor::<f32>::zeros(&[n_samples]);
 
         let dataset = TensorDataset::new(features, labels);
 
-        let pca_result = dataset.compute_pca(2).unwrap();
+        let pca_result = dataset
+            .compute_pca(2)
+            .expect("test: PCA computation should succeed");
 
         // Verify PCA results
         assert_eq!(pca_result.n_components, 2);
@@ -287,18 +304,23 @@ pub mod advanced_statistics_tests {
             feature_data.push(random_val * 10.0 - 5.0); // Scale to [-5.0, 5.0]
         }
 
-        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, n_features]).unwrap();
+        let features = Tensor::<f32>::from_vec(feature_data, &[n_samples, n_features])
+            .expect("test: tensor creation should succeed");
         let labels = Tensor::<f32>::zeros(&[n_samples]);
 
         let dataset = TensorDataset::new(features, labels);
 
         // Test multivariate statistics
-        let multivariate_stats = dataset.compute_multivariate_statistics().unwrap();
+        let multivariate_stats = dataset
+            .compute_multivariate_statistics()
+            .expect("test: multivariate statistics should succeed");
         assert_eq!(multivariate_stats.n_features, n_features);
         assert_eq!(multivariate_stats.n_samples, n_samples);
 
         // Test PCA with fewer components than features
-        let pca_result = dataset.compute_pca(2).unwrap();
+        let pca_result = dataset
+            .compute_pca(2)
+            .expect("test: PCA computation should succeed");
         assert_eq!(pca_result.n_components, 2);
         assert!(pca_result.explained_variance_ratio.len() <= n_features);
 

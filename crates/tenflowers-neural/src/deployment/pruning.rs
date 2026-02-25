@@ -1329,7 +1329,7 @@ mod tests {
         let result = prune_model(&model, None);
         assert!(result.is_ok());
 
-        let (_pruned_model, stats) = result.unwrap();
+        let (_pruned_model, stats) = result.expect("test: result should be valid");
         assert!(stats.layers_pruned > 0);
         assert!(stats.achieved_sparsity > 0.0);
         assert!(stats.param_reduction_ratio() > 0.0);
@@ -1374,7 +1374,7 @@ mod tests {
         let result = pruner.generate_masks(&model);
         assert!(result.is_ok());
 
-        let masks = result.unwrap();
+        let masks = result.expect("test: result should be valid");
         assert!(!masks.is_empty());
         assert_eq!(masks.len(), model.parameters().len());
     }
@@ -1383,8 +1383,9 @@ mod tests {
     #[cfg(feature = "serialize")]
     fn test_pruning_serialization() {
         let strategy = PruningStrategy::Structured;
-        let serialized = serde_json::to_string(&strategy).unwrap();
-        let deserialized: PruningStrategy = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&strategy).expect("test: operation should succeed");
+        let deserialized: PruningStrategy =
+            serde_json::from_str(&serialized).expect("test: operation should succeed");
         assert_eq!(strategy, deserialized);
     }
 }

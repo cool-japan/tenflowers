@@ -6,7 +6,7 @@
 //! The module is organized by format type:
 //! - `audio`: Audio format support for machine learning with audio files
 //! - `csv`: CSV and delimited text file support
-//! - `image`: Image directory and folder structure support  
+//! - `image`: Image directory and folder structure support
 //! - `webdataset`: WebDataset format for streaming large datasets
 //! - `zarr`: Zarr multidimensional array format for scientific datasets
 //! - `json`: JSON and JSON Lines format support for structured data
@@ -15,6 +15,9 @@
 //! - `hdf5`: HDF5 hierarchical format support for scientific datasets
 //! - `tfrecord`: TensorFlow TFRecord format support for ML training data
 //! - `common`: Shared types and utilities used across formats
+//! - `unified_reader`: Unified format reader abstraction layer
+//! - `cross_format`: Cross-format operations and utilities
+//! - `schema_validator`: Enhanced schema validation system
 
 #[cfg(feature = "parquet")]
 pub mod arrow;
@@ -23,15 +26,25 @@ pub mod arrow_advanced;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod common;
+pub mod cross_format;
 pub mod csv;
+#[cfg(feature = "csv_format")]
+pub mod csv_format_reader;
 #[cfg(feature = "hdf5")]
 pub mod hdf5;
+#[cfg(feature = "hdf5")]
+pub mod hdf5_format_reader;
 pub mod image;
 #[cfg(feature = "serialize")]
 pub mod json;
+#[cfg(feature = "serialize")]
+pub mod json_format_reader;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+#[cfg(feature = "parquet")]
+pub mod parquet_format_reader;
 pub mod registry;
+pub mod schema_validator;
 pub mod text;
 #[cfg(feature = "tfrecord")]
 pub mod tfrecord;
@@ -74,3 +87,25 @@ pub use unified_reader::{
 #[cfg(feature = "webdataset")]
 pub use webdataset::*;
 pub use zarr::*;
+
+// Re-export cross-format utilities
+pub use cross_format::{
+    CrossFormatConcatenation, CrossFormatIterator, FormatConverter, SchemaCompatibility,
+    UnifiedBatchReader,
+};
+
+// Re-export schema validation
+pub use schema_validator::{
+    SchemaValidator, ValidationConfig, ValidationError, ValidationErrorCategory, ValidationResult,
+    ValidationWarning,
+};
+
+// Re-export format readers
+#[cfg(feature = "csv_format")]
+pub use csv_format_reader::{CsvFormatFactory, CsvFormatReader};
+#[cfg(feature = "hdf5")]
+pub use hdf5_format_reader::{HDF5FormatFactory, HDF5FormatReader};
+#[cfg(feature = "serialize")]
+pub use json_format_reader::{JsonFormatFactory, JsonFormatReader};
+#[cfg(feature = "parquet")]
+pub use parquet_format_reader::{ParquetFormatFactory, ParquetFormatReader};

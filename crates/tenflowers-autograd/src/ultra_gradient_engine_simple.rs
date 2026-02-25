@@ -512,7 +512,7 @@ mod tests {
         let result = tape.gradient_ultra(&[x.clone()], &[x, y]);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: operation result should be valid");
         assert_eq!(result.gradients.len(), 2);
         assert!(result.performance_metrics.total_time.as_nanos() > 0);
     }
@@ -551,12 +551,13 @@ mod tests {
     #[test]
     fn test_optimization_insights() {
         let config = UltraGradientConfig::default();
-        let engine = UltraGradientEngine::new(config).unwrap();
+        let engine =
+            UltraGradientEngine::new(config).expect("test: gradient computation should succeed");
 
         let insights = engine.optimize();
         assert!(insights.is_ok());
 
-        let insights = insights.unwrap();
+        let insights = insights.expect("test: operation should succeed");
         assert!(!insights.recommendations.is_empty());
     }
 }

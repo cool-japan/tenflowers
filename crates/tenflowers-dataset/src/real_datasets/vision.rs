@@ -935,7 +935,7 @@ mod tests {
 
     #[test]
     fn test_mnist_builder() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealMnistBuilder::new()
             .root(temp_dir.path())
             .train(true)
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn test_cifar10_builder() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealCifar10Builder::new()
             .root(temp_dir.path())
             .train(true)

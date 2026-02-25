@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn test_make_moons() {
         let config = SyntheticConfig::new(100).with_seed(42);
-        let dataset = DatasetGenerator::make_moons(config).unwrap();
+        let dataset = DatasetGenerator::make_moons(config).expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 100);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -38,7 +38,8 @@ mod tests {
     #[test]
     fn test_make_circles() {
         let config = SyntheticConfig::new(50).with_seed(42);
-        let dataset = DatasetGenerator::make_circles(config, 0.5).unwrap();
+        let dataset =
+            DatasetGenerator::make_circles(config, 0.5).expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 50);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -56,7 +57,7 @@ mod tests {
             1.0,         // cluster_std
             (-5.0, 5.0), // center_box
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 150);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -74,7 +75,7 @@ mod tests {
             3,    // n_classes
             0.01, // flip_y
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 100);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -93,7 +94,7 @@ mod tests {
             0.01,    // tail_strength
             0.0,     // bias
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 100);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -104,7 +105,8 @@ mod tests {
     #[test]
     fn test_make_s_curve() {
         let config = SyntheticConfig::new(100).with_seed(42);
-        let dataset = DatasetGenerator::make_s_curve(config, 0.1).unwrap();
+        let dataset =
+            DatasetGenerator::make_s_curve(config, 0.1).expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 100);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -115,7 +117,8 @@ mod tests {
     #[test]
     fn test_make_swiss_roll() {
         let config = SyntheticConfig::new(100).with_seed(42);
-        let dataset = DatasetGenerator::make_swiss_roll(config, 0.1).unwrap();
+        let dataset =
+            DatasetGenerator::make_swiss_roll(config, 0.1).expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 100);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -127,7 +130,8 @@ mod tests {
     fn test_time_series_patterns() {
         let config = SyntheticConfig::new(50).with_seed(42);
         let pattern = TimeSeriesPattern::Sine { frequency: 2.0 };
-        let dataset = DatasetGenerator::make_time_series(config, pattern, 20).unwrap();
+        let dataset = DatasetGenerator::make_time_series(config, pattern, 20)
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 50);
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -140,15 +144,17 @@ mod tests {
         let config1 = SyntheticConfig::new(50).with_seed(42);
         let config2 = SyntheticConfig::new(50).with_seed(42);
 
-        let dataset1 = DatasetGenerator::make_moons(config1).unwrap();
-        let dataset2 = DatasetGenerator::make_moons(config2).unwrap();
+        let dataset1 =
+            DatasetGenerator::make_moons(config1).expect("test: operation should succeed");
+        let dataset2 =
+            DatasetGenerator::make_moons(config2).expect("test: operation should succeed");
 
         // With same seed, should generate identical datasets
         let (features1, _) = dataset1.get(0).expect("index should be in bounds");
         let (features2, _) = dataset2.get(0).expect("index should be in bounds");
 
-        let data1 = features1.to_vec().unwrap();
-        let data2 = features2.to_vec().unwrap();
+        let data1 = features1.to_vec().expect("test: operation should succeed");
+        let data2 = features2.to_vec().expect("test: operation should succeed");
 
         // Check first few values are equal (within floating point precision)
         for (a, b) in data1.iter().zip(data2.iter()).take(4) {
@@ -163,7 +169,8 @@ mod tests {
             .with_task(TextSynthesisTask::Classification)
             .with_seed(42);
 
-        let dataset = DatasetGenerator::make_text_corpus(config).unwrap();
+        let dataset =
+            DatasetGenerator::make_text_corpus(config).expect("test: operation should succeed");
         assert!(dataset.len() > 0);
 
         let (features, labels) = dataset.get(0).expect("index should be in bounds");
@@ -183,7 +190,8 @@ mod tests {
             .with_channels(3);
 
         let mut rng = scirs2_core::random::rng();
-        let image = ImagePatternGenerator::generate_image(&config, &mut rng).unwrap();
+        let image = ImagePatternGenerator::generate_image(&config, &mut rng)
+            .expect("test: operation should succeed");
 
         assert_eq!(image.shape().dims(), &[3, 32, 32]);
     }

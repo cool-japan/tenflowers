@@ -496,8 +496,10 @@ mod tests {
 
     #[test]
     fn test_schema_validation() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let schema = SchemaInfo {
@@ -509,7 +511,9 @@ mod tests {
 
         let validator = DataValidator::new(ValidationConfig::default()).with_schema(schema);
 
-        let result = validator.validate(&dataset).unwrap();
+        let result = validator
+            .validate(&dataset)
+            .expect("test: operation should succeed");
         assert!(result.is_valid);
         assert!(!result.has_errors());
     }
@@ -520,15 +524,18 @@ mod tests {
             vec![0.5, 0.8, 1.2, 0.3], // 1.2 is above range [0, 1]
             &[2, 2],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let feature_range = RangeConstraint::range(0.0f32, 1.0f32);
         let validator =
             DataValidator::new(ValidationConfig::default()).with_feature_range(feature_range);
 
-        let result = validator.validate(&dataset).unwrap();
+        let result = validator
+            .validate(&dataset)
+            .expect("test: operation should succeed");
         assert!(!result.is_valid);
         assert!(result.has_errors());
         assert!(!result.range_errors.is_empty());
@@ -540,8 +547,9 @@ mod tests {
             vec![1.0, 2.0, 1.0, 2.0, 3.0, 4.0], // First two samples are duplicates
             &[3, 2],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        .expect("test: operation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let config = ValidationConfig {
@@ -553,7 +561,9 @@ mod tests {
         };
 
         let validator = DataValidator::new(config);
-        let result = validator.validate(&dataset).unwrap();
+        let result = validator
+            .validate(&dataset)
+            .expect("test: operation should succeed");
 
         assert!(!result.is_valid);
         assert!(result.has_errors());
@@ -566,8 +576,9 @@ mod tests {
             vec![1.0, 1.0, 1.1, 1.0, 1.2, 1.0, 1.0, 1.0, 100.0, 1.0], // 100.0 is an outlier with more stable baseline
             &[5, 2],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0], &[5]).unwrap();
+        .expect("test: operation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0], &[5])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let config = ValidationConfig {
@@ -579,7 +590,9 @@ mod tests {
         };
 
         let validator = DataValidator::new(config);
-        let result = validator.validate(&dataset).unwrap();
+        let result = validator
+            .validate(&dataset)
+            .expect("test: operation should succeed");
 
         assert!(!result.is_valid);
         assert!(result.has_errors());
@@ -588,15 +601,19 @@ mod tests {
 
     #[test]
     fn test_dataset_validation_ext() {
-        let features = Tensor::<f32>::from_vec(vec![0.5, 0.8, 0.3, 0.7], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![0.5, 0.8, 0.3, 0.7], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let is_valid = dataset.is_valid().unwrap();
+        let is_valid = dataset.is_valid().expect("test: operation should succeed");
         assert!(is_valid);
 
         let config = ValidationConfig::default();
-        let result = dataset.validate_with_config(config).unwrap();
+        let result = dataset
+            .validate_with_config(config)
+            .expect("test: operation should succeed");
         assert!(result.is_valid);
     }
 }

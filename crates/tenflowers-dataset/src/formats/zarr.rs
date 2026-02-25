@@ -1024,7 +1024,12 @@ mod tests {
 
         assert_eq!(info.shape, vec![1000, 224, 224, 3]);
         assert_eq!(info.dtype, "<f4");
-        assert_eq!(info.compressor.as_ref().unwrap(), "blosc");
+        assert_eq!(
+            info.compressor
+                .as_ref()
+                .expect("test: value should be present"),
+            "blosc"
+        );
         assert_eq!(info.zarr_format, 2);
     }
 
@@ -1080,7 +1085,7 @@ mod tests {
         let result = ZarrDataset::<f32>::parse_zarr_metadata(json_content);
         assert!(result.is_ok());
 
-        let metadata = result.unwrap();
+        let metadata = result.expect("test: operation should succeed");
         assert_eq!(metadata.shape, vec![1000, 224, 224, 3]);
         assert_eq!(metadata.dtype, "<f4");
         assert_eq!(metadata.chunks, vec![100, 224, 224, 3]);

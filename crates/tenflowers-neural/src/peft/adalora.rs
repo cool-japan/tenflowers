@@ -717,7 +717,8 @@ mod tests {
     #[test]
     fn test_adalora_adapter_creation() {
         let config = AdaLoRAConfig::new(8, 4, 16.0);
-        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(100, 50, config).unwrap();
+        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(100, 50, config)
+            .expect("test: AdaLoRAAdapter creation should succeed");
 
         // Check initial state
         assert_eq!(adapter.current_rank, 8);
@@ -747,13 +748,16 @@ mod tests {
     #[test]
     fn test_rank_adaptation() {
         let config = AdaLoRAConfig::new(8, 4, 16.0).with_update_frequency(1); // Update every step for testing
-        let mut adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(10, 5, config).unwrap();
+        let mut adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(10, 5, config)
+            .expect("test: AdaLoRAAdapter creation should succeed");
         adapter.set_training(true);
 
         // Force some importance pattern (manually set for testing)
         adapter.importance.combined_scores = vec![0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6];
 
-        let stats = adapter.adapt_rank().unwrap();
+        let stats = adapter
+            .adapt_rank()
+            .expect("test: operation should succeed");
 
         // Should have adapted the rank
         if stats.adaptation_occurred {
@@ -765,7 +769,8 @@ mod tests {
     #[test]
     fn test_adalora_forward_pass() {
         let config = AdaLoRAConfig::new(4, 2, 8.0);
-        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(10, 5, config).unwrap();
+        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(10, 5, config)
+            .expect("test: AdaLoRAAdapter creation should succeed");
 
         let input = Tensor::ones(&[2, 10]); // Batch of 2, input dim 10
         let base_output = Tensor::zeros(&[2, 5]); // Batch of 2, output dim 5
@@ -773,14 +778,15 @@ mod tests {
         let result = adapter.forward(&input, &base_output);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         assert_eq!(output.shape().dims(), &[2, 5]);
     }
 
     #[test]
     fn test_parameter_counting() {
         let config = AdaLoRAConfig::new(8, 4, 16.0);
-        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(100, 50, config).unwrap();
+        let adapter: AdaLoRAAdapter<f32> = AdaLoRAAdapter::new(100, 50, config)
+            .expect("test: AdaLoRAAdapter creation should succeed");
 
         // Initial parameter count: 100*8 + 8*50 = 1200
         assert_eq!(adapter.num_trainable_parameters(), 1200);

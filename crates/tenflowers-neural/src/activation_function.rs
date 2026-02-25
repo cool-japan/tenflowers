@@ -564,8 +564,11 @@ mod tests {
     #[test]
     fn test_relu6_activation() {
         let activation = ActivationFunction::ReLU6;
-        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 3.0, 6.0, 8.0], &[6]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 3.0, 6.0, 8.0], &[6])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert!((data[0] - 0.0).abs() < 1e-6); // -2.0 -> 0.0 (clipped at 0)
@@ -579,8 +582,11 @@ mod tests {
     #[test]
     fn test_leaky_relu_activation() {
         let activation = ActivationFunction::LeakyReLU(0.01);
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert!((data[0] - (-0.01)).abs() < 1e-6); // -1.0 * 0.01 = -0.01
@@ -592,8 +598,11 @@ mod tests {
     #[test]
     fn test_elu_activation() {
         let activation = ActivationFunction::ELU(1.0);
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         // ELU(-1) = 1.0 * (exp(-1) - 1) ≈ -0.632
@@ -605,8 +614,11 @@ mod tests {
     #[test]
     fn test_selu_activation() {
         let activation = ActivationFunction::SELU;
-        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0], &[3]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert!((data[0] - 0.0).abs() < 1e-6);
@@ -617,8 +629,11 @@ mod tests {
     #[test]
     fn test_hardswish_activation() {
         let activation = ActivationFunction::Hardswish;
-        let input = Tensor::from_vec(vec![-3.0f32, 0.0, 3.0], &[3]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-3.0f32, 0.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert!((data[0] - 0.0).abs() < 1e-6); // Should be 0 for x = -3
@@ -630,8 +645,11 @@ mod tests {
     fn test_glu_activation() {
         let activation = ActivationFunction::GLU;
         // GLU requires even last dimension - using 4 elements (2+2)
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data.len(), 2); // Should be halved
@@ -645,7 +663,8 @@ mod tests {
     #[test]
     fn test_glu_odd_dimension_error() {
         let activation = ActivationFunction::GLU;
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap(); // Odd dimension
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed"); // Odd dimension
         let result = activation.apply(&input);
         assert!(result.is_err());
     }
@@ -653,8 +672,11 @@ mod tests {
     #[test]
     fn test_swiglu_activation() {
         let activation = ActivationFunction::SwiGLU;
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data.len(), 2); // Should be halved
@@ -665,8 +687,11 @@ mod tests {
     #[test]
     fn test_geglu_activation() {
         let activation = ActivationFunction::GeGLU;
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data.len(), 2); // Should be halved
@@ -678,8 +703,11 @@ mod tests {
     #[test]
     fn test_linear_activation() {
         let activation = ActivationFunction::Linear;
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data, &[-1.0, 0.0, 1.0]); // Should be unchanged
@@ -688,8 +716,11 @@ mod tests {
     #[test]
     fn test_snake_activation() {
         let activation = ActivationFunction::Snake(1.0);
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data.len(), 4);
@@ -710,13 +741,14 @@ mod tests {
 
     #[test]
     fn test_snake_activation_different_frequencies() {
-        let input = Tensor::from_vec(vec![0.5f32], &[1]).unwrap();
+        let input =
+            Tensor::from_vec(vec![0.5f32], &[1]).expect("test: tensor creation should succeed");
 
         let snake_1 = ActivationFunction::Snake(1.0);
         let snake_2 = ActivationFunction::Snake(2.0);
 
-        let result_1 = snake_1.apply(&input).unwrap();
-        let result_2 = snake_2.apply(&input).unwrap();
+        let result_1 = snake_1.apply(&input).expect("test: apply should succeed");
+        let result_2 = snake_2.apply(&input).expect("test: apply should succeed");
 
         if let (Some(data_1), Some(data_2)) = (result_1.as_slice(), result_2.as_slice()) {
             // Different frequencies should produce different results
@@ -727,8 +759,11 @@ mod tests {
     #[test]
     fn test_quick_gelu_activation() {
         let activation = ActivationFunction::QuickGELU;
-        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
-        let result = activation.apply(&input).unwrap();
+        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: tensor creation should succeed");
+        let result = activation
+            .apply(&input)
+            .expect("test: result should be valid");
 
         let data = result.as_slice().expect("Expected CPU tensor data");
         assert_eq!(data.len(), 5);
@@ -754,13 +789,16 @@ mod tests {
 
     #[test]
     fn test_quick_gelu_vs_gelu_approximation() {
-        let input = Tensor::from_vec(vec![1.0f32], &[1]).unwrap();
+        let input =
+            Tensor::from_vec(vec![1.0f32], &[1]).expect("test: tensor creation should succeed");
 
         let quick_gelu = ActivationFunction::QuickGELU;
         let gelu = ActivationFunction::GELU;
 
-        let quick_result = quick_gelu.apply(&input).unwrap();
-        let gelu_result = gelu.apply(&input).unwrap();
+        let quick_result = quick_gelu
+            .apply(&input)
+            .expect("test: apply should succeed");
+        let gelu_result = gelu.apply(&input).expect("test: apply should succeed");
 
         if let (Some(quick_data), Some(gelu_data)) =
             (quick_result.as_slice(), gelu_result.as_slice())

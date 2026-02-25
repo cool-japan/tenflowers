@@ -1204,7 +1204,9 @@ mod tests {
         runtime.register_backend(CommunicationBackend::Thread, Box::new(ThreadBackend::new()));
 
         let config = BackendConfig::default();
-        runtime.initialize(&config).unwrap();
+        runtime
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test_group".to_string(),
@@ -1224,7 +1226,9 @@ mod tests {
         runtime.register_backend(CommunicationBackend::Thread, Box::new(ThreadBackend::new()));
 
         let config = BackendConfig::default();
-        runtime.initialize(&config).unwrap();
+        runtime
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test_group".to_string(),
@@ -1234,7 +1238,9 @@ mod tests {
             backend: CommunicationBackend::Thread,
         };
 
-        runtime.create_group(group).unwrap();
+        runtime
+            .create_group(group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[2, 3]);
         let op = CollectiveOp::AllReduce {
@@ -1243,7 +1249,7 @@ mod tests {
 
         let result = runtime
             .collective_op_f32(op, &tensor, Some("test_group"))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert!(
             matches!(result, CollectiveResult::Tensor(_)),

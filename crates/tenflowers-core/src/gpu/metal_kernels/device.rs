@@ -221,7 +221,7 @@ mod tests {
             let config = device.calculate_optimal_dispatch_config(shapes);
             assert!(config.is_ok());
 
-            let config = config.unwrap();
+            let config = config.expect("test: operation should succeed");
             assert!(config.thread_groups.width > 0);
             assert!(config.threads_per_group.width > 0);
         }

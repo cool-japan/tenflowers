@@ -14,7 +14,7 @@
 ///
 /// # Usage
 ///
-/// ```rust
+/// ```rust,no_run
 /// use tenflowers_core::performance_gates::{PerformanceGate, OperationBaseline};
 /// use tenflowers_core::{Tensor, ops::matmul};
 ///
@@ -33,7 +33,7 @@
 /// // Validate performance
 /// let gate = PerformanceGate::new(baseline);
 /// let passed = gate.validate(|| {
-///     matmul(&a, &b).unwrap();
+///     matmul(&a, &b).expect("matmul should succeed");
 /// });
 ///
 /// assert!(passed, "Performance regression detected!");
@@ -457,7 +457,7 @@ mod tests {
 
         let retrieved = get_baseline("custom_op");
         assert!(retrieved.is_some());
-        let retrieved = retrieved.unwrap();
+        let retrieved = retrieved.expect("test: operation should succeed");
         assert_eq!(retrieved.name, "custom_op");
         assert_eq!(retrieved.baseline_ns, 5000);
     }

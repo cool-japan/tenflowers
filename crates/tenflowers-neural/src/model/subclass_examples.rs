@@ -412,7 +412,9 @@ mod tests {
         let model = SimpleCustomModel::new();
         let input = Tensor::<f32>::ones(&[1, 784]);
 
-        let output = model.forward(&input).unwrap();
+        let output = model
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[1, 10]);
     }
 }

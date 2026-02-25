@@ -375,7 +375,7 @@ mod tests {
         let pool = Arc::new(MemoryPool::new());
 
         // Allocate some memory
-        let mut mem1 = pool.allocate(1024).unwrap();
+        let mut mem1 = pool.allocate(1024).expect("test: operation should succeed");
         assert_eq!(mem1.size(), 1024);
 
         // Write some data
@@ -386,7 +386,7 @@ mod tests {
         drop(mem1);
 
         // Allocate again
-        let mut mem2 = pool.allocate(1024).unwrap();
+        let mut mem2 = pool.allocate(1024).expect("test: operation should succeed");
         let slice2 = mem2.as_slice_mut();
 
         // Verify we can write to the new allocation
@@ -404,9 +404,9 @@ mod tests {
     fn test_memory_pool_different_sizes() {
         let pool = Arc::new(MemoryPool::new());
 
-        let mem1 = pool.allocate(512).unwrap();
-        let mem2 = pool.allocate(1024).unwrap();
-        let mem3 = pool.allocate(2048).unwrap();
+        let mem1 = pool.allocate(512).expect("test: operation should succeed");
+        let mem2 = pool.allocate(1024).expect("test: operation should succeed");
+        let mem3 = pool.allocate(2048).expect("test: operation should succeed");
 
         assert!(mem1.size() >= 512);
         assert!(mem2.size() >= 1024);
@@ -422,10 +422,10 @@ mod tests {
 
     #[test]
     fn test_global_memory_pool() {
-        let mem1 = GlobalMemoryPool::allocate(1024).unwrap();
+        let mem1 = GlobalMemoryPool::allocate(1024).expect("test: operation should succeed");
         assert_eq!(mem1.size(), 1024);
 
-        let mem2 = GlobalMemoryPool::allocate(2048).unwrap();
+        let mem2 = GlobalMemoryPool::allocate(2048).expect("test: operation should succeed");
         assert!(mem2.size() >= 2048);
 
         // Basic functionality test - just verify allocations work
@@ -440,7 +440,8 @@ mod tests {
     fn test_vec_with_pool_capacity() {
         GlobalMemoryPool::clear();
 
-        let mut vec: Vec<i32> = Vec::with_pool_capacity(100).unwrap();
+        let mut vec: Vec<i32> =
+            Vec::with_pool_capacity(100).expect("test: operation should succeed");
         vec.push(42);
         vec.push(99);
 
@@ -462,7 +463,7 @@ mod tests {
         assert_eq!(stats.hit_ratio(), 0.0);
         assert_eq!(stats.efficiency(), 0.0);
 
-        let _mem = pool.allocate(1024).unwrap();
+        let _mem = pool.allocate(1024).expect("test: operation should succeed");
         let stats = pool.stats();
         assert_eq!(stats.allocations, 1);
         assert_eq!(stats.cache_misses, 1);

@@ -613,15 +613,18 @@ mod tests {
     #[test]
     fn test_json_dataset_from_file() {
         // Create a temporary JSON file
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let json_content = r#"[
             {"features": [1.0, 2.0], "label": 0},
             {"features": [3.0, 4.0], "label": 1}
         ]"#;
-        temp_file.write_all(json_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(json_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
-        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label").unwrap();
+        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label")
+            .expect("test: loading from file should succeed");
 
         assert_eq!(dataset.len(), 2);
 
@@ -633,15 +636,17 @@ mod tests {
     #[test]
     fn test_jsonl_dataset_from_file() {
         // Create a temporary JSONL file
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let jsonl_content = r#"{"features": [1.0, 2.0], "label": 0}
 {"features": [3.0, 4.0], "label": 1}
 {"features": [5.0, 6.0], "label": 0}"#;
-        temp_file.write_all(jsonl_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(jsonl_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
-        let dataset =
-            JsonLDataset::<f32>::from_file(temp_file.path(), "features", "label").unwrap();
+        let dataset = JsonLDataset::<f32>::from_file(temp_file.path(), "features", "label")
+            .expect("test: loading from file should succeed");
 
         assert_eq!(dataset.len(), 3);
 
@@ -653,15 +658,18 @@ mod tests {
     #[test]
     fn test_json_dataset_info() {
         // Create a temporary JSON file
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let json_content = r#"[
             {"features": [1.0, 2.0, 3.0], "label": 0},
             {"features": [4.0, 5.0, 6.0], "label": 1}
         ]"#;
-        temp_file.write_all(json_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(json_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
-        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label").unwrap();
+        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label")
+            .expect("test: loading from file should succeed");
 
         let info = dataset.info();
         assert_eq!(info.sample_count, 2);
@@ -672,14 +680,17 @@ mod tests {
     #[test]
     fn test_json_dataset_nested_arrays() {
         // Create a temporary JSON file with nested arrays
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let json_content = r#"[
             {"features": [[1.0, 2.0], [3.0, 4.0]], "label": 0}
         ]"#;
-        temp_file.write_all(json_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(json_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
-        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label").unwrap();
+        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label")
+            .expect("test: loading from file should succeed");
 
         assert_eq!(dataset.len(), 1);
 
@@ -690,10 +701,12 @@ mod tests {
     #[test]
     fn test_invalid_json_file() {
         // Create a temporary file with invalid JSON
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let invalid_json = r#"{"invalid": json}"#;
-        temp_file.write_all(invalid_json.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(invalid_json.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         let result = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label");
 
@@ -703,12 +716,14 @@ mod tests {
     #[test]
     fn test_missing_feature_field() {
         // Create a temporary JSON file without expected feature field
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let json_content = r#"[
             {"other_field": [1.0, 2.0], "label": 0}
         ]"#;
-        temp_file.write_all(json_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(json_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         let result = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label");
 

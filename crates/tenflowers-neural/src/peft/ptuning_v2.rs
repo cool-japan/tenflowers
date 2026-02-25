@@ -755,7 +755,8 @@ mod tests {
     fn test_ptuning_v2_creation() {
         let device = Device::Cpu;
         let config = PTuningV2Config::default();
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
 
         assert_eq!(adapter.config().num_virtual_tokens, 100);
         assert_eq!(adapter.config().num_layers, 12);
@@ -812,7 +813,8 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
         let stats = adapter.stats();
 
         assert_eq!(stats.layers_with_prompts, 2);
@@ -830,14 +832,19 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
-        let layer_prompts = adapter.get_layer_prompts(0, 2).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
+        let layer_prompts = adapter
+            .get_layer_prompts(0, 2)
+            .expect("test: operation should succeed");
 
         assert!(layer_prompts.is_some());
-        let prompts = layer_prompts.unwrap();
+        let prompts = layer_prompts.expect("test: operation should succeed");
         assert!(prompts.prefix_tokens.is_some());
 
-        let prefix_tokens = prompts.prefix_tokens.unwrap();
+        let prefix_tokens = prompts
+            .prefix_tokens
+            .expect("test: operation should succeed");
         // With simplified implementation, check basic dimensions
         assert!(prefix_tokens.shape().dims().len() >= 2); // At least 2D tensor
     }
@@ -853,7 +860,8 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
         let params = adapter.trainable_parameters();
 
         // Should have prompt embeddings for each layer (2 layers with prefix tokens each)
@@ -872,7 +880,8 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
         let stats = adapter.stats();
 
         assert_eq!(stats.layers_with_prompts, 3); // Should have prompts in 3 layers
@@ -888,11 +897,14 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PTuningV2Adapter::<f32>::new(config, &device).unwrap();
+        let adapter = PTuningV2Adapter::<f32>::new(config, &device)
+            .expect("test: PTuningV2Adapter creation should succeed");
 
         // Test input: [batch_size=2, seq_len=10, hidden_size=32]
         let hidden_states = Tensor::ones(&[2, 10, 32]);
-        let result = adapter.integrate_prompts(0, &hidden_states).unwrap();
+        let result = adapter
+            .integrate_prompts(0, &hidden_states)
+            .expect("test: result should be valid");
 
         // With simplified implementation, result should have same or different shape
         // depending on what prompts are available

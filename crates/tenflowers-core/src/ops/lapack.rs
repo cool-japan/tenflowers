@@ -673,20 +673,31 @@ pub fn is_lapack_available() -> bool {
 
 /// Get LAPACK provider information
 pub fn lapack_provider() -> &'static str {
-    #[cfg(feature = "blas-openblas")]
+    #[cfg(feature = "blas-oxiblas")]
+    return "OxiBLAS";
+
+    #[cfg(all(feature = "blas-openblas", not(feature = "blas-oxiblas")))]
     return "OpenBLAS";
 
-    #[cfg(all(feature = "blas-mkl", not(feature = "blas-openblas")))]
+    #[cfg(all(
+        feature = "blas-mkl",
+        not(any(feature = "blas-oxiblas", feature = "blas-openblas"))
+    ))]
     return "Intel MKL";
 
     #[cfg(all(
         feature = "blas-accelerate",
-        not(any(feature = "blas-openblas", feature = "blas-mkl"))
+        not(any(
+            feature = "blas-oxiblas",
+            feature = "blas-openblas",
+            feature = "blas-mkl"
+        ))
     ))]
     return "Apple Accelerate";
     #[cfg(all(
         feature = "blas",
         not(any(
+            feature = "blas-oxiblas",
             feature = "blas-openblas",
             feature = "blas-mkl",
             feature = "blas-accelerate"
@@ -720,19 +731,26 @@ mod tests {
 
     #[test]
     fn test_matmul_consistency() {
-        let a = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let b = Tensor::from_vec(vec![5.0f32, 6.0, 7.0, 8.0], &[2, 2]).unwrap();
+        let a = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::from_vec(vec![5.0f32, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("test: from_vec should succeed");
 
-        let result_regular = crate::ops::matmul(&a, &b).unwrap();
-        let result_lapack = matmul_blas(&a, &b).unwrap();
+        let result_regular = crate::ops::matmul(&a, &b).expect("test: matmul should succeed");
+        let result_lapack = matmul_blas(&a, &b).expect("test: matmul_blas should succeed");
 
         // Results should be identical regardless of LAPACK availability
-        for (r, l) in result_regular.as_slice().unwrap().iter().zip(
-            result_lapack
-                .as_slice()
-                .expect("tensor should be contiguous")
-                .iter(),
-        ) {
+        for (r, l) in result_regular
+            .as_slice()
+            .expect("test: tensor data should be accessible as slice")
+            .iter()
+            .zip(
+                result_lapack
+                    .as_slice()
+                    .expect("tensor should be contiguous")
+                    .iter(),
+            )
+        {
             assert_abs_diff_eq!(r, l, epsilon = 1e-6);
         }
     }
@@ -740,10 +758,11 @@ mod tests {
     #[test]
     #[ignore = "LAPACK determinant not yet fully implemented for generic types"]
     fn test_determinant_consistency() {
-        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
 
         let result_regular = crate::ops::det(&matrix)
-            .unwrap()
+            .expect("test: operation should succeed")
             .as_slice()
             .expect("tensor should be contiguous")[0];
 

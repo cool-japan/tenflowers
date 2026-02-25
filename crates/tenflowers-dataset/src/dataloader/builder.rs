@@ -230,8 +230,7 @@ mod tests {
             .timeout(Duration::from_secs(30))
             .build(sampler);
 
-        // If we reach here, the chaining worked
-        assert!(true);
+        // If we reach here, the chaining worked - no assertion needed
     }
 
     #[test]
@@ -247,7 +246,7 @@ mod tests {
 
         let mut batch_count = 0;
         for batch_result in dataloader.iter() {
-            let batch = batch_result.unwrap();
+            let batch = batch_result.expect("test: operation should succeed");
             assert_eq!(batch.len(), 2);
             batch_count += 1;
         }

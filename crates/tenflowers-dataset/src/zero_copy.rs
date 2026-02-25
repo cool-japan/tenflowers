@@ -717,10 +717,13 @@ mod tests {
     #[test]
     fn test_tensor_view_slice() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Arc::new(Tensor::from_vec(data, &[2, 3]).unwrap());
+        let tensor = Arc::new(
+            Tensor::from_vec(data, &[2, 3]).expect("test: tensor creation should succeed"),
+        );
 
         // Slice first row: [1, 2, 3]
-        let view = TensorView::slice(tensor, &[0..1, 0..3]).unwrap();
+        let view =
+            TensorView::slice(tensor, &[0..1, 0..3]).expect("test: operation should succeed");
         assert_eq!(view.shape().dims(), &[1, 3]);
         assert_eq!(view.offset(), 0);
         assert!(view.is_contiguous());
@@ -729,20 +732,25 @@ mod tests {
     #[test]
     fn test_tensor_view_reshape() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Arc::new(Tensor::from_vec(data, &[2, 3]).unwrap());
+        let tensor = Arc::new(
+            Tensor::from_vec(data, &[2, 3]).expect("test: tensor creation should succeed"),
+        );
 
         // Reshape to [6, 1]
-        let view = TensorView::reshape(tensor, vec![6, 1]).unwrap();
+        let view = TensorView::reshape(tensor, vec![6, 1]).expect("test: operation should succeed");
         assert_eq!(view.shape().dims(), &[6, 1]);
         assert_eq!(view.offset(), 0);
     }
 
     #[test]
     fn test_zero_copy_dataset() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
-        let dataset = ZeroCopyDataset::new(features, labels).unwrap();
+        let dataset =
+            ZeroCopyDataset::new(features, labels).expect("test: operation should succeed");
         assert_eq!(dataset.len(), 2);
 
         let (feat, label) = dataset.get(0).expect("index should be in bounds");
@@ -761,7 +769,7 @@ mod tests {
             vec![2], // 2 features per sample
             vec![],  // scalar labels
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 2);
 

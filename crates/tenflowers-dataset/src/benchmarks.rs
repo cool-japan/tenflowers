@@ -526,7 +526,8 @@ mod tests {
 
     #[test]
     fn test_synthetic_mnist() {
-        let dataset = BenchmarkDatasets::synthetic_mnist(100, Some(42)).unwrap();
+        let dataset = BenchmarkDatasets::synthetic_mnist(100, Some(42))
+            .expect("test: operation should succeed");
         assert_eq!(dataset.len(), 100);
 
         let (image, label) = dataset.get(0).expect("index should be in bounds");
@@ -540,7 +541,8 @@ mod tests {
 
     #[test]
     fn test_synthetic_cifar10() {
-        let dataset = BenchmarkDatasets::synthetic_cifar10(50, Some(42)).unwrap();
+        let dataset = BenchmarkDatasets::synthetic_cifar10(50, Some(42))
+            .expect("test: operation should succeed");
         assert_eq!(dataset.len(), 50);
 
         let (image, label) = dataset.get(0).expect("index should be in bounds");
@@ -555,7 +557,8 @@ mod tests {
 
     #[test]
     fn test_synthetic_iris() {
-        let dataset = BenchmarkDatasets::synthetic_iris(150, Some(42)).unwrap();
+        let dataset = BenchmarkDatasets::synthetic_iris(150, Some(42))
+            .expect("test: operation should succeed");
         assert_eq!(dataset.len(), 150);
 
         let (features, label) = dataset.get(0).expect("index should be in bounds");
@@ -577,8 +580,10 @@ mod tests {
 
     #[test]
     fn test_dataset_reproducibility() {
-        let dataset1 = BenchmarkDatasets::synthetic_mnist(10, Some(123)).unwrap();
-        let dataset2 = BenchmarkDatasets::synthetic_mnist(10, Some(123)).unwrap();
+        let dataset1 = BenchmarkDatasets::synthetic_mnist(10, Some(123))
+            .expect("test: operation should succeed");
+        let dataset2 = BenchmarkDatasets::synthetic_mnist(10, Some(123))
+            .expect("test: operation should succeed");
 
         // With same seed, datasets should be identical
         let (img1, label1) = dataset1.get(0).expect("index should be in bounds");

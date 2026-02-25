@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+
 use scirs2_core::ndarray::Array1;
 /// Example demonstrating gradient validation concept
 ///

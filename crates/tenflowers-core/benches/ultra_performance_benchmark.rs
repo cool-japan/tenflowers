@@ -1,3 +1,7 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+
 //! 🚀 Ultra-Performance Comprehensive Benchmarking Suite
 //!
 //! This benchmark suite provides detailed performance analysis and validation

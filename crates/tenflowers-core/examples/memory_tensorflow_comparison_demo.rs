@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Memory Usage Profiling vs TensorFlow Demo
 //!
 //! This example demonstrates the memory usage profiling and optimization features
@@ -85,7 +87,7 @@ fn main() {
 
         let snapshot = MemorySnapshot {
             timestamp: Instant::now(),
-            operation: op_name.to_string(),
+            operation: (*op_name).to_string(),
             tenflowers_memory_mb: *tf_rs_memory,
             tensorflow_memory_mb: *tf_memory,
             pytorch_memory_mb: tf_memory.map(|tf| tf * 1.05), // Simulate PyTorch slightly higher

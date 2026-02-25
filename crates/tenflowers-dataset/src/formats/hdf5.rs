@@ -447,7 +447,7 @@ mod tests {
     fn test_hdf5_config_default() {
         let config = HDF5Config::default();
         assert_eq!(config.group_path, "/");
-        assert_eq!(config.cache_data, true);
+        assert!(config.cache_data);
         assert!(config.feature_dataset.is_none());
         assert!(config.label_dataset.is_none());
     }
@@ -460,8 +460,20 @@ mod tests {
             .with_group_path("/data".to_string())
             .with_max_samples(1000);
 
-        assert_eq!(config.feature_dataset.as_ref().unwrap(), "features");
-        assert_eq!(config.label_dataset.as_ref().unwrap(), "labels");
+        assert_eq!(
+            config
+                .feature_dataset
+                .as_ref()
+                .expect("test: value should be present"),
+            "features"
+        );
+        assert_eq!(
+            config
+                .label_dataset
+                .as_ref()
+                .expect("test: value should be present"),
+            "labels"
+        );
         assert_eq!(config.group_path, "/data");
         assert_eq!(config.max_samples, Some(1000));
     }
@@ -472,8 +484,22 @@ mod tests {
             .feature_dataset("data".to_string())
             .label_dataset("targets".to_string());
 
-        assert_eq!(builder.config.feature_dataset.as_ref().unwrap(), "data");
-        assert_eq!(builder.config.label_dataset.as_ref().unwrap(), "targets");
+        assert_eq!(
+            builder
+                .config
+                .feature_dataset
+                .as_ref()
+                .expect("test: value should be present"),
+            "data"
+        );
+        assert_eq!(
+            builder
+                .config
+                .label_dataset
+                .as_ref()
+                .expect("test: value should be present"),
+            "targets"
+        );
     }
 
     // Note: Actual file I/O tests would require creating sample HDF5 files

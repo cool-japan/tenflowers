@@ -711,7 +711,7 @@ mod tests {
             CudnnTensorFormat::NCHW,
             vec![1, 3, 224, 224],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(desc.data_type, CudnnDataType::Float);
         assert_eq!(desc.format, CudnnTensorFormat::NCHW);
@@ -730,7 +730,7 @@ mod tests {
             1, // dilation
             CudnnDataType::Float,
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(desc.padding, vec![1, 1]);
         assert_eq!(desc.stride, vec![1, 1]);
@@ -744,7 +744,7 @@ mod tests {
             0, 0, // padding
             2, 2, // stride
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         assert_eq!(desc.mode, CudnnPoolingMode::Max);
         assert_eq!(desc.window_size, vec![2, 2]);
@@ -761,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_version_info() {
-        let version = CudnnContext::version_info().unwrap();
+        let version = CudnnContext::version_info().expect("test: version_info should succeed");
         assert!(version.contains("cuDNN"));
     }
 
@@ -777,15 +777,18 @@ mod tests {
     #[test]
     fn test_data_type_inference() {
         assert_eq!(
-            CudnnTensorDescriptor::infer_data_type::<f32>().unwrap(),
+            CudnnTensorDescriptor::infer_data_type::<f32>()
+                .expect("test: operation should succeed"),
             CudnnDataType::Float
         );
         assert_eq!(
-            CudnnTensorDescriptor::infer_data_type::<f64>().unwrap(),
+            CudnnTensorDescriptor::infer_data_type::<f64>()
+                .expect("test: operation should succeed"),
             CudnnDataType::Double
         );
         assert_eq!(
-            CudnnTensorDescriptor::infer_data_type::<i32>().unwrap(),
+            CudnnTensorDescriptor::infer_data_type::<i32>()
+                .expect("test: operation should succeed"),
             CudnnDataType::Int32
         );
     }

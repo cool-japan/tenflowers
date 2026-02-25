@@ -537,12 +537,17 @@ mod tests {
         let tape = GradientTape::new();
 
         // f(x) = x³, so f'''(x) = 6
-        let x = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
 
         // Compute x³
-        let x_squared = x_tracked.mul(&x_tracked).unwrap();
-        let x_cubed = x_squared.mul(&x_tracked).unwrap();
+        let x_squared = x_tracked
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
+        let x_cubed = x_squared
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
 
         // Compute third derivative
         let result = tape.third_derivative(&x_cubed, &x_tracked);
@@ -557,11 +562,16 @@ mod tests {
         let tape = GradientTape::new();
 
         // f(x) = x⁴
-        let x = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
 
-        let x2 = x_tracked.mul(&x_tracked).unwrap();
-        let x4 = x2.mul(&x2).unwrap();
+        let x2 = x_tracked
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
+        let x4 = x2
+            .mul(&x2)
+            .expect("test: tensor multiplication should succeed");
 
         // Test nth derivative API
         for order in 1..=4 {
@@ -577,12 +587,16 @@ mod tests {
         let tape = GradientTape::new();
 
         // f(x, y) = xy
-        let x = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 
-        let xy = x_tracked.mul(&y_tracked).unwrap();
+        let xy = x_tracked
+            .mul(&y_tracked)
+            .expect("test: tensor multiplication should succeed");
 
         // Test mixed partial derivative API
         let variables = vec![&x_tracked, &y_tracked];
@@ -602,12 +616,17 @@ mod tests {
         let tape = GradientTape::new();
 
         // f(x) = x⁴, so f''''(x) = 24
-        let x = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
 
         // Compute x⁴
-        let x2 = x_tracked.mul(&x_tracked).unwrap();
-        let x4 = x2.mul(&x2).unwrap();
+        let x2 = x_tracked
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
+        let x4 = x2
+            .mul(&x2)
+            .expect("test: tensor multiplication should succeed");
 
         // Test 4th derivative
         let result = tape.nth_derivative(&x4, &x_tracked, 4);
@@ -629,12 +648,19 @@ mod tests {
         let tape = GradientTape::new();
 
         // Test with f(x) = x⁵
-        let x = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
 
-        let x2 = x_tracked.mul(&x_tracked).unwrap();
-        let x4 = x2.mul(&x2).unwrap();
-        let x5 = x4.mul(&x_tracked).unwrap();
+        let x2 = x_tracked
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
+        let x4 = x2
+            .mul(&x2)
+            .expect("test: tensor multiplication should succeed");
+        let x5 = x4
+            .mul(&x_tracked)
+            .expect("test: tensor multiplication should succeed");
 
         // Test derivatives up to 6th order
         for order in 1..=6 {

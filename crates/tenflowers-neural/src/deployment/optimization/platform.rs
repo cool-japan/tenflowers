@@ -564,7 +564,7 @@ mod tests {
         let result = PlatformOptimizations::auto_tune_kernels(&mut model, &config);
         assert!(result.is_ok());
 
-        let profile = result.unwrap();
+        let profile = result.expect("test: result should be valid");
         assert!(profile.avg_inference_time_ms > 0.0);
         assert!(profile.compute_utilization > 0.0);
     }
@@ -577,7 +577,7 @@ mod tests {
         let result = PlatformOptimizations::apply_mixed_precision_optimization(&mut model, &config);
         assert!(result.is_ok());
 
-        let profile = result.unwrap();
+        let profile = result.expect("test: result should be valid");
         assert!(profile.avg_inference_time_ms > 0.0);
         assert!(!profile.accuracy_by_precision.is_empty());
     }
@@ -590,7 +590,7 @@ mod tests {
         let result = PlatformOptimizations::apply_profile_guided_optimization(&mut model, &config);
         assert!(result.is_ok());
 
-        let profile = result.unwrap();
+        let profile = result.expect("test: result should be valid");
         assert!(profile.avg_inference_time_ms > 0.0);
         assert!(!profile.batch_throughput.is_empty());
     }
@@ -602,7 +602,7 @@ mod tests {
         let result = PlatformOptimizations::validate_model_accuracy(&model, 1000, 0.01);
         assert!(result.is_ok());
 
-        let accuracies = result.unwrap();
+        let accuracies = result.expect("test: result should be valid");
         assert!(!accuracies.is_empty());
         assert!(accuracies.contains_key("FP32_original"));
     }

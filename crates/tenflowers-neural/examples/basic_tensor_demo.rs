@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::{ArrayD, IxDyn};
 /// Basic Tensor Operations Demo using TenfloweRS
 /// Simple demonstration of tensor creation and basic operations

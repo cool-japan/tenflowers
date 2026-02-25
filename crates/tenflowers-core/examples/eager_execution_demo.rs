@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::field_reassign_with_default)]
+
 //! Eager Execution Optimization Demo
 //!
 //! This example demonstrates the eager execution optimization features

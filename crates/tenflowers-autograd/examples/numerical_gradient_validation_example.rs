@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::field_reassign_with_default)]
+
 // # Numerical Gradient Validation Example
 //
 // This example demonstrates comprehensive numerical gradient validation using
@@ -114,7 +117,7 @@ fn example_2_compare_methods() -> Result<()> {
         let mut checker = NumericalChecker::new(config);
 
         let epsilon = method.recommended_epsilon();
-        let numerical_grad = checker.compute_numerical_gradient(&x, &f, epsilon)?;
+        let numerical_grad = checker.compute_numerical_gradient(&x, f, epsilon)?;
 
         println!(
             "{:20} (h={:.0e}): {:?}",
@@ -243,7 +246,7 @@ fn example_5_adaptive_epsilon() -> Result<()> {
 
     for (name, x_array) in test_cases {
         let x = Tensor::from_array(x_array);
-        let numerical_grad = checker.compute_numerical_gradient(&x, &f, epsilon)?;
+        let numerical_grad = checker.compute_numerical_gradient(&x, f, epsilon)?;
 
         println!("{}: ", name);
         println!(

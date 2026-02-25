@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_performance_report() {
-        let manager = create_ultra_layer_manager().unwrap();
+        let manager = create_ultra_layer_manager().expect("test: operation should succeed");
         let report = manager.get_performance_report();
         assert!(report.is_ok());
     }

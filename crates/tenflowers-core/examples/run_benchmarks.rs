@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use std::time::Duration;
 use tenflowers_core::{
     ops::benchmark::{
@@ -27,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 2: Binary operation benchmarks
     println!("2. Running binary operation benchmarks...");
-    let devices = vec![Device::Cpu];
+    let devices = [Device::Cpu];
     #[cfg(feature = "gpu")]
     let devices = vec![Device::Cpu, Device::Gpu(0)];
 

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Example demonstrating ImageNet dataset loading and usage
 //!
 //! This example shows how to load ImageNet validation set with automatic downloading

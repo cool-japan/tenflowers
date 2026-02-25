@@ -480,15 +480,15 @@ mod tests {
 
         let batch1 = sampler.next_batch();
         assert!(batch1.is_some());
-        assert_eq!(batch1.unwrap().len(), 10);
+        assert_eq!(batch1.expect("test: operation should succeed").len(), 10);
 
         let batch2 = sampler.next_batch();
         assert!(batch2.is_some());
-        assert_eq!(batch2.unwrap().len(), 10);
+        assert_eq!(batch2.expect("test: operation should succeed").len(), 10);
 
         let batch3 = sampler.next_batch();
         assert!(batch3.is_some());
-        assert_eq!(batch3.unwrap().len(), 5); // Last incomplete batch
+        assert_eq!(batch3.expect("test: operation should succeed").len(), 5); // Last incomplete batch
     }
 
     #[test]

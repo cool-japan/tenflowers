@@ -1,3 +1,7 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2};
 use std::time::{Duration, Instant};
@@ -32,7 +36,8 @@ fn bench_performance_regression(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.add(&y).unwrap();
-            black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -45,7 +50,8 @@ fn bench_performance_regression(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.mul(&y).unwrap();
-            black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -56,7 +62,8 @@ fn bench_performance_regression(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.relu().unwrap();
-            black_box(tape.gradient(&z, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -67,7 +74,8 @@ fn bench_performance_regression(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.sigmoid().unwrap();
-            black_box(tape.gradient(&z, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -80,7 +88,8 @@ fn bench_performance_regression(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.matmul(&y).unwrap();
-            black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -113,7 +122,8 @@ fn bench_performance_regression(c: &mut Criterion) {
             let loss = output.sum(None, false).unwrap();
 
             // Backward pass
-            black_box(tape.gradient(&loss, &[&w1, &b1, &w2, &b2]).unwrap());
+            let inputs = vec![w1.clone(), b1.clone(), w2.clone(), b2.clone()];
+            black_box(tape.gradient(&[loss], &inputs).unwrap());
         });
     });
 
@@ -137,7 +147,7 @@ fn bench_memory_usage(c: &mut Criterion) {
 
                     for _ in 0..iters {
                         let tape = GradientTape::new();
-                        let x_data = Array1::zeros(size).into_dyn();
+                        let x_data = Array1::<f32>::zeros(size).into_dyn();
                         let x = tape.watch(Tensor::from_array(x_data));
 
                         // Perform operations that create intermediate tensors
@@ -146,7 +156,8 @@ fn bench_memory_usage(c: &mut Criterion) {
                         let w = z.relu().unwrap();
 
                         // Compute gradients
-                        let _gradients = tape.gradient(&w, &[&x]).unwrap();
+                        let inputs = vec![x.clone()];
+                        let _gradients = tape.gradient(&[w.clone()], &inputs).unwrap();
 
                         // Drop everything to simulate memory cleanup
                         drop(tape);
@@ -198,7 +209,8 @@ fn bench_gradient_overhead(c: &mut Criterion) {
             let z = x.add(&y).unwrap();
             let w = z.relu().unwrap();
             let loss = w.sum(None, false).unwrap();
-            black_box(tape.gradient(&loss, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[loss], &inputs).unwrap());
         });
     });
 
@@ -220,19 +232,20 @@ fn bench_scalability(c: &mut Criterion) {
             &batch_size,
             |b, &batch_size| {
                 let tape = GradientTape::new();
-                let x_data = Array2::zeros((batch_size, feature_size)).into_dyn();
-                let w_data = Array2::zeros((feature_size, 10)).into_dyn();
-                let b_data = Array1::zeros(10).into_dyn();
+                let x_data = Array2::<f32>::zeros((batch_size, feature_size)).into_dyn();
+                let w_data = Array2::<f32>::zeros((feature_size, 10)).into_dyn();
+                let b_data = Array1::<f32>::zeros(10).into_dyn();
 
                 let x = tape.watch(Tensor::from_array(x_data));
                 let w = tape.watch(Tensor::from_array(w_data));
-                let b = tape.watch(Tensor::from_array(b_data));
+                let bias = tape.watch(Tensor::from_array(b_data));
 
                 b.iter(|| {
-                    let logits = x.matmul(&w).unwrap().add(&b).unwrap();
+                    let logits = x.matmul(&w).unwrap().add(&bias).unwrap();
                     let probs = logits.softmax(Some(1)).unwrap();
                     let loss = probs.sum(None, false).unwrap();
-                    black_box(tape.gradient(&loss, &[&w, &b]).unwrap());
+                    let inputs = vec![w.clone(), bias.clone()];
+                    black_box(tape.gradient(&[loss.clone()], &inputs).unwrap());
                 });
             },
         );
@@ -258,8 +271,8 @@ fn bench_gradient_accumulation_strategies(c: &mut Criterion) {
                     let accumulator = GradientAccumulator::new(true);
 
                     let feature_size = 100;
-                    let x_data = Array2::zeros((micro_batch_size, feature_size)).into_dyn();
-                    let w_data = Array2::zeros((feature_size, 1)).into_dyn();
+                    let x_data = Array2::<f32>::zeros((micro_batch_size, feature_size)).into_dyn();
+                    let w_data = Array2::<f32>::zeros((feature_size, 1)).into_dyn();
 
                     let x = tape.watch(Tensor::from_array(x_data));
                     let w = tape.watch(Tensor::from_array(w_data));
@@ -311,7 +324,7 @@ fn bench_complex_operations(c: &mut Criterion) {
                         match i % 4 {
                             0 => result = result.add(&result).unwrap(),
                             1 => {
-                                let scalar = tape.watch(Tensor::from_scalar(0.5));
+                                let scalar = tape.watch(Tensor::from_scalar(0.5f32));
                                 result = result.mul(&scalar).unwrap();
                             }
                             2 => result = result.relu().unwrap(),
@@ -320,7 +333,9 @@ fn bench_complex_operations(c: &mut Criterion) {
                         }
                     }
 
-                    black_box(tape.gradient(&result, &[&x]).unwrap());
+                    let loss = result.sum(None, false).unwrap();
+                    let inputs = vec![x.clone()];
+                    black_box(tape.gradient(&[loss], &inputs).unwrap());
                 });
             },
         );

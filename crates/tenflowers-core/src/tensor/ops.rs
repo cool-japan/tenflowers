@@ -760,7 +760,7 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
     /// let flattened = tensor.flatten().expect("flatten should not fail");
     /// assert_eq!(flattened.shape().dims(), &[4]);
     /// ```
@@ -783,8 +783,8 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-    /// let cumsum = tensor.cumsum(Some(0)).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
+    /// let cumsum = tensor.cumsum(Some(0)).expect("operation should succeed");
     /// ```
     pub fn cumsum(&self, axis: Option<i32>) -> Result<Self>
     where
@@ -811,8 +811,8 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-    /// let cumprod = tensor.cumprod(Some(0)).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
+    /// let cumprod = tensor.cumprod(Some(0)).expect("operation should succeed");
     /// ```
     pub fn cumprod(&self, axis: Option<i32>) -> Result<Self>
     where
@@ -839,8 +839,8 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
-    /// let tiled = tensor.tile(&[2, 3]).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).expect("from_vec should succeed");
+    /// let tiled = tensor.tile(&[2, 3]).expect("tile should succeed");
     /// assert_eq!(tiled.shape().dims(), &[2, 6]);
     /// ```
     pub fn tile(&self, multiples: &[usize]) -> Result<Self>
@@ -863,8 +863,8 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-    /// let repeated = tensor.repeat(2, Some(0)).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).expect("from_vec should succeed");
+    /// let repeated = tensor.repeat(2, Some(0)).expect("operation should succeed");
     /// assert_eq!(repeated.shape().dims(), &[6]);
     /// ```
     pub fn repeat(&self, repeats: usize, axis: Option<usize>) -> Result<Self>
@@ -886,8 +886,8 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
-    /// let broadcasted = tensor.broadcast_to(&[3, 2]).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).expect("from_vec should succeed");
+    /// let broadcasted = tensor.broadcast_to(&[3, 2]).expect("broadcast_to should succeed");
     /// assert_eq!(broadcasted.shape().dims(), &[3, 2]);
     /// ```
     pub fn broadcast_to(&self, target_shape: &[usize]) -> Result<Self>
@@ -909,9 +909,9 @@ where
     /// ```
     /// use tenflowers_core::Tensor;
     ///
-    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
+    /// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).expect("from_vec should succeed");
     /// let target = Tensor::<f32>::zeros(&[3, 2]);
-    /// let expanded = tensor.expand_as(&target).unwrap();
+    /// let expanded = tensor.expand_as(&target).expect("expand_as should succeed");
     /// assert_eq!(expanded.shape().dims(), &[3, 2]);
     /// ```
     pub fn expand_as(&self, target: &Self) -> Result<Self>

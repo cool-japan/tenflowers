@@ -323,7 +323,9 @@ mod tests {
     fn test_mpi_group_creation() {
         let mut backend = MpiBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -340,7 +342,9 @@ mod tests {
     fn test_mpi_all_reduce() {
         let mut backend = MpiBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -350,7 +354,9 @@ mod tests {
             backend: CommunicationBackend::Mpi,
         };
 
-        backend.create_group(&group).unwrap();
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[100, 50]);
         let result = backend.all_reduce_f32(&tensor, &group, ReductionOp::Sum);

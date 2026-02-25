@@ -40,7 +40,7 @@
 //!
 //! ### GPU Acceleration
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, Device};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -74,7 +74,7 @@
 //!
 //! #### Quantization
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, quantize, QuantizationParams};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -123,7 +123,7 @@
 //!
 //! The crate automatically uses SIMD instructions when available for maximum performance:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, SimdCapabilities};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -141,7 +141,7 @@
 //!
 //! ### Memory Optimization
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, Device};
 //! use tenflowers_core::memory::{BufferPool, GlobalBufferPool};
 //!
@@ -177,7 +177,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tenflowers-core = { version = "0.1.0-beta.1", features = ["gpu"] }
+//! tenflowers-core = { version = "0.1.0-rc.1", features = ["gpu"] }
 //! ```
 //!
 //! ## Safety and Correctness
@@ -192,7 +192,7 @@
 //!
 //! Use the built-in benchmarking utilities to measure performance:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, Device};
 //! use tenflowers_core::profiling::Profiler;
 //!

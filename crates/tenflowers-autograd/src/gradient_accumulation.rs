@@ -689,19 +689,29 @@ mod tests {
         let y = tape.watch(Tensor::from_array(y_data));
 
         // Simulate two gradient computations
-        let loss1 = x.add(&y).unwrap();
-        let loss2 = x.mul(&y).unwrap();
+        let loss1 = x.add(&y).expect("test: tensor addition should succeed");
+        let loss2 = x
+            .mul(&y)
+            .expect("test: tensor multiplication should succeed");
 
         // Accumulate gradients
-        accumulator.accumulate(&tape, &loss1, &[&x, &y]).unwrap();
-        accumulator.accumulate(&tape, &loss2, &[&x, &y]).unwrap();
+        accumulator
+            .accumulate(&tape, &loss1, &[&x, &y])
+            .expect("test: gradient accumulation should succeed");
+        accumulator
+            .accumulate(&tape, &loss2, &[&x, &y])
+            .expect("test: gradient accumulation should succeed");
 
         // Check accumulation count
         assert_eq!(accumulator.num_accumulated(), 2);
 
         // Check gradients were accumulated
-        let grad_x = accumulator.get_gradient(&x).unwrap();
-        let grad_y = accumulator.get_gradient(&y).unwrap();
+        let grad_x = accumulator
+            .get_gradient(&x)
+            .expect("test: gradient computation should succeed");
+        let grad_y = accumulator
+            .get_gradient(&y)
+            .expect("test: gradient computation should succeed");
 
         assert!(grad_x.is_some());
         assert!(grad_y.is_some());
@@ -722,15 +732,22 @@ mod tests {
         let x = tape.watch(Tensor::from_array(x_data));
 
         // Simulate gradient computation that should give gradient of [2.0, 2.0]
-        let loss = x.add(&x).unwrap();
+        let loss = x.add(&x).expect("test: tensor addition should succeed");
 
         // Accumulate the same gradient twice
-        accumulator.accumulate(&tape, &loss, &[&x]).unwrap();
-        accumulator.accumulate(&tape, &loss, &[&x]).unwrap();
+        accumulator
+            .accumulate(&tape, &loss, &[&x])
+            .expect("test: gradient accumulation should succeed");
+        accumulator
+            .accumulate(&tape, &loss, &[&x])
+            .expect("test: gradient accumulation should succeed");
 
         // With averaging, we should get [2.0, 2.0] (original gradient)
         // Without averaging, we would get [4.0, 4.0] (2 * original)
-        let grad_x = accumulator.get_gradient(&x).unwrap().unwrap();
+        let grad_x = accumulator
+            .get_gradient(&x)
+            .expect("test: gradient computation should succeed")
+            .expect("test: gradient computation should succeed");
 
         // The gradient should be averaged - for add operation, gradient is [1.0, 1.0] + [1.0, 1.0] = [2.0, 2.0]
         // Since we accumulated twice and average, we should get [2.0, 2.0]
@@ -774,8 +791,12 @@ mod tests {
         let x_data = Array1::from_vec(vec![1.0f32, 2.0f32]).into_dyn();
         let x = tape.watch(Tensor::from_array(x_data));
 
-        let loss = x.mul(&x).unwrap();
-        accumulator.accumulate_local(&tape, &loss, &[&x]).unwrap();
+        let loss = x
+            .mul(&x)
+            .expect("test: tensor multiplication should succeed");
+        accumulator
+            .accumulate_local(&tape, &loss, &[&x])
+            .expect("test: gradient accumulation should succeed");
 
         let stats = accumulator.get_distributed_stats();
         assert_eq!(stats.rank, 0);
@@ -799,10 +820,16 @@ mod tests {
         let x_data = Array1::from_vec(vec![1.0f32, 2.0f32]).into_dyn();
         let x = tape.watch(Tensor::from_array(x_data));
 
-        let loss = x.mul(&x).unwrap();
-        accumulator.accumulate_local(&tape, &loss, &[&x]).unwrap();
+        let loss = x
+            .mul(&x)
+            .expect("test: tensor multiplication should succeed");
+        accumulator
+            .accumulate_local(&tape, &loss, &[&x])
+            .expect("test: gradient accumulation should succeed");
 
-        let aggregated_grads = accumulator.aggregate_distributed(&[&x]).unwrap();
+        let aggregated_grads = accumulator
+            .aggregate_distributed(&[&x])
+            .expect("test: gradient computation should succeed");
         assert_eq!(aggregated_grads.len(), 1);
 
         // Check that the gradient was scaled by world size (simulation)
@@ -838,11 +865,14 @@ mod tests {
             &[&x],
             &data_batch,
             micro_batch_size,
-            |_batch| Ok(x.mul(&x).unwrap()),
+            |_batch| {
+                Ok(x.mul(&x)
+                    .expect("test: tensor multiplication should succeed"))
+            },
         );
 
         assert!(result.is_ok());
-        let gradients = result.unwrap();
+        let gradients = result.expect("test: gradient computation should succeed");
         assert_eq!(gradients.len(), 1);
     }
 
@@ -862,10 +892,16 @@ mod tests {
         let x_data = Array1::from_vec(vec![1.0f32, 2.0f32]).into_dyn();
         let x = tape.watch(Tensor::from_array(x_data));
 
-        let loss = x.mul(&x).unwrap();
-        accumulator.accumulate_local(&tape, &loss, &[&x]).unwrap();
+        let loss = x
+            .mul(&x)
+            .expect("test: tensor multiplication should succeed");
+        accumulator
+            .accumulate_local(&tape, &loss, &[&x])
+            .expect("test: gradient accumulation should succeed");
 
-        let aggregated_grads = accumulator.aggregate_distributed(&[&x]).unwrap();
+        let aggregated_grads = accumulator
+            .aggregate_distributed(&[&x])
+            .expect("test: gradient computation should succeed");
         assert_eq!(aggregated_grads.len(), 1);
 
         // In parameter server mode, gradients should be unmodified for simulation
@@ -893,13 +929,17 @@ mod tests {
         let x = tape.watch(Tensor::from_array(x_data));
 
         // Test synchronization
-        accumulator.synchronize("test_barrier", &[&x]).unwrap();
+        accumulator
+            .synchronize("test_barrier", &[&x])
+            .expect("test: synchronization should succeed");
 
         let stats = accumulator.get_distributed_stats();
         assert_eq!(stats.active_barriers, 1);
 
         // Synchronize again to simulate second process
-        accumulator.synchronize("test_barrier", &[&x]).unwrap();
+        accumulator
+            .synchronize("test_barrier", &[&x])
+            .expect("test: synchronization should succeed");
 
         let stats_after = accumulator.get_distributed_stats();
         assert_eq!(stats_after.active_barriers, 0); // Barrier should be cleared

@@ -765,11 +765,15 @@ mod tests {
         let sequence = patterns::elementwise_activation(FusableOp::Add, FusableOp::ReLU);
 
         // First creation should cache the kernel
-        let kernel1 = optimizer.create_fused_kernel(sequence.clone()).unwrap();
+        let kernel1 = optimizer
+            .create_fused_kernel(sequence.clone())
+            .expect("test: fusion operation should succeed");
         assert_eq!(optimizer.fusion_cache.len(), 1);
 
         // Second access should return cached kernel
-        let kernel2 = optimizer.create_fused_kernel(sequence).unwrap();
+        let kernel2 = optimizer
+            .create_fused_kernel(sequence)
+            .expect("test: fusion operation should succeed");
         assert_eq!(kernel1.kernel_id, kernel2.kernel_id);
         assert_eq!(optimizer.fusion_cache.len(), 1);
     }
@@ -780,7 +784,9 @@ mod tests {
 
         let sequence =
             patterns::chained_elementwise(vec![FusableOp::Add, FusableOp::Mul, FusableOp::ReLU]);
-        optimizer.create_fused_kernel(sequence).unwrap();
+        optimizer
+            .create_fused_kernel(sequence)
+            .expect("test: fusion operation should succeed");
 
         let stats = optimizer.get_stats();
         assert_eq!(stats.cached_kernels, 1);

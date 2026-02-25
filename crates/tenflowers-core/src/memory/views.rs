@@ -302,7 +302,9 @@ mod tests {
     #[test]
     fn test_strided_view_transpose() {
         let view = StridedView::new(0, vec![2, 3, 4], vec![48, 16, 4], 4);
-        let transposed = view.transpose(&[2, 0, 1]).unwrap();
+        let transposed = view
+            .transpose(&[2, 0, 1])
+            .expect("test: transpose should succeed");
 
         assert_eq!(transposed.shape, vec![4, 2, 3]);
         assert_eq!(transposed.strides, vec![4, 48, 16]);
@@ -311,7 +313,7 @@ mod tests {
     #[test]
     fn test_strided_view_reshape() {
         let view = StridedView::new(0, vec![2, 3, 4], vec![48, 16, 4], 4);
-        let reshaped = view.reshape(&[6, 4]).unwrap();
+        let reshaped = view.reshape(&[6, 4]).expect("test: reshape should succeed");
 
         assert_eq!(reshaped.shape, vec![6, 4]);
         assert_eq!(reshaped.strides, vec![16, 4]);
@@ -320,7 +322,9 @@ mod tests {
     #[test]
     fn test_strided_view_slice() {
         let view = StridedView::new(0, vec![4, 4], vec![16, 4], 4);
-        let sliced = view.slice(&[(1, 3), (0, 2)]).unwrap();
+        let sliced = view
+            .slice(&[(1, 3), (0, 2)])
+            .expect("test: operation should succeed");
 
         assert_eq!(sliced.shape, vec![2, 2]);
         assert_eq!(sliced.strides, vec![16, 4]);

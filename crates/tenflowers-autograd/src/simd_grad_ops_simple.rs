@@ -857,7 +857,7 @@ mod tests {
     #[test]
     fn test_add_backward() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
         let result = ops.add_backward_simd(&grad_output);
@@ -876,7 +876,7 @@ mod tests {
     #[test]
     fn test_matmul_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         // Create test matrices: A (2x3), B (3x2) -> C (2x2)
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
@@ -886,7 +886,7 @@ mod tests {
         let result = ops.matmul_backward_simd(&grad_output, &a, &b);
         assert!(result.is_ok());
 
-        let (grad_a, grad_b) = result.unwrap();
+        let (grad_a, grad_b) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_a.shape().dims(), &[2, 3]);
         assert_eq!(grad_b.shape().dims(), &[3, 2]);
     }
@@ -894,7 +894,7 @@ mod tests {
     #[test]
     fn test_batch_matmul_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         // Create test batch matrices: A (4x2x3), B (4x3x2) -> C (4x2x2)
         let grad_output = Tensor::<f32>::ones(&[4, 2, 2]);
@@ -907,7 +907,7 @@ mod tests {
         }
         assert!(result.is_ok());
 
-        let (grad_a, grad_b) = result.unwrap();
+        let (grad_a, grad_b) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_a.shape().dims(), &[4, 2, 3]);
         assert_eq!(grad_b.shape().dims(), &[4, 3, 2]);
     }
@@ -915,7 +915,7 @@ mod tests {
     #[test]
     fn test_conv2d_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         // Create test conv2d tensors: Input (1,1,4,4), Weight (1,1,3,3), Output (1,1,2,2)
         let grad_output = Tensor::<f32>::ones(&[1, 1, 2, 2]);
@@ -925,7 +925,7 @@ mod tests {
         let result = ops.conv2d_backward_simd(&grad_output, &input, &weight);
         assert!(result.is_ok());
 
-        let (grad_input, grad_weight) = result.unwrap();
+        let (grad_input, grad_weight) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[1, 1, 4, 4]);
         assert_eq!(grad_weight.shape().dims(), &[1, 1, 3, 3]);
     }
@@ -933,16 +933,19 @@ mod tests {
     #[test]
     fn test_mul_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
-        let grad_output = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let a = Tensor::<f32>::from_vec(vec![2.0, 3.0, 4.0, 5.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![0.5, 1.0, 1.5, 2.0], &[2, 2]).unwrap();
+        let grad_output = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let a = Tensor::<f32>::from_vec(vec![2.0, 3.0, 4.0, 5.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::<f32>::from_vec(vec![0.5, 1.0, 1.5, 2.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = ops.mul_backward_simd(&grad_output, &a, &b);
         assert!(result.is_ok());
 
-        let (grad_a, grad_b) = result.unwrap();
+        let (grad_a, grad_b) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_a.shape().dims(), &[2, 2]);
         assert_eq!(grad_b.shape().dims(), &[2, 2]);
     }
@@ -950,16 +953,18 @@ mod tests {
     #[test]
     fn test_div_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
-        let a = Tensor::<f32>::from_vec(vec![4.0, 6.0, 8.0, 10.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 2.0, 2.0], &[2, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![4.0, 6.0, 8.0, 10.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 2.0, 2.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = ops.div_backward_simd(&grad_output, &a, &b);
         assert!(result.is_ok());
 
-        let (grad_a, grad_b) = result.unwrap();
+        let (grad_a, grad_b) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_a.shape().dims(), &[2, 2]);
         assert_eq!(grad_b.shape().dims(), &[2, 2]);
     }
@@ -967,15 +972,16 @@ mod tests {
     #[test]
     fn test_relu_backward_simd() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
-        let input = Tensor::<f32>::from_vec(vec![-1.0, 2.0, -3.0, 4.0], &[2, 2]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-1.0, 2.0, -3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = ops.relu_backward_simd(&grad_output, &input);
         assert!(result.is_ok());
 
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[2, 2]);
 
         let grad_data = grad_input.data();

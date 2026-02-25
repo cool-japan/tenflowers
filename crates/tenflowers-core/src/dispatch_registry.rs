@@ -521,7 +521,9 @@ mod tests {
         let registry: DispatchRegistry<f32> = DispatchRegistry::new();
 
         let desc = OperationDescriptor::new("add", "binary");
-        registry.register_operation(desc).unwrap();
+        registry
+            .register_operation(desc)
+            .expect("test: register_operation should succeed");
 
         assert_eq!(registry.list_operations().len(), 1);
         assert!(registry.get_operation("add").is_some());
@@ -534,7 +536,9 @@ mod tests {
         let desc1 = OperationDescriptor::new("add", "binary");
         let desc2 = OperationDescriptor::new("add", "binary");
 
-        registry.register_operation(desc1).unwrap();
+        registry
+            .register_operation(desc1)
+            .expect("test: register_operation should succeed");
         assert!(registry.register_operation(desc2).is_err());
     }
 
@@ -544,19 +548,23 @@ mod tests {
 
         // Register operation
         let desc = OperationDescriptor::new("abs", "unary");
-        registry.register_operation(desc).unwrap();
+        registry
+            .register_operation(desc)
+            .expect("test: register_operation should succeed");
 
         // Register CPU kernel
         fn abs_cpu(x: &Tensor<f32>) -> Result<Tensor<f32>> {
             let data = x.data();
             let abs_data: Vec<f32> = data.iter().map(|v| v.abs()).collect();
-            let array =
-                scirs2_core::ndarray::ArrayD::from_shape_vec(x.shape().dims(), abs_data).unwrap();
+            let array = scirs2_core::ndarray::ArrayD::from_shape_vec(x.shape().dims(), abs_data)
+                .expect("test: operation should succeed");
             Ok(Tensor::from_array(array))
         }
 
         let kernel = KernelImplementation::unary(BackendType::Cpu, abs_cpu);
-        registry.register_kernel("abs", kernel).unwrap();
+        registry
+            .register_kernel("abs", kernel)
+            .expect("test: register_kernel should succeed");
 
         assert_eq!(registry.available_backends("abs").len(), 1);
     }
@@ -567,23 +575,29 @@ mod tests {
 
         // Register operation
         let desc = OperationDescriptor::new("negate", "unary");
-        registry.register_operation(desc).unwrap();
+        registry
+            .register_operation(desc)
+            .expect("test: register_operation should succeed");
 
         // Register CPU kernel
         fn negate_cpu(x: &Tensor<f32>) -> Result<Tensor<f32>> {
             let data = x.data();
             let neg_data: Vec<f32> = data.iter().map(|v| -v).collect();
-            let array =
-                scirs2_core::ndarray::ArrayD::from_shape_vec(x.shape().dims(), neg_data).unwrap();
+            let array = scirs2_core::ndarray::ArrayD::from_shape_vec(x.shape().dims(), neg_data)
+                .expect("test: operation should succeed");
             Ok(Tensor::from_array(array))
         }
 
         let kernel = KernelImplementation::unary(BackendType::Cpu, negate_cpu);
-        registry.register_kernel("negate", kernel).unwrap();
+        registry
+            .register_kernel("negate", kernel)
+            .expect("test: register_kernel should succeed");
 
         // Test dispatch
         let input = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
-        let result = registry.dispatch_unary("negate", &input).unwrap();
+        let result = registry
+            .dispatch_unary("negate", &input)
+            .expect("test: dispatch_unary should succeed");
 
         assert_eq!(result.data(), &[-1.0f32, -2.0, -3.0]);
     }
@@ -594,7 +608,9 @@ mod tests {
 
         // Register operation
         let desc = OperationDescriptor::new("add", "binary");
-        registry.register_operation(desc).unwrap();
+        registry
+            .register_operation(desc)
+            .expect("test: register_operation should succeed");
 
         // Register CPU kernel
         fn add_cpu(a: &Tensor<f32>, b: &Tensor<f32>) -> Result<Tensor<f32>> {
@@ -605,18 +621,22 @@ mod tests {
                 .zip(b_data.iter())
                 .map(|(x, y)| x + y)
                 .collect();
-            let array =
-                scirs2_core::ndarray::ArrayD::from_shape_vec(a.shape().dims(), sum_data).unwrap();
+            let array = scirs2_core::ndarray::ArrayD::from_shape_vec(a.shape().dims(), sum_data)
+                .expect("test: operation should succeed");
             Ok(Tensor::from_array(array))
         }
 
         let kernel = KernelImplementation::binary(BackendType::Cpu, add_cpu);
-        registry.register_kernel("add", kernel).unwrap();
+        registry
+            .register_kernel("add", kernel)
+            .expect("test: register_kernel should succeed");
 
         // Test dispatch
         let a = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
         let b = Tensor::from_array(array![4.0f32, 5.0, 6.0].into_dyn());
-        let result = registry.dispatch_binary("add", &a, &b).unwrap();
+        let result = registry
+            .dispatch_binary("add", &a, &b)
+            .expect("test: dispatch_binary should succeed");
 
         assert_eq!(result.data(), &[5.0f32, 7.0, 9.0]);
     }
@@ -626,14 +646,18 @@ mod tests {
         let registry: DispatchRegistry<f32> = DispatchRegistry::new();
 
         let desc = OperationDescriptor::new("add", "binary");
-        registry.register_operation(desc).unwrap();
+        registry
+            .register_operation(desc)
+            .expect("test: register_operation should succeed");
 
         fn add_cpu(a: &Tensor<f32>, b: &Tensor<f32>) -> Result<Tensor<f32>> {
             Ok(a.clone())
         }
 
         let kernel = KernelImplementation::binary(BackendType::Cpu, add_cpu);
-        registry.register_kernel("add", kernel).unwrap();
+        registry
+            .register_kernel("add", kernel)
+            .expect("test: register_kernel should succeed");
 
         let a = Tensor::from_array(array![1.0f32].into_dyn());
         let b = Tensor::from_array(array![2.0f32].into_dyn());

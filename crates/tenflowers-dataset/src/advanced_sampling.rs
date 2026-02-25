@@ -536,7 +536,8 @@ mod tests {
     #[ignore]
     fn test_importance_sampler() {
         let weights = vec![1.0, 2.0, 3.0, 4.0];
-        let sampler = AdvancedImportanceSampler::new(weights).unwrap();
+        let sampler =
+            AdvancedImportanceSampler::new(weights).expect("test: operation should succeed");
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let samples = sampler.sample(100, &mut rng);
@@ -549,7 +550,8 @@ mod tests {
     #[ignore]
     fn test_importance_sampler_from_losses() {
         let losses = vec![0.5, 1.0, 2.0, 0.1];
-        let sampler = AdvancedImportanceSampler::from_losses(losses).unwrap();
+        let sampler =
+            AdvancedImportanceSampler::from_losses(losses).expect("test: operation should succeed");
 
         let weights = sampler.normalized_weights();
         assert!((weights.iter().sum::<f32>() - 1.0).abs() < 1e-6);
@@ -568,7 +570,7 @@ mod tests {
             negative_scores,
             MiningStrategy::Hardest,
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let hard_negatives = miner.mine_negatives(2, &mut rng);
@@ -582,7 +584,8 @@ mod tests {
     #[ignore]
     fn test_class_balanced_sampler() {
         let labels = vec![0, 0, 0, 1, 1, 2];
-        let sampler = ClassBalancedSampler::new(&labels, 3, BalancingStrategy::Oversample).unwrap();
+        let sampler = ClassBalancedSampler::new(&labels, 3, BalancingStrategy::Oversample)
+            .expect("test: operation should succeed");
 
         let distribution = sampler.get_class_distribution();
         assert_eq!(distribution.get(&0), Some(&3));
@@ -594,7 +597,8 @@ mod tests {
     #[ignore]
     fn test_class_balanced_sampler_oversample() {
         let labels = vec![0, 0, 1];
-        let sampler = ClassBalancedSampler::new(&labels, 2, BalancingStrategy::Oversample).unwrap();
+        let sampler = ClassBalancedSampler::new(&labels, 2, BalancingStrategy::Oversample)
+            .expect("test: operation should succeed");
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let balanced = sampler.get_balanced_indices(10, &mut rng);
@@ -615,7 +619,7 @@ mod tests {
             negative_scores,
             MiningStrategy::SemiHard { margin: 0.2 },
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let negatives = miner.mine_negatives(2, &mut rng);

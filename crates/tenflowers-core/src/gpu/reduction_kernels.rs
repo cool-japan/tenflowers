@@ -619,7 +619,8 @@ mod tests {
 
     #[test]
     fn test_create_reduction_kernel() {
-        let kernel = create_reduction_kernel(ReductionOp::Sum, "f32").unwrap();
+        let kernel = create_reduction_kernel(ReductionOp::Sum, "f32")
+            .expect("test: create_reduction_kernel should succeed");
         assert_eq!(kernel.op, ReductionOp::Sum);
         assert_eq!(kernel.dtype, "f32");
         assert_eq!(kernel.workgroup_size, 256);
@@ -640,10 +641,12 @@ mod tests {
 
     #[test]
     fn test_kernel_id() {
-        let kernel = create_reduction_kernel(ReductionOp::Sum, "f32").unwrap();
+        let kernel = create_reduction_kernel(ReductionOp::Sum, "f32")
+            .expect("test: create_reduction_kernel should succeed");
         assert_eq!(kernel.id(), "reduce_sum_f32");
 
-        let kernel2 = create_reduction_kernel(ReductionOp::Max, "i32").unwrap();
+        let kernel2 = create_reduction_kernel(ReductionOp::Max, "i32")
+            .expect("test: create_reduction_kernel should succeed");
         assert_eq!(kernel2.id(), "reduce_max_i32");
     }
 
@@ -675,7 +678,8 @@ mod tests {
         ];
 
         for op in ops {
-            let kernel = create_reduction_kernel(op, "f32").unwrap();
+            let kernel = create_reduction_kernel(op, "f32")
+                .expect("test: create_reduction_kernel should succeed");
             assert!(!kernel.shader_source.is_empty());
             assert!(kernel.shader_source.contains("@compute"));
         }
@@ -702,7 +706,7 @@ mod tests {
                 dtype
             );
 
-            let kernel = kernel.unwrap();
+            let kernel = kernel.expect("test: operation should succeed");
             assert_eq!(kernel.dtype, dtype);
             assert!(!kernel.shader_source.is_empty());
             assert!(kernel.shader_source.contains("@compute"));

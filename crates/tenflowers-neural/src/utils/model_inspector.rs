@@ -684,7 +684,7 @@ mod tests {
 
         let found = summary.get_layer("conv1");
         assert!(found.is_some());
-        assert_eq!(found.unwrap().name, "conv1");
+        assert_eq!(found.expect("test: operation should succeed").name, "conv1");
 
         let not_found = summary.get_layer("nonexistent");
         assert!(not_found.is_none());

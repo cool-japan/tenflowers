@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🚀 Ultra-Performance Optimization Demo
 //!
 //! This example demonstrates the world-class ultra-performance optimizations

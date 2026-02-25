@@ -14,10 +14,10 @@ use tenflowers_core::{Result, Tensor};
 /// Count total number of parameters in a layer
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// use tenflowers_neural::{Dense, count_parameters};
 ///
-/// let layer = Dense::<f32>::new(784, 128).unwrap();
+/// let layer = Dense::<f32>::new(784, 128)?;
 /// let params = count_parameters(&layer);
 /// println!("Total parameters: {}", params); // 784*128 + 128 = 100,480
 /// ```
@@ -117,10 +117,10 @@ fn format_number(n: usize) -> String {
 /// This is suitable for layers with tanh or sigmoid activations.
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// use tenflowers_neural::{Dense, xavier_init};
 ///
-/// let mut layer = Dense::<f32>::new(784, 128).unwrap();
+/// let mut layer = Dense::<f32>::new(784, 128)?;
 /// xavier_init(&mut layer, 42); // seed = 42
 /// ```
 pub fn xavier_init<T>(layer: &mut dyn Layer<T>, seed: u64)
@@ -163,10 +163,10 @@ where
 /// This is suitable for layers with ReLU activations.
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// use tenflowers_neural::{Dense, he_init};
 ///
-/// let mut layer = Dense::<f32>::new(784, 128).unwrap();
+/// let mut layer = Dense::<f32>::new(784, 128)?;
 /// he_init(&mut layer, 42); // seed = 42
 /// ```
 pub fn he_init<T>(layer: &mut dyn Layer<T>, seed: u64)

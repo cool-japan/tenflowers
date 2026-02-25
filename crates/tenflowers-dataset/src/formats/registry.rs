@@ -41,15 +41,33 @@ impl GlobalFormatRegistry {
 
     /// Auto-register all available format factories
     fn auto_register_formats(&self) {
-        // Register Arrow/Parquet if available
-        #[cfg(feature = "parquet")]
+        // Register CSV if available
+        #[cfg(feature = "csv_format")]
         {
-            use crate::formats::arrow::ArrowFormatFactory;
-            self.register_factory(Box::new(ArrowFormatFactory));
+            use crate::formats::csv_format_reader::CsvFormatFactory;
+            self.register_factory(Box::new(CsvFormatFactory));
         }
 
-        // Additional formats can be registered here as they become available
-        // CSV, JSON, HDF5, etc.
+        // Register JSON if available
+        #[cfg(feature = "serialize")]
+        {
+            use crate::formats::json_format_reader::JsonFormatFactory;
+            self.register_factory(Box::new(JsonFormatFactory));
+        }
+
+        // Register Parquet if available
+        #[cfg(feature = "parquet")]
+        {
+            use crate::formats::parquet_format_reader::ParquetFormatFactory;
+            self.register_factory(Box::new(ParquetFormatFactory));
+        }
+
+        // Register HDF5 if available
+        #[cfg(feature = "hdf5")]
+        {
+            use crate::formats::hdf5_format_reader::HDF5FormatFactory;
+            self.register_factory(Box::new(HDF5FormatFactory));
+        }
     }
 
     /// Register a format factory
@@ -318,13 +336,29 @@ mod tests {
     fn test_list_formats() {
         let formats = global::list_formats();
 
-        // Should have at least Arrow if parquet feature is enabled
+        // Should have formats based on enabled features
+        #[cfg(feature = "csv_format")]
+        {
+            assert!(!formats.is_empty());
+            assert!(formats.iter().any(|f| f.contains("CSV")));
+        }
+
+        #[cfg(feature = "serialize")]
+        {
+            assert!(!formats.is_empty());
+            assert!(formats.iter().any(|f| f.contains("JSON")));
+        }
+
         #[cfg(feature = "parquet")]
         {
             assert!(!formats.is_empty());
-            assert!(formats
-                .iter()
-                .any(|f| f.contains("Arrow") || f.contains("Parquet")));
+            assert!(formats.iter().any(|f| f.contains("Parquet")));
+        }
+
+        #[cfg(feature = "hdf5")]
+        {
+            assert!(!formats.is_empty());
+            assert!(formats.iter().any(|f| f.contains("HDF5")));
         }
     }
 
@@ -332,21 +366,56 @@ mod tests {
     fn test_list_extensions() {
         let extensions = global::list_extensions();
 
-        #[cfg(feature = "parquet")]
+        #[cfg(feature = "csv_format")]
+        {
+            assert!(!extensions.is_empty());
+            assert!(extensions.contains(&"csv".to_string()));
+        }
+
+        #[cfg(feature = "serialize")]
         {
             assert!(!extensions.is_empty());
             assert!(
-                extensions.contains(&"parquet".to_string())
-                    || extensions.contains(&"arrow".to_string())
+                extensions.contains(&"json".to_string())
+                    || extensions.contains(&"jsonl".to_string())
+            );
+        }
+
+        #[cfg(feature = "parquet")]
+        {
+            assert!(!extensions.is_empty());
+            assert!(extensions.contains(&"parquet".to_string()));
+        }
+
+        #[cfg(feature = "hdf5")]
+        {
+            assert!(!extensions.is_empty());
+            assert!(
+                extensions.contains(&"h5".to_string()) || extensions.contains(&"hdf5".to_string())
             );
         }
     }
 
     #[test]
     fn test_has_format() {
+        #[cfg(feature = "csv_format")]
+        {
+            assert!(global::has_format("CSV"));
+        }
+
+        #[cfg(feature = "serialize")]
+        {
+            assert!(global::has_format("JSON"));
+        }
+
         #[cfg(feature = "parquet")]
         {
-            assert!(global::has_format("Arrow/Parquet"));
+            assert!(global::has_format("Parquet"));
+        }
+
+        #[cfg(feature = "hdf5")]
+        {
+            assert!(global::has_format("HDF5"));
         }
 
         assert!(!global::has_format("NonexistentFormat"));
@@ -354,13 +423,23 @@ mod tests {
 
     #[test]
     fn test_get_format_info() {
-        #[cfg(feature = "parquet")]
+        #[cfg(feature = "csv_format")]
         {
-            let info = global::get_format_info("Arrow/Parquet");
+            let info = global::get_format_info("CSV");
             assert!(info.is_some());
 
-            let info = info.unwrap();
-            assert_eq!(info.name, "Arrow/Parquet");
+            let info = info.expect("test: operation should succeed");
+            assert_eq!(info.name, "CSV");
+            assert!(!info.extensions.is_empty());
+        }
+
+        #[cfg(feature = "serialize")]
+        {
+            let info = global::get_format_info("JSON");
+            assert!(info.is_some());
+
+            let info = info.expect("test: operation should succeed");
+            assert_eq!(info.name, "JSON");
             assert!(!info.extensions.is_empty());
         }
     }
@@ -369,10 +448,35 @@ mod tests {
     fn test_get_all_format_info() {
         let all_info = global::get_all_format_info();
 
-        #[cfg(feature = "parquet")]
+        // Check that at least one format is registered
+        #[cfg(any(
+            feature = "csv_format",
+            feature = "serialize",
+            feature = "parquet",
+            feature = "hdf5"
+        ))]
         {
             assert!(!all_info.is_empty());
-            assert!(all_info.iter().any(|info| info.name == "Arrow/Parquet"));
+        }
+
+        #[cfg(feature = "csv_format")]
+        {
+            assert!(all_info.iter().any(|info| info.name == "CSV"));
+        }
+
+        #[cfg(feature = "serialize")]
+        {
+            assert!(all_info.iter().any(|info| info.name == "JSON"));
+        }
+
+        #[cfg(feature = "parquet")]
+        {
+            assert!(all_info.iter().any(|info| info.name == "Parquet"));
+        }
+
+        #[cfg(feature = "hdf5")]
+        {
+            assert!(all_info.iter().any(|info| info.name == "HDF5"));
         }
     }
 

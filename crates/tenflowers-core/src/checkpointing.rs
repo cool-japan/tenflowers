@@ -29,6 +29,8 @@
 //!     policy: CheckpointPolicy::EveryNLayers(2), // Checkpoint every 2 layers
 //!     recompute_on_backward: true,
 //!     save_rng_state: true, // Important for dropout consistency
+//!     enable_statistics: false,
+//!     max_checkpoints: None,
 //! };
 //! ```
 
@@ -420,12 +422,16 @@ mod tests {
         let manager = CheckpointManager::<f32>::new(CheckpointingConfig::default());
         let tensor = Tensor::from_array(array![[1.0, 2.0], [3.0, 4.0]].into_dyn());
 
-        manager.save_checkpoint(5, vec![tensor.clone()]).unwrap();
+        manager
+            .save_checkpoint(5, vec![tensor.clone()])
+            .expect("test: operation should succeed");
 
-        let checkpoint = manager.get_checkpoint(5).unwrap();
+        let checkpoint = manager
+            .get_checkpoint(5)
+            .expect("test: get_checkpoint should succeed");
         assert!(checkpoint.is_some());
 
-        let cp = checkpoint.unwrap();
+        let cp = checkpoint.expect("test: operation should succeed");
         assert_eq!(cp.layer_index, 5);
         assert_eq!(cp.activations.len(), 1);
     }
@@ -439,9 +445,15 @@ mod tests {
 
         let tensor = Tensor::from_array(array![1.0, 2.0].into_dyn());
 
-        manager.save_checkpoint(0, vec![tensor.clone()]).unwrap();
-        manager.save_checkpoint(1, vec![tensor.clone()]).unwrap();
-        manager.save_checkpoint(2, vec![tensor.clone()]).unwrap();
+        manager
+            .save_checkpoint(0, vec![tensor.clone()])
+            .expect("test: operation should succeed");
+        manager
+            .save_checkpoint(1, vec![tensor.clone()])
+            .expect("test: operation should succeed");
+        manager
+            .save_checkpoint(2, vec![tensor.clone()])
+            .expect("test: operation should succeed");
 
         // Should have only 2 checkpoints (oldest removed)
         assert_eq!(manager.checkpoint_count(), 2);
@@ -456,12 +468,16 @@ mod tests {
 
         let tensor = Tensor::from_array(array![1.0, 2.0, 3.0].into_dyn());
 
-        manager.save_checkpoint(0, vec![tensor.clone()]).unwrap();
+        manager
+            .save_checkpoint(0, vec![tensor.clone()])
+            .expect("test: operation should succeed");
         manager.record_backward_pass();
         manager.record_recomputation(1000);
         manager.record_recomputation(2000);
 
-        let stats = manager.get_statistics().unwrap();
+        let stats = manager
+            .get_statistics()
+            .expect("test: get_statistics should succeed");
         assert_eq!(stats.forward_passes, 1);
         assert_eq!(stats.backward_passes, 1);
         assert_eq!(stats.recompute_count, 2);
@@ -473,12 +489,16 @@ mod tests {
         let manager = CheckpointManager::<f32>::new(CheckpointingConfig::default());
         let tensor = Tensor::from_array(array![1.0, 2.0].into_dyn());
 
-        manager.save_checkpoint(0, vec![tensor.clone()]).unwrap();
-        manager.save_checkpoint(1, vec![tensor.clone()]).unwrap();
+        manager
+            .save_checkpoint(0, vec![tensor.clone()])
+            .expect("test: operation should succeed");
+        manager
+            .save_checkpoint(1, vec![tensor.clone()])
+            .expect("test: operation should succeed");
 
         assert_eq!(manager.checkpoint_count(), 2);
 
-        manager.clear().unwrap();
+        manager.clear().expect("test: clear should succeed");
         assert_eq!(manager.checkpoint_count(), 0);
     }
 

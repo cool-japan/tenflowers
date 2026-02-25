@@ -423,7 +423,8 @@ mod tests {
         let result = conv2d_backward(&grad_output, &input, &weight, None, (1, 1), "valid");
         assert!(result.is_ok());
 
-        let (grad_input, grad_weight, grad_bias) = result.unwrap();
+        let (grad_input, grad_weight, grad_bias) =
+            result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[1, 3, 32, 32]);
         assert_eq!(grad_weight.shape().dims(), &[64, 3, 3, 3]);
         assert!(grad_bias.is_none());
@@ -437,7 +438,7 @@ mod tests {
         let result = max_pool2d_backward(&grad_output, &input, (2, 2), (2, 2), "valid", (1, 1));
         assert!(result.is_ok());
 
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[1, 3, 32, 32]);
     }
 
@@ -449,7 +450,7 @@ mod tests {
         let result = avg_pool2d_backward(&grad_output, &input, (2, 2), (2, 2), "valid");
         assert!(result.is_ok());
 
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[1, 3, 32, 32]);
     }
 }

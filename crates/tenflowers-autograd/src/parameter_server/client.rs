@@ -90,7 +90,9 @@ mod tests {
         let x: TrackedTensor<f32> = tape.watch(Tensor::zeros(&[2, 2]));
         let grad: Tensor<f32> = Tensor::ones(&[2, 2]);
 
-        server.register_parameter(x.id, &x.tensor).unwrap();
+        server
+            .register_parameter(x.id, &x.tensor)
+            .expect("test: registration should succeed");
 
         let result = server.submit_gradient(0, x.id, &grad, 0);
         assert!(result.is_ok());
@@ -104,9 +106,13 @@ mod tests {
         let tape = GradientTape::new();
         let x: TrackedTensor<f32> = tape.watch(Tensor::zeros(&[2, 2]));
 
-        server.register_parameter(x.id, &x.tensor).unwrap();
+        server
+            .register_parameter(x.id, &x.tensor)
+            .expect("test: registration should succeed");
 
-        let retrieved: Option<Tensor<f32>> = server.get_parameter(x.id).unwrap();
+        let retrieved: Option<Tensor<f32>> = server
+            .get_parameter(x.id)
+            .expect("test: server operation should succeed");
         assert!(retrieved.is_some());
     }
 
@@ -123,7 +129,9 @@ mod tests {
         let x: TrackedTensor<f32> = tape.watch(Tensor::zeros(&[2, 2]));
         let grad: Tensor<f32> = Tensor::ones(&[2, 2]);
 
-        server.register_parameter(x.id, &x.tensor).unwrap();
+        server
+            .register_parameter(x.id, &x.tensor)
+            .expect("test: registration should succeed");
 
         // Test heartbeat
         let result = client.send_heartbeat(0.5);

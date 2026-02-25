@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Example demonstrating GPU-accelerated image transforms
 //!
 //! This example shows how to use GPU-accelerated image augmentation transforms

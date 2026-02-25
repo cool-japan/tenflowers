@@ -853,10 +853,12 @@ mod tests {
 
     #[test]
     fn test_binary_ufunc_broadcasting() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[1, 3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[1, 3])
+            .expect("test: from_vec should succeed");
 
-        let result = apply_ufunc("add", &[&a, &b]).unwrap();
+        let result = apply_ufunc("add", &[&a, &b]).expect("test: apply_ufunc should succeed");
         assert_eq!(result.shape().dims(), &[2, 3]);
 
         if let Some(data) = result.as_slice() {
@@ -866,16 +868,17 @@ mod tests {
 
     #[test]
     fn test_unary_ufuncs() {
-        let x = Tensor::<f32>::from_vec(vec![0.0, 1.0, -1.0, 2.0], &[4]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![0.0, 1.0, -1.0, 2.0], &[4])
+            .expect("test: from_vec should succeed");
 
         // Test absolute value
-        let abs_result = apply_ufunc("absolute", &[&x]).unwrap();
+        let abs_result = apply_ufunc("absolute", &[&x]).expect("test: apply_ufunc should succeed");
         if let Some(data) = abs_result.as_slice() {
             assert_eq!(data, &[0.0, 1.0, 1.0, 2.0]);
         }
 
         // Test square
-        let square_result = apply_ufunc("square", &[&x]).unwrap();
+        let square_result = apply_ufunc("square", &[&x]).expect("test: apply_ufunc should succeed");
         if let Some(data) = square_result.as_slice() {
             assert_eq!(data, &[0.0, 1.0, 1.0, 4.0]);
         }
@@ -884,11 +887,15 @@ mod tests {
     #[test]
     fn test_numpy_broadcast_arrays() {
         // Use compatible shapes that can actually broadcast together
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[1, 3]).unwrap();
-        let c = Tensor::<f32>::from_vec(vec![100.0], &[1, 1]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2, 1])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[1, 3])
+            .expect("test: from_vec should succeed");
+        let c =
+            Tensor::<f32>::from_vec(vec![100.0], &[1, 1]).expect("test: from_vec should succeed");
 
-        let broadcasted = numpy_broadcast_arrays(&[&a, &b, &c]).unwrap();
+        let broadcasted = numpy_broadcast_arrays(&[&a, &b, &c])
+            .expect("test: numpy_broadcast_arrays should succeed");
 
         assert_eq!(broadcasted.len(), 3);
         for tensor in &broadcasted {
@@ -899,9 +906,10 @@ mod tests {
     #[test]
     fn test_trigonometric_functions() {
         use std::f32::consts::PI;
-        let x = Tensor::<f32>::from_vec(vec![0.0, PI / 2.0, PI], &[3]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![0.0, PI / 2.0, PI], &[3])
+            .expect("test: from_vec should succeed");
 
-        let sin_result = apply_ufunc("sin", &[&x]).unwrap();
+        let sin_result = apply_ufunc("sin", &[&x]).expect("test: apply_ufunc should succeed");
         if let Some(data) = sin_result.as_slice() {
             assert!((data[0] - 0.0).abs() < 1e-6);
             assert!((data[1] - 1.0).abs() < 1e-6);
@@ -911,12 +919,15 @@ mod tests {
 
     #[test]
     fn test_comparison_ufuncs() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 1.0], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 1.0], &[3])
+            .expect("test: from_vec should succeed");
 
         // Test with an available ufunc instead of 'less' which is not registered for f32
         // Use minimum function which is available
-        let min_result = apply_ufunc("minimum", &[&a, &b]).unwrap();
+        let min_result =
+            apply_ufunc("minimum", &[&a, &b]).expect("test: apply_ufunc should succeed");
         if let Some(data) = min_result.as_slice() {
             assert_eq!(data, &[1.0, 2.0, 1.0]); // element-wise minimum
             assert_eq!(data.len(), 3);
@@ -925,15 +936,17 @@ mod tests {
 
     #[test]
     fn test_min_max_functions() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 5.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 4.0], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 5.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 2.0, 4.0], &[3])
+            .expect("test: from_vec should succeed");
 
-        let min_result = minimum(&a, &b).unwrap();
+        let min_result = minimum(&a, &b).expect("test: minimum should succeed");
         if let Some(data) = min_result.as_slice() {
             assert_eq!(data, &[1.0, 2.0, 3.0]);
         }
 
-        let max_result = maximum(&a, &b).unwrap();
+        let max_result = maximum(&a, &b).expect("test: maximum should succeed");
         if let Some(data) = max_result.as_slice() {
             assert_eq!(data, &[2.0, 5.0, 4.0]);
         }
@@ -942,19 +955,19 @@ mod tests {
     #[test]
     fn test_floating_point_functions() {
         let x = Tensor::<f32>::from_vec(vec![f32::NAN, f32::INFINITY, -f32::INFINITY, 1.0], &[4])
-            .unwrap();
+            .expect("test: operation should succeed");
 
-        let isnan_result = isnan(&x).unwrap();
+        let isnan_result = isnan(&x).expect("test: isnan should succeed");
         if let Some(data) = isnan_result.as_slice() {
             assert_eq!(data, &[true, false, false, false]);
         }
 
-        let isinf_result = isinf(&x).unwrap();
+        let isinf_result = isinf(&x).expect("test: isinf should succeed");
         if let Some(data) = isinf_result.as_slice() {
             assert_eq!(data, &[false, true, true, false]);
         }
 
-        let isfinite_result = isfinite(&x).unwrap();
+        let isfinite_result = isfinite(&x).expect("test: isfinite should succeed");
         if let Some(data) = isfinite_result.as_slice() {
             assert_eq!(data, &[false, false, false, true]);
         }

@@ -414,7 +414,8 @@ mod tests {
         let y = tape.watch(Tensor::from_array(y_data));
 
         // Perform in-place addition
-        x.add_inplace(&y).unwrap();
+        x.add_inplace(&y)
+            .expect("test: inplace operation should succeed");
 
         // Check the result
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
@@ -435,7 +436,8 @@ mod tests {
         let y = tape.watch(Tensor::from_array(y_data));
 
         // Perform in-place multiplication
-        x.mul_inplace(&y).unwrap();
+        x.mul_inplace(&y)
+            .expect("test: inplace operation should succeed");
 
         // Check the result
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
@@ -472,7 +474,8 @@ mod tests {
         let mut x = tape.watch(Tensor::from_array(x_data));
 
         // Test scalar addition
-        x.add_scalar_inplace(5.0).unwrap();
+        x.add_scalar_inplace(5.0)
+            .expect("test: inplace operation should succeed");
 
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
             panic!("Expected CPU storage in test");

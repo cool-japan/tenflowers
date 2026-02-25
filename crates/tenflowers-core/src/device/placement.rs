@@ -1153,7 +1153,9 @@ mod tests {
             output_lifetimes: Vec::new(),
         };
 
-        let device = placement.choose_device(&op_info).unwrap();
+        let device = placement
+            .choose_device(&op_info)
+            .expect("test: choose_device should succeed");
         assert_eq!(device, Device::Cpu);
     }
 
@@ -1202,7 +1204,11 @@ mod tests {
 
         // Should cycle through available devices
         let devices: Vec<_> = (0..placement.available_devices().len() * 2)
-            .map(|_| placement.choose_device(&op_info).unwrap())
+            .map(|_| {
+                placement
+                    .choose_device(&op_info)
+                    .expect("test: map should succeed")
+            })
             .collect();
 
         // Check that it cycles
@@ -1345,11 +1351,11 @@ mod tests {
         };
 
         // First optimization should miss cache
-        let placements1 = optimizer.optimize_graph_placement(&vec![op_info.clone()]);
+        let placements1 = optimizer.optimize_graph_placement(std::slice::from_ref(&op_info));
         assert_eq!(optimizer.get_optimization_stats().cache_hits, 0);
 
         // Second optimization should hit cache
-        let placements2 = optimizer.optimize_graph_placement(&vec![op_info]);
+        let placements2 = optimizer.optimize_graph_placement(std::slice::from_ref(&op_info));
         assert_eq!(optimizer.get_optimization_stats().cache_hits, 1);
         assert_eq!(placements1, placements2);
     }

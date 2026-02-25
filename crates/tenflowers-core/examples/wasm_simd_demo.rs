@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! WebAssembly SIMD demonstration
 //!
 //! This example demonstrates how to use TenfloweRS WebAssembly SIMD optimizations
@@ -27,7 +29,6 @@ fn main() {
         #[cfg(not(target_arch = "wasm32"))]
         {
             println!("Error: WASM environment detected but not compiled for WASM target");
-            return;
         }
     } else {
         println!("ℹ Running in native environment (WASM simulation)");

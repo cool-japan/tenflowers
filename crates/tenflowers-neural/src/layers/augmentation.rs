@@ -551,13 +551,15 @@ mod tests {
         let mixup = Mixup::new(1.0);
 
         // Create test data
-        let samples = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
-        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2]).unwrap();
+        let samples = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let result = mixup.forward(&samples, &labels);
         assert!(result.is_ok());
 
-        let (mixed_samples, mixed_labels, lambda) = result.unwrap();
+        let (mixed_samples, mixed_labels, lambda) = result.expect("test: result should be valid");
         assert_eq!(mixed_samples.shape().dims(), samples.shape().dims());
         assert_eq!(mixed_labels.shape().dims(), labels.shape().dims());
         assert!((0.0..=1.0).contains(&lambda));
@@ -568,10 +570,14 @@ mod tests {
         let mut mixup = Mixup::new(1.0);
         mixup.set_training(false);
 
-        let samples = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2]).unwrap();
+        let samples = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2])
+            .expect("test: tensor creation should succeed");
 
-        let result = mixup.forward(&samples, &labels).unwrap();
+        let result = mixup
+            .forward(&samples, &labels)
+            .expect("test: forward pass should succeed");
         assert_eq!(result.2, 1.0); // lambda should be 1.0 when disabled
     }
 
@@ -588,12 +594,13 @@ mod tests {
 
         // Create test 4D image data [batch_size, channels, height, width]
         let images = Tensor::zeros(&[2, 3, 8, 8]);
-        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2]).unwrap();
+        let labels = Tensor::from_vec(vec![1.0f32, 0.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let result = cutmix.forward(&images, &labels);
         assert!(result.is_ok());
 
-        let (mixed_images, mixed_labels, lambda) = result.unwrap();
+        let (mixed_images, mixed_labels, lambda) = result.expect("test: result should be valid");
         assert_eq!(mixed_images.shape().dims(), images.shape().dims());
         assert_eq!(mixed_labels.shape().dims(), labels.shape().dims());
         assert!((0.0..=1.0).contains(&lambda));
@@ -604,12 +611,13 @@ mod tests {
         let smoothing = LabelSmoothing::new(0.1);
 
         // One-hot encoded labels
-        let labels = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]).unwrap();
+        let labels = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3])
+            .expect("test: tensor creation should succeed");
 
         let result = smoothing.forward(&labels);
         assert!(result.is_ok());
 
-        let smoothed = result.unwrap();
+        let smoothed = result.expect("test: result should be valid");
         assert_eq!(smoothed.shape().dims(), labels.shape().dims());
     }
 
@@ -618,8 +626,11 @@ mod tests {
         let mut smoothing = LabelSmoothing::new(0.1);
         smoothing.set_training(false);
 
-        let labels = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 1.0], &[2, 2]).unwrap();
-        let result = smoothing.forward(&labels).unwrap();
+        let labels = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 1.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let result = smoothing
+            .forward(&labels)
+            .expect("test: forward pass should succeed");
 
         // When disabled, should return original labels
         // Note: exact comparison might fail due to floating point precision
@@ -631,8 +642,10 @@ mod tests {
         let mixup = Mixup::new(1.0);
 
         // Single sample should fail
-        let samples = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2]).unwrap();
-        let labels = Tensor::from_vec(vec![1.0f32], &[1]).unwrap();
+        let samples = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(vec![1.0f32], &[1]).expect("test: tensor creation should succeed");
 
         let result = mixup.forward(&samples, &labels);
         assert!(result.is_err());

@@ -1022,7 +1022,9 @@ mod tests {
     #[test]
     fn test_coverage_report_generation() {
         let matrix = CoverageMatrix::new();
-        let report = matrix.generate_coverage_report().unwrap();
+        let report = matrix
+            .generate_coverage_report()
+            .expect("test: report generation should succeed");
 
         assert!(report.total_operations > 0, "Should have operations");
         assert!(report.coverage_percentage() >= 0.0 && report.coverage_percentage() <= 100.0);
@@ -1067,7 +1069,9 @@ mod tests {
     #[test]
     fn test_report_formatting() {
         let matrix = CoverageMatrix::new();
-        let report = matrix.generate_coverage_report().unwrap();
+        let report = matrix
+            .generate_coverage_report()
+            .expect("test: report generation should succeed");
         let formatted = report.format_report();
 
         assert!(formatted.contains("Gradient Coverage Report"));
@@ -1078,7 +1082,9 @@ mod tests {
     #[test]
     fn test_category_coverage_percentages() {
         let matrix = CoverageMatrix::new();
-        let report = matrix.generate_coverage_report().unwrap();
+        let report = matrix
+            .generate_coverage_report()
+            .expect("test: report generation should succeed");
 
         for category in &report.category_breakdown {
             assert!(category.coverage_percentage() >= 0.0);

@@ -2,7 +2,7 @@
 
 Automatic differentiation engine for TenfloweRS, providing both tape-based (eager) and graph-based (static) automatic differentiation capabilities.
 
-> Alpha Notice (0.1.0-alpha.1 · 2025-09-27)
+> Release Candidate (0.1.0-rc.1 · 2026-02-12)
 > Reverse-mode eager tape core is functional; forward-mode & higher-order support are partial. Gradient coverage and performance instrumentation will expand rapidly pre-beta.
 
 ## Overview

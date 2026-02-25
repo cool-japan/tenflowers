@@ -453,7 +453,8 @@ mod tests {
         let input = vec![0.0, 1.0, -1.0, 2.0];
         let mut output = vec![0.0; 4];
 
-        MathFunctions::exp_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::exp_f32_optimized(&input, &mut output)
+            .expect("test: exp_f32_optimized should succeed");
 
         // Check that exp(0) ≈ 1
         assert_relative_eq!(output[0], 1.0, epsilon = 0.1);
@@ -471,9 +472,10 @@ mod tests {
     fn test_sqrt_f32_optimized() {
         let input = vec![0.0, 1.0, 4.0, 9.0, 16.0];
         let mut output = vec![0.0; 5];
-        let expected = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+        let expected = [0.0, 1.0, 2.0, 3.0, 4.0];
 
-        MathFunctions::sqrt_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::sqrt_f32_optimized(&input, &mut output)
+            .expect("test: sqrt_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -485,7 +487,8 @@ mod tests {
         let input = vec![1.0, std::f32::consts::E, 10.0];
         let mut output = vec![0.0; 3];
 
-        MathFunctions::log_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::log_f32_optimized(&input, &mut output)
+            .expect("test: log_f32_optimized should succeed");
 
         // Check that ln(1) = 0
         assert_relative_eq!(output[0], 0.0, epsilon = 1e-6);
@@ -502,9 +505,10 @@ mod tests {
         let base = vec![2.0, 3.0, 4.0, 5.0];
         let exponent = vec![2.0, 3.0, 0.5, 0.0];
         let mut output = vec![0.0; 4];
-        let expected = vec![4.0, 27.0, 2.0, 1.0]; // 2², 3³, √4, 5⁰
+        let expected = [4.0, 27.0, 2.0, 1.0]; // 2², 3³, √4, 5⁰
 
-        MathFunctions::pow_f32_optimized(&base, &exponent, &mut output).unwrap();
+        MathFunctions::pow_f32_optimized(&base, &exponent, &mut output)
+            .expect("test: pow_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -520,9 +524,10 @@ mod tests {
             std::f32::consts::PI / 2.0,
         ];
         let mut output = vec![0.0; 4];
-        let expected = vec![0.0, 0.5, std::f32::consts::FRAC_1_SQRT_2, 1.0];
+        let expected = [0.0, 0.5, std::f32::consts::FRAC_1_SQRT_2, 1.0];
 
-        MathFunctions::sin_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::sin_f32_optimized(&input, &mut output)
+            .expect("test: sin_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -539,7 +544,7 @@ mod tests {
             std::f32::consts::PI / 2.0,
         ];
         let mut output = vec![0.0; 5];
-        let expected = vec![
+        let expected = [
             1.0,
             (3.0_f32).sqrt() / 2.0,
             std::f32::consts::FRAC_1_SQRT_2,
@@ -547,7 +552,8 @@ mod tests {
             0.0,
         ];
 
-        MathFunctions::cos_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::cos_f32_optimized(&input, &mut output)
+            .expect("test: cos_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -558,9 +564,10 @@ mod tests {
     fn test_abs_f32_optimized() {
         let input = vec![-5.0, -3.0, -1.0, 0.0, 1.0, 3.0, 5.0, -7.0];
         let mut output = vec![0.0; 8];
-        let expected = vec![5.0, 3.0, 1.0, 0.0, 1.0, 3.0, 5.0, 7.0];
+        let expected = [5.0, 3.0, 1.0, 0.0, 1.0, 3.0, 5.0, 7.0];
 
-        MathFunctions::abs_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::abs_f32_optimized(&input, &mut output)
+            .expect("test: abs_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -574,7 +581,8 @@ mod tests {
         let mut result = vec![0.0; 5];
         let expected = [4.0, 2.0, 0.0, -2.0, -4.0];
 
-        MathFunctions::sub_f32_optimized(&a, &b, &mut result).unwrap();
+        MathFunctions::sub_f32_optimized(&a, &b, &mut result)
+            .expect("test: sub_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -588,7 +596,8 @@ mod tests {
         let mut result = vec![0.0; 4];
         let expected = [3.0, 2.0, 2.0, 4.0];
 
-        MathFunctions::div_f32_optimized(&a, &b, &mut result).unwrap();
+        MathFunctions::div_f32_optimized(&a, &b, &mut result)
+            .expect("test: div_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -601,7 +610,8 @@ mod tests {
         let mut output = vec![0.0; 5];
         let expected = [1.0, 0.5, 0.25, 0.2, 0.1];
 
-        MathFunctions::reciprocal_f32_optimized(&input, &mut output).unwrap();
+        MathFunctions::reciprocal_f32_optimized(&input, &mut output)
+            .expect("test: reciprocal_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -616,7 +626,8 @@ mod tests {
         let max_val = 3.0;
         let expected = [-2.0, -1.0, 0.0, 1.0, 3.0, 3.0];
 
-        MathFunctions::clamp_f32_optimized(&input, &mut output, min_val, max_val).unwrap();
+        MathFunctions::clamp_f32_optimized(&input, &mut output, min_val, max_val)
+            .expect("test: clamp_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);

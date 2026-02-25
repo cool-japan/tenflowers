@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Modern ML Dataset Examples
 //!
 //! This example demonstrates how to use the modern ML dataset generators

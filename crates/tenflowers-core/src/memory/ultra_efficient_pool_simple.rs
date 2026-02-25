@@ -454,12 +454,12 @@ mod tests {
     #[test]
     fn test_buffer_allocation() {
         let config = PoolConfig::default();
-        let pool = UltraEfficientMemoryPool::new(config).unwrap();
+        let pool = UltraEfficientMemoryPool::new(config).expect("test: new should succeed");
 
         let buffer = pool.allocate(1024);
         assert!(buffer.is_ok());
 
-        let buffer = buffer.unwrap();
+        let buffer = buffer.expect("test: operation should succeed");
         assert!(buffer.size >= 1024);
         assert!(buffer.is_simd_aligned);
     }
@@ -467,15 +467,16 @@ mod tests {
     #[test]
     fn test_buffer_reuse() {
         let config = PoolConfig::default();
-        let pool = UltraEfficientMemoryPool::new(config).unwrap();
+        let pool = UltraEfficientMemoryPool::new(config).expect("test: new should succeed");
 
         // Create and use a buffer multiple times to trigger reuse
-        let mut buffer1 = pool.allocate(1024).unwrap();
+        let mut buffer1 = pool.allocate(1024).expect("test: allocate should succeed");
         buffer1.access_count = 2; // Simulate multiple accesses
 
-        pool.deallocate(buffer1).unwrap();
+        pool.deallocate(buffer1)
+            .expect("test: deallocate should succeed");
 
-        let buffer2 = pool.allocate(1024).unwrap();
+        let buffer2 = pool.allocate(1024).expect("test: allocate should succeed");
         // Buffer should start with access_count 1 and be incremented if reused
         assert!(buffer2.access_count >= 1);
         assert!(buffer2.is_simd_aligned);
@@ -484,22 +485,24 @@ mod tests {
     #[test]
     fn test_tensor_creation() {
         let config = PoolConfig::default();
-        let pool = UltraEfficientMemoryPool::new(config).unwrap();
+        let pool = UltraEfficientMemoryPool::new(config).expect("test: new should succeed");
 
         let tensor = pool.create_tensor::<f32>(&[100, 100]);
         assert!(tensor.is_ok());
 
-        let tensor = tensor.unwrap();
+        let tensor = tensor.expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[100, 100]);
     }
 
     #[test]
     fn test_statistics() {
         let config = PoolConfig::default();
-        let pool = UltraEfficientMemoryPool::new(config).unwrap();
+        let pool = UltraEfficientMemoryPool::new(config).expect("test: new should succeed");
 
-        let _buffer = pool.allocate(1024).unwrap();
-        let stats = pool.get_statistics().unwrap();
+        let _buffer = pool.allocate(1024).expect("test: allocate should succeed");
+        let stats = pool
+            .get_statistics()
+            .expect("test: get_statistics should succeed");
 
         assert!(stats.total_allocated > 0);
         assert!(stats.current_usage > 0);
@@ -524,7 +527,7 @@ mod tests {
         });
 
         assert!(result.is_ok());
-        let (value, duration) = result.unwrap();
+        let (value, duration) = result.expect("test: operation should succeed");
         assert_eq!(value, 42);
         assert!(duration.as_nanos() > 0);
     }

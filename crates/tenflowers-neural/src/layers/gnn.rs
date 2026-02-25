@@ -667,7 +667,8 @@ mod tests {
 
     #[test]
     fn test_graph_conv_forward() {
-        let gcn = GraphConv::<f32>::new(64, 32, true).unwrap();
+        let gcn =
+            GraphConv::<f32>::new(64, 32, true).expect("test: GraphConv creation should succeed");
         let input = Tensor::<f32>::ones(&[10, 64]);
         let result = gcn.forward(&input);
         assert!(result.is_ok());
@@ -675,7 +676,8 @@ mod tests {
 
     #[test]
     fn test_graph_conv_with_adjacency() {
-        let gcn = GraphConv::<f32>::new(64, 32, true).unwrap();
+        let gcn =
+            GraphConv::<f32>::new(64, 32, true).expect("test: GraphConv creation should succeed");
         let input = Tensor::<f32>::ones(&[10, 64]);
         let adj_matrix = Tensor::<f32>::ones(&[10, 10]);
         let result = gcn.forward_with_adjacency(&input, &adj_matrix);
@@ -697,7 +699,8 @@ mod tests {
 
     #[test]
     fn test_graph_sage_forward() {
-        let sage = GraphSAGE::<f32>::new(64, 32, AggregatorType::Mean, true, true).unwrap();
+        let sage = GraphSAGE::<f32>::new(64, 32, AggregatorType::Mean, true, true)
+            .expect("test: GraphSAGE creation should succeed");
         let input = Tensor::<f32>::ones(&[10, 64]);
         let result = sage.forward(&input);
         assert!(result.is_ok());
@@ -705,7 +708,8 @@ mod tests {
 
     #[test]
     fn test_graph_sage_with_neighbors() {
-        let sage = GraphSAGE::<f32>::new(64, 32, AggregatorType::Mean, true, true).unwrap();
+        let sage = GraphSAGE::<f32>::new(64, 32, AggregatorType::Mean, true, true)
+            .expect("test: GraphSAGE creation should succeed");
         let input = Tensor::<f32>::ones(&[10, 64]);
         let neighbors = Tensor::<f32>::ones(&[10, 64]);
         let result = sage.forward_with_neighbors(&input, &neighbors);
@@ -726,7 +730,8 @@ mod tests {
 
     #[test]
     fn test_graph_attention_forward() {
-        let gat = GraphAttention::<f32>::new(64, 32, 4, 0.1, true).unwrap();
+        let gat = GraphAttention::<f32>::new(64, 32, 4, 0.1, true)
+            .expect("test: GraphAttention creation should succeed");
         let input = Tensor::<f32>::ones(&[10, 64]);
         let result = gat.forward(&input);
         assert!(result.is_ok());

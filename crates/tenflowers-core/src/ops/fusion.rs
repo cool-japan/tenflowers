@@ -934,7 +934,8 @@ mod tests {
             );
             graph.mark_output(relu_node);
 
-            let mask = encode_fusion_operations(&graph).unwrap();
+            let mask = encode_fusion_operations(&graph)
+                .expect("test: encode_fusion_operations should succeed");
 
             // Check encoding: Add (0) + Mul (1) + ReLU (1)
             assert_eq!(mask & 0xF, 0); // Add

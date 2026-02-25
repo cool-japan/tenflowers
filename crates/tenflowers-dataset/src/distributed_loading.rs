@@ -1056,7 +1056,8 @@ mod tests {
             ..Default::default()
         };
 
-        let sampler = EnhancedDistributedSampler::new(4, 1, config).unwrap();
+        let sampler =
+            EnhancedDistributedSampler::new(4, 1, config).expect("test: operation should succeed");
 
         // Test index ownership calculation
         let dataset_len = 100;
@@ -1071,7 +1072,7 @@ mod tests {
         let rdma_ctx = RdmaContext::new(Some(&"mlx5_0".to_string()));
         assert!(rdma_ctx.is_ok());
 
-        let mut ctx = rdma_ctx.unwrap();
+        let mut ctx = rdma_ctx.expect("test: operation should succeed");
         assert!(ctx.initialize().is_ok());
         assert!(ctx.initialized);
     }

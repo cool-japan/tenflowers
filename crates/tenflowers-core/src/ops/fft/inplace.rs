@@ -4,7 +4,7 @@
 //! directly to save memory during computation.
 
 use crate::{Result, Tensor};
-use rustfft::num_complex::Complex;
+use num_complex::Complex;
 use scirs2_core::numeric::{Float, FromPrimitive, Signed};
 use std::fmt::Debug;
 

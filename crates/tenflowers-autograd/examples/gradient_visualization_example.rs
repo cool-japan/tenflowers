@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::Array1;
 use std::fs;
 use std::sync::{Arc, Mutex};

@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_imdb_builder() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealImdbBuilder::new()
             .root(temp_dir.path())
             .train(true)
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_ag_news_builder() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealAgNewsBuilder::new()
             .root(temp_dir.path())
             .train(true)

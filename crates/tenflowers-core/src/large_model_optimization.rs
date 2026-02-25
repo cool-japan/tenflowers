@@ -611,7 +611,9 @@ mod tests {
     #[test]
     fn test_model_analysis() {
         let optimizer = LargeModelOptimizer::new(LargeModelConfig::default());
-        let plan = optimizer.analyze_model(100, 10_000_000).unwrap(); // 1B parameters
+        let plan = optimizer
+            .analyze_model(100, 10_000_000)
+            .expect("test: analyze_model should succeed"); // 1B parameters
         assert!(!plan.optimization_recommendations.is_empty());
         assert!(plan.estimated_peak_memory_mb > 0.0);
     }

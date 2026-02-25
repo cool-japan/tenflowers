@@ -340,7 +340,9 @@ mod tests {
     fn test_thread_group_creation() {
         let mut backend = ThreadBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -357,7 +359,9 @@ mod tests {
     fn test_thread_all_reduce() {
         let mut backend = ThreadBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -367,7 +371,9 @@ mod tests {
             backend: CommunicationBackend::Thread,
         };
 
-        backend.create_group(&group).unwrap();
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[2, 3]);
         let result = backend.all_reduce_f32(&tensor, &group, ReductionOp::Average);

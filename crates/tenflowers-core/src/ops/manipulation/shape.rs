@@ -317,8 +317,8 @@ where
 /// # Example
 /// ```rust
 /// use tenflowers_core::{Tensor, ops::flatten};
-/// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-/// let flattened = flatten(&tensor).unwrap();
+/// let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
+/// let flattened = flatten(&tensor).expect("flatten should succeed");
 /// assert_eq!(flattened.shape().dims(), &[4]);
 /// ```
 pub fn flatten<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>

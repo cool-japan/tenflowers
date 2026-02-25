@@ -374,9 +374,9 @@ mod tests {
     // TODO: Uncomment when logsumexp is implemented
     // #[test]
     // fn test_logsumexp() {
-    //     let input = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4]).unwrap();
-    //     let result = logsumexp(&input, None, false).unwrap();
-    //     let result_val = result.to_vec().unwrap()[0];
+    //     let input = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4]).expect("test: from_vec should succeed");
+    //     let result = logsumexp(&input, None, false).expect("test: logsumexp should succeed");
+    //     let result_val = result.to_vec().expect("test: tensor data should be convertible to vec")[0];
     //
     //     // Should be approximately log(e^1 + e^2 + e^3 + e^4) ≈ 4.44019
     //     assert!((result_val - 4.44019).abs() < 0.001, "logsumexp mismatch: {}", result_val);
@@ -384,9 +384,12 @@ mod tests {
 
     #[test]
     fn test_softplus() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0, 10.0], &[4]).unwrap();
-        let result = softplus(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0, 10.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = softplus(&input).expect("test: softplus should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // softplus(0) ≈ 0.693
         assert!((result_data[0] - 0.693).abs() < 0.01);
@@ -396,9 +399,12 @@ mod tests {
 
     #[test]
     fn test_softsign() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0, 2.0], &[4]).unwrap();
-        let result = softsign(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0, 2.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = softsign(&input).expect("test: softsign should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         assert!((result_data[0] - 0.0).abs() < 1e-6);
         assert!((result_data[1] - 0.5).abs() < 1e-6);
@@ -408,9 +414,12 @@ mod tests {
 
     #[test]
     fn test_mish() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3]).unwrap();
-        let result = mish(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = mish(&input).expect("test: mish should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // Mish(0) ≈ 0
         assert!(result_data[0].abs() < 0.01);
@@ -420,9 +429,12 @@ mod tests {
 
     #[test]
     fn test_hard_sigmoid() {
-        let input = Tensor::from_vec(vec![-3.0_f32, 0.0, 3.0, 6.0], &[4]).unwrap();
-        let result = hard_sigmoid(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![-3.0_f32, 0.0, 3.0, 6.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = hard_sigmoid(&input).expect("test: hard_sigmoid should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         assert!((result_data[0] - 0.0).abs() < 1e-6);
         assert!((result_data[1] - 0.5).abs() < 1e-6);
@@ -432,9 +444,12 @@ mod tests {
 
     #[test]
     fn test_hard_swish() {
-        let input = Tensor::from_vec(vec![-3.0_f32, 0.0, 3.0], &[3]).unwrap();
-        let result = hard_swish(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![-3.0_f32, 0.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = hard_swish(&input).expect("test: hard_swish should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         assert!((result_data[0] - 0.0).abs() < 1e-6);
         assert!((result_data[1] - 0.0).abs() < 1e-6);
@@ -443,9 +458,12 @@ mod tests {
 
     #[test]
     fn test_log_sigmoid() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3]).unwrap();
-        let result = log_sigmoid(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = log_sigmoid(&input).expect("test: log_sigmoid should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // log(sigmoid(0)) = log(0.5) ≈ -0.693
         assert!((result_data[0] - (-0.693)).abs() < 0.01);
@@ -453,9 +471,12 @@ mod tests {
 
     #[test]
     fn test_gelu_tanh() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3]).unwrap();
-        let result = gelu_tanh(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = gelu_tanh(&input).expect("test: gelu_tanh should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // GELU(0) ≈ 0
         assert!(result_data[0].abs() < 0.01);
@@ -465,9 +486,12 @@ mod tests {
 
     #[test]
     fn test_logit() {
-        let input = Tensor::from_vec(vec![0.5_f32, 0.75, 0.25], &[3]).unwrap();
-        let result = logit(&input, 1e-7).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.5_f32, 0.75, 0.25], &[3])
+            .expect("test: from_vec should succeed");
+        let result = logit(&input, 1e-7).expect("test: logit should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // logit(0.5) = 0
         assert!(result_data[0].abs() < 1e-6);
@@ -479,9 +503,12 @@ mod tests {
 
     #[test]
     fn test_selu() {
-        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3]).unwrap();
-        let result = selu(&input).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let input = Tensor::from_vec(vec![0.0_f32, 1.0, -1.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = selu(&input).expect("test: selu should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // SELU(0) ≈ 0
         assert!(result_data[0].abs() < 0.01);
@@ -493,11 +520,11 @@ mod tests {
     // #[test]
     // fn test_numerical_stability_logsumexp() {
     //     // Test with large values that would cause overflow without stability
-    //     let input = Tensor::from_vec(vec![100.0_f32, 101.0, 102.0], &[3]).unwrap();
+    //     let input = Tensor::from_vec(vec![100.0_f32, 101.0, 102.0], &[3]).expect("test: from_vec should succeed");
     //     let result = logsumexp(&input, None, false);
     //     assert!(result.is_ok());
     //
-    //     let result_val = result.unwrap().to_vec().unwrap()[0];
+    //     let result_val = result.expect("test: operation should succeed").to_vec().expect("test: tensor data should be convertible to vec")[0];
     //     // Should be close to 102 + log(e^(-2) + e^(-1) + 1)
     //     assert!(result_val.is_finite());
     //     assert!(result_val > 102.0 && result_val < 103.0);

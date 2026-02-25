@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Re-enable tensorboard integration (awaiting protobuf security fix)
 - ONNX import/export support
 
+## [0.1.0-rc.1] - 2026-02-08
+
+### Summary
+Release Candidate 1 with updated dependencies and stability improvements. This release focuses on keeping dependencies up-to-date and maintaining compatibility with the latest SciRS2 ecosystem.
+
+**Release Status:** ✅ Release Candidate (5 crates ready)
+- **Tests:** Maintained 100% pass rate
+- **Security:** 0 vulnerabilities
+- **Quality:** Zero clippy warnings, full formatting compliance
+- **Dependencies:** Updated to latest compatible versions
+
+### Changed
+
+#### Dependency Updates
+- **SciRS2 Ecosystem Updates**: All scirs2-* dependencies updated to 0.1.5
+  - scirs2-core: 0.1.4 → 0.1.5
+  - scirs2-autograd: 0.1.4 → 0.1.5
+  - scirs2-neural: 0.1.4 → 0.1.5
+  - scirs2-linalg: 0.1.4 → 0.1.5
+  - scirs2-numpy: 0.1.4 → 0.1.5
+- **Compatibility**: Verified compatibility with latest SciRS2 releases
+- **Build System**: All workspace builds verified after dependency updates
+
+### Fixed
+- **Workspace Consistency**: Ensured all subcrates properly use workspace dependencies
+- **Version Alignment**: All internal version references updated to rc.1
+
 ## [0.1.0-beta.1] - 2026-02-06
 
 ### Summary

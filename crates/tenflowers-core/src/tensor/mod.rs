@@ -187,7 +187,7 @@ mod tests {
             assert_eq!(data, &[true, false, true, true]);
         }
 
-        let gt_result = a.gt(&b).unwrap();
+        let gt_result = a.gt(&b).expect("test: gt should succeed");
         if let Some(data) = gt_result.as_slice() {
             assert_eq!(data, &[false, false, true, true]);
         }

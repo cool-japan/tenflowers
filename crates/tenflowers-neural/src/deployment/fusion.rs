@@ -474,7 +474,7 @@ mod tests {
         let result = fuse_layers(&model, None);
         assert!(result.is_ok());
 
-        let (_fused_model, stats) = result.unwrap();
+        let (_fused_model, stats) = result.expect("test: result should be valid");
         assert!(stats.fusions_applied > 0);
         assert!(stats.total_efficiency_gain() > 0.0);
     }
@@ -499,8 +499,9 @@ mod tests {
     #[cfg(feature = "serialize")]
     fn test_fusion_pattern_serialization() {
         let pattern = FusionPattern::DenseBatchNormActivation;
-        let serialized = serde_json::to_string(&pattern).unwrap();
-        let deserialized: FusionPattern = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&pattern).expect("test: operation should succeed");
+        let deserialized: FusionPattern =
+            serde_json::from_str(&serialized).expect("test: operation should succeed");
         assert_eq!(pattern, deserialized);
     }
 }

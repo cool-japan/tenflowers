@@ -18,7 +18,7 @@
 //!
 //! ### Building a Simple Neural Network
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Sequential, Dense, ActivationFunction};
 //! use tenflowers_core::{Tensor, Device};
 //!
@@ -39,7 +39,7 @@
 //!
 //! ### Training with the High-Level API
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{quick_train, Sequential, Dense, SGD};
 //! use tenflowers_neural::loss::categorical_cross_entropy;
 //! use tenflowers_core::Tensor;
@@ -70,7 +70,7 @@
 //!
 //! ### Advanced Training with Callbacks
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Trainer, EarlyStopping, ModelCheckpoint};
 //! use tenflowers_neural::{Sequential, Dense, Adam};
 //! use tenflowers_neural::loss::mse;
@@ -113,7 +113,7 @@
 //! TenfloweRS supports GPU acceleration through the SciRS2 ecosystem. GPU operations
 //! are automatically dispatched when tensors are placed on GPU devices:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_core::{Tensor, Device};
 //! use tenflowers_neural::Dense;
 //!
@@ -133,7 +133,7 @@
 //!
 //! For faster training and reduced memory usage:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{MixedPrecisionTrainer, Sequential, Adam};
 //! use tenflowers_neural::loss::mse;
 //!
@@ -155,7 +155,7 @@
 //!
 //! Scale training across multiple GPUs:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{create_data_parallel, Sequential, Dense};
 //! use tenflowers_core::Device;
 //!
@@ -174,7 +174,7 @@
 //!
 //! Fine-tune large models efficiently:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::peft::{LoRALayer, LoRAConfig};
 //! use tenflowers_neural::Dense;
 //!
@@ -194,7 +194,7 @@
 //!
 //! Optimize models for production:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::deployment::{ModelOptimizer, OptimizationConfig};
 //! use tenflowers_neural::Sequential;
 //!

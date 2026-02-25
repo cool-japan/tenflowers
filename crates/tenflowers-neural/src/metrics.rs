@@ -822,7 +822,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 0, 0, 1, 0], &[5])
             .expect("test tensor creation should succeed");
 
-        let acc = accuracy(&predictions, &targets).unwrap();
+        let acc = accuracy(&predictions, &targets).expect("test: training should succeed");
         assert_eq!(acc, 0.8); // 4 out of 5 correct
     }
 
@@ -833,7 +833,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 0, 0, 1, 0], &[5])
             .expect("test tensor creation should succeed");
 
-        let prec = precision(&predictions, &targets).unwrap();
+        let prec = precision(&predictions, &targets).expect("test: training should succeed");
         // TP = 2 (indices 0, 3), FP = 1 (index 1)
         // Precision = 2 / (2 + 1) = 2/3 ≈ 0.667
         assert!((prec - 2.0 / 3.0).abs() < 1e-6);
@@ -846,7 +846,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 1, 0, 1, 0], &[5])
             .expect("test tensor creation should succeed");
 
-        let rec = recall(&predictions, &targets).unwrap();
+        let rec = recall(&predictions, &targets).expect("test: training should succeed");
         // TP = 2 (indices 0, 3), FN = 1 (index 1)
         // Recall = 2 / (2 + 1) = 2/3 ≈ 0.667
         assert!((rec - 2.0 / 3.0).abs() < 1e-6);
@@ -860,7 +860,10 @@ mod tests {
         let empty_target =
             Tensor::<i32>::from_vec(vec![], &[0]).expect("test tensor creation should succeed");
 
-        assert_eq!(accuracy(&empty_pred, &empty_target).unwrap(), 0.0);
+        assert_eq!(
+            accuracy(&empty_pred, &empty_target).expect("test: operation should succeed"),
+            0.0
+        );
 
         // All zeros (no positive predictions/targets)
         let zeros_pred = Tensor::<i32>::from_vec(vec![0, 0, 0], &[3])
@@ -868,8 +871,14 @@ mod tests {
         let zeros_target = Tensor::<i32>::from_vec(vec![0, 0, 0], &[3])
             .expect("test tensor creation should succeed");
 
-        assert_eq!(precision(&zeros_pred, &zeros_target).unwrap(), 0.0);
-        assert_eq!(recall(&zeros_pred, &zeros_target).unwrap(), 0.0);
+        assert_eq!(
+            precision(&zeros_pred, &zeros_target).expect("test: operation should succeed"),
+            0.0
+        );
+        assert_eq!(
+            recall(&zeros_pred, &zeros_target).expect("test: operation should succeed"),
+            0.0
+        );
     }
 
     #[test]
@@ -879,7 +888,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 0, 0, 1, 0], &[5])
             .expect("test tensor creation should succeed");
 
-        let f1 = f1_score(&predictions, &targets).unwrap();
+        let f1 = f1_score(&predictions, &targets).expect("test: training should succeed");
         let expected_precision = 2.0 / 3.0; // 2 TP, 1 FP
         let expected_recall = 2.0 / 2.0; // 2 TP, 0 FN (both 1s in targets are correctly predicted)
         let expected_f1 =
@@ -898,16 +907,18 @@ mod tests {
             ], // Sample 2: class 2 has highest prob
             &[2, 3],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let targets =
             Tensor::<i64>::from_vec(vec![1, 2], &[2]).expect("test tensor creation should succeed");
 
         // Top-1 accuracy should be 100% (both predictions are correct)
-        let top1 = top_k_accuracy(&predictions, &targets, 1).unwrap();
+        let top1 =
+            top_k_accuracy(&predictions, &targets, 1).expect("test: training should succeed");
         assert_eq!(top1, 1.0);
 
         // Top-2 accuracy should also be 100%
-        let top2 = top_k_accuracy(&predictions, &targets, 2).unwrap();
+        let top2 =
+            top_k_accuracy(&predictions, &targets, 2).expect("test: training should succeed");
         assert_eq!(top2, 1.0);
     }
 
@@ -918,7 +929,8 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 0, 0, 0, 1], &[5])
             .expect("test tensor creation should succeed");
 
-        let (tn, fp, fn_, tp) = confusion_matrix(&predictions, &targets).unwrap();
+        let (tn, fp, fn_, tp) =
+            confusion_matrix(&predictions, &targets).expect("test: training should succeed");
 
         // TN: predicted 0, actual 0 (indices 1, 3) = 2
         // FP: predicted 1, actual 0 (index 2) = 1
@@ -937,7 +949,8 @@ mod tests {
         let targets = Tensor::<f32>::from_vec(vec![2.5, 4.0, 5.0], &[3])
             .expect("test tensor creation should succeed");
 
-        let mape = mean_absolute_percentage_error(&predictions, &targets).unwrap();
+        let mape = mean_absolute_percentage_error(&predictions, &targets)
+            .expect("test: training should succeed");
 
         // MAPE = mean([|2.5-2.0|/2.5, |4.0-4.0|/4.0, |5.0-6.0|/5.0]) * 100
         // MAPE = mean([0.2, 0.0, 0.2]) * 100 = 0.1333... * 100 = 13.333...
@@ -953,13 +966,13 @@ mod tests {
         let targets = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
             .expect("test tensor creation should succeed");
 
-        let r2 = r_squared(&predictions, &targets).unwrap();
+        let r2 = r_squared(&predictions, &targets).expect("test: training should succeed");
         assert!((r2 - 1.0).abs() < 1e-6);
 
         // Mean prediction should give R² = 0
         let mean_pred = Tensor::<f32>::from_vec(vec![2.5, 2.5, 2.5, 2.5], &[4])
             .expect("test tensor creation should succeed");
-        let r2_mean = r_squared(&mean_pred, &targets).unwrap();
+        let r2_mean = r_squared(&mean_pred, &targets).expect("test: operation should succeed");
         assert!(r2_mean.abs() < 1e-6);
     }
 
@@ -971,7 +984,7 @@ mod tests {
         let targets = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0], &[6])
             .expect("test tensor creation should succeed");
 
-        let auc = auc_roc(&predictions, &targets).unwrap();
+        let auc = auc_roc(&predictions, &targets).expect("test: training should succeed");
         assert!((auc - 1.0).abs() < 1e-6);
 
         // Random classifier should give AUC ≈ 0.5
@@ -980,7 +993,8 @@ mod tests {
         let random_targets = Tensor::<f32>::from_vec(vec![1.0, 0.0, 1.0, 0.0], &[4])
             .expect("test tensor creation should succeed");
 
-        let auc_random = auc_roc(&random_pred, &random_targets).unwrap();
+        let auc_random =
+            auc_roc(&random_pred, &random_targets).expect("test: operation should succeed");
         assert!((0.0..=1.0).contains(&auc_random));
     }
 
@@ -992,7 +1006,7 @@ mod tests {
         let targets = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0], &[6])
             .expect("test tensor creation should succeed");
 
-        let auc = auc_pr(&predictions, &targets).unwrap();
+        let auc = auc_pr(&predictions, &targets).expect("test: training should succeed");
         assert!((0.0..=1.0).contains(&auc));
 
         // All negative case
@@ -1001,7 +1015,7 @@ mod tests {
         let some_pred = Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[4])
             .expect("test tensor creation should succeed");
 
-        let auc_neg = auc_pr(&some_pred, &all_neg_targets).unwrap();
+        let auc_neg = auc_pr(&some_pred, &all_neg_targets).expect("test: operation should succeed");
         assert_eq!(auc_neg, 0.0);
     }
 
@@ -1013,8 +1027,10 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![0, 1, 2, 1, 2, 0], &[6])
             .expect("test tensor creation should succeed");
 
-        let f1_micro = f1_score_multiclass(&predictions, &targets, "micro").unwrap();
-        let f1_macro = f1_score_multiclass(&predictions, &targets, "macro").unwrap();
+        let f1_micro = f1_score_multiclass(&predictions, &targets, "micro")
+            .expect("test: training should succeed");
+        let f1_macro = f1_score_multiclass(&predictions, &targets, "macro")
+            .expect("test: training should succeed");
 
         assert!((0.0..=1.0).contains(&f1_micro));
         assert!((0.0..=1.0).contains(&f1_macro));
@@ -1025,7 +1041,8 @@ mod tests {
         let perfect_targets = Tensor::<i32>::from_vec(vec![0, 1, 2, 0, 1, 2], &[6])
             .expect("test tensor creation should succeed");
 
-        let f1_perfect = f1_score_multiclass(&perfect_pred, &perfect_targets, "micro").unwrap();
+        let f1_perfect = f1_score_multiclass(&perfect_pred, &perfect_targets, "micro")
+            .expect("test: operation should succeed");
         assert!((f1_perfect - 1.0).abs() < 1e-6);
     }
 
@@ -1037,13 +1054,14 @@ mod tests {
         let targets = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
             .expect("test tensor creation should succeed");
 
-        let ev = explained_variance(&predictions, &targets).unwrap();
+        let ev = explained_variance(&predictions, &targets).expect("test: training should succeed");
         assert!((ev - 1.0).abs() < 1e-6);
 
         // Random predictions should give lower explained variance
         let random_pred = Tensor::<f32>::from_vec(vec![1.5, 2.5, 2.8, 3.2], &[4])
             .expect("test tensor creation should succeed");
-        let ev_random = explained_variance(&random_pred, &targets).unwrap();
+        let ev_random =
+            explained_variance(&random_pred, &targets).expect("test: operation should succeed");
         assert!(ev_random < 1.0);
     }
 
@@ -1055,7 +1073,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 1, 0, 0, 1, 0], &[6])
             .expect("test tensor creation should succeed");
 
-        let iou = iou_jaccard(&predictions, &targets).unwrap();
+        let iou = iou_jaccard(&predictions, &targets).expect("test: training should succeed");
         assert!((iou - 1.0).abs() < 1e-6);
 
         // Partial overlap
@@ -1064,7 +1082,8 @@ mod tests {
         let target_partial = Tensor::<i32>::from_vec(vec![1, 0, 0, 1, 1, 0], &[6])
             .expect("test tensor creation should succeed");
 
-        let iou_partial = iou_jaccard(&pred_partial, &target_partial).unwrap();
+        let iou_partial =
+            iou_jaccard(&pred_partial, &target_partial).expect("test: operation should succeed");
         // Intersection = 1, Union = 5, IoU = 1/5 = 0.2
         assert!((iou_partial - 0.2).abs() < 1e-6);
     }
@@ -1077,7 +1096,7 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![1, 1, 0, 0, 1, 0], &[6])
             .expect("test tensor creation should succeed");
 
-        let dice = dice_coefficient(&predictions, &targets).unwrap();
+        let dice = dice_coefficient(&predictions, &targets).expect("test: training should succeed");
         assert!((dice - 1.0).abs() < 1e-6);
 
         // Partial overlap
@@ -1086,7 +1105,8 @@ mod tests {
         let target_partial = Tensor::<i32>::from_vec(vec![1, 0, 0, 1, 1, 0], &[6])
             .expect("test tensor creation should succeed");
 
-        let dice_partial = dice_coefficient(&pred_partial, &target_partial).unwrap();
+        let dice_partial = dice_coefficient(&pred_partial, &target_partial)
+            .expect("test: operation should succeed");
         // TP = 1, FP = 2, FN = 2, Dice = 2*1 / (2*1 + 2 + 2) = 2/6 = 1/3
         assert!((dice_partial - 1.0 / 3.0).abs() < 1e-6);
 
@@ -1096,7 +1116,8 @@ mod tests {
         let zero_target = Tensor::<i32>::from_vec(vec![0, 0, 0, 0], &[4])
             .expect("test tensor creation should succeed");
 
-        let dice_zero = dice_coefficient(&zero_pred, &zero_target).unwrap();
+        let dice_zero =
+            dice_coefficient(&zero_pred, &zero_target).expect("test: operation should succeed");
         assert!((dice_zero - 1.0).abs() < 1e-6);
     }
 
@@ -1108,7 +1129,8 @@ mod tests {
         let targets = Tensor::<i32>::from_vec(vec![0, 1, 2, 0, 1, 2, 0, 1], &[8])
             .expect("test tensor creation should succeed");
 
-        let pixel_acc = pixel_accuracy(&predictions, &targets).unwrap();
+        let pixel_acc =
+            pixel_accuracy(&predictions, &targets).expect("test: training should succeed");
         assert!((pixel_acc - 1.0).abs() < 1e-6);
 
         // Half correct segmentation
@@ -1117,7 +1139,8 @@ mod tests {
         let target_half = Tensor::<i32>::from_vec(vec![0, 1, 2, 0, 1, 2, 0, 1], &[8])
             .expect("test tensor creation should succeed");
 
-        let pixel_acc_half = pixel_accuracy(&pred_half, &target_half).unwrap();
+        let pixel_acc_half =
+            pixel_accuracy(&pred_half, &target_half).expect("test: operation should succeed");
         // Correct: indices 0, 1, 2, 4, 6, 7 = 6 out of 8 = 0.75
         assert!((pixel_acc_half - 0.75).abs() < 1e-6);
 
@@ -1127,7 +1150,8 @@ mod tests {
         let target_wrong = Tensor::<i32>::from_vec(vec![0, 1, 2, 0, 1, 2, 0, 1], &[8])
             .expect("test tensor creation should succeed");
 
-        let pixel_acc_wrong = pixel_accuracy(&pred_wrong, &target_wrong).unwrap();
+        let pixel_acc_wrong =
+            pixel_accuracy(&pred_wrong, &target_wrong).expect("test: operation should succeed");
         assert!((pixel_acc_wrong - 0.0).abs() < 1e-6);
 
         // Empty case
@@ -1136,7 +1160,8 @@ mod tests {
         let empty_target =
             Tensor::<i32>::from_vec(vec![], &[0]).expect("test tensor creation should succeed");
 
-        let pixel_acc_empty = pixel_accuracy(&empty_pred, &empty_target).unwrap();
+        let pixel_acc_empty =
+            pixel_accuracy(&empty_pred, &empty_target).expect("test: operation should succeed");
         assert!((pixel_acc_empty - 0.0).abs() < 1e-6);
     }
 
@@ -1158,7 +1183,8 @@ mod tests {
         let single_class_target = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0], &[3])
             .expect("test tensor creation should succeed");
 
-        let auc_single = auc_roc(&single_class_pred, &single_class_target).unwrap();
+        let auc_single = auc_roc(&single_class_pred, &single_class_target)
+            .expect("test: operation should succeed");
         assert_eq!(auc_single, 0.5); // Should return 0.5 for single class
     }
 }

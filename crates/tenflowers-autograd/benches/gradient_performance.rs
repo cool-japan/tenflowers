@@ -1,3 +1,7 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2, Array3};
 use std::time::Duration;
@@ -24,7 +28,8 @@ fn bench_basic_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.add(&y).unwrap();
-                black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+                let inputs = vec![x.clone(), y.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -38,7 +43,8 @@ fn bench_basic_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.mul(&y).unwrap();
-                black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+                let inputs = vec![x.clone(), y.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -59,7 +65,8 @@ fn bench_basic_gradients(c: &mut Criterion) {
 
                         b.iter(|| {
                             let z = x.matmul(&y).unwrap();
-                            black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+                            let inputs = vec![x.clone(), y.clone()];
+                            black_box(tape.gradient(&[z], &inputs).unwrap());
                         });
                     },
                 );
@@ -87,7 +94,8 @@ fn bench_activation_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.relu().unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -99,7 +107,8 @@ fn bench_activation_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.sigmoid().unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -111,7 +120,8 @@ fn bench_activation_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.tanh().unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -123,7 +133,8 @@ fn bench_activation_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.softmax(None).unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
     }
@@ -148,7 +159,8 @@ fn bench_reduction_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.sum(None, false).unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -160,7 +172,8 @@ fn bench_reduction_gradients(c: &mut Criterion) {
 
             b.iter(|| {
                 let z = x.mean(None, false).unwrap();
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
 
@@ -173,7 +186,8 @@ fn bench_reduction_gradients(c: &mut Criterion) {
             b.iter(|| {
                 // Use sum reduction instead of max since TrackedTensor doesn't have max with those parameters
                 let z = x.add(&x).unwrap(); // Simple operation for benchmark
-                black_box(tape.gradient(&z, &[&x]).unwrap());
+                let inputs = vec![x.clone()];
+                black_box(tape.gradient(&[z], &inputs).unwrap());
             });
         });
     }
@@ -215,7 +229,8 @@ fn bench_complex_gradients(c: &mut Criterion) {
             let loss = output.sum(None, false).unwrap();
 
             // Backward pass
-            black_box(tape.gradient(&loss, &[&w1, &b1, &w2, &b2]).unwrap());
+            let inputs = vec![w1.clone(), b1.clone(), w2.clone(), b2.clone()];
+            black_box(tape.gradient(&[loss], &inputs).unwrap());
         });
     });
 
@@ -238,7 +253,8 @@ fn bench_complex_gradients(c: &mut Criterion) {
         b.iter(|| {
             // Simplified convolution benchmark using compatible operations
             let conv_result = x.add(&x).unwrap(); // Simple operation for benchmark
-            black_box(tape.gradient(&conv_result, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[conv_result], &inputs).unwrap());
         });
     });
 
@@ -329,7 +345,8 @@ fn bench_tape_operations(c: &mut Criterion) {
         let loss = x.sum(None, false).unwrap();
 
         b.iter(|| {
-            black_box(accumulator.accumulate(&tape, &loss, &[&x]).unwrap());
+            accumulator.accumulate(&tape, &loss, &[&x]).unwrap();
+            black_box(());
         });
     });
 
@@ -355,7 +372,8 @@ fn bench_memory_patterns(c: &mut Criterion) {
                 result = result.tanh().unwrap();
             }
 
-            black_box(tape.gradient(&result, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[result], &inputs).unwrap());
         });
     });
 
@@ -381,7 +399,8 @@ fn bench_memory_patterns(c: &mut Criterion) {
                 result = result.add(branch).unwrap();
             }
 
-            black_box(tape.gradient(&result, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[result], &inputs).unwrap());
         });
     });
 

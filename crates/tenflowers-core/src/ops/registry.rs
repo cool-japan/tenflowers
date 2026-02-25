@@ -1571,10 +1571,14 @@ mod tests {
             deprecation_message: None,
         };
 
-        registry.register_op(op_def.clone()).unwrap();
+        registry
+            .register_op(op_def.clone())
+            .expect("test: operation should succeed");
 
         // Get op
-        let retrieved = registry.get_op("TestOp").unwrap();
+        let retrieved = registry
+            .get_op("TestOp")
+            .expect("test: get_op should succeed");
         assert_eq!(retrieved.name, "TestOp");
         assert_eq!(retrieved.version, OpVersion::new(1, 0, 0));
 
@@ -1634,30 +1638,38 @@ mod tests {
             deprecation_message: None,
         };
 
-        registry.register_op(op_v1).unwrap();
-        registry.register_op(op_v1_1).unwrap();
-        registry.register_op(op_v2).unwrap();
+        registry
+            .register_op(op_v1)
+            .expect("test: register_op should succeed");
+        registry
+            .register_op(op_v1_1)
+            .expect("test: register_op should succeed");
+        registry
+            .register_op(op_v2)
+            .expect("test: register_op should succeed");
 
         // Test latest version retrieval
-        let latest = registry.get_op("TestVersionOp").unwrap();
+        let latest = registry
+            .get_op("TestVersionOp")
+            .expect("test: get_op should succeed");
         assert_eq!(latest.version, OpVersion::new(2, 0, 0));
 
         // Test specific version retrieval
         let v1 = registry
             .get_op_version("TestVersionOp", &OpVersion::new(1, 0, 0))
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(v1.version, OpVersion::new(1, 0, 0));
 
         // Test compatible version resolution
         let compatible = registry
             .get_op_compatible("TestVersionOp", &OpVersion::new(1, 0, 0))
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(compatible.version, OpVersion::new(1, 1, 0)); // Should get highest compatible
 
         // Test cross-major version incompatibility
         let compatible_v2 = registry
             .get_op_compatible("TestVersionOp", &OpVersion::new(2, 0, 0))
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(compatible_v2.version, OpVersion::new(2, 0, 0));
 
         // Test version listing
@@ -1706,9 +1718,13 @@ mod tests {
             deprecation_message: Some("Use NewOp instead".to_string()),
         };
 
-        registry.register_op(deprecated_op).unwrap();
+        registry
+            .register_op(deprecated_op)
+            .expect("test: register_op should succeed");
 
-        let retrieved = registry.get_op("DeprecatedOp").unwrap();
+        let retrieved = registry
+            .get_op("DeprecatedOp")
+            .expect("test: get_op should succeed");
         assert!(retrieved.deprecated);
         assert_eq!(
             retrieved.deprecation_message,

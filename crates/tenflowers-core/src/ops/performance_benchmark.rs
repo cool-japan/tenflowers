@@ -403,7 +403,8 @@ mod tests {
             verify_correctness: true,
         };
 
-        let results = benchmark_binary_operations(config).unwrap();
+        let results = benchmark_binary_operations(config)
+            .expect("test: benchmark_binary_operations should succeed");
 
         // All results should have correctness verified
         for result in &results {
@@ -427,7 +428,8 @@ mod tests {
             verify_correctness: true,
         };
 
-        let results = benchmark_binary_operations(config).unwrap();
+        let results = benchmark_binary_operations(config)
+            .expect("test: benchmark_binary_operations should succeed");
         assert!(!results.is_empty());
 
         // Print results for manual inspection

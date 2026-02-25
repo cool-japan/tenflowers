@@ -357,17 +357,20 @@ mod tests {
 
     #[test]
     fn test_random_normal() {
-        let tensor = random_normal_f32(&[10], 0.0, 1.0, Some(42)).unwrap();
+        let tensor =
+            random_normal_f32(&[10], 0.0, 1.0, Some(42)).expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[10]);
 
         // Test with fixed seed should be reproducible
-        let tensor2 = random_normal_f32(&[10], 0.0, 1.0, Some(42)).unwrap();
+        let tensor2 =
+            random_normal_f32(&[10], 0.0, 1.0, Some(42)).expect("test: operation should succeed");
         assert_eq!(tensor.as_slice(), tensor2.as_slice());
     }
 
     #[test]
     fn test_random_uniform() {
-        let tensor = random_uniform_f32(&[5, 2], -1.0, 1.0, Some(123)).unwrap();
+        let tensor = random_uniform_f32(&[5, 2], -1.0, 1.0, Some(123))
+            .expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[5, 2]);
 
         // Check all values are in range
@@ -380,7 +383,8 @@ mod tests {
 
     #[test]
     fn test_random_uniform_int() {
-        let tensor = random_uniform_int(&[8], 0, 10, Some(456)).unwrap();
+        let tensor =
+            random_uniform_int(&[8], 0, 10, Some(456)).expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[8]);
 
         // Check all values are in range
@@ -393,13 +397,13 @@ mod tests {
 
     #[test]
     fn test_randn() {
-        let tensor = randn_f32(&[3, 3], Some(789)).unwrap();
+        let tensor = randn_f32(&[3, 3], Some(789)).expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[3, 3]);
     }
 
     #[test]
     fn test_rand() {
-        let tensor = rand_f32(&[4], Some(101112)).unwrap();
+        let tensor = rand_f32(&[4], Some(101112)).expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[4]);
 
         // Check all values are in [0, 1)
@@ -413,8 +417,10 @@ mod tests {
     #[test]
     fn test_multinomial() {
         // Test with uniform weights
-        let weights = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[4]).unwrap();
-        let samples = multinomial_f32(&weights, 100, Some(131415)).unwrap();
+        let weights = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[4])
+            .expect("test: from_vec should succeed");
+        let samples =
+            multinomial_f32(&weights, 100, Some(131415)).expect("test: operation should succeed");
 
         assert_eq!(samples.shape().dims(), &[100]);
 
@@ -426,19 +432,23 @@ mod tests {
         }
 
         // Test with biased weights
-        let weights = Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[4]).unwrap();
-        let samples = multinomial_f32(&weights, 10, Some(161718)).unwrap();
+        let weights = Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[4])
+            .expect("test: from_vec should succeed");
+        let samples =
+            multinomial_f32(&weights, 10, Some(161718)).expect("test: operation should succeed");
         assert_eq!(samples.shape().dims(), &[10]);
     }
 
     #[test]
     fn test_multinomial_errors() {
         // Test 2D weights (should fail)
-        let weights = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[2, 2]).unwrap();
+        let weights = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[2, 2])
+            .expect("test: from_vec should succeed");
         assert!(multinomial_f32(&weights, 10, Some(123)).is_err());
 
         // Test zero weights (should fail)
-        let weights = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0], &[3]).unwrap();
+        let weights = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0], &[3])
+            .expect("test: from_vec should succeed");
         assert!(multinomial_f32(&weights, 10, Some(123)).is_err());
     }
 
@@ -495,21 +505,21 @@ mod tests {
         use crate::Device;
 
         // Test CPU versions work
-        let cpu_normal =
-            random_normal_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu).unwrap();
+        let cpu_normal = random_normal_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu)
+            .expect("test: operation should succeed");
         assert_eq!(cpu_normal.shape().dims(), &[5, 5]);
 
-        let cpu_uniform =
-            random_uniform_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu).unwrap();
+        let cpu_uniform = random_uniform_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu)
+            .expect("test: operation should succeed");
         assert_eq!(cpu_uniform.shape().dims(), &[5, 5]);
 
         // Test that CPU implementations are deterministic with same seed
-        let cpu_normal2 =
-            random_normal_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu).unwrap();
+        let cpu_normal2 = random_normal_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu)
+            .expect("test: operation should succeed");
         assert_eq!(cpu_normal.as_slice(), cpu_normal2.as_slice());
 
-        let cpu_uniform2 =
-            random_uniform_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu).unwrap();
+        let cpu_uniform2 = random_uniform_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Cpu)
+            .expect("test: operation should succeed");
         assert_eq!(cpu_uniform.as_slice(), cpu_uniform2.as_slice());
     }
 }

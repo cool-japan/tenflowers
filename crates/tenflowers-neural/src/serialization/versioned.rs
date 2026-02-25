@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_version_parsing() {
-        let version = SemanticVersion::parse("1.2.3").unwrap();
+        let version = SemanticVersion::parse("1.2.3").expect("test: parse should succeed");
         assert_eq!(version.major, 1);
         assert_eq!(version.minor, 2);
         assert_eq!(version.patch, 3);
@@ -606,7 +606,7 @@ mod tests {
 
     #[test]
     fn test_version_range_parsing() {
-        let range = utils::parse_version_range("1.0.0..1.5.0").unwrap();
+        let range = utils::parse_version_range("1.0.0..1.5.0").expect("test: parse should succeed");
         assert_eq!(range.min_version, SemanticVersion::new(1, 0, 0));
         assert_eq!(range.max_version, SemanticVersion::new(1, 5, 0));
 

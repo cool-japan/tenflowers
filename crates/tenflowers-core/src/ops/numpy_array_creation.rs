@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_arange() {
-        let result = arange(0.0f32, 5.0, 1.0).unwrap();
+        let result = arange(0.0f32, 5.0, 1.0).expect("test: arange should succeed");
         if let Some(data) = result.as_slice() {
             assert_eq!(data, &[0.0, 1.0, 2.0, 3.0, 4.0]);
         }
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_linspace() {
-        let result = linspace(0.0f32, 1.0, 6, true).unwrap();
+        let result = linspace(0.0f32, 1.0, 6, true).expect("test: linspace should succeed");
         if let Some(data) = result.as_slice() {
             assert_eq!(data.len(), 6);
             assert!((data[0] - 0.0).abs() < 1e-6);
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_eye() {
-        let result = eye::<f32>(3, None, 0).unwrap();
+        let result = eye::<f32>(3, None, 0).expect("test: operation should succeed");
         assert_eq!(result.shape().dims(), &[3, 3]);
 
         if let Some(data) = result.as_slice() {
@@ -441,8 +441,9 @@ mod tests {
 
     #[test]
     fn test_diag() {
-        let v = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let result = diag(&v, 0).unwrap();
+        let v = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = diag(&v, 0).expect("test: diag should succeed");
         assert_eq!(result.shape().dims(), &[3, 3]);
 
         if let Some(data) = result.as_slice() {
@@ -455,9 +456,9 @@ mod tests {
     fn test_diagonal() {
         let matrix =
             Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
-                .unwrap();
+                .expect("test: operation should succeed");
 
-        let result = diagonal(&matrix, 0).unwrap();
+        let result = diagonal(&matrix, 0).expect("test: diagonal should succeed");
         if let Some(data) = result.as_slice() {
             assert_eq!(data, &[1.0, 5.0, 9.0]);
         }
@@ -465,17 +466,20 @@ mod tests {
 
     #[test]
     fn test_meshgrid() {
-        let x = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[3]).unwrap();
+        let x =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("test: from_vec should succeed");
+        let y = Tensor::<f32>::from_vec(vec![3.0, 4.0, 5.0], &[3])
+            .expect("test: from_vec should succeed");
 
-        let (xx, yy) = meshgrid(&x, &y, "xy").unwrap();
+        let (xx, yy) = meshgrid(&x, &y, "xy").expect("test: meshgrid should succeed");
         assert_eq!(xx.shape().dims(), &[3, 2]);
         assert_eq!(yy.shape().dims(), &[3, 2]);
     }
 
     #[test]
     fn test_fromfunction() {
-        let result = fromfunction(|indices| (indices[0] + indices[1]) as f32, &[2, 3]).unwrap();
+        let result = fromfunction(|indices| (indices[0] + indices[1]) as f32, &[2, 3])
+            .expect("test: operation should succeed");
         assert_eq!(result.shape().dims(), &[2, 3]);
 
         if let Some(data) = result.as_slice() {
@@ -485,13 +489,13 @@ mod tests {
 
     #[test]
     fn test_triu_tril() {
-        let upper = triu::<f32>(3, None, 0).unwrap();
+        let upper = triu::<f32>(3, None, 0).expect("test: operation should succeed");
         if let Some(data) = upper.as_slice() {
             let expected = &[1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
             assert_eq!(data, expected);
         }
 
-        let lower = tril::<f32>(3, None, 0).unwrap();
+        let lower = tril::<f32>(3, None, 0).expect("test: operation should succeed");
         if let Some(data) = lower.as_slice() {
             let expected = &[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0];
             assert_eq!(data, expected);

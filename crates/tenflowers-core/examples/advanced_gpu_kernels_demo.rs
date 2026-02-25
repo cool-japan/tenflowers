@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Advanced GPU Kernels Demonstration
 //!
 //! This example showcases the cutting-edge GPU optimization features in TenfloweRS,

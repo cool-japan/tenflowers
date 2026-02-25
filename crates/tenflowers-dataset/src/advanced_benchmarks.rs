@@ -875,9 +875,10 @@ mod tests {
 
     #[test]
     fn test_dataset_benchmark() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 

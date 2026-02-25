@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🔍 Performance Bottleneck Analysis and Remediation
 //!
 //! This analysis tool identifies specific bottlenecks in ultra_matmul performance

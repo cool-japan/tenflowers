@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🚀 Comprehensive Performance Analysis and Validation
 //!
 //! This analysis tool provides detailed performance validation of the

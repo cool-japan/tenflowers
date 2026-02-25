@@ -535,7 +535,7 @@ mod tests {
 
         // Shard into 3 workers with contiguous strategy
         let config = ShardConfig::new(3, 1)
-            .unwrap()
+            .expect("test: operation should succeed")
             .with_strategy(ShardStrategy::Contiguous);
         let sharded =
             ShardedDataset::new(dataset, config).expect("sharded dataset creation should succeed");
@@ -812,7 +812,8 @@ mod tests {
 
     #[test]
     fn test_stratified_sharding_deterministic() {
-        let features = Tensor::<f32>::from_vec(vec![1.0; 30], &[30, 1]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0; 30], &[30, 1])
+            .expect("test: tensor creation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![
                 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0,

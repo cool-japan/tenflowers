@@ -1094,7 +1094,7 @@ mod tests {
         let topology = UltraCacheOptimizer::detect_numa_topology();
         assert!(topology.is_ok());
 
-        let topology = topology.unwrap();
+        let topology = topology.expect("test: operation should succeed");
         assert!(topology.node_count > 0);
         assert!(!topology.cores_per_node.is_empty());
         assert!(!topology.memory_per_node.is_empty());
@@ -1103,12 +1103,12 @@ mod tests {
     #[test]
     fn test_memory_access_optimization() {
         let config = CacheOptimizerConfig::default();
-        let optimizer = UltraCacheOptimizer::new(config).unwrap();
+        let optimizer = UltraCacheOptimizer::new(config).expect("test: new should succeed");
 
         let result = optimizer.optimize_memory_access("matrix_multiply", 1024 * 1024, "sequential");
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: operation should succeed");
         assert!(!result.recommendations.is_empty());
         assert!(result.performance_impact.total_improvement > 0.0);
     }
@@ -1118,7 +1118,7 @@ mod tests {
         let analyzer = CacheHierarchyAnalyzer::new();
         assert!(analyzer.is_ok());
 
-        let analyzer = analyzer.unwrap();
+        let analyzer = analyzer.expect("test: operation should succeed");
         assert!(!analyzer.cache_levels.is_empty());
         assert_eq!(analyzer.cache_levels[0].level, 1);
         assert!(analyzer.cache_levels[0].size > 0);
@@ -1127,7 +1127,7 @@ mod tests {
     #[test]
     fn test_optimization_recommendations() {
         let config = CacheOptimizerConfig::default();
-        let optimizer = UltraCacheOptimizer::new(config).unwrap();
+        let optimizer = UltraCacheOptimizer::new(config).expect("test: new should succeed");
 
         let analysis = AccessPatternAnalysis {
             operation: "matrix_multiply".to_string(),
@@ -1143,7 +1143,7 @@ mod tests {
         let recommendations = optimizer.generate_optimization_recommendations(&analysis);
         assert!(recommendations.is_ok());
 
-        let recommendations = recommendations.unwrap();
+        let recommendations = recommendations.expect("test: operation should succeed");
         assert!(!recommendations.is_empty());
     }
 
@@ -1159,12 +1159,12 @@ mod tests {
     #[test]
     fn test_optimization_statistics() {
         let config = CacheOptimizerConfig::default();
-        let optimizer = UltraCacheOptimizer::new(config).unwrap();
+        let optimizer = UltraCacheOptimizer::new(config).expect("test: new should succeed");
 
         let stats = optimizer.get_optimization_statistics();
         assert!(stats.is_ok());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: operation should succeed");
         assert!(stats.overall_efficiency_score > 0.0);
         assert!(stats.cache_performance.l1_hit_rate > 0.0);
     }

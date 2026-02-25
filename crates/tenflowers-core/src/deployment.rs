@@ -575,7 +575,7 @@ mod tests {
         let result = freeze_graph_for_inference(&graph);
         assert!(result.is_ok());
 
-        let (frozen_graph, stats) = result.unwrap();
+        let (frozen_graph, stats) = result.expect("test: operation should succeed");
         assert_eq!(stats.nodes_before, 0);
         assert_eq!(stats.nodes_after, 0);
     }

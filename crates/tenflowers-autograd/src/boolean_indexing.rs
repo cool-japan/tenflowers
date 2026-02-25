@@ -505,13 +505,16 @@ mod tests {
         let input_shape = [5];
 
         // Create mask [true, false, true, false, true]
-        let mask = Tensor::from_vec(vec![true, false, true, false, true], &[5]).unwrap();
+        let mask = Tensor::from_vec(vec![true, false, true, false, true], &[5])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Create gradient output for 3 selected elements
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Compute backward pass
-        let grad_input = boolean_mask_backward(&grad_output, &mask, &input_shape).unwrap();
+        let grad_input = boolean_mask_backward(&grad_output, &mask, &input_shape)
+            .expect("test: gradient computation should succeed");
 
         // Check result
         if let Some(data) = grad_input.as_slice() {
@@ -524,18 +527,20 @@ mod tests {
     #[test]
     fn test_where_backward() {
         // Create condition [true, false, true]
-        let condition = Tensor::from_vec(vec![true, false, true], &[3]).unwrap();
+        let condition = Tensor::from_vec(vec![true, false, true], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Create gradient output
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Shapes for x and z
         let x_shape = [3];
         let z_shape = [3];
 
         // Compute backward pass
-        let (grad_x, grad_z) =
-            where_backward(&grad_output, &condition, &x_shape, &z_shape).unwrap();
+        let (grad_x, grad_z) = where_backward(&grad_output, &condition, &x_shape, &z_shape)
+            .expect("test: gradient computation should succeed");
 
         // Check results
         if let (Some(x_data), Some(z_data)) = (grad_x.as_slice(), grad_z.as_slice()) {
@@ -549,17 +554,19 @@ mod tests {
     #[test]
     fn test_integer_array_indexing_backward() {
         // Create indices [0, 2, 1, 2] - note duplicate index 2
-        let indices = Tensor::from_vec(vec![0i64, 2, 1, 2], &[4]).unwrap();
+        let indices = Tensor::from_vec(vec![0i64, 2, 1, 2], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Create gradient output
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Input shape [3]
         let input_shape = [3];
 
         // Compute backward pass
-        let grad_input =
-            integer_array_indexing_backward(&grad_output, &indices, &input_shape, 0).unwrap();
+        let grad_input = integer_array_indexing_backward(&grad_output, &indices, &input_shape, 0)
+            .expect("test: gradient computation should succeed");
 
         // Check result - index 2 should accumulate gradients 2.0 + 4.0 = 6.0
         if let Some(data) = grad_input.as_slice() {

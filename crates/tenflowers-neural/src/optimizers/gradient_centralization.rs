@@ -287,20 +287,24 @@ mod tests {
 
     #[test]
     fn test_apply_gc_small_tensor() {
-        let gradient = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
+        let gradient = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
         let config = GradientCentralizationConfig::default();
 
         // Should skip small tensors (< min_elements)
-        let result = apply_gradient_centralization(&gradient, &config).unwrap();
+        let result = apply_gradient_centralization(&gradient, &config)
+            .expect("test: result should be valid");
         assert_eq!(gradient.as_slice(), result.as_slice());
     }
 
     #[test]
     fn test_apply_gc_1d_tensor() {
-        let gradient = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
+        let gradient = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test: tensor creation should succeed");
         let config = GradientCentralizationConfig::default();
 
-        let result = apply_gradient_centralization(&gradient, &config).unwrap();
+        let result = apply_gradient_centralization(&gradient, &config)
+            .expect("test: result should be valid");
 
         // Mean should be 3.0, so result should be [-2, -1, 0, 1, 2]
         if let Some(data) = result.as_slice() {
@@ -313,11 +317,12 @@ mod tests {
 
     #[test]
     fn test_apply_gc_2d_tensor() {
-        let gradient =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+        let gradient = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation should succeed");
         let config = GradientCentralizationConfig::default();
 
-        let result = apply_gradient_centralization(&gradient, &config).unwrap();
+        let result = apply_gradient_centralization(&gradient, &config)
+            .expect("test: result should be valid");
 
         // Should be centered (mean = 3.5)
         if let Some(data) = result.as_slice() {
@@ -336,10 +341,11 @@ mod tests {
             ], // Second output channel
             &[2, 2, 2, 2],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let config = GradientCentralizationConfig::default();
-        let result = apply_gradient_centralization(&gradient, &config).unwrap();
+        let result = apply_gradient_centralization(&gradient, &config)
+            .expect("test: result should be valid");
 
         // Each output channel should be centered independently
         // This is a basic test to ensure the function doesn't crash
@@ -348,10 +354,11 @@ mod tests {
 
     #[test]
     fn test_gc_config_selective_application() {
-        let gradient_2d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let gradient_2d = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
         let gradient_4d =
             Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 1, 2])
-                .unwrap();
+                .expect("test: operation should succeed");
 
         // Config that only applies to dense layers
         let config = GradientCentralizationConfig {
@@ -362,11 +369,13 @@ mod tests {
         };
 
         // Should apply to 2D (dense) tensor
-        let result_2d = apply_gradient_centralization(&gradient_2d, &config).unwrap();
+        let result_2d = apply_gradient_centralization(&gradient_2d, &config)
+            .expect("test: apply should succeed");
         assert_ne!(gradient_2d.as_slice(), result_2d.as_slice()); // Should be modified
 
         // Should not apply to 4D (conv) tensor
-        let result_4d = apply_gradient_centralization(&gradient_4d, &config).unwrap();
+        let result_4d = apply_gradient_centralization(&gradient_4d, &config)
+            .expect("test: apply should succeed");
         assert_eq!(gradient_4d.as_slice(), result_4d.as_slice()); // Should be unchanged
     }
 
@@ -404,16 +413,16 @@ mod tests {
     #[test]
     fn test_numerical_stability() {
         // Test with very small values
-        let gradient =
-            Tensor::<f32>::from_vec(vec![1e-10, 2e-10, 3e-10, 4e-10, 5e-10], &[5]).unwrap();
+        let gradient = Tensor::<f32>::from_vec(vec![1e-10, 2e-10, 3e-10, 4e-10, 5e-10], &[5])
+            .expect("test: tensor creation should succeed");
         let config = GradientCentralizationConfig::default();
 
         let result = apply_gradient_centralization(&gradient, &config);
         assert!(result.is_ok());
 
         // Test with very large values
-        let gradient_large =
-            Tensor::<f32>::from_vec(vec![1e10, 2e10, 3e10, 4e10, 5e10], &[5]).unwrap();
+        let gradient_large = Tensor::<f32>::from_vec(vec![1e10, 2e10, 3e10, 4e10, 5e10], &[5])
+            .expect("test: tensor creation should succeed");
 
         let result_large = apply_gradient_centralization(&gradient_large, &config);
         assert!(result_large.is_ok());

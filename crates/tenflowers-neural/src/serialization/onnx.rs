@@ -688,11 +688,11 @@ mod tests {
     #[test]
     fn test_onnx_data_type_from_code() {
         assert_eq!(
-            OnnxDataType::from_type_code(1).unwrap(),
+            OnnxDataType::from_type_code(1).expect("test: operation should succeed"),
             OnnxDataType::Float32
         );
         assert_eq!(
-            OnnxDataType::from_type_code(11).unwrap(),
+            OnnxDataType::from_type_code(11).expect("test: operation should succeed"),
             OnnxDataType::Float64
         );
         assert!(OnnxDataType::from_type_code(999).is_err());

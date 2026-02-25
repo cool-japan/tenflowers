@@ -807,7 +807,9 @@ mod tests {
         let config = BenchmarkConfig::image_classification(4, vec![3, 32, 32], 10);
         let benchmark = ModelBenchmark::<f32>::new(config);
 
-        let (input, target) = benchmark.generate_synthetic_data().unwrap();
+        let (input, target) = benchmark
+            .generate_synthetic_data()
+            .expect("test: operation should succeed");
 
         // Check input shape: [batch_size, channels, height, width]
         assert_eq!(input.shape().dims(), &[4, 3, 32, 32]);
@@ -844,7 +846,7 @@ mod tests {
 
         let results = benchmark
             .calculate_statistics(measurements, "TestModel".to_string())
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(results.model_name, "TestModel");
         assert_eq!(results.avg_metrics.forward_time_ms, 11.0);

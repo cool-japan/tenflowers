@@ -27,7 +27,7 @@
 //! reporter.snapshot("after_optimization");
 //!
 //! // Generate diff report
-//! let diff = reporter.diff("before_optimization", "after_optimization").unwrap();
+//! let diff = reporter.diff("before_optimization", "after_optimization").expect("report generation should succeed");
 //! println!("{}", diff.format_report());
 //! ```
 
@@ -495,8 +495,20 @@ mod tests {
         snapshot.add_layer_memory("layer1", 2048);
 
         assert_eq!(snapshot.total_allocated, 3072);
-        assert_eq!(*snapshot.operation_memory.get("op1").unwrap(), 1024);
-        assert_eq!(*snapshot.layer_memory.get("layer1").unwrap(), 2048);
+        assert_eq!(
+            *snapshot
+                .operation_memory
+                .get("op1")
+                .expect("test: memory operation should succeed"),
+            1024
+        );
+        assert_eq!(
+            *snapshot
+                .layer_memory
+                .get("layer1")
+                .expect("test: memory operation should succeed"),
+            2048
+        );
     }
 
     #[test]
@@ -529,7 +541,9 @@ mod tests {
         reporter.snapshot_with("before", snapshot1);
         reporter.snapshot_with("after", snapshot2);
 
-        let diff = reporter.diff("before", "after").unwrap();
+        let diff = reporter
+            .diff("before", "after")
+            .expect("test: report generation should succeed");
         assert!(diff.is_improvement());
         assert_eq!(diff.memory_savings(), 512);
     }

@@ -490,7 +490,8 @@ mod tests {
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         let expected = 55.0;
 
-        let result = ReductionOps::reduce_sum_f32_optimized(&input).unwrap();
+        let result = ReductionOps::reduce_sum_f32_optimized(&input)
+            .expect("test: reduce_sum_f32_optimized should succeed");
 
         assert_relative_eq!(result, expected, epsilon = 1e-6);
     }
@@ -510,7 +511,8 @@ mod tests {
         let input = vec![3.0, 1.0, 7.0, 2.0, 9.0, 4.0];
         let expected = (1.0, 9.0);
 
-        let result = ReductionOps::reduce_min_max_f32_optimized(&input).unwrap();
+        let result = ReductionOps::reduce_min_max_f32_optimized(&input)
+            .expect("test: reduce_min_max_f32_optimized should succeed");
 
         assert_relative_eq!(result.0, expected.0, epsilon = 1e-6);
         assert_relative_eq!(result.1, expected.1, epsilon = 1e-6);
@@ -522,7 +524,8 @@ mod tests {
         let mut output = vec![0.0; 5];
         let eps = 1e-8;
 
-        ReductionOps::normalize_f32_optimized(&input, &mut output, eps).unwrap();
+        ReductionOps::normalize_f32_optimized(&input, &mut output, eps)
+            .expect("test: normalize_f32_optimized should succeed");
 
         // Check that normalized output has mean ≈ 0 and std ≈ 1
         let sum: f32 = output.iter().sum();
@@ -541,7 +544,8 @@ mod tests {
         let expected_mean = 5.0;
         let expected_variance = 20.0 / 3.0; // Sample variance
 
-        let (mean, variance) = ReductionOps::mean_variance_f32_optimized(&input).unwrap();
+        let (mean, variance) = ReductionOps::mean_variance_f32_optimized(&input)
+            .expect("test: mean_variance_f32_optimized should succeed");
 
         assert_relative_eq!(mean, expected_mean, epsilon = 1e-6);
         assert_relative_eq!(variance, expected_variance, epsilon = 1e-6);
@@ -552,7 +556,8 @@ mod tests {
         let input = vec![3.0, 4.0]; // 3-4-5 triangle
         let expected = 5.0;
 
-        let result = ReductionOps::l2_norm_f32_optimized(&input).unwrap();
+        let result = ReductionOps::l2_norm_f32_optimized(&input)
+            .expect("test: l2_norm_f32_optimized should succeed");
 
         assert_relative_eq!(result, expected, epsilon = 1e-6);
     }
@@ -562,7 +567,8 @@ mod tests {
         let input = vec![-2.0, 3.0, -4.0, 1.0];
         let expected = 10.0; // |−2| + |3| + |−4| + |1| = 10
 
-        let result = ReductionOps::l1_norm_f32_optimized(&input).unwrap();
+        let result = ReductionOps::l1_norm_f32_optimized(&input)
+            .expect("test: l1_norm_f32_optimized should succeed");
 
         assert_relative_eq!(result, expected, epsilon = 1e-6);
     }
@@ -572,7 +578,8 @@ mod tests {
         let input = vec![1.0, 5.0, 3.0, 9.0, 2.0];
         let expected = 3; // Index of maximum value (9.0)
 
-        let result = ReductionOps::argmax_f32_optimized(&input).unwrap();
+        let result = ReductionOps::argmax_f32_optimized(&input)
+            .expect("test: argmax_f32_optimized should succeed");
 
         assert_eq!(result, expected);
     }
@@ -582,7 +589,8 @@ mod tests {
         let input = vec![5.0, 1.0, 3.0, 9.0, 2.0];
         let expected = 1; // Index of minimum value (1.0)
 
-        let result = ReductionOps::argmin_f32_optimized(&input).unwrap();
+        let result = ReductionOps::argmin_f32_optimized(&input)
+            .expect("test: argmin_f32_optimized should succeed");
 
         assert_eq!(result, expected);
     }
@@ -592,7 +600,8 @@ mod tests {
         let empty: Vec<f32> = vec![];
 
         // Test operations that should handle empty arrays
-        let sum = ReductionOps::reduce_sum_f32_optimized(&empty).unwrap();
+        let sum = ReductionOps::reduce_sum_f32_optimized(&empty)
+            .expect("test: reduce_sum_f32_optimized should succeed");
         assert_relative_eq!(sum, 0.0, epsilon = 1e-6);
 
         // Test operations that should error on empty arrays
@@ -613,7 +622,8 @@ mod tests {
         let product_op = |acc: f32, x: f32| acc * x;
         let expected = 120.0; // 1 * 1 * 2 * 3 * 4 * 5 = 120
 
-        let result = ReductionOps::reduce_f32_optimized(&input, initial, product_op).unwrap();
+        let result = ReductionOps::reduce_f32_optimized(&input, initial, product_op)
+            .expect("test: reduce_f32_optimized should succeed");
 
         assert_relative_eq!(result, expected, epsilon = 1e-6);
     }

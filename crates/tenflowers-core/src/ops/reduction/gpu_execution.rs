@@ -7,11 +7,61 @@ use crate::gpu::buffer::GpuBuffer;
 use crate::{Device, Result, Shape, Tensor, TensorError};
 use wgpu::util::DeviceExt;
 
+/// Reduction operation type for GPU execution
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuReductionOp {
+    Sum,
+    Mean,
+    Max,
+    Min,
+    Product,
+    Variance,
+    ArgMax,
+    ArgMin,
+    All,
+    Any,
+}
+
+impl GpuReductionOp {
+    /// Get the WGSL shader entry point name for this operation
+    fn shader_entry_point(&self) -> &'static str {
+        match self {
+            Self::Sum => "sum_axis_reduction",
+            Self::Mean => "mean_axis_reduction",
+            Self::Max => "max_axis_reduction",
+            Self::Min => "min_axis_reduction",
+            Self::Product => "product_axis_reduction",
+            Self::Variance => "variance_axis_reduction",
+            Self::ArgMax => "argmax_axis_reduction",
+            Self::ArgMin => "argmin_axis_reduction",
+            Self::All => "all_axis_reduction",
+            Self::Any => "any_axis_reduction",
+        }
+    }
+
+    /// Get operation name for debugging
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Sum => "sum",
+            Self::Mean => "mean",
+            Self::Max => "max",
+            Self::Min => "min",
+            Self::Product => "product",
+            Self::Variance => "variance",
+            Self::ArgMax => "argmax",
+            Self::ArgMin => "argmin",
+            Self::All => "all",
+            Self::Any => "any",
+        }
+    }
+}
+
 /// Execute GPU reduction along an axis using WGSL shaders
 #[cfg(feature = "gpu")]
-pub fn execute_gpu_sum_reduction<T>(
+pub fn execute_gpu_reduction<T>(
     tensor: &Tensor<T>,
     axis: usize,
+    op: GpuReductionOp,
     keep_dims: bool,
 ) -> Result<Tensor<T>>
 where
@@ -52,7 +102,7 @@ where
 
     // Create output buffer
     let output_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("sum_reduction_output"),
+        label: Some(&format!("{}_reduction_output", op.name())),
         size: (output_size * std::mem::size_of::<T>()) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
@@ -61,7 +111,7 @@ where
     // Create metadata buffer
     let input_rank = shape.rank() as u32;
     let num_axes = 1u32; // Single axis reduction
-    let mut metadata = vec![
+    let metadata = vec![
         input_size as u32,
         output_size as u32,
         input_rank,
@@ -72,7 +122,7 @@ where
     let metadata_buffer = ctx
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sum_reduction_metadata"),
+            label: Some(&format!("{}_reduction_metadata", op.name())),
             contents: bytemuck::cast_slice(&metadata),
             usage: wgpu::BufferUsages::STORAGE,
         });
@@ -107,7 +157,7 @@ where
     let shader_module = ctx
         .device
         .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("sum_reduction_shader"),
+            label: Some(&format!("{}_reduction_shader", op.name())),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
                 "../../gpu/shaders/reduction_ops.wgsl"
             ))),
@@ -117,7 +167,7 @@ where
     let bind_group_layout = ctx
         .device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("sum_reduction_bind_group_layout"),
+            label: Some(&format!("{}_reduction_bind_group_layout", op.name())),
             entries: &[
                 // Input buffer
                 wgpu::BindGroupLayoutEntry {
@@ -179,7 +229,7 @@ where
 
     // Create bind group
     let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("sum_reduction_bind_group"),
+        label: Some(&format!("{}_reduction_bind_group", op.name())),
         layout: &bind_group_layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -209,7 +259,7 @@ where
     let pipeline_layout = ctx
         .device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("sum_reduction_pipeline_layout"),
+            label: Some(&format!("{}_reduction_pipeline_layout", op.name())),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
@@ -217,10 +267,10 @@ where
     let pipeline = ctx
         .device
         .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("sum_reduction_pipeline"),
+            label: Some(&format!("{}_reduction_pipeline", op.name())),
             layout: Some(&pipeline_layout),
             module: &shader_module,
-            entry_point: Some("sum_axis_reduction"),
+            entry_point: Some(op.shader_entry_point()),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -229,12 +279,12 @@ where
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("sum_reduction_encoder"),
+            label: Some(&format!("{}_reduction_encoder", op.name())),
         });
 
     {
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("sum_reduction_pass"),
+            label: Some(&format!("{}_reduction_pass", op.name())),
             timestamp_writes: None,
         });
 
@@ -269,6 +319,139 @@ where
     Ok(Tensor::from_gpu_buffer(result_buffer, result_shape))
 }
 
+/// Convenience function for GPU sum reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_sum_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Sum, keep_dims)
+}
+
+/// Convenience function for GPU mean reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_mean_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Mean, keep_dims)
+}
+
+/// Convenience function for GPU max reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_max_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Max, keep_dims)
+}
+
+/// Convenience function for GPU min reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_min_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Min, keep_dims)
+}
+
+/// Convenience function for GPU product reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_product_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Product, keep_dims)
+}
+
+/// Convenience function for GPU variance reduction
+#[cfg(feature = "gpu")]
+pub fn execute_gpu_variance_reduction<T>(
+    tensor: &Tensor<T>,
+    axis: usize,
+    keep_dims: bool,
+) -> Result<Tensor<T>>
+where
+    T: scirs2_core::num_traits::Float
+        + Default
+        + bytemuck::Pod
+        + Send
+        + Sync
+        + 'static
+        + scirs2_core::num_traits::FromPrimitive,
+{
+    execute_gpu_reduction(tensor, axis, GpuReductionOp::Variance, keep_dims)
+}
+
+/// Convert gpu_kernels::ReductionOp to GpuReductionOp
+impl From<super::gpu_kernels::ReductionOp> for GpuReductionOp {
+    fn from(op: super::gpu_kernels::ReductionOp) -> Self {
+        match op {
+            super::gpu_kernels::ReductionOp::Sum => Self::Sum,
+            super::gpu_kernels::ReductionOp::Mean => Self::Mean,
+            super::gpu_kernels::ReductionOp::Max => Self::Max,
+            super::gpu_kernels::ReductionOp::Min => Self::Min,
+            super::gpu_kernels::ReductionOp::Prod => Self::Product,
+            super::gpu_kernels::ReductionOp::Variance => Self::Variance,
+            super::gpu_kernels::ReductionOp::StdDev => Self::Variance, // StdDev uses variance then sqrt
+            super::gpu_kernels::ReductionOp::L1Norm => Self::Sum,      // L1 is sum of abs values
+            super::gpu_kernels::ReductionOp::L2Norm => Self::Sum, // L2 is sqrt of sum of squares
+            super::gpu_kernels::ReductionOp::Any => Self::Any,
+            super::gpu_kernels::ReductionOp::All => Self::All,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,13 +465,46 @@ mod tests {
         let num_axes = 1u32;
         let axis = 1u32;
 
-        let metadata = vec![input_size, output_size, input_rank, num_axes, axis];
+        let metadata = [input_size, output_size, input_rank, num_axes, axis];
 
         assert_eq!(metadata[0], 100);
         assert_eq!(metadata[1], 10);
         assert_eq!(metadata[2], 2);
         assert_eq!(metadata[3], 1);
         assert_eq!(metadata[4], 1);
+    }
+
+    #[test]
+    fn test_gpu_reduction_op_shader_entry_points() {
+        assert_eq!(
+            GpuReductionOp::Sum.shader_entry_point(),
+            "sum_axis_reduction"
+        );
+        assert_eq!(
+            GpuReductionOp::Mean.shader_entry_point(),
+            "mean_axis_reduction"
+        );
+        assert_eq!(
+            GpuReductionOp::Max.shader_entry_point(),
+            "max_axis_reduction"
+        );
+        assert_eq!(
+            GpuReductionOp::Min.shader_entry_point(),
+            "min_axis_reduction"
+        );
+    }
+
+    #[test]
+    fn test_gpu_reduction_op_from_conversion() {
+        use super::super::gpu_kernels::ReductionOp;
+
+        assert_eq!(GpuReductionOp::from(ReductionOp::Sum), GpuReductionOp::Sum);
+        assert_eq!(
+            GpuReductionOp::from(ReductionOp::Mean),
+            GpuReductionOp::Mean
+        );
+        assert_eq!(GpuReductionOp::from(ReductionOp::Max), GpuReductionOp::Max);
+        assert_eq!(GpuReductionOp::from(ReductionOp::Min), GpuReductionOp::Min);
     }
 
     // Note: Async GPU tests require runtime and proper GPU initialization

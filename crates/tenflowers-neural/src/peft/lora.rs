@@ -337,7 +337,8 @@ mod tests {
     #[test]
     fn test_lora_adapter_creation() {
         let config = LoRAConfig::new(4, 8.0);
-        let adapter: LoRAAdapter<f32> = LoRAAdapter::new(100, 50, config).unwrap();
+        let adapter: LoRAAdapter<f32> =
+            LoRAAdapter::new(100, 50, config).expect("test: LoRAAdapter creation should succeed");
 
         // Check matrix shapes
         assert_eq!(adapter.a_matrix().shape().dims(), &[100, 4]);
@@ -350,7 +351,8 @@ mod tests {
     #[test]
     fn test_lora_dense_creation() {
         let config = LoRAConfig::new(8, 16.0);
-        let lora_dense: LoRADense<f32> = LoRADense::new_lora_dense(128, 64, config, true).unwrap();
+        let lora_dense: LoRADense<f32> = LoRADense::new_lora_dense(128, 64, config, true)
+            .expect("test: operation should succeed");
 
         let stats = lora_dense.parameter_efficiency_stats();
 
@@ -365,21 +367,22 @@ mod tests {
     #[test]
     fn test_lora_forward_pass() {
         let config = LoRAConfig::new(4, 8.0);
-        let lora_dense: LoRADense<f32> = LoRADense::new_lora_dense(10, 5, config, false).unwrap();
+        let lora_dense: LoRADense<f32> = LoRADense::new_lora_dense(10, 5, config, false)
+            .expect("test: operation should succeed");
 
         let input = Tensor::ones(&[2, 10]); // Batch of 2, input dim 10
         let output = lora_dense.forward(&input);
 
         assert!(output.is_ok());
-        let output = output.unwrap();
+        let output = output.expect("test: operation should succeed");
         assert_eq!(output.shape().dims(), &[2, 5]); // Batch of 2, output dim 5
     }
 
     #[test]
     fn test_parameter_efficiency() {
         let config = LoRAConfig::new(8, 16.0);
-        let lora_dense: LoRADense<f32> =
-            LoRADense::new_lora_dense(1000, 1000, config, true).unwrap();
+        let lora_dense: LoRADense<f32> = LoRADense::new_lora_dense(1000, 1000, config, true)
+            .expect("test: operation should succeed");
 
         let stats = lora_dense.parameter_efficiency_stats();
         let summary = stats.summary();

@@ -342,8 +342,11 @@ mod tests {
         let mut stochastic_depth = StochasticDepth::new(test_layer, 0.5);
         stochastic_depth.set_training(false);
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let output = stochastic_depth.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let output = stochastic_depth
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         // In inference mode with survival_prob = 0.5, output should be input + 0.5 * (2 * input)
         // = input + input = 2 * input
@@ -360,8 +363,11 @@ mod tests {
         let mut stochastic_depth = StochasticDepth::new(test_layer, 0.0); // Never skip
         stochastic_depth.set_training(true);
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let output = stochastic_depth.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let output = stochastic_depth
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         // With drop_prob = 0.0, layer should always be applied with scale 1/1 = 1
         // Output should be input + 1 * (2 * input) = 3 * input
@@ -378,8 +384,11 @@ mod tests {
         let mut stochastic_depth = StochasticDepthNoResidual::new(test_layer, 0.5);
         stochastic_depth.set_training(false);
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let output = stochastic_depth.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let output = stochastic_depth
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         // In inference mode with survival_prob = 0.5, output should be 0.5 * (2 * input)
         if let Some(output_data) = output.as_slice() {
@@ -395,8 +404,11 @@ mod tests {
         let mut stochastic_depth = StochasticDepthNoResidual::new(test_layer, 0.0); // Never skip
         stochastic_depth.set_training(true);
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let output = stochastic_depth.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let output = stochastic_depth
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         // With drop_prob = 0.0, layer should always be applied with scale 1/1 = 1
         // Output should be 1 * (2 * input) = 2 * input

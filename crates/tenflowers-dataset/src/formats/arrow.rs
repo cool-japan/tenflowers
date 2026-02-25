@@ -982,7 +982,14 @@ mod tests {
             validate_schema: false,
         };
 
-        assert_eq!(config.feature_columns.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            config
+                .feature_columns
+                .as_ref()
+                .expect("test: value should be present")
+                .len(),
+            2
+        );
         assert_eq!(config.label_column, "target");
         assert_eq!(config.batch_size, 2048);
         assert!(!config.zero_copy);
@@ -1000,7 +1007,9 @@ mod tests {
         assert!(!view.is_empty());
         assert!(view.is_contiguous());
 
-        let tensor = view.to_tensor().unwrap();
+        let tensor = view
+            .to_tensor()
+            .expect("test: tensor conversion should succeed");
         assert_eq!(tensor.shape().dims(), &[2, 3]);
     }
 
@@ -1026,7 +1035,7 @@ mod tests {
         let data = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let view = ArrowTensorView::new(&data, vec![6]);
 
-        let slice = view.slice(1, 4).unwrap();
+        let slice = view.slice(1, 4).expect("test: slice should succeed");
         assert_eq!(slice.data(), &[2.0, 3.0, 4.0]);
         assert_eq!(slice.shape(), &[3]);
 
@@ -1041,12 +1050,16 @@ mod tests {
         let view = ArrowTensorView::new(&data, vec![6]);
 
         // Valid reshape
-        let reshaped = view.reshape(vec![2, 3]).unwrap();
+        let reshaped = view
+            .reshape(vec![2, 3])
+            .expect("test: reshape should succeed");
         assert_eq!(reshaped.shape(), &[2, 3]);
         assert_eq!(reshaped.data(), view.data());
 
         // Another valid reshape
-        let reshaped2 = view.reshape(vec![3, 2]).unwrap();
+        let reshaped2 = view
+            .reshape(vec![3, 2])
+            .expect("test: reshape should succeed");
         assert_eq!(reshaped2.shape(), &[3, 2]);
 
         // Invalid reshape (wrong total elements)
@@ -1063,7 +1076,9 @@ mod tests {
         assert_eq!(view.strides(), &[3, 1]);
 
         // Reshape and check new strides
-        let reshaped = view.reshape(vec![3, 2]).unwrap();
+        let reshaped = view
+            .reshape(vec![3, 2])
+            .expect("test: reshape should succeed");
         assert_eq!(reshaped.strides(), &[2, 1]);
     }
 

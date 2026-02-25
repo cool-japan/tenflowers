@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🚀 Ultra-MatMul V3 Demonstration: Building Upon Excellence
 //!
 //! This demo showcases the V3 approach that achieves ultra-performance

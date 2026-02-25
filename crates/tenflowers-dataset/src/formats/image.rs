@@ -633,14 +633,14 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_dataset_structure() -> (TempDir, PathBuf) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let root_path = temp_dir.path().to_path_buf();
 
         // Create class directories
         let class_a_dir = root_path.join("class_a");
         let class_b_dir = root_path.join("class_b");
-        fs::create_dir_all(&class_a_dir).unwrap();
-        fs::create_dir_all(&class_b_dir).unwrap();
+        fs::create_dir_all(&class_a_dir).expect("test: directory creation should succeed");
+        fs::create_dir_all(&class_b_dir).expect("test: directory creation should succeed");
 
         // Create dummy image files
         let files = [
@@ -651,8 +651,9 @@ mod tests {
         ];
 
         for file_path in &files {
-            let mut file = fs::File::create(file_path).unwrap();
-            file.write_all(b"dummy image data").unwrap();
+            let mut file = fs::File::create(file_path).expect("test: file creation should succeed");
+            file.write_all(b"dummy image data")
+                .expect("test: write should succeed");
         }
 
         (temp_dir, root_path)
@@ -661,7 +662,8 @@ mod tests {
     #[test]
     fn test_image_folder_dataset_creation() {
         let (_temp_dir, root_path) = create_test_dataset_structure();
-        let dataset = ImageFolderDataset::<f32>::new(&root_path).unwrap();
+        let dataset = ImageFolderDataset::<f32>::new(&root_path)
+            .expect("test: image folder dataset creation should succeed");
 
         assert_eq!(dataset.len(), 4);
         assert_eq!(dataset.num_classes(), 2);
@@ -679,7 +681,7 @@ mod tests {
             .extensions(vec!["jpg".to_string(), "png".to_string()])
             .max_images(2)
             .build()
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 2);
     }

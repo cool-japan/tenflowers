@@ -777,8 +777,8 @@ mod tests {
             ema_low.add(val);
         }
 
-        let high_val = ema_high.value().unwrap();
-        let low_val = ema_low.value().unwrap();
+        let high_val = ema_high.value().expect("test: operation should succeed");
+        let low_val = ema_low.value().expect("test: operation should succeed");
 
         // High alpha responds more to recent values
         assert!(high_val > low_val);
@@ -787,7 +787,7 @@ mod tests {
     #[test]
     fn test_metric_statistics() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let stats = MetricStatistics::from_values(&values).unwrap();
+        let stats = MetricStatistics::from_values(&values).expect("test: operation should succeed");
 
         assert_eq!(stats.count, 10);
         assert!((stats.mean - 5.5).abs() < 0.01);
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn test_iqr_calculation() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let stats = MetricStatistics::from_values(&values).unwrap();
+        let stats = MetricStatistics::from_values(&values).expect("test: operation should succeed");
 
         let iqr = stats.iqr();
         assert!(iqr > 0.0);
@@ -815,7 +815,7 @@ mod tests {
     #[test]
     fn test_outlier_detection() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 100.0]; // 100 is outlier
-        let stats = MetricStatistics::from_values(&values).unwrap();
+        let stats = MetricStatistics::from_values(&values).expect("test: operation should succeed");
 
         assert!(stats.is_outlier(100.0));
         assert!(!stats.is_outlier(5.0));
@@ -824,11 +824,12 @@ mod tests {
     #[test]
     fn test_coefficient_of_variation() {
         let values = vec![10.0, 10.0, 10.0];
-        let stats = MetricStatistics::from_values(&values).unwrap();
+        let stats = MetricStatistics::from_values(&values).expect("test: operation should succeed");
         assert!((stats.coefficient_of_variation()).abs() < 0.01); // Should be near 0
 
         let values2 = vec![1.0, 5.0, 10.0];
-        let stats2 = MetricStatistics::from_values(&values2).unwrap();
+        let stats2 =
+            MetricStatistics::from_values(&values2).expect("test: operation should succeed");
         assert!(stats2.coefficient_of_variation() > 0.0);
     }
 
@@ -900,7 +901,7 @@ mod tests {
         agg.add(2.0);
         agg.add(3.0);
 
-        let stats = agg.statistics().unwrap();
+        let stats = agg.statistics().expect("test: operation should succeed");
         assert_eq!(stats.count, 3);
         assert_eq!(stats.mean, 2.0);
     }

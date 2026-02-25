@@ -671,7 +671,7 @@ mod tests {
         let config = AudioConfig::default();
         assert_eq!(config.sample_rate, 16000);
         assert_eq!(config.feature_type, FeatureType::Raw);
-        assert_eq!(config.normalize, true);
+        assert!(config.normalize);
         assert_eq!(config.n_mfcc, 13);
         assert_eq!(config.n_mels, 80);
     }
@@ -689,7 +689,7 @@ mod tests {
         assert_eq!(config.max_duration, Some(5.0));
         assert_eq!(config.feature_type, FeatureType::MFCC);
         assert_eq!(config.n_mfcc, 20);
-        assert_eq!(config.normalize, false);
+        assert!(!config.normalize);
     }
 
     #[test]

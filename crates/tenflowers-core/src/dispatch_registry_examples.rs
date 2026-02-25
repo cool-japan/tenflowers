@@ -541,7 +541,9 @@ mod tests {
         initialize_dispatch_registrations();
 
         let input = Tensor::from_array(array![-1.0f32, 2.0, -3.0, 4.0].into_dyn());
-        let result = F32_REGISTRY.dispatch_unary("abs", &input).unwrap();
+        let result = F32_REGISTRY
+            .dispatch_unary("abs", &input)
+            .expect("test: dispatch_unary should succeed");
 
         assert_eq!(result.data(), &[1.0f32, 2.0, 3.0, 4.0]);
     }
@@ -552,7 +554,9 @@ mod tests {
 
         let a = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
         let b = Tensor::from_array(array![4.0f32, 5.0, 6.0].into_dyn());
-        let result = F32_REGISTRY.dispatch_binary("add", &a, &b).unwrap();
+        let result = F32_REGISTRY
+            .dispatch_binary("add", &a, &b)
+            .expect("test: dispatch_binary should succeed");
 
         assert_eq!(result.data(), &[5.0f32, 7.0, 9.0]);
     }

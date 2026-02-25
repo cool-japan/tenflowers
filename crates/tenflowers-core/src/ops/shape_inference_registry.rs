@@ -1140,7 +1140,10 @@ mod tests {
 
         let result = registry.infer("add", &[shape1, shape2], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 3]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 3]
+        );
     }
 
     #[test]
@@ -1152,7 +1155,10 @@ mod tests {
 
         let result = registry.infer("mul", &[shape1, shape2], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 4, 3]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 4, 3]
+        );
     }
 
     #[test]
@@ -1166,7 +1172,10 @@ mod tests {
 
         let result = registry.infer("matmul", &[shape1, shape2], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 4]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 4]
+        );
     }
 
     #[test]
@@ -1181,19 +1190,25 @@ mod tests {
 
         let result = registry.infer("sum", std::slice::from_ref(&shape), &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 4]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 4]
+        );
 
         // Reduce on axis 1, with keepdims
         metadata.insert("keepdims".to_string(), MetadataValue::Bool(true));
         let result = registry.infer("sum", std::slice::from_ref(&shape), &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 1, 4]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 1, 4]
+        );
 
         // Reduce all dimensions
         let metadata_all = HashMap::new();
         let result = registry.infer("mean", &[shape], &metadata_all);
         assert!(result.is_ok());
-        let result_shape = result.unwrap();
+        let result_shape = result.expect("test: operation should succeed");
         assert_eq!(result_shape.dims().len(), 0); // Scalar shape has no dimensions
     }
 
@@ -1206,7 +1221,10 @@ mod tests {
 
         let result = registry.infer("reshape", &[shape], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[6, 4]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[6, 4]
+        );
     }
 
     #[test]
@@ -1218,7 +1236,10 @@ mod tests {
 
         let result = registry.infer("reshape", &[shape], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[6, 4]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[6, 4]
+        );
     }
 
     #[test]
@@ -1229,7 +1250,10 @@ mod tests {
 
         let result = registry.infer("transpose", &[shape], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 4, 3]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 4, 3]
+        );
     }
 
     #[test]
@@ -1243,7 +1267,10 @@ mod tests {
 
         let result = registry.infer("concat", &[shape1, shape2, shape3], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[2, 12]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[2, 12]
+        );
     }
 
     #[test]
@@ -1257,7 +1284,10 @@ mod tests {
 
         let result = registry.infer("stack", &[shape1, shape2, shape3], &metadata);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().dims(), &[3, 2, 3]);
+        assert_eq!(
+            result.expect("test: operation should succeed").dims(),
+            &[3, 2, 3]
+        );
     }
 
     #[test]

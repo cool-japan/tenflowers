@@ -789,8 +789,10 @@ mod tests {
 
     #[test]
     fn test_access_pattern_analyzer() {
-        let mut config = PrefetchOptimizerConfig::default();
-        config.prediction_confidence_threshold = 0.5; // Lower threshold for testing
+        let config = PrefetchOptimizerConfig {
+            prediction_confidence_threshold: 0.5, // Lower threshold for testing
+            ..Default::default()
+        };
         let mut analyzer = AccessPatternAnalyzer::new(config);
 
         // Record sequential access pattern (need enough data for pattern detection)
@@ -819,8 +821,8 @@ mod tests {
         let mut buffer: PrefetchBuffer<f32> = PrefetchBuffer::new(5);
 
         let sample_data = (
-            Tensor::from_vec(vec![1.0, 2.0], &[2]).unwrap(),
-            Tensor::from_vec(vec![0.0], &[1]).unwrap(),
+            Tensor::from_vec(vec![1.0, 2.0], &[2]).expect("test: tensor creation should succeed"),
+            Tensor::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed"),
         );
 
         let buffered_sample = BufferedSample {
@@ -835,7 +837,12 @@ mod tests {
 
         let retrieved = buffer.get_sample(0);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().access_count, 1);
+        assert_eq!(
+            retrieved
+                .expect("test: operation should succeed")
+                .access_count,
+            1
+        );
     }
 
     #[test]

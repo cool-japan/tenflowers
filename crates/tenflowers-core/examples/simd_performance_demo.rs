@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! SIMD Performance Optimization Demo
 //!
 //! This example demonstrates the performance improvements achieved through

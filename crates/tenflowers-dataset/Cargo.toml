@@ -10,12 +10,14 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Data pipeline and dataset utilities for TenfloweRS"
+documentation = "https://docs.rs/tenflowers-dataset"
+readme = "README.md"
 
 [lints]
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-beta.1" }
+tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-rc.1" }
 scirs2-core = { workspace = true, features = ["random"] }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -40,11 +42,11 @@ wgpu = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
-libc = { version = "0.2", optional = true }
+libc = { workspace = true, optional = true }
 uuid = { workspace = true }
 num_cpus = { workspace = true }
-toml = { version = "0.9" }
-serde_yaml = { version = "0.9", optional = true }
+toml = { workspace = true }
+serde_yaml = { workspace = true, optional = true }
 
 # Additional dependencies for distributed loading
 async-trait = { workspace = true, optional = true }

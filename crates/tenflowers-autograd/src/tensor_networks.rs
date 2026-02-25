@@ -937,7 +937,9 @@ mod tests {
         let optimizer = TensorNetworkOptimizer::new(ContractionStrategy::MemoryAware)
             .with_memory_limit(1000000); // 1MB limit
 
-        let path = optimizer.optimize_contraction(&network).unwrap();
+        let path = optimizer
+            .optimize_contraction(&network)
+            .expect("test: tensor network operation should succeed");
 
         assert!(!path.steps.is_empty());
         assert!(path.peak_memory <= 1000000 * 10); // More tolerance for memory estimates

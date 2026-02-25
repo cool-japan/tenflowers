@@ -15,24 +15,25 @@
 //!
 //! ## Usage Example
 //!
-//! ```rust,no_run
-//! # use tenflowers_core::gpu::metal_kernels::{MetalDevice, MetalKernelConfig};
-//! # use tenflowers_core::Tensor;
-//! # fn example() -> tenflowers_core::Result<()> {
-//! // Create Metal device
-//! let mut device = MetalDevice::new()?;
+//! ```rust,ignore
+//! use tenflowers_core::gpu::metal_kernels::{MetalDevice, MetalBenchmark};
+//! use tenflowers_core::Tensor;
 //!
-//! // Execute optimized matrix multiplication
-//! let a = Tensor::<f32>::zeros(&[512, 512])?;
-//! let b = Tensor::<f32>::zeros(&[512, 512])?;
-//! let result = device.matmul_mps(&a, &b)?;
+//! fn example() -> tenflowers_core::Result<()> {
+//!     // Create Metal device
+//!     let mut device = MetalDevice::new()?;
 //!
-//! // Benchmark performance
-//! let mut benchmark = MetalBenchmark::new()?;
-//! let results = benchmark.benchmark_matmul(&[(256, 256, 256), (512, 512, 512)])?;
-//! println!("{}", benchmark.generate_report());
-//! # Ok(())
-//! # }
+//!     // Execute optimized matrix multiplication
+//!     let a = Tensor::<f32>::zeros(&[512, 512]);
+//!     let b = Tensor::<f32>::zeros(&[512, 512]);
+//!     let result = device.matmul_mps(&a, &b)?;
+//!
+//!     // Benchmark performance
+//!     let mut benchmark = MetalBenchmark::new()?;
+//!     let results = benchmark.benchmark_matmul(&[(256, 256, 256), (512, 512, 512)])?;
+//!     println!("{}", benchmark.generate_report());
+//!     Ok(())
+//! }
 //! ```
 
 use crate::Result;

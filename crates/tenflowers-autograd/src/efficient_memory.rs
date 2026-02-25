@@ -512,10 +512,12 @@ mod tests {
         let tensor = Tensor::ones(&[2, 2]);
         checkpointer
             .store_checkpoint("test", tensor.clone(), 10.0)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert!(checkpointer.has_checkpoint("test"));
-        let retrieved = checkpointer.get_checkpoint("test").unwrap();
+        let retrieved = checkpointer
+            .get_checkpoint("test")
+            .expect("test: checkpoint operation should succeed");
 
         // Check shapes match
         assert_eq!(tensor.shape().dims(), retrieved.shape().dims());
@@ -527,11 +529,17 @@ mod tests {
 
         // Add some gradients
         for i in 0..10 {
-            let grad = Tensor::from_scalar(i as f32).broadcast_to(&[2, 2]).unwrap();
-            aggregator.add_gradient(grad).unwrap();
+            let grad = Tensor::from_scalar(i as f32)
+                .broadcast_to(&[2, 2])
+                .expect("test: gradient computation should succeed");
+            aggregator
+                .add_gradient(grad)
+                .expect("test: gradient computation should succeed");
         }
 
-        let final_grad = aggregator.finalize().unwrap();
+        let final_grad = aggregator
+            .finalize()
+            .expect("test: gradient computation should succeed");
         assert!(final_grad.is_some());
 
         let stats = aggregator.get_stats();

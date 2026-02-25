@@ -571,8 +571,9 @@ mod tests {
 
     #[test]
     fn test_version_manager_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = DatasetVersionManager::new(temp_dir.path()).unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let manager =
+            DatasetVersionManager::new(temp_dir.path()).expect("test: operation should succeed");
 
         assert!(temp_dir.path().exists());
         assert_eq!(manager.list_versions().len(), 0);
@@ -580,14 +581,17 @@ mod tests {
 
     #[test]
     fn test_create_and_load_snapshot() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manager = DatasetVersionManager::new(temp_dir.path()).unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let mut manager =
+            DatasetVersionManager::new(temp_dir.path()).expect("test: operation should succeed");
 
         // Create a simple test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0];
         let labels_data = vec![0.0, 1.0];
-        let features = Tensor::from_vec(features_data, &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[2]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[2, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[2]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Create snapshot
@@ -598,13 +602,15 @@ mod tests {
                 vec!["test".to_string()],
                 None,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert!(!version_id.is_empty());
         assert_eq!(manager.list_versions().len(), 1);
 
         // Load snapshot
-        let loaded_dataset = manager.load_snapshot::<f32>(&version_id).unwrap();
+        let loaded_dataset = manager
+            .load_snapshot::<f32>(&version_id)
+            .expect("test: operation should succeed");
         assert_eq!(loaded_dataset.len(), 2);
         assert_eq!(loaded_dataset.version_id(), &version_id);
 
@@ -612,19 +618,22 @@ mod tests {
         let (features, labels) = loaded_dataset.get(0).expect("index should be in bounds");
         let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[1.0, 2.0]);
-        assert_eq!(labels.get(&[]).unwrap(), 0.0);
+        assert_eq!(labels.get(&[]).expect("test: get should succeed"), 0.0);
     }
 
     #[test]
     fn test_lineage_tracking() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manager = DatasetVersionManager::new(temp_dir.path()).unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let mut manager =
+            DatasetVersionManager::new(temp_dir.path()).expect("test: operation should succeed");
 
         // Create initial dataset
         let features_data1 = vec![1.0, 2.0];
         let labels_data1 = vec![0.0];
-        let features1 = Tensor::from_vec(features_data1, &[1, 2]).unwrap();
-        let labels1 = Tensor::from_vec(labels_data1, &[1]).unwrap();
+        let features1 = Tensor::from_vec(features_data1, &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels1 =
+            Tensor::from_vec(labels_data1, &[1]).expect("test: tensor creation should succeed");
         let dataset1 = TensorDataset::new(features1, labels1);
 
         let version1 = manager
@@ -634,13 +643,15 @@ mod tests {
                 vec!["v1".to_string()],
                 None,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Create derived dataset
         let features_data2 = vec![2.0, 4.0];
         let labels_data2 = vec![1.0];
-        let features2 = Tensor::from_vec(features_data2, &[1, 2]).unwrap();
-        let labels2 = Tensor::from_vec(labels_data2, &[1]).unwrap();
+        let features2 = Tensor::from_vec(features_data2, &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels2 =
+            Tensor::from_vec(labels_data2, &[1]).expect("test: tensor creation should succeed");
         let dataset2 = TensorDataset::new(features2, labels2);
 
         let version2 = manager
@@ -650,7 +661,7 @@ mod tests {
                 vec!["v2".to_string()],
                 Some(version1.clone()),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Add transformation record
         let mut params = HashMap::new();
@@ -663,16 +674,20 @@ mod tests {
                 params,
                 "Scale features by 2".to_string(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Test lineage
-        let lineage = manager.get_lineage(&version2).unwrap();
+        let lineage = manager
+            .get_lineage(&version2)
+            .expect("test: operation should succeed");
         assert_eq!(lineage.source_versions, vec![version1.clone()]);
         assert_eq!(lineage.transformations.len(), 1);
         assert_eq!(lineage.transformations[0].transform_type, "scale");
 
         // Test lineage tree
-        let tree = manager.get_lineage_tree(&version1).unwrap();
+        let tree = manager
+            .get_lineage_tree(&version1)
+            .expect("test: operation should succeed");
         assert_eq!(tree.version.version_id, version1);
         assert_eq!(tree.children.len(), 1);
         assert_eq!(tree.children[0].version.version_id, version2);
@@ -680,14 +695,17 @@ mod tests {
 
     #[test]
     fn test_version_filtering() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manager = DatasetVersionManager::new(temp_dir.path()).unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let mut manager =
+            DatasetVersionManager::new(temp_dir.path()).expect("test: operation should succeed");
 
         // Create multiple versions with different tags
         let features_data = vec![1.0];
         let labels_data = vec![0.0];
-        let features = Tensor::from_vec(features_data, &[1, 1]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[1]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[1, 1]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[1]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let _version1 = manager
@@ -697,7 +715,7 @@ mod tests {
                 vec!["production".to_string()],
                 None,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let _version2 = manager
             .create_snapshot(
@@ -706,7 +724,7 @@ mod tests {
                 vec!["development".to_string()],
                 None,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let _version3 = manager
             .create_snapshot(
@@ -715,7 +733,7 @@ mod tests {
                 vec!["production".to_string(), "validated".to_string()],
                 None,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Test filtering by tag
         let prod_versions = manager.get_versions_by_tag("production");

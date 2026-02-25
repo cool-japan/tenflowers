@@ -690,8 +690,10 @@ mod tests {
 
     #[test]
     fn test_audio_config_validation() {
-        let mut config = AudioConfig::default();
-        config.sample_rate = 0;
+        let mut config = AudioConfig {
+            sample_rate: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
         config.sample_rate = 44100;

@@ -666,33 +666,33 @@ mod tests {
         let layer = UltraDense::<f32>::new(10, 5, true);
         assert!(layer.is_ok());
 
-        let layer = layer.unwrap();
+        let layer = layer.expect("test: operation should succeed");
         assert_eq!(layer.weight.shape().dims(), &[10, 5]);
         assert!(layer.bias.is_some());
-        assert_eq!(layer.bias.as_ref().unwrap().shape().dims(), &[5]);
+        assert_eq!(layer.bias.as_ref().expect("test: bias should exist").shape().dims(), &[5]);
     }
 
     #[test]
     fn test_ultra_dense_forward() {
-        let layer = UltraDense::<f32>::new(4, 3, true).unwrap();
+        let layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
         let input = Tensor::<f32>::ones(&[2, 4]);
 
         let result = layer.forward(&input);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         assert_eq!(output.shape().dims(), &[2, 3]);
     }
 
     #[test]
     fn test_ultra_dense_forward_ultra() {
-        let layer = UltraDense::<f32>::new(4, 3, true).unwrap();
+        let layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
         let input = Tensor::<f32>::ones(&[2, 4]);
 
         let result = layer.forward_ultra(&input);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: result should be valid");
         assert_eq!(result.output.shape().dims(), &[2, 3]);
         assert!(result.metrics.forward_time.as_nanos() > 0);
     }
@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn test_ultra_dense_with_activation() {
         let layer = UltraDense::<f32>::new(4, 3, true)
-            .unwrap()
+            .expect("test: operation should succeed")
             .with_activation("relu");
 
         let input = Tensor::<f32>::ones(&[2, 4]);
@@ -713,7 +713,7 @@ mod tests {
         let layer = UltraDense::<f32>::new_he(10, 5, true);
         assert!(layer.is_ok());
 
-        let layer = layer.unwrap();
+        let layer = layer.expect("test: operation should succeed");
         assert_eq!(layer.weight.shape().dims(), &[10, 5]);
     }
 
@@ -722,7 +722,7 @@ mod tests {
         let layer = UltraDense::<f32>::new_xavier(10, 5, true);
         assert!(layer.is_ok());
 
-        let layer = layer.unwrap();
+        let layer = layer.expect("test: operation should succeed");
         assert_eq!(layer.weight.shape().dims(), &[10, 5]);
     }
 
@@ -740,17 +740,17 @@ mod tests {
 
     #[test]
     fn test_ultra_dense_performance_metrics() {
-        let layer = UltraDense::<f32>::new(4, 3, true).unwrap();
+        let layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
         let input = Tensor::<f32>::ones(&[2, 4]);
 
-        let _result = layer.forward(&input).unwrap();
+        let _result = layer.forward(&input).expect("test: forward pass should succeed");
         let metrics = layer.get_performance_metrics();
         assert!(metrics.is_ok());
     }
 
     #[test]
     fn test_layer_trait_implementation() {
-        let mut layer = UltraDense::<f32>::new(4, 3, true).unwrap();
+        let mut layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
 
         // Test parameters
         let params = layer.parameters();

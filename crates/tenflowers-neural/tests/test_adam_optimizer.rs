@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use std::collections::HashMap;
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::{

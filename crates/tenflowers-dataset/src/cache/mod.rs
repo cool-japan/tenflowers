@@ -75,9 +75,10 @@ mod tests {
 
     #[test]
     fn test_cached_dataset() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let cached_dataset = dataset.cached(2);
@@ -92,7 +93,9 @@ mod tests {
         let (features2, _label2) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features2.shape().dims(), &[2]);
 
-        let stats = cached_dataset.cache_stats().unwrap();
+        let stats = cached_dataset
+            .cache_stats()
+            .expect("test: cache stats should succeed");
         assert_eq!(stats.total_requests, 2);
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.misses, 1);
@@ -102,19 +105,23 @@ mod tests {
     #[test]
     fn test_cache_warming_sequential() {
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0, 40.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0, 40.0], &[4])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let cached_dataset = dataset
             .cached_with_warming(4, WarmingStrategy::Sequential { start: 0, count: 2 })
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // These should be cache hits since we pre-warmed indices 0 and 1
         let _ = cached_dataset.get(0).expect("index should be in bounds");
         let _ = cached_dataset.get(1).expect("index should be in bounds");
 
-        let stats = cached_dataset.cache_stats().unwrap();
+        let stats = cached_dataset
+            .cache_stats()
+            .expect("test: cache stats should succeed");
         assert!(stats.hits >= 2);
     }
 
@@ -152,18 +159,31 @@ mod tests {
         let cache_dir = env::temp_dir().join("test_persistent_cache");
         let _ = std::fs::remove_dir_all(&cache_dir); // Clean up if exists
 
-        let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 2).unwrap();
+        let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 2)
+            .expect("test: persistent cache creation should succeed");
 
         // Test insertion and retrieval
-        cache.insert(0, "value0".to_string()).unwrap();
-        cache.insert(1, "value1".to_string()).unwrap();
+        cache
+            .insert(0, "value0".to_string())
+            .expect("test: insert should succeed");
+        cache
+            .insert(1, "value1".to_string())
+            .expect("test: insert should succeed");
 
-        assert_eq!(cache.get(&0).unwrap(), Some("value0".to_string()));
-        assert_eq!(cache.get(&1).unwrap(), Some("value1".to_string()));
+        assert_eq!(
+            cache.get(&0).expect("test: get should succeed"),
+            Some("value0".to_string())
+        );
+        assert_eq!(
+            cache.get(&1).expect("test: get should succeed"),
+            Some("value1".to_string())
+        );
         assert_eq!(cache.len(), 2);
 
         // Test eviction
-        cache.insert(2, "value2".to_string()).unwrap();
+        cache
+            .insert(2, "value2".to_string())
+            .expect("test: insert should succeed");
         assert_eq!(cache.len(), 2);
 
         // Clean up
@@ -180,20 +200,26 @@ mod tests {
 
         // Create cache and add some data
         {
-            let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 3).unwrap();
-            cache.insert(0, "persistent_value0".to_string()).unwrap();
-            cache.insert(1, "persistent_value1".to_string()).unwrap();
+            let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 3)
+                .expect("test: persistent cache creation should succeed");
+            cache
+                .insert(0, "persistent_value0".to_string())
+                .expect("test: insert should succeed");
+            cache
+                .insert(1, "persistent_value1".to_string())
+                .expect("test: insert should succeed");
         }
 
         // Create new cache instance and verify data persists
         {
-            let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 3).unwrap();
+            let mut cache = PersistentCache::<usize, String>::new(&cache_dir, 3)
+                .expect("test: persistent cache creation should succeed");
             assert_eq!(
-                cache.get(&0).unwrap(),
+                cache.get(&0).expect("test: get should succeed"),
                 Some("persistent_value0".to_string())
             );
             assert_eq!(
-                cache.get(&1).unwrap(),
+                cache.get(&1).expect("test: get should succeed"),
                 Some("persistent_value1".to_string())
             );
         }
@@ -210,11 +236,14 @@ mod tests {
         let cache_dir = env::temp_dir().join("test_persistently_cached_dataset");
         let _ = std::fs::remove_dir_all(&cache_dir); // Clean up if exists
 
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
-        let cached_dataset = PersistentlyCachedDataset::new(dataset, &cache_dir, 2).unwrap();
+        let cached_dataset = PersistentlyCachedDataset::new(dataset, &cache_dir, 2)
+            .expect("test: operation should succeed");
 
         // First access - should be cache miss
         let (features1, _) = cached_dataset.get(0).expect("index should be in bounds");
@@ -224,7 +253,9 @@ mod tests {
         let (features2, _) = cached_dataset.get(0).expect("index should be in bounds");
         assert_eq!(features2.shape().dims(), &[2]);
 
-        let stats = cached_dataset.cache_stats().unwrap();
+        let stats = cached_dataset
+            .cache_stats()
+            .expect("test: cache stats should succeed");
         assert_eq!(stats.total_requests, 2);
         assert_eq!(stats.hits, 1); // Second access should be a hit
         assert_eq!(stats.misses, 1); // First access should be a miss

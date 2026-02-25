@@ -810,11 +810,19 @@ mod tests {
     fn test_memory_tracking() {
         let mut profiler = GradientMemoryProfiler::new();
 
-        profiler.begin_operation("test_add").unwrap();
-        profiler.record_allocation(1024).unwrap();
-        profiler.end_operation().unwrap();
+        profiler
+            .begin_operation("test_add")
+            .expect("test: profiler operation should succeed");
+        profiler
+            .record_allocation(1024)
+            .expect("test: profiler operation should succeed");
+        profiler
+            .end_operation()
+            .expect("test: profiler operation should succeed");
 
-        let stats = profiler.get_stats().unwrap();
+        let stats = profiler
+            .get_stats()
+            .expect("test: profiler operation should succeed");
         assert_eq!(stats.gradient_operations, 1);
         assert!(stats.operation_memory.contains_key("test_add"));
     }
@@ -823,12 +831,22 @@ mod tests {
     fn test_memory_report_generation() {
         let mut profiler = GradientMemoryProfiler::new();
 
-        profiler.record_allocation(1_048_576).unwrap(); // 1 MB
-        profiler.begin_operation("matrix_mul").unwrap();
-        profiler.record_allocation(2_097_152).unwrap(); // 2 MB more
-        profiler.end_operation().unwrap();
+        profiler
+            .record_allocation(1_048_576)
+            .expect("test: profiler operation should succeed"); // 1 MB
+        profiler
+            .begin_operation("matrix_mul")
+            .expect("test: profiler operation should succeed");
+        profiler
+            .record_allocation(2_097_152)
+            .expect("test: profiler operation should succeed"); // 2 MB more
+        profiler
+            .end_operation()
+            .expect("test: profiler operation should succeed");
 
-        let report = profiler.generate_report().unwrap();
+        let report = profiler
+            .generate_report()
+            .expect("test: profiler operation should succeed");
         assert!(report.memory_efficiency > 0.0);
         assert!(report.stats.peak_memory > 0);
     }
@@ -838,11 +856,19 @@ mod tests {
         let mut profiler = GradientMemoryProfiler::new();
         profiler.set_enabled(false);
 
-        profiler.begin_operation("disabled_op").unwrap();
-        profiler.record_allocation(1024).unwrap();
-        profiler.end_operation().unwrap();
+        profiler
+            .begin_operation("disabled_op")
+            .expect("test: profiler operation should succeed");
+        profiler
+            .record_allocation(1024)
+            .expect("test: profiler operation should succeed");
+        profiler
+            .end_operation()
+            .expect("test: profiler operation should succeed");
 
-        let stats = profiler.get_stats().unwrap();
+        let stats = profiler
+            .get_stats()
+            .expect("test: profiler operation should succeed");
         // Should still record allocation but not operation
         assert_eq!(stats.gradient_operations, 0);
     }
@@ -851,12 +877,22 @@ mod tests {
     fn test_stats_reset() {
         let mut profiler = GradientMemoryProfiler::new();
 
-        profiler.record_allocation(1024).unwrap();
-        profiler.begin_operation("test").unwrap();
-        profiler.end_operation().unwrap();
+        profiler
+            .record_allocation(1024)
+            .expect("test: profiler operation should succeed");
+        profiler
+            .begin_operation("test")
+            .expect("test: profiler operation should succeed");
+        profiler
+            .end_operation()
+            .expect("test: profiler operation should succeed");
 
-        profiler.reset_stats().unwrap();
-        let stats = profiler.get_stats().unwrap();
+        profiler
+            .reset_stats()
+            .expect("test: profiler operation should succeed");
+        let stats = profiler
+            .get_stats()
+            .expect("test: profiler operation should succeed");
         assert_eq!(stats.current_memory, 0);
         assert_eq!(stats.gradient_operations, 0);
     }
@@ -876,13 +912,21 @@ mod tests {
         profiler.set_sample_interval(Duration::from_millis(1));
 
         for i in 0..5 {
-            profiler.record_allocation(1024).unwrap();
-            profiler.begin_operation(&format!("op_{}", i)).unwrap();
+            profiler
+                .record_allocation(1024)
+                .expect("test: profiler operation should succeed");
+            profiler
+                .begin_operation(&format!("op_{}", i))
+                .expect("test: profiler operation should succeed");
             thread::sleep(Duration::from_millis(2));
-            profiler.end_operation().unwrap();
+            profiler
+                .end_operation()
+                .expect("test: profiler operation should succeed");
         }
 
-        let stats = profiler.get_stats().unwrap();
+        let stats = profiler
+            .get_stats()
+            .expect("test: profiler operation should succeed");
         assert!(!stats.memory_timeline.is_empty());
     }
 }

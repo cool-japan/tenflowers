@@ -696,14 +696,18 @@ mod tests {
     #[test]
     fn test_quadratic_implicit_function() {
         let tape = GradientTape::new();
-        let x = Tensor::<f32>::from_vec(vec![4.0], &[1]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![4.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
 
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 
         let implicit_fn = examples::QuadraticImplicit;
-        let result = implicit_fn.evaluate(&x_tracked, &y_tracked).unwrap();
+        let result = implicit_fn
+            .evaluate(&x_tracked, &y_tracked)
+            .expect("test: implicit differentiation should succeed");
 
         // Should be close to 0 for y² - x = 0 when x=4, y=2
         if let Some(data) = result.tensor.as_slice() {
@@ -714,14 +718,18 @@ mod tests {
     #[test]
     fn test_sqrt_fixed_point() {
         let tape = GradientTape::new();
-        let x = Tensor::<f32>::from_vec(vec![4.0], &[1]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.1], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![4.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.1], &[1])
+            .expect("test: tensor creation from valid data should succeed");
 
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 
         let fixed_point_fn = examples::SqrtFixedPoint;
-        let result = fixed_point_fn.evaluate(&x_tracked, &y_tracked).unwrap();
+        let result = fixed_point_fn
+            .evaluate(&x_tracked, &y_tracked)
+            .expect("test: operation should succeed");
 
         // Should be approximately 2.0 for sqrt(4)
         if let Some(data) = result.tensor.as_slice() {

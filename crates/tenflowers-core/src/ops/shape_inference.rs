@@ -629,12 +629,14 @@ mod tests {
     fn test_binary_elementwise_shapes() {
         let a = Shape::from_slice(&[2, 3, 4]);
         let b = Shape::from_slice(&[1, 3, 4]);
-        let result = infer_binary_elementwise(&a, &b).unwrap();
+        let result = infer_binary_elementwise(&a, &b)
+            .expect("test: infer_binary_elementwise should succeed");
         assert_eq!(result.dims(), &[2, 3, 4]);
 
         let a = Shape::from_slice(&[5, 1, 4]);
         let b = Shape::from_slice(&[1, 3, 1]);
-        let result = infer_binary_elementwise(&a, &b).unwrap();
+        let result = infer_binary_elementwise(&a, &b)
+            .expect("test: infer_binary_elementwise should succeed");
         assert_eq!(result.dims(), &[5, 3, 4]);
     }
 
@@ -643,25 +645,25 @@ mod tests {
         // Simple 2D
         let a = Shape::from_slice(&[3, 4]);
         let b = Shape::from_slice(&[4, 5]);
-        let result = infer_matmul(&a, &b, false, false).unwrap();
+        let result = infer_matmul(&a, &b, false, false).expect("test: infer_matmul should succeed");
         assert_eq!(result.dims(), &[3, 5]);
 
         // With transpose
         let a = Shape::from_slice(&[4, 3]);
         let b = Shape::from_slice(&[4, 5]);
-        let result = infer_matmul(&a, &b, true, false).unwrap();
+        let result = infer_matmul(&a, &b, true, false).expect("test: infer_matmul should succeed");
         assert_eq!(result.dims(), &[3, 5]);
 
         // Batch matmul
         let a = Shape::from_slice(&[2, 3, 4]);
         let b = Shape::from_slice(&[2, 4, 5]);
-        let result = infer_matmul(&a, &b, false, false).unwrap();
+        let result = infer_matmul(&a, &b, false, false).expect("test: infer_matmul should succeed");
         assert_eq!(result.dims(), &[2, 3, 5]);
 
         // Broadcast batch
         let a = Shape::from_slice(&[1, 3, 4]);
         let b = Shape::from_slice(&[2, 4, 5]);
-        let result = infer_matmul(&a, &b, false, false).unwrap();
+        let result = infer_matmul(&a, &b, false, false).expect("test: infer_matmul should succeed");
         assert_eq!(result.dims(), &[2, 3, 5]);
     }
 
@@ -670,19 +672,23 @@ mod tests {
         let input = Shape::from_slice(&[2, 3, 4]);
 
         // Reduce all
-        let result = infer_reduction(&input, None, false).unwrap();
+        let result =
+            infer_reduction(&input, None, false).expect("test: infer_reduction should succeed");
         assert_eq!(result.dims(), &[] as &[usize]);
 
         // Reduce specific axes
-        let result = infer_reduction(&input, Some(&[1]), false).unwrap();
+        let result =
+            infer_reduction(&input, Some(&[1]), false).expect("test: operation should succeed");
         assert_eq!(result.dims(), &[2, 4]);
 
         // Keep dims
-        let result = infer_reduction(&input, Some(&[1, 2]), true).unwrap();
+        let result =
+            infer_reduction(&input, Some(&[1, 2]), true).expect("test: operation should succeed");
         assert_eq!(result.dims(), &[2, 1, 1]);
 
         // Negative axes
-        let result = infer_reduction(&input, Some(&[-1]), false).unwrap();
+        let result =
+            infer_reduction(&input, Some(&[-1]), false).expect("test: operation should succeed");
         assert_eq!(result.dims(), &[2, 3]);
     }
 
@@ -691,14 +697,14 @@ mod tests {
         let input = Shape::from_slice(&[2, 3, 4]);
 
         // Simple reshape
-        let result = infer_reshape(&input, &[6, 4]).unwrap();
+        let result = infer_reshape(&input, &[6, 4]).expect("test: infer_reshape should succeed");
         assert_eq!(result.dims(), &[6, 4]);
 
         // With -1
-        let result = infer_reshape(&input, &[-1, 4]).unwrap();
+        let result = infer_reshape(&input, &[-1, 4]).expect("test: infer_reshape should succeed");
         assert_eq!(result.dims(), &[6, 4]);
 
-        let result = infer_reshape(&input, &[2, -1]).unwrap();
+        let result = infer_reshape(&input, &[2, -1]).expect("test: infer_reshape should succeed");
         assert_eq!(result.dims(), &[2, 12]);
     }
 

@@ -792,7 +792,12 @@ mod tests {
     fn test_memory_optimizer_creation() {
         let optimizer = PyMemoryOptimizer::new(Some(1024.0)); // 1GB baseline
         assert!(optimizer.tensorflow_baseline.is_some());
-        assert_eq!(optimizer.tensorflow_baseline.unwrap(), 1024.0 * 1_048_576.0);
+        assert_eq!(
+            optimizer
+                .tensorflow_baseline
+                .expect("test: operation should succeed"),
+            1024.0 * 1_048_576.0
+        );
     }
 
     #[test]

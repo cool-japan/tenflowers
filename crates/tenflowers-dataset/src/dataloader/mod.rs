@@ -26,7 +26,7 @@
 //!
 //! // Iterate over batches
 //! for batch in dataloader.iter() {
-//!     let batch = batch.unwrap();
+//!     let batch = batch?;
 //!     // Process batch...
 //! }
 //! ```

@@ -310,7 +310,9 @@ mod tests {
         let model = Sequential::new(vec![Box::new(dense)]);
 
         let input = Tensor::<f32>::ones(&[1, 3]);
-        let output = model.forward(&input).unwrap();
+        let output = model
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         assert_eq!(output.shape().dims(), &[1, 2]);
     }
@@ -402,8 +404,12 @@ mod tests {
         let dense2 = Dense::<f32>::new(5, 2, true);
         let mut model = Sequential::new(vec![Box::new(dense1), Box::new(dense2)]);
 
-        // Use /tmp for test file
-        let model_path = "/tmp/test_model_tenflowers.json";
+        // Use temp_dir for test file
+        let temp_dir = std::env::temp_dir();
+        let model_path_buf = temp_dir.join("test_model_tenflowers.json");
+        let model_path = model_path_buf
+            .to_str()
+            .expect("Failed to convert temp path to string");
 
         // Save the model using f32-specific method
         model.save_f32(model_path).expect("Failed to save model");

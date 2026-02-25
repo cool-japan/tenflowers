@@ -233,13 +233,16 @@ mod advanced_activation_tests {
 
     #[test]
     fn test_swiglu_basic() {
-        let swiglu = SwiGLU::<f32>::new(4, 8).unwrap();
+        let swiglu = SwiGLU::<f32>::new(4, 8).expect("test: SwiGLU creation should succeed");
 
         // Check parameters
         assert_eq!(swiglu.parameters().len(), 4); // W_gate, b_gate, W_up, b_up
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 4]).unwrap();
-        let output = swiglu.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 4])
+            .expect("test: tensor creation should succeed");
+        let output = swiglu
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         // Output dimension should be hidden_dim (8)
         assert_eq!(output.shape().dims(), &[1, 8]);
@@ -268,12 +271,16 @@ mod advanced_activation_tests {
 
     #[test]
     fn test_swiglu_custom_init() {
-        let swiglu = SwiGLU::<f32>::new_with_init(4, 8, 0.02).unwrap();
+        let swiglu =
+            SwiGLU::<f32>::new_with_init(4, 8, 0.02).expect("test: operation should succeed");
         assert_eq!(swiglu.input_dim, 4);
         assert_eq!(swiglu.hidden_dim, 8);
 
-        let input = Tensor::<f32>::from_vec(vec![1.0; 4], &[4]).unwrap();
-        let output = swiglu.forward(&input).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0; 4], &[4])
+            .expect("test: tensor creation should succeed");
+        let output = swiglu
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[8]);
     }
 }

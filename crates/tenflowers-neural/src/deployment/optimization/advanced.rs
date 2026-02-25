@@ -465,7 +465,7 @@ mod tests {
         let result = AdvancedOptimizations::apply_layer_fusion(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         // ops_removed is unsigned, so >= 0 is always true
     }
@@ -481,7 +481,7 @@ mod tests {
         let result = AdvancedOptimizations::apply_kernel_fusion(&mut model, &config);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
     }
 
@@ -493,7 +493,7 @@ mod tests {
         let result = AdvancedOptimizations::apply_memory_layout_optimization(&mut model, &config);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         assert!(stats.memory_reduction >= 0.0);
     }
@@ -511,7 +511,7 @@ mod tests {
         let result = AdvancedOptimizations::apply_dynamic_batching(&mut model, &config);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
     }
 
@@ -527,7 +527,7 @@ mod tests {
         let result = AdvancedOptimizations::apply_dynamic_batching(&mut model, &config);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert_eq!(stats.speedup_ratio, 1.0);
         assert_eq!(stats.memory_reduction, 0.0);
     }

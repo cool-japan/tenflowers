@@ -25,6 +25,8 @@
 //!         operation_index: 5,
 //!         num_inputs: 2,
 //!         num_outputs: 1,
+//!         is_higher_order: false,
+//!         parent_operation: None,
 //!     })
 //!     .shape_mismatch("expected [10, 5]", "got [10, 4]");
 //!

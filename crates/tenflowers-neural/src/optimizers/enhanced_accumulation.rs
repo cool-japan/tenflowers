@@ -506,7 +506,9 @@ mod tests {
 
         // Set custom weights
         let weights = vec![0.1, 0.3, 0.6];
-        accumulator.set_step_weights(weights).unwrap();
+        accumulator
+            .set_step_weights(weights)
+            .expect("test: operation should succeed");
 
         // Test invalid weight vector
         let invalid_weights = vec![0.1, 0.3]; // Wrong length

@@ -358,22 +358,28 @@ mod tests {
 
     #[test]
     fn test_expert_creation() {
-        let expert = Expert::<f32>::new(0, &[128, 256, 128]).unwrap();
+        let expert =
+            Expert::<f32>::new(0, &[128, 256, 128]).expect("test: Expert creation should succeed");
         assert_eq!(expert.expert_id, 0);
         assert_eq!(expert.layers.len(), 2);
     }
 
     #[test]
     fn test_expert_forward() {
-        let expert = Expert::<f32>::new(0, &[4, 8, 4]).unwrap();
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4]).unwrap();
-        let output = expert.forward(&input).unwrap();
+        let expert =
+            Expert::<f32>::new(0, &[4, 8, 4]).expect("test: Expert creation should succeed");
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4])
+            .expect("test: tensor creation should succeed");
+        let output = expert
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[1, 4]);
     }
 
     #[test]
     fn test_router_creation() {
-        let router = TopKRouter::<f32>::new(128, 8, 2).unwrap();
+        let router =
+            TopKRouter::<f32>::new(128, 8, 2).expect("test: TopKRouter creation should succeed");
         assert_eq!(router.k, 2);
         // Router should be created successfully with valid parameters
         assert!(!router.parameters().is_empty());
@@ -387,30 +393,36 @@ mod tests {
 
     #[test]
     fn test_moe_creation() {
-        let moe = MixtureOfExperts::<f32>::new(128, 8, 512, 128, 2).unwrap();
+        let moe = MixtureOfExperts::<f32>::new(128, 8, 512, 128, 2)
+            .expect("test: MixtureOfExperts creation should succeed");
         assert_eq!(moe.num_experts, 8);
         assert_eq!(moe.experts.len(), 8);
     }
 
     #[test]
     fn test_moe_forward() {
-        let moe = MixtureOfExperts::<f32>::new(4, 4, 8, 4, 2).unwrap();
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4]).unwrap();
-        let output = moe.forward(&input).unwrap();
+        let moe = MixtureOfExperts::<f32>::new(4, 4, 8, 4, 2)
+            .expect("test: MixtureOfExperts creation should succeed");
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4])
+            .expect("test: tensor creation should succeed");
+        let output = moe
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[1, 4]);
     }
 
     #[test]
     fn test_moe_with_expert_capacity() {
         let moe = MixtureOfExperts::<f32>::new(128, 8, 512, 128, 2)
-            .unwrap()
+            .expect("test: operation should succeed")
             .with_expert_capacity(64);
         assert_eq!(moe.expert_capacity, Some(64));
     }
 
     #[test]
     fn test_moe_parameters() {
-        let moe = MixtureOfExperts::<f32>::new(4, 2, 8, 4, 1).unwrap();
+        let moe = MixtureOfExperts::<f32>::new(4, 2, 8, 4, 1)
+            .expect("test: MixtureOfExperts creation should succeed");
         let params = moe.parameters();
         // Should have router parameters + expert parameters
         assert!(!params.is_empty());
@@ -418,7 +430,8 @@ mod tests {
 
     #[test]
     fn test_moe_training_mode() {
-        let mut moe = MixtureOfExperts::<f32>::new(4, 2, 8, 4, 1).unwrap();
+        let mut moe = MixtureOfExperts::<f32>::new(4, 2, 8, 4, 1)
+            .expect("test: MixtureOfExperts creation should succeed");
         assert!(moe.training);
 
         moe.set_training(false);
@@ -428,9 +441,13 @@ mod tests {
 
     #[test]
     fn test_load_balance_loss() {
-        let moe = MixtureOfExperts::<f32>::new(4, 4, 8, 4, 2).unwrap();
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4]).unwrap();
-        let loss = moe.load_balance_loss(&input).unwrap();
+        let moe = MixtureOfExperts::<f32>::new(4, 4, 8, 4, 2)
+            .expect("test: MixtureOfExperts creation should succeed");
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4])
+            .expect("test: tensor creation should succeed");
+        let loss = moe
+            .load_balance_loss(&input)
+            .expect("test: load should succeed");
         assert!(loss.is_finite());
     }
 }

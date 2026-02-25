@@ -445,7 +445,10 @@ mod tests {
 
         profiler.record_matmul("test_op", m, n, k, elapsed);
 
-        let metrics = profiler.operation_metrics.get("test_op").unwrap();
+        let metrics = profiler
+            .operation_metrics
+            .get("test_op")
+            .expect("test: index should be valid");
         assert_eq!(metrics.call_count, 1);
         assert_eq!(metrics.total_time, elapsed);
         assert!(metrics.peak_gflops > 0.0);

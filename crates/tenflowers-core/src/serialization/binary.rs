@@ -650,14 +650,16 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_f32() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::from_data(data.clone(), &[2, 3]).unwrap();
+        let tensor =
+            Tensor::from_data(data.clone(), &[2, 3]).expect("test: operation should succeed");
 
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&tensor, &mut buffer, None).unwrap();
+        BinarySerializer::serialize(&tensor, &mut buffer, None)
+            .expect("test: serialize should succeed");
 
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _): (Tensor<f32>, _) =
-            BinarySerializer::deserialize(&mut cursor).unwrap();
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
 
         assert_eq!(tensor.shape().dims(), deserialized.shape().dims());
         assert_eq!(
@@ -671,7 +673,8 @@ mod tests {
     #[test]
     fn test_serialize_with_metadata() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0];
-        let tensor = Tensor::from_data(data.clone(), &[2, 2]).unwrap();
+        let tensor =
+            Tensor::from_data(data.clone(), &[2, 2]).expect("test: operation should succeed");
 
         let mut metadata = TensorMetadata::new();
         metadata.name = Some("test_tensor".to_string());
@@ -679,14 +682,15 @@ mod tests {
         metadata.add_field("version".to_string(), "1.0".to_string());
 
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&tensor, &mut buffer, Some(&metadata)).unwrap();
+        BinarySerializer::serialize(&tensor, &mut buffer, Some(&metadata))
+            .expect("test: operation should succeed");
 
         let mut cursor = Cursor::new(buffer);
         let (deserialized, meta): (Tensor<f32>, _) =
-            BinarySerializer::deserialize(&mut cursor).unwrap();
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
 
         assert!(meta.is_some());
-        let meta = meta.unwrap();
+        let meta = meta.expect("test: operation should succeed");
         assert_eq!(meta.name, Some("test_tensor".to_string()));
         assert!(meta.requires_grad);
         assert_eq!(meta.fields.get("version"), Some(&"1.0".to_string()));
@@ -703,22 +707,25 @@ mod tests {
     fn test_different_shapes() {
         // 1D tensor
         let data = vec![1.0f32, 2.0, 3.0];
-        let tensor = Tensor::from_data(data.clone(), &[3]).unwrap();
+        let tensor = Tensor::from_data(data.clone(), &[3]).expect("test: operation should succeed");
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&tensor, &mut buffer, None).unwrap();
+        BinarySerializer::serialize(&tensor, &mut buffer, None)
+            .expect("test: serialize should succeed");
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _): (Tensor<f32>, _) =
-            BinarySerializer::deserialize(&mut cursor).unwrap();
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
         assert_eq!(tensor.shape().dims(), deserialized.shape().dims());
 
         // 3D tensor
         let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let tensor = Tensor::from_data(data.clone(), &[2, 2, 2]).unwrap();
+        let tensor =
+            Tensor::from_data(data.clone(), &[2, 2, 2]).expect("test: operation should succeed");
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&tensor, &mut buffer, None).unwrap();
+        BinarySerializer::serialize(&tensor, &mut buffer, None)
+            .expect("test: serialize should succeed");
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _): (Tensor<f32>, _) =
-            BinarySerializer::deserialize(&mut cursor).unwrap();
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
         assert_eq!(tensor.shape().dims(), deserialized.shape().dims());
     }
 
@@ -730,8 +737,9 @@ mod tests {
         metadata.add_field("key1".to_string(), "value1".to_string());
         metadata.add_field("key2".to_string(), "value2".to_string());
 
-        let json = metadata.to_json().unwrap();
-        let deserialized = TensorMetadata::from_json(&json).unwrap();
+        let json = metadata.to_json().expect("test: to_json should succeed");
+        let deserialized =
+            TensorMetadata::from_json(&json).expect("test: from_json should succeed");
 
         assert_eq!(metadata.name, deserialized.name);
         assert_eq!(metadata.requires_grad, deserialized.requires_grad);

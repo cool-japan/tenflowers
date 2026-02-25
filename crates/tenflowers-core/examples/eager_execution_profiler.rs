@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Eager Execution Performance Profiler
 //!
 //! This profiler targets the goal of achieving sub-millisecond overhead for eager execution

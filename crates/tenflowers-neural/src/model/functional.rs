@@ -945,7 +945,9 @@ mod tests {
         let input = Input::<f32>::new(vec![10, 64]);
         let input_node = Node::<f32>::new(vec![10, 64], vec![]);
 
-        let output_node = shared_layer.call(&input_node).unwrap();
+        let output_node = shared_layer
+            .call(&input_node)
+            .expect("test: operation should succeed");
         assert_eq!(output_node.layer_id(), Some(shared_layer.id()));
         assert_eq!(output_node.inputs(), &[input_node.id()]);
     }
@@ -963,7 +965,9 @@ mod tests {
         // Create output node
         let output_node = Node::<f32>::from_layer(0, vec![10, 32], vec![input.id()]);
 
-        let model = builder.build(vec![output_node]).unwrap();
+        let model = builder
+            .build(vec![output_node])
+            .expect("test: operation should succeed");
         assert_eq!(model.name(), Some("test_model"));
         assert_eq!(model.num_inputs(), 1);
         assert_eq!(model.num_outputs(), 1);
@@ -991,7 +995,9 @@ mod tests {
         let node1 = Node::<f32>::from_layer(0, vec![10, 16], vec![input1.id()]);
         let node2 = Node::<f32>::from_layer(1, vec![10, 16], vec![input2.id()]);
 
-        let model = builder.build(vec![node1, node2]).unwrap();
+        let model = builder
+            .build(vec![node1, node2])
+            .expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 2);
         assert_eq!(model.num_outputs(), 2);
     }

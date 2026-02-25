@@ -808,7 +808,8 @@ mod tests {
     #[test]
     fn test_qlora_adapter_creation() {
         let config = QLoRAConfig::for_efficiency();
-        let adapter: QLoRAAdapter<f32> = QLoRAAdapter::new(100, 50, config).unwrap();
+        let adapter: QLoRAAdapter<f32> =
+            QLoRAAdapter::new(100, 50, config).expect("test: QLoRAAdapter creation should succeed");
 
         // Check LoRA matrix shapes
         assert_eq!(adapter.lora_a.shape().dims(), &[100, 4]); // rank=4 from efficiency config
@@ -823,15 +824,22 @@ mod tests {
         let weight: Tensor<f32> = Tensor::ones(&[10, 8]); // Small test weight
         let config = QLoRAConfig::for_efficiency();
 
-        let quantized = QuantizedWeight::quantize(&weight, &config).unwrap();
-        let dequantized = quantized.dequantize().unwrap();
+        let quantized =
+            QuantizedWeight::quantize(&weight, &config).expect("test: optimization should succeed");
+        let dequantized = quantized
+            .dequantize()
+            .expect("test: optimization should succeed");
 
         // Check shape preservation
         assert_eq!(dequantized.shape().dims(), &[10, 8]);
 
         // Check that dequantized values are close to original (allowing for quantization error)
-        let original_data = weight.to_vec().unwrap();
-        let deq_data = dequantized.to_vec().unwrap();
+        let original_data = weight
+            .to_vec()
+            .expect("test: tensor conversion should succeed");
+        let deq_data = dequantized
+            .to_vec()
+            .expect("test: tensor conversion should succeed");
 
         for (orig, deq) in original_data.iter().zip(deq_data.iter()) {
             let diff = (orig.to_f32().expect("numeric conversion should succeed")
@@ -851,7 +859,8 @@ mod tests {
         let weight: Tensor<f32> = Tensor::ones(&[1000, 1000]); // Large weight matrix
         let config = QLoRAConfig::for_efficiency();
 
-        let adapter = QLoRAAdapter::from_weight(&weight, config).unwrap();
+        let adapter =
+            QLoRAAdapter::from_weight(&weight, config).expect("test: operation should succeed");
         let stats = adapter.memory_stats();
 
         // Should achieve significant memory reduction
@@ -868,7 +877,8 @@ mod tests {
     #[test]
     fn test_qlora_forward_pass() {
         let config = QLoRAConfig::for_efficiency();
-        let adapter: QLoRAAdapter<f32> = QLoRAAdapter::new(10, 5, config).unwrap();
+        let adapter: QLoRAAdapter<f32> =
+            QLoRAAdapter::new(10, 5, config).expect("test: QLoRAAdapter creation should succeed");
 
         let input = Tensor::ones(&[2, 10]);
         let base_output = Tensor::zeros(&[2, 5]);
@@ -876,7 +886,7 @@ mod tests {
         let result = adapter.forward(&input, &base_output);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         assert_eq!(output.shape().dims(), &[2, 5]);
     }
 }

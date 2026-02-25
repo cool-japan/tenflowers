@@ -571,8 +571,8 @@ mod tests {
     fn test_parquet_config_default() {
         let config = ParquetConfig::default();
         assert_eq!(config.batch_size, 1000);
-        assert_eq!(config.skip_header, false);
-        assert_eq!(config.cache_batches, true);
+        assert!(!config.skip_header);
+        assert!(config.cache_batches);
         assert!(config.feature_columns.is_none());
         assert!(config.label_column.is_none());
     }
@@ -586,8 +586,21 @@ mod tests {
             .with_max_rows(1000);
 
         assert_eq!(config.batch_size, 500);
-        assert_eq!(config.feature_columns.as_ref().unwrap().len(), 2);
-        assert_eq!(config.label_column.as_ref().unwrap(), "target");
+        assert_eq!(
+            config
+                .feature_columns
+                .as_ref()
+                .expect("test: value should be present")
+                .len(),
+            2
+        );
+        assert_eq!(
+            config
+                .label_column
+                .as_ref()
+                .expect("test: value should be present"),
+            "target"
+        );
         assert_eq!(config.max_rows, Some(1000));
     }
 
@@ -599,7 +612,15 @@ mod tests {
             .batch_size(100);
 
         assert_eq!(builder.config.batch_size, 100);
-        assert_eq!(builder.config.feature_columns.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            builder
+                .config
+                .feature_columns
+                .as_ref()
+                .expect("test: value should be present")
+                .len(),
+            1
+        );
     }
 
     #[test]

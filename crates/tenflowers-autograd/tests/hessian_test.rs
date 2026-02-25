@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use tenflowers_autograd::{GradientTape, TrackedTensor};
 use tenflowers_core::Tensor;
 

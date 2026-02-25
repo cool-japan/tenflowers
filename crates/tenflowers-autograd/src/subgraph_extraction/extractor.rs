@@ -525,7 +525,7 @@ mod tests {
         let result = extractor.extract_subgraphs(&operations);
         assert!(result.is_ok());
 
-        let extraction_result = result.unwrap();
+        let extraction_result = result.expect("test: extraction should succeed");
         assert_eq!(extraction_result.subgraphs.len(), 0);
     }
 
@@ -558,7 +558,7 @@ mod tests {
         let result = extractor.extract_subgraphs(&operations);
         assert!(result.is_ok());
 
-        let extraction_result = result.unwrap();
+        let extraction_result = result.expect("test: extraction should succeed");
         assert!(!extraction_result.subgraphs.is_empty());
     }
 }

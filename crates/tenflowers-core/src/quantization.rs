@@ -788,8 +788,8 @@ mod tests {
         let tensor = Tensor::from_array(data);
 
         let params = QuantizationParams::symmetric_int8(0.1);
-        let quantized = quantize(&tensor, &params).unwrap();
-        let dequantized = dequantize(&quantized, &params).unwrap();
+        let quantized = quantize(&tensor, &params).expect("test: quantize should succeed");
+        let dequantized = dequantize(&quantized, &params).expect("test: dequantize should succeed");
 
         // Test that quantization and dequantization are approximately inverse operations
         // (within quantization error)
@@ -801,7 +801,8 @@ mod tests {
         let data = Array::from_vec(vec![1.0f32, 2.0, 3.0, -1.0, -2.0]).into_dyn();
         let tensor = Tensor::from_array(data);
 
-        let (quantized, params) = dynamic_quantize(&tensor, DType::Int8).unwrap();
+        let (quantized, params) =
+            dynamic_quantize(&tensor, DType::Int8).expect("test: dynamic_quantize should succeed");
 
         assert_eq!(quantized.dtype(), DType::Int8);
         assert!(params.scale > 0.0);
@@ -813,7 +814,8 @@ mod tests {
         let tensor = Tensor::from_array(data);
 
         let params = QuantizationParams::symmetric_int8(0.1);
-        let fake_quantized = fake_quantize(&tensor, &params).unwrap();
+        let fake_quantized =
+            fake_quantize(&tensor, &params).expect("test: fake_quantize should succeed");
 
         // Fake quantization should maintain the same data type and shape
         assert_eq!(fake_quantized.dtype(), tensor.dtype());
@@ -828,11 +830,13 @@ mod tests {
         let cpu_tensor = Tensor::from_array(data);
 
         // Convert to GPU tensor
-        let gpu_tensor = cpu_tensor.to_device(crate::Device::Gpu(0)).unwrap();
+        let gpu_tensor = cpu_tensor
+            .to_device(crate::Device::Gpu(0))
+            .expect("test: operation should succeed");
 
         let params = QuantizationParams::symmetric_int8(0.1);
-        let quantized = quantize(&gpu_tensor, &params).unwrap();
-        let dequantized = dequantize(&quantized, &params).unwrap();
+        let quantized = quantize(&gpu_tensor, &params).expect("test: quantize should succeed");
+        let dequantized = dequantize(&quantized, &params).expect("test: dequantize should succeed");
 
         // Test that GPU quantization works
         assert_eq!(quantized.dtype(), DType::Int8);
@@ -848,10 +852,13 @@ mod tests {
         let cpu_tensor = Tensor::from_array(data);
 
         // Convert to GPU tensor
-        let gpu_tensor = cpu_tensor.to_device(crate::Device::Gpu(0)).unwrap();
+        let gpu_tensor = cpu_tensor
+            .to_device(crate::Device::Gpu(0))
+            .expect("test: operation should succeed");
 
         let params = QuantizationParams::symmetric_int8(0.1);
-        let fake_quantized = fake_quantize(&gpu_tensor, &params).unwrap();
+        let fake_quantized =
+            fake_quantize(&gpu_tensor, &params).expect("test: fake_quantize should succeed");
 
         // Fake quantization should maintain the same data type and shape
         assert_eq!(fake_quantized.dtype(), gpu_tensor.dtype());

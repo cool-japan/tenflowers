@@ -581,8 +581,10 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let labels_data = vec![0.0, 1.0, 0.0];
-        let features = Tensor::from_vec(features_data, &[3, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[3]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[3, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[3]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Create deterministic dataset
@@ -678,11 +680,14 @@ mod tests {
         assert_eq!(tracker.operations()[0].duration_ms, 100);
 
         // Test file save/load
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let file_path = temp_dir.path().join("experiment.json");
 
-        tracker.save_to_file(&file_path).unwrap();
-        let loaded_tracker = ExperimentTracker::load_from_file(&file_path).unwrap();
+        tracker
+            .save_to_file(&file_path)
+            .expect("test: save to file should succeed");
+        let loaded_tracker = ExperimentTracker::load_from_file(&file_path)
+            .expect("test: load from file should succeed");
 
         assert_eq!(loaded_tracker.config().name, "test_experiment");
         assert_eq!(loaded_tracker.operations().len(), 1);
@@ -693,8 +698,10 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0];
         let labels_data = vec![0.0, 1.0];
-        let features = Tensor::from_vec(features_data, &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[2]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[2, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[2]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Test extension methods

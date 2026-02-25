@@ -385,10 +385,12 @@ mod tests {
 
     #[test]
     fn test_ultra_matmul_v2_basic() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("test: from_vec should succeed");
 
-        let result = ultra_matmul_v2(&a, &b).unwrap();
+        let result = ultra_matmul_v2(&a, &b).expect("test: ultra_matmul_v2 should succeed");
         assert_eq!(result.shape().dims(), &[2, 2]);
 
         // Expected: [[1*5+2*7, 1*6+2*8], [3*5+4*7, 3*6+4*8]]
@@ -401,10 +403,12 @@ mod tests {
     #[test]
     fn test_ultra_matmul_v2_small() {
         // Test 2x2 matrix specifically optimized path
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("test: from_vec should succeed");
 
-        let result = ultra_matmul_v2(&a, &b).unwrap();
+        let result = ultra_matmul_v2(&a, &b).expect("test: ultra_matmul_v2 should succeed");
         let _expected = [[19.0, 22.0], [43.0, 50.0]];
 
         if let Some(data) = result.as_slice() {
@@ -415,10 +419,12 @@ mod tests {
     #[test]
     fn test_ultra_matmul_v2_outer_product() {
         // Test outer product optimization
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0], &[1, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0], &[1, 2])
+            .expect("test: from_vec should succeed");
 
-        let result = ultra_matmul_v2(&a, &b).unwrap();
+        let result = ultra_matmul_v2(&a, &b).expect("test: ultra_matmul_v2 should succeed");
         assert_eq!(result.shape().dims(), &[3, 2]);
 
         // Expected: [[1*4, 1*5], [2*4, 2*5], [3*4, 3*5]]
@@ -435,11 +441,13 @@ mod tests {
         let a_data: Vec<f32> = (0..size * size).map(|i| i as f32).collect();
         let b_data: Vec<f32> = (0..size * size).map(|i| (i + 1) as f32).collect();
 
-        let a = Tensor::<f32>::from_vec(a_data, &[size, size]).unwrap();
-        let b = Tensor::<f32>::from_vec(b_data, &[size, size]).unwrap();
+        let a =
+            Tensor::<f32>::from_vec(a_data, &[size, size]).expect("test: from_vec should succeed");
+        let b =
+            Tensor::<f32>::from_vec(b_data, &[size, size]).expect("test: from_vec should succeed");
 
         let start = Instant::now();
-        let _result = ultra_matmul_v2(&a, &b).unwrap();
+        let _result = ultra_matmul_v2(&a, &b).expect("test: ultra_matmul_v2 should succeed");
         let elapsed = start.elapsed();
 
         println!(

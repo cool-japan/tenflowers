@@ -578,7 +578,8 @@ mod tests {
     fn test_prefix_tuning_creation() {
         let device = Device::Cpu;
         let config = PrefixTuningConfig::default();
-        let adapter = PrefixTuningAdapter::<f32>::new(config, &device).unwrap();
+        let adapter = PrefixTuningAdapter::<f32>::new(config, &device)
+            .expect("test: PrefixTuningAdapter creation should succeed");
 
         assert_eq!(adapter.config().prefix_length, 10);
         assert_eq!(adapter.config().num_layers, 12);
@@ -612,7 +613,8 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PrefixTuningAdapter::<f32>::new(config, &device).unwrap();
+        let adapter = PrefixTuningAdapter::<f32>::new(config, &device)
+            .expect("test: PrefixTuningAdapter creation should succeed");
         let stats = adapter.stats();
 
         assert_eq!(stats.prefix_length, 5);
@@ -630,7 +632,8 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PrefixTuningAdapter::<f32>::new(config, &device).unwrap();
+        let adapter = PrefixTuningAdapter::<f32>::new(config, &device)
+            .expect("test: PrefixTuningAdapter creation should succeed");
         let params = adapter.trainable_parameters();
 
         // Should have 2 parameters per layer (key + value) × 2 layers = 4 parameters
@@ -649,8 +652,11 @@ mod tests {
             ..Default::default()
         };
 
-        let adapter = PrefixTuningAdapter::<f32>::new(config, &device).unwrap();
-        let (key, value) = adapter.get_layer_prefix_kv(0, 2).unwrap();
+        let adapter = PrefixTuningAdapter::<f32>::new(config, &device)
+            .expect("test: PrefixTuningAdapter creation should succeed");
+        let (key, value) = adapter
+            .get_layer_prefix_kv(0, 2)
+            .expect("test: operation should succeed");
 
         // With simplified implementation, shape may be different
         // The actual shape depends on the implementation details
@@ -662,10 +668,13 @@ mod tests {
     fn test_reparameterization_forward() {
         let device = Device::Cpu;
         let config = PrefixTuningConfig::default();
-        let reparam = PrefixReparameterization::<f32>::new(128, 256, &config, &device).unwrap();
+        let reparam = PrefixReparameterization::<f32>::new(128, 256, &config, &device)
+            .expect("test: PrefixReparameterization creation should succeed");
 
         let input = Tensor::ones(&[10, 128]);
-        let output = reparam.forward(&input).unwrap();
+        let output = reparam
+            .forward(&input)
+            .expect("test: forward pass should succeed");
 
         assert_eq!(output.shape().dims(), &[10, 256]);
     }

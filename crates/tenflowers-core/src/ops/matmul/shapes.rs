@@ -97,30 +97,35 @@ mod tests {
     #[test]
     fn test_compute_matmul_shape() {
         // Basic 2D case
-        let result = compute_matmul_shape(&[3, 4], &[4, 5]).unwrap();
+        let result = compute_matmul_shape(&[3, 4], &[4, 5])
+            .expect("test: compute_matmul_shape should succeed");
         assert_eq!(result, &[3, 5]);
 
         // Batch case
-        let result = compute_matmul_shape(&[2, 3, 4], &[2, 4, 5]).unwrap();
+        let result = compute_matmul_shape(&[2, 3, 4], &[2, 4, 5])
+            .expect("test: compute_matmul_shape should succeed");
         assert_eq!(result, &[2, 3, 5]);
 
         // Broadcasting case
-        let result = compute_matmul_shape(&[1, 3, 4], &[2, 4, 5]).unwrap();
+        let result = compute_matmul_shape(&[1, 3, 4], &[2, 4, 5])
+            .expect("test: compute_matmul_shape should succeed");
         assert_eq!(result, &[2, 3, 5]);
     }
 
     #[test]
     fn test_broadcast_shapes() {
         // Compatible shapes
-        let result = broadcast_shapes(&[1, 3], &[2, 1]).unwrap();
+        let result =
+            broadcast_shapes(&[1, 3], &[2, 1]).expect("test: broadcast_shapes should succeed");
         assert_eq!(result, &[2, 3]);
 
         // Empty and non-empty
-        let result = broadcast_shapes(&[], &[3, 4]).unwrap();
+        let result = broadcast_shapes(&[], &[3, 4]).expect("test: broadcast_shapes should succeed");
         assert_eq!(result, &[3, 4]);
 
         // Same shapes
-        let result = broadcast_shapes(&[3, 4], &[3, 4]).unwrap();
+        let result =
+            broadcast_shapes(&[3, 4], &[3, 4]).expect("test: broadcast_shapes should succeed");
         assert_eq!(result, &[3, 4]);
     }
 

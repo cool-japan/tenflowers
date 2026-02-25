@@ -212,12 +212,12 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[3, 2], // 3 samples, 2 features each
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![0.0, 1.0, 0.0],
             &[3], // 3 labels
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
@@ -235,8 +235,10 @@ mod tests {
         // Test that we can create loaders (must consume pipeline)
         let pipeline2 = NeuralDataPipeline::new(
             TensorDataset::new(
-                Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap(),
-                Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0], &[3]).unwrap(),
+                Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+                    .expect("test: tensor creation should succeed"),
+                Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0], &[3])
+                    .expect("test: tensor creation should succeed"),
             ),
             config,
         );
@@ -248,10 +250,13 @@ mod tests {
 
     #[test]
     fn test_training_batch_creation() {
-        let features = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(vec![0.0, 1.0], &[2]).expect("test: tensor creation should succeed");
 
-        let batch = TrainingBatch::new(features, labels).unwrap();
+        let batch = TrainingBatch::new(features, labels)
+            .expect("test: TrainingBatch creation should succeed");
         assert_eq!(batch.batch_size, 2);
     }
 
@@ -267,13 +272,18 @@ mod tests {
 
     #[test]
     fn test_training_batch_device_transfer() {
-        let features = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(vec![0.0, 1.0], &[2]).expect("test: tensor creation should succeed");
 
-        let batch = TrainingBatch::new(features, labels).unwrap();
+        let batch = TrainingBatch::new(features, labels)
+            .expect("test: TrainingBatch creation should succeed");
 
         // Test CPU to CPU transfer (should work)
-        let cpu_batch = batch.to_device(&Device::Cpu).unwrap();
+        let cpu_batch = batch
+            .to_device(&Device::Cpu)
+            .expect("test: operation should succeed");
         assert_eq!(cpu_batch.batch_size, 2);
         assert_eq!(cpu_batch.features.device(), &Device::Cpu);
         assert_eq!(cpu_batch.labels.device(), &Device::Cpu);
@@ -298,7 +308,9 @@ mod tests {
         #[cfg(feature = "gpu")]
         {
             if let Ok(gpu_device) = Device::try_gpu(0) {
-                let gpu_batch = batch.to_device(&gpu_device).unwrap();
+                let gpu_batch = batch
+                    .to_device(&gpu_device)
+                    .expect("test: operation should succeed");
                 assert_eq!(gpu_batch.batch_size, 2);
                 assert_eq!(gpu_batch.features.device(), &gpu_device);
                 assert_eq!(gpu_batch.labels.device(), &gpu_device);
@@ -312,7 +324,7 @@ mod tests {
         let text_transform = NeuralTransforms::text_classification(1000, 128);
         assert!(text_transform.is_ok());
 
-        let transform = text_transform.unwrap();
+        let transform = text_transform.expect("test: conversion should succeed");
         assert_eq!(transform.tokenizer().len(), 4); // Should start with 4 special tokens
     }
 }

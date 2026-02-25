@@ -29,15 +29,18 @@ mod tests {
     #[test]
     fn test_roundtrip_serialization() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let original = Tensor::from_data(data.clone(), &[3, 3]).unwrap();
+        let original =
+            Tensor::from_data(data.clone(), &[3, 3]).expect("test: operation should succeed");
 
         // Serialize
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&original, &mut buffer, None).unwrap();
+        BinarySerializer::serialize(&original, &mut buffer, None)
+            .expect("test: serialize should succeed");
 
         // Deserialize
         let mut cursor = Cursor::new(buffer);
-        let (restored, _): (Tensor<f32>, _) = BinarySerializer::deserialize(&mut cursor).unwrap();
+        let (restored, _): (Tensor<f32>, _) =
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
 
         // Verify
         assert_eq!(original.shape().dims(), restored.shape().dims());
@@ -50,7 +53,8 @@ mod tests {
     #[test]
     fn test_metadata_preservation() {
         let data = vec![1.0f32, 2.0, 3.0, 4.0];
-        let original = Tensor::from_data(data.clone(), &[2, 2]).unwrap();
+        let original =
+            Tensor::from_data(data.clone(), &[2, 2]).expect("test: operation should succeed");
 
         let mut metadata = TensorMetadata::new();
         metadata.name = Some("weight_matrix".to_string());
@@ -60,12 +64,13 @@ mod tests {
 
         // Serialize with metadata
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&original, &mut buffer, Some(&metadata)).unwrap();
+        BinarySerializer::serialize(&original, &mut buffer, Some(&metadata))
+            .expect("test: operation should succeed");
 
         // Deserialize
         let mut cursor = Cursor::new(buffer);
         let (restored, meta): (Tensor<f32>, _) =
-            BinarySerializer::deserialize(&mut cursor).unwrap();
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
 
         // Verify tensor data
         assert_eq!(
@@ -75,7 +80,7 @@ mod tests {
 
         // Verify metadata
         assert!(meta.is_some());
-        let meta = meta.unwrap();
+        let meta = meta.expect("test: operation should succeed");
         assert_eq!(meta.name, Some("weight_matrix".to_string()));
         assert!(meta.requires_grad);
         assert_eq!(meta.fields.get("layer"), Some(&"conv1".to_string()));
@@ -87,17 +92,20 @@ mod tests {
         // Create a larger tensor to test performance
         let size = 1000;
         let data: Vec<f32> = (0..size).map(|i| i as f32).collect();
-        let original = Tensor::from_data(data.clone(), &[size]).unwrap();
+        let original =
+            Tensor::from_data(data.clone(), &[size]).expect("test: operation should succeed");
 
         let mut buffer = Vec::new();
-        BinarySerializer::serialize(&original, &mut buffer, None).unwrap();
+        BinarySerializer::serialize(&original, &mut buffer, None)
+            .expect("test: serialize should succeed");
 
         // Verify buffer size is reasonable
         let expected_size = std::mem::size_of::<f32>() * size + 64; // data + header
         assert!(buffer.len() >= expected_size);
 
         let mut cursor = Cursor::new(buffer);
-        let (restored, _): (Tensor<f32>, _) = BinarySerializer::deserialize(&mut cursor).unwrap();
+        let (restored, _): (Tensor<f32>, _) =
+            BinarySerializer::deserialize(&mut cursor).expect("test: deserialize should succeed");
 
         assert_eq!(
             original.as_slice().expect("tensor should be contiguous"),

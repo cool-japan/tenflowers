@@ -364,7 +364,7 @@ mod tests {
         let wrapper = FallbackWrapper::new(success_result, "test_op");
 
         let result = wrapper.with_cpu_fallback(|| Ok(100));
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("test: operation should succeed"), 42);
     }
 
     #[test]

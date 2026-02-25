@@ -490,7 +490,8 @@ mod tests {
 
     #[test]
     fn test_dual_tensor_creation() {
-        let x = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let dual = DualTensor::new_constant(x);
 
         assert_eq!(dual.tangents.len(), 0);
@@ -501,11 +502,14 @@ mod tests {
     fn test_forward_mode_basic() {
         let mut forward = ForwardMode::new();
 
-        let x_val = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
-        let x = forward.variable(x_val).unwrap();
+        let x_val = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let x = forward
+            .variable(x_val)
+            .expect("test: variable creation should succeed");
 
         // f(x) = x + x = 2x, so f'(x) = 2
-        let result = forward_ops::add(&x, &x).unwrap();
+        let result = forward_ops::add(&x, &x).expect("test: forward pass should succeed");
 
         assert_eq!(
             result
@@ -517,7 +521,7 @@ mod tests {
         assert_eq!(
             result
                 .tangent(1)
-                .unwrap()
+                .expect("test: operation should succeed")
                 .as_slice()
                 .expect("tensor should be contiguous"),
             &[2.0]
@@ -528,11 +532,14 @@ mod tests {
     fn test_forward_mode_product_rule() {
         let mut forward = ForwardMode::new();
 
-        let x_val = Tensor::<f32>::from_vec(vec![3.0], &[1]).unwrap();
-        let x = forward.variable(x_val).unwrap();
+        let x_val = Tensor::<f32>::from_vec(vec![3.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let x = forward
+            .variable(x_val)
+            .expect("test: variable creation should succeed");
 
         // f(x) = x * x = x^2, so f'(x) = 2x = 6
-        let result = forward_ops::mul(&x, &x).unwrap();
+        let result = forward_ops::mul(&x, &x).expect("test: forward pass should succeed");
 
         assert_eq!(
             result
@@ -544,7 +551,7 @@ mod tests {
         assert_eq!(
             result
                 .tangent(1)
-                .unwrap()
+                .expect("test: operation should succeed")
                 .as_slice()
                 .expect("tensor should be contiguous"),
             &[6.0]
@@ -555,14 +562,16 @@ mod tests {
     fn test_directional_derivative() {
         let mut forward = ForwardMode::new();
 
-        let x = Tensor::<f32>::from_vec(vec![3.0], &[1]).unwrap();
-        let v = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![3.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let v = Tensor::<f32>::from_vec(vec![1.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
 
         // f(x) = x * x = x^2, so f'(x) = 2x, and f'(3) = 6
         // Directional derivative with v = [1] should be 6 * 1 = 6
         let result = forward
             .directional_derivative(&x, &v, |dual_x| forward_ops::mul(dual_x, dual_x))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(
             result.as_slice().expect("tensor should be contiguous"),

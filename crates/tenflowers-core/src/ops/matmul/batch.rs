@@ -134,10 +134,11 @@ mod tests {
             IxDyn(&[2, 2, 2]),
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let batch_indices = vec![0];
-        let slice = extract_2d_slice(&arr, &batch_indices, &[2, 2, 2], &[2, 2, 2]).unwrap();
+        let slice = extract_2d_slice(&arr, &batch_indices, &[2, 2, 2], &[2, 2, 2])
+            .expect("test: extract_2d_slice should succeed");
 
         let expected = array![[1.0, 2.0], [3.0, 4.0]];
         assert_eq!(slice, expected);

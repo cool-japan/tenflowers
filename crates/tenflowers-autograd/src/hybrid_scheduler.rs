@@ -548,11 +548,15 @@ mod tests {
         let scheduler = HybridScheduler::default();
 
         // Many inputs, few outputs -> reverse mode cheaper
-        let cost = scheduler.estimate_strategy_cost(100, 1).unwrap();
+        let cost = scheduler
+            .estimate_strategy_cost(100, 1)
+            .expect("test: scheduler operation should succeed");
         assert_eq!(cost.recommended_mode, DifferentiationMode::Reverse);
 
         // Few inputs, many outputs -> forward mode cheaper
-        let cost = scheduler.estimate_strategy_cost(1, 100).unwrap();
+        let cost = scheduler
+            .estimate_strategy_cost(1, 100)
+            .expect("test: scheduler operation should succeed");
         assert_eq!(cost.recommended_mode, DifferentiationMode::Forward);
     }
 

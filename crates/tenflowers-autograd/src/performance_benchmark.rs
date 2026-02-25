@@ -18,6 +18,7 @@
 //! ```rust,no_run
 //! use tenflowers_autograd::{PerformanceBenchmark, BenchmarkConfig, GradientTape};
 //! use tenflowers_core::Tensor;
+//! use std::time::Duration;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create benchmark configuration
@@ -28,18 +29,17 @@
 //!
 //! let mut benchmark = PerformanceBenchmark::new(config);
 //!
-//! // Benchmark a gradient operation
-//! benchmark.benchmark_operation("matmul_backward", || {
-//!     let tape = GradientTape::new();
-//!     let a = tape.watch(Tensor::<f32>::ones(&[100, 100]));
-//!     let b = tape.watch(Tensor::<f32>::ones(&[100, 100]));
-//!     let c = a.matmul(&b)?;
-//!     tape.gradient(&[c], &[a, b])
+//! // Benchmark a tensor operation
+//! benchmark.benchmark_operation("matmul", || {
+//!     let a = Tensor::<f32>::ones(&[100, 100]);
+//!     let b = Tensor::<f32>::ones(&[100, 100]);
+//!     let _c = a.matmul(&b)?;
+//!     Ok(())
 //! })?;
 //!
 //! // Get and print results
-//! let results = benchmark.get_results();
-//! results.print_report();
+//! let report = benchmark.generate_report();
+//! report.print_report();
 //! # Ok(())
 //! # }
 //! ```
@@ -636,9 +636,11 @@ mod tests {
                 std::thread::sleep(Duration::from_micros(100));
                 Ok::<(), tenflowers_core::TensorError>(())
             })
-            .unwrap();
+            .expect("test: operation should succeed");
 
-        let result = benchmark.get_result("test_op").unwrap();
+        let result = benchmark
+            .get_result("test_op")
+            .expect("test: benchmark operation should succeed");
         assert_eq!(result.measurements.len(), 10);
         assert!(result.statistics.is_some());
     }

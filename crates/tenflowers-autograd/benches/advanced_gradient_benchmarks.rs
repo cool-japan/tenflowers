@@ -1,3 +1,9 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::unnecessary_unwrap)]
+#![allow(unused_must_use)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2, Array3, Array4};
 use std::time::Duration;
@@ -22,7 +28,8 @@ fn bench_gradient_edge_cases(c: &mut Criterion) {
         b.iter(|| {
             let z = x.mul(&y).unwrap();
             let pow_z = z.pow(&x).unwrap();
-            black_box(tape.gradient(&pow_z, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[pow_z], &inputs).unwrap());
         });
     });
 
@@ -38,7 +45,8 @@ fn bench_gradient_edge_cases(c: &mut Criterion) {
             let y = x.relu().unwrap();
             let z = y.sigmoid().unwrap();
             let w = z.tanh().unwrap();
-            black_box(tape.gradient(&w, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[w], &inputs).unwrap());
         });
     });
 
@@ -52,7 +60,8 @@ fn bench_gradient_edge_cases(c: &mut Criterion) {
 
         b.iter(|| {
             let z = x.matmul(&y).unwrap();
-            black_box(tape.gradient(&z, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -66,7 +75,8 @@ fn bench_gradient_edge_cases(c: &mut Criterion) {
         b.iter(|| {
             let z = x.add(&y).unwrap();
             let w = z.sum(None, false).unwrap();
-            black_box(tape.gradient(&w, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[w], &inputs).unwrap());
         });
     });
 
@@ -87,7 +97,8 @@ fn bench_numerical_stability(c: &mut Criterion) {
         b.iter(|| {
             let y = x.sigmoid().unwrap(); // Using sigmoid for numerical stability
             let z = y.relu().unwrap();
-            black_box(tape.gradient(&z, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -100,7 +111,8 @@ fn bench_numerical_stability(c: &mut Criterion) {
         b.iter(|| {
             let y = x.sigmoid().unwrap();
             let z = y.tanh().unwrap(); // Using tanh instead of log for numerical stability
-            black_box(tape.gradient(&z, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -113,7 +125,8 @@ fn bench_numerical_stability(c: &mut Criterion) {
         b.iter(|| {
             let y = x.tanh().unwrap();
             let z = y.pow(&x).unwrap();
-            black_box(tape.gradient(&z, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[z], &inputs).unwrap());
         });
     });
 
@@ -141,7 +154,8 @@ fn bench_complex_gradient_chains(c: &mut Criterion) {
                 result = result.sigmoid().unwrap();
                 result = result.add(&x).unwrap();
             }
-            black_box(tape.gradient(&result, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[result], &inputs).unwrap());
         });
     });
 
@@ -170,7 +184,8 @@ fn bench_complex_gradient_chains(c: &mut Criterion) {
                 .add(&branch5)
                 .unwrap();
 
-            black_box(tape.gradient(&combined, &[&x]).unwrap());
+            let inputs = vec![x.clone()];
+            black_box(tape.gradient(&[combined], &inputs).unwrap());
         });
     });
 
@@ -190,7 +205,8 @@ fn bench_complex_gradient_chains(c: &mut Criterion) {
             let y = m.matmul(&x.reshape(&[3, 1]).unwrap()).unwrap();
             let z = y.sigmoid().unwrap();
             let w = z.sum(None, false).unwrap();
-            black_box(tape.gradient(&w, &[&x, &m]).unwrap());
+            let inputs = vec![x.clone(), m.clone()];
+            black_box(tape.gradient(&[w], &inputs).unwrap());
         });
     });
 
@@ -218,7 +234,8 @@ fn bench_memory_intensive_gradients(c: &mut Criterion) {
 
             let z = x.matmul(&y).unwrap();
             let w = z.sigmoid().unwrap();
-            let result = tape.gradient(&w, &[&x, &y]).unwrap();
+            let inputs = vec![x.clone(), y.clone()];
+            let result = tape.gradient(&[w], &inputs).unwrap();
 
             if let Ok(mut p) = profiler.lock() {
                 p.end_operation().unwrap();
@@ -246,8 +263,8 @@ fn bench_memory_intensive_gradients(c: &mut Criterion) {
                 result = result.add(tensor).unwrap();
                 result = result.sigmoid().unwrap();
             }
-            let tensor_refs: Vec<&_> = tensors.iter().collect();
-            black_box(tape.gradient(&result, &tensor_refs).unwrap());
+            let tensor_clones: Vec<_> = tensors.to_vec();
+            black_box(tape.gradient(&[result.clone()], &tensor_clones).unwrap());
         });
     });
 
@@ -270,7 +287,8 @@ fn bench_precision_variants(c: &mut Criterion) {
             let z = x.mul(&y).unwrap();
             let w = z.pow(&x).unwrap();
             let result = w.sum(None, false).unwrap();
-            black_box(tape.gradient(&result, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[result.clone()], &inputs).unwrap());
         });
     });
 
@@ -286,7 +304,8 @@ fn bench_precision_variants(c: &mut Criterion) {
             let z = x.mul(&y).unwrap();
             let w = z.pow(&x).unwrap();
             let result = w.sum(None, false).unwrap();
-            black_box(tape.gradient(&result, &[&x, &y]).unwrap());
+            let inputs = vec![x.clone(), y.clone()];
+            black_box(tape.gradient(&[result.clone()], &inputs).unwrap());
         });
     });
 
@@ -311,7 +330,8 @@ fn bench_error_scenarios(c: &mut Criterion) {
             let result = x.matmul(&y);
             if result.is_ok() {
                 // Unexpected success, compute gradients
-                black_box(tape.gradient(&result.unwrap(), &[&x, &y]));
+                let inputs = vec![x.clone(), y.clone()];
+                black_box(tape.gradient(&[result.unwrap()], &inputs));
             } else {
                 // Expected failure, benchmark error path
                 black_box(result.unwrap_err());

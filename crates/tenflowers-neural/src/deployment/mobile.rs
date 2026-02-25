@@ -1009,7 +1009,7 @@ mod tests {
         let result = exporter.export(&model);
 
         assert!(result.is_ok());
-        let mobile_model = result.unwrap();
+        let mobile_model = result.expect("test: result should be valid");
         assert!(!mobile_model.model_data.is_empty());
         assert_eq!(mobile_model.config.backend, MobileBackend::CoreML);
     }
@@ -1026,7 +1026,7 @@ mod tests {
         let result = exporter.export(&model);
 
         assert!(result.is_ok());
-        let mobile_model = result.unwrap();
+        let mobile_model = result.expect("test: result should be valid");
         assert!(!mobile_model.model_data.is_empty());
         assert_eq!(mobile_model.config.backend, MobileBackend::TensorFlowLite);
     }
@@ -1056,7 +1056,7 @@ mod tests {
         let result = exporter.export(&model);
 
         assert!(result.is_ok());
-        let mobile_model = result.unwrap();
+        let mobile_model = result.expect("test: result should be valid");
         assert!(!mobile_model.model_data.is_empty());
         assert_eq!(mobile_model.config.backend, MobileBackend::OnnxMobile);
 

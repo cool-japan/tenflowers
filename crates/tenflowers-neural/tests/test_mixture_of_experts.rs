@@ -2,6 +2,8 @@
 //!
 //! Tests for enhanced MoE layer with proper gating, routing, and load balancing
 
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::{array, Array3};
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::layers::attention::mixture_of_experts::MixtureOfExperts;
@@ -324,11 +326,10 @@ mod moe_performance_tests {
 
     #[test]
     fn test_moe_with_varying_complexity() -> Result<()> {
-        // Test MoE layers with different complexity levels
+        // Test MoE layers with different complexity levels (optimized for faster tests)
         let complexities = vec![
-            (2, 1, 16, 32),    // Simple
-            (8, 2, 64, 256),   // Medium
-            (16, 4, 128, 512), // Complex (may be slow in tests)
+            (2, 1, 16, 32), // Simple
+            (4, 2, 32, 64), // Medium (reduced from 8/64/256)
         ];
 
         for (num_experts, num_selected, embed_dim, expert_dim) in complexities {
@@ -342,10 +343,10 @@ mod moe_performance_tests {
             )?;
 
             // Small input for performance testing
-            let input = Tensor::zeros(&[2, 3, embed_dim]);
+            let input = Tensor::zeros(&[1, 2, embed_dim]);
             let (output, aux_loss) = moe.forward_with_aux_loss(&input)?;
 
-            assert_eq!(output.shape().dims(), &[2, 3, embed_dim]);
+            assert_eq!(output.shape().dims(), &[1, 2, embed_dim]);
             assert!(aux_loss.shape().dims().iter().product::<usize>() == 1);
         }
 
@@ -435,29 +436,91 @@ mod moe_integration_tests {
 
     #[test]
     fn test_moe_memory_efficiency_patterns() -> Result<()> {
-        // Test patterns that would be memory efficient in practice
+        // Test patterns that would be memory efficient in practice (optimized for faster tests)
         let moe = MixtureOfExperts::<TestFloat>::new(
-            8,    // num_experts (moderate count)
+            4,    // num_experts (reduced from 8)
             2,    // num_selected (sparse activation)
-            64,   // embed_dim
-            128,  // expert_dim (2x expansion, not 4x)
+            32,   // embed_dim (reduced from 64)
+            64,   // expert_dim (reduced from 128)
             0.0,  // dropout_prob
             0.01, // load_balance_loss_coef
         )?;
 
-        // Test with realistic batch processing
-        let batch_sizes = vec![1, 4, 8];
+        // Test with reduced batch processing
+        let batch_sizes = vec![1, 2];
 
         for batch_size in batch_sizes {
-            let input = Tensor::zeros(&[batch_size, 16, 64]); // longer sequences
+            let input = Tensor::zeros(&[batch_size, 8, 32]); // reduced sequence length
             let (output, _aux_loss) = moe.forward_with_aux_loss(&input)?;
 
             assert_eq!(
                 output.shape().dims(),
-                &[batch_size, 16, 64],
+                &[batch_size, 8, 32],
                 "Memory efficient processing should preserve dimensions for batch size {}",
                 batch_size
             );
+        }
+
+        Ok(())
+    }
+}
+
+/// Comprehensive MoE stress tests (marked as ignored by default)
+/// Run with: cargo test -- --ignored
+#[cfg(test)]
+mod moe_stress_tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn test_moe_large_scale_comprehensive() -> Result<()> {
+        // Test MoE layers with original large complexity levels
+        let complexities = vec![
+            (2, 1, 16, 32),     // Simple
+            (8, 2, 64, 256),    // Medium
+            (16, 4, 128, 512),  // Complex
+            (32, 8, 256, 1024), // Very complex (stress test)
+        ];
+
+        for (num_experts, num_selected, embed_dim, expert_dim) in complexities {
+            let moe = MixtureOfExperts::<TestFloat>::new(
+                num_experts,
+                num_selected,
+                embed_dim,
+                expert_dim,
+                0.0,
+                0.01,
+            )?;
+
+            let input = Tensor::zeros(&[4, 8, embed_dim]);
+            let (output, aux_loss) = moe.forward_with_aux_loss(&input)?;
+
+            assert_eq!(output.shape().dims(), &[4, 8, embed_dim]);
+            assert!(aux_loss.shape().dims().iter().product::<usize>() == 1);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_moe_memory_patterns_comprehensive() -> Result<()> {
+        // Test with original larger memory patterns
+        let moe = MixtureOfExperts::<TestFloat>::new(
+            16,  // num_experts
+            4,   // num_selected
+            128, // embed_dim
+            512, // expert_dim
+            0.0, 0.01,
+        )?;
+
+        let batch_sizes = vec![1, 4, 8, 16];
+
+        for batch_size in batch_sizes {
+            let input = Tensor::zeros(&[batch_size, 32, 128]);
+            let (output, _aux_loss) = moe.forward_with_aux_loss(&input)?;
+
+            assert_eq!(output.shape().dims(), &[batch_size, 32, 128]);
         }
 
         Ok(())

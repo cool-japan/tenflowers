@@ -149,11 +149,14 @@ mod activation_tests {
 
     #[test]
     fn test_basic_activations() {
-        let input = Tensor::<f32>::from_vec(vec![-1.0, 0.0, 1.0], &[3]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-1.0, 0.0, 1.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         // Test ReLU
         let relu = Activation::ReLU;
-        let output = relu.forward(&input).unwrap();
+        let output = relu
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         if let Some(data) = output.as_slice() {
             assert_eq!(data[0], 0.0); // ReLU(-1) = 0
             assert_eq!(data[1], 0.0); // ReLU(0) = 0
@@ -162,7 +165,9 @@ mod activation_tests {
 
         // Test Sigmoid
         let sigmoid = Activation::Sigmoid;
-        let output = sigmoid.forward(&input).unwrap();
+        let output = sigmoid
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         if let Some(data) = output.as_slice() {
             assert!(data[0] > 0.0 && data[0] < 0.5); // sigmoid(-1) ≈ 0.27
             assert!((data[1] - 0.5).abs() < 1e-6); // sigmoid(0) = 0.5
@@ -171,7 +176,9 @@ mod activation_tests {
 
         // Test CELU with alpha
         let celu = Activation::CELU { alpha: 1.0 };
-        let output = celu.forward(&input).unwrap();
+        let output = celu
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
     }
 

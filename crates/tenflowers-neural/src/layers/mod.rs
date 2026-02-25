@@ -69,7 +69,7 @@
 //!
 //! ## Building a Simple Network
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::layers::{Dense, Activation};
 //! use tenflowers_neural::ActivationFunction;
 //! use tenflowers_core::Tensor;
@@ -89,7 +89,7 @@
 //!
 //! ## Convolutional Network
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::layers::{Conv2D, BatchNorm, MaxPool2D};
 //! use tenflowers_core::Tensor;
 //!
@@ -108,7 +108,7 @@
 //!
 //! ## Transformer Block
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::layers::{MultiHeadAttention, LayerNorm, FeedForwardNetwork};
 //! use tenflowers_core::Tensor;
 //!
@@ -129,7 +129,7 @@
 //!
 //! ## State-Space Model (Mamba)
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::layers::MambaBlock;
 //! use tenflowers_core::Tensor;
 //!

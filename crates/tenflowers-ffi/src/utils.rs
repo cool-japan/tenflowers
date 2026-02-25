@@ -531,16 +531,16 @@ mod tests {
 
     #[test]
     fn test_arange() {
-        let result = arange(0.0, 5.0, Some(1.0)).unwrap();
+        let result = arange(0.0, 5.0, Some(1.0)).expect("test: operation should succeed");
         assert_eq!(result, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
 
-        let result = arange(1.0, 2.0, Some(0.25)).unwrap();
+        let result = arange(1.0, 2.0, Some(0.25)).expect("test: operation should succeed");
         assert_eq!(result.len(), 4);
     }
 
     #[test]
     fn test_linspace() {
-        let result = linspace(0.0, 1.0, 5).unwrap();
+        let result = linspace(0.0, 1.0, 5).expect("test: operation should succeed");
         assert_eq!(result.len(), 5);
         assert_eq!(result[0], 0.0);
         assert_eq!(result[4], 1.0);
@@ -548,7 +548,8 @@ mod tests {
 
     #[test]
     fn test_broadcast_shape() {
-        let result = broadcast_shape(vec![3, 1, 5], vec![1, 4, 5]).unwrap();
+        let result = broadcast_shape(vec![3, 1, 5], vec![1, 4, 5])
+            .expect("test: shape/index operation should succeed");
         assert_eq!(result, vec![3, 4, 5]);
 
         let result = broadcast_shape(vec![1], vec![3, 4, 5]);

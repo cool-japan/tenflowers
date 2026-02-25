@@ -741,22 +741,28 @@ mod tests {
 
     #[test]
     fn test_dataset_debugger_inspect() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let samples = DatasetDebugger::inspect_samples(&dataset, 5).unwrap();
+        let samples =
+            DatasetDebugger::inspect_samples(&dataset, 5).expect("test: operation should succeed");
         assert_eq!(samples.len(), 2);
         assert_eq!(samples[0].feature_shape, vec![2]);
     }
 
     #[test]
     fn test_consistency_check() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
-        let report = DatasetDebugger::verify_consistency(&dataset).unwrap();
+        let report =
+            DatasetDebugger::verify_consistency(&dataset).expect("test: operation should succeed");
         assert!(report.is_consistent);
         assert_eq!(report.total_samples, 2);
     }

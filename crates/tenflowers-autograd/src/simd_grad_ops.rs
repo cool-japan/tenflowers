@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn test_simd_add_backward() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
         let lhs = Tensor::<f32>::ones(&[2, 2]);
@@ -721,7 +721,7 @@ mod tests {
         let result = ops.add_backward_simd(&grad_output, &lhs, &rhs);
         assert!(result.is_ok());
 
-        let (grad_lhs, grad_rhs) = result.unwrap();
+        let (grad_lhs, grad_rhs) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_lhs.shape().dims(), &[2, 2]);
         assert_eq!(grad_rhs.shape().dims(), &[2, 2]);
     }
@@ -729,7 +729,7 @@ mod tests {
     #[test]
     fn test_simd_mul_backward() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
         let lhs = Tensor::<f32>::full(&[2, 2], 2.0);
@@ -738,7 +738,7 @@ mod tests {
         let result = ops.mul_backward_simd(&grad_output, &lhs, &rhs);
         assert!(result.is_ok());
 
-        let (grad_lhs, grad_rhs) = result.unwrap();
+        let (grad_lhs, grad_rhs) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_lhs.shape().dims(), &[2, 2]);
         assert_eq!(grad_rhs.shape().dims(), &[2, 2]);
     }
@@ -746,15 +746,15 @@ mod tests {
     #[test]
     fn test_simd_relu_backward() {
         let config = SimdGradConfig::default();
-        let ops = SimdGradOps::new(config).unwrap();
+        let ops = SimdGradOps::new(config).expect("test: gradient computation should succeed");
 
         let grad_output = Tensor::<f32>::ones(&[2, 2]);
-        let input = Tensor::<f32>::from_vec(&[1.0, -1.0, 2.0, -2.0], &[2, 2]).unwrap();
+        let input = Tensor::<f32>::from_vec(&[1.0, -1.0, 2.0, -2.0], &[2, 2]).expect("test: tensor creation from valid data should succeed");
 
         let result = ops.relu_backward_simd(&grad_output, &input);
         assert!(result.is_ok());
 
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[2, 2]);
     }
 

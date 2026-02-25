@@ -457,13 +457,15 @@ mod tests {
 
     #[test]
     fn test_svd_backward_square_matrix() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = svd_backward(&grad_output, &input);
         assert!(result.is_ok(), "SVD gradient computation should succeed");
 
-        let gradient = result.unwrap();
+        let gradient = result.expect("test: gradient computation should succeed");
         assert_eq!(gradient.shape().dims(), input.shape().dims());
 
         // Verify the gradient is not all zeros
@@ -479,8 +481,10 @@ mod tests {
 
     #[test]
     fn test_svd_backward_rectangular_matrix() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.1, 0.1, 0.1, 0.1, 0.1], &[2, 3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.1, 0.1, 0.1, 0.1, 0.1], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = svd_backward(&grad_output, &input);
 
@@ -502,8 +506,10 @@ mod tests {
     #[test]
     fn test_svd_backward_invalid_input() {
         // Test with 3D tensor (should fail)
-        let input = Tensor::from_vec(vec![1.0f32; 8], &[2, 2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32; 8], &[2, 2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32; 8], &[2, 2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32; 8], &[2, 2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = svd_backward(&grad_output, &input);
         assert!(result.is_err(), "SVD should reject non-2D tensors");
@@ -511,41 +517,51 @@ mod tests {
 
     #[test]
     fn test_eig_backward_interface() {
-        let input = Tensor::from_vec(vec![2.0f32, 1.0, 1.0, 2.0], &[2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
-        let eigenvalues = Tensor::from_vec(vec![1.0f32, 3.0], &[2]).unwrap();
-        let eigenvectors = Tensor::from_vec(vec![1.0f32, -1.0, 1.0, 1.0], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![2.0f32, 1.0, 1.0, 2.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let eigenvalues = Tensor::from_vec(vec![1.0f32, 3.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let eigenvectors = Tensor::from_vec(vec![1.0f32, -1.0, 1.0, 1.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = eig_backward(&grad_output, &input, &eigenvalues, &eigenvectors);
         assert!(result.is_ok());
 
-        let gradient = result.unwrap();
+        let gradient = result.expect("test: gradient computation should succeed");
         assert_eq!(gradient.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_cholesky_backward_interface() {
-        let input = Tensor::from_vec(vec![4.0f32, 2.0, 2.0, 3.0], &[2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![4.0f32, 2.0, 2.0, 3.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = cholesky_backward(&grad_output, &input);
         assert!(result.is_ok());
 
-        let gradient = result.unwrap();
+        let gradient = result.expect("test: gradient computation should succeed");
         assert_eq!(gradient.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_qr_backward_interface() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
-        let q = Tensor::from_vec(vec![0.316f32, 0.949, 0.949, -0.316], &[2, 2]).unwrap();
-        let r = Tensor::from_vec(vec![3.162f32, 4.427, 0.0, 0.632], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let q = Tensor::from_vec(vec![0.316f32, 0.949, 0.949, -0.316], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let r = Tensor::from_vec(vec![3.162f32, 4.427, 0.0, 0.632], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = qr_backward(&grad_output, &input, &q, &r);
         assert!(result.is_ok());
 
-        let gradient = result.unwrap();
+        let gradient = result.expect("test: gradient computation should succeed");
         assert_eq!(gradient.shape().dims(), input.shape().dims());
     }
 
@@ -567,27 +583,33 @@ mod tests {
 
     #[test]
     fn test_gradient_consistency_check() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
-        let gradient = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let gradient = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         let tolerance = 1e-6_f32;
 
         let result = check_gradient_consistency(&input, &gradient, tolerance);
         assert!(result.is_ok());
-        assert!(result.unwrap(), "Gradient consistency check should pass");
+        assert!(
+            result.expect("test: gradient computation should succeed"),
+            "Gradient consistency check should pass"
+        );
     }
 
     #[test]
     fn test_gradient_consistency_with_large_gradient() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
-        let large_gradient =
-            Tensor::from_vec(vec![1000000.0f32, 2000000.0, 3000000.0], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let large_gradient = Tensor::from_vec(vec![1000000.0f32, 2000000.0, 3000000.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         let tolerance = 1e-6_f32;
 
         let result = check_gradient_consistency(&input, &large_gradient, tolerance);
         assert!(result.is_ok());
         // This should fail due to very large gradient compared to input
         assert!(
-            !result.unwrap(),
+            !result.expect("test: operation result should be valid"),
             "Large gradient should fail consistency check"
         );
     }
@@ -615,13 +637,14 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let stats = result.unwrap();
+        let stats = result.expect("test: operation result should be valid");
         assert!(stats.num_elements > 0);
     }
 
     #[test]
     fn test_gradient_check_interface() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let epsilon = 1e-5_f32;
         let tolerance = 1e-3_f32;
 
@@ -634,7 +657,7 @@ mod tests {
         let result = gradient_check(forward_fn, &[input], epsilon, tolerance);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: operation result should be valid");
         assert!(stats.num_elements > 0);
         println!(
             "Gradient check completed with {} elements validated",
@@ -644,13 +667,14 @@ mod tests {
 
     #[test]
     fn test_create_scaled_identity_like() {
-        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let scale = 0.5_f32;
 
         let result = create_scaled_identity_like(&matrix, scale);
         assert!(result.is_ok());
 
-        let identity_like = result.unwrap();
+        let identity_like = result.expect("test: operation result should be valid");
         assert_eq!(identity_like.shape().dims(), matrix.shape().dims());
 
         if let Some(data) = identity_like.as_slice() {
@@ -665,13 +689,14 @@ mod tests {
 
     #[test]
     fn test_create_scaled_identity_like_rectangular() {
-        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+        let matrix = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
         let scale = 0.7_f32;
 
         let result = create_scaled_identity_like(&matrix, scale);
         assert!(result.is_ok());
 
-        let identity_like = result.unwrap();
+        let identity_like = result.expect("test: operation result should be valid");
         assert_eq!(identity_like.shape().dims(), matrix.shape().dims());
 
         if let Some(data) = identity_like.as_slice() {

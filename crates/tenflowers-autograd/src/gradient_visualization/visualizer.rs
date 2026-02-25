@@ -721,9 +721,12 @@ mod tests {
     #[test]
     fn test_compute_gradient_stats() {
         let visualizer = GradientFlowVisualizer::<f32>::new();
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let stats = visualizer.compute_gradient_stats(&tensor).unwrap();
+        let stats = visualizer
+            .compute_gradient_stats(&tensor)
+            .expect("test: gradient computation should succeed");
         assert!(stats.mean > 0.0);
         assert!(stats.std > 0.0);
         assert!(stats.l2_norm > 0.0);
@@ -732,9 +735,12 @@ mod tests {
     #[test]
     fn test_compute_value_stats() {
         let visualizer = GradientFlowVisualizer::<f32>::new();
-        let tensor = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 2.0], &[2, 2]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 2.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let stats = visualizer.compute_value_stats(&tensor).unwrap();
+        let stats = visualizer
+            .compute_value_stats(&tensor)
+            .expect("test: visualization should succeed");
         assert_eq!(stats.sparsity, 50.0); // 50% zeros
         assert!(stats.norm > 0.0);
     }
@@ -742,9 +748,12 @@ mod tests {
     #[test]
     fn test_compute_tensor_magnitude() {
         let visualizer = GradientFlowVisualizer::<f32>::new();
-        let tensor = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let magnitude = visualizer.compute_tensor_magnitude(&tensor).unwrap();
+        let magnitude = visualizer
+            .compute_tensor_magnitude(&tensor)
+            .expect("test: visualization should succeed");
         assert!((magnitude - 5.0).abs() < 1e-6); // sqrt(3^2 + 4^2) = 5
     }
 

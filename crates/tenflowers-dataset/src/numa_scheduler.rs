@@ -567,8 +567,10 @@ mod tests {
             balance_nodes: true,
         };
 
-        let mut scheduler = NumaScheduler::new(config).unwrap();
-        let assignments = scheduler.assign_workers(4).unwrap();
+        let mut scheduler = NumaScheduler::new(config).expect("test: operation should succeed");
+        let assignments = scheduler
+            .assign_workers(4)
+            .expect("test: operation should succeed");
 
         assert_eq!(assignments.len(), 4);
 
@@ -581,8 +583,10 @@ mod tests {
     #[test]
     fn test_assignment_stats() {
         let config = NumaConfig::default();
-        let mut scheduler = NumaScheduler::new(config).unwrap();
-        let _assignments = scheduler.assign_workers(4).unwrap();
+        let mut scheduler = NumaScheduler::new(config).expect("test: operation should succeed");
+        let _assignments = scheduler
+            .assign_workers(4)
+            .expect("test: operation should succeed");
 
         let stats = scheduler.get_assignment_stats();
         assert_eq!(stats.total_workers, 4);

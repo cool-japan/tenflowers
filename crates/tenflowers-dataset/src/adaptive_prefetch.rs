@@ -580,7 +580,9 @@ mod tests {
             tuner.update_metrics(metrics);
         }
 
-        let avg = tuner.get_average_metrics(Duration::from_secs(60)).unwrap();
+        let avg = tuner
+            .get_average_metrics(Duration::from_secs(60))
+            .expect("test: operation should succeed");
         assert!((avg.hit_rate - 0.3).abs() < 0.01); // Average of 0.1, 0.2, 0.3, 0.4, 0.5
     }
 

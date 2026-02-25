@@ -570,146 +570,6 @@ where
     Tensor::from_vec(l, &[n, n])
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use approx::assert_relative_eq;
-
-    #[test]
-    fn test_det_2x2() {
-        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let det_result = det(&a).unwrap();
-        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
-        assert_relative_eq!(det_val, -2.0, epsilon = 1e-10); // det = 1*4 - 2*3 = -2
-    }
-
-    #[test]
-    fn test_det_3x3() {
-        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0], &[3, 3])
-            .unwrap();
-        let det_result = det(&a).unwrap();
-        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
-        assert_relative_eq!(det_val, 1.0, epsilon = 1e-10); // Computed manually
-    }
-
-    #[test]
-    fn test_inv_2x2() {
-        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let inv_result = inv(&a).unwrap();
-        let inv_data = inv_result.as_slice().expect("tensor should be contiguous");
-
-        // Expected inverse of [[1,2],[3,4]] is [[-2,1],[1.5,-0.5]]
-        assert_relative_eq!(inv_data[0], -2.0, epsilon = 1e-10);
-        assert_relative_eq!(inv_data[1], 1.0, epsilon = 1e-10);
-        assert_relative_eq!(inv_data[2], 1.5, epsilon = 1e-10);
-        assert_relative_eq!(inv_data[3], -0.5, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn test_cholesky_2x2() {
-        // Test with a positive definite matrix [[4,2],[2,2]]
-        let a = Tensor::<f64>::from_vec(vec![4.0, 2.0, 2.0, 2.0], &[2, 2]).unwrap();
-        let chol_result = cholesky(&a).unwrap();
-        let chol_data = chol_result.as_slice().expect("tensor should be contiguous");
-
-        // Expected Cholesky decomposition [[2,0],[1,1]]
-        assert_relative_eq!(chol_data[0], 2.0, epsilon = 1e-10);
-        assert_relative_eq!(chol_data[1], 0.0, epsilon = 1e-10);
-        assert_relative_eq!(chol_data[2], 1.0, epsilon = 1e-10);
-        assert_relative_eq!(chol_data[3], 1.0, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn test_lu_decomposition() {
-        let a = Tensor::<f64>::from_vec(vec![2.0, 1.0, 1.0, 3.0], &[2, 2]).unwrap();
-        let (l, u, _p) = lu(&a).unwrap();
-
-        // Basic sanity check - L should be lower triangular with 1s on diagonal
-        let l_data = l.as_slice().expect("tensor should be contiguous");
-        assert_relative_eq!(l_data[0], 1.0, epsilon = 1e-10); // L[0,0] = 1
-        assert_relative_eq!(l_data[1], 0.0, epsilon = 1e-10); // L[0,1] = 0
-
-        // U should be upper triangular
-        let u_data = u.as_slice().expect("tensor should be contiguous");
-        assert!(u_data[0] != 0.0); // U[0,0] should be non-zero
-    }
-
-    #[test]
-    fn test_eigenvalues_2x2() {
-        // Test with a simple 2x2 matrix [[2, 1], [1, 2]]
-        // Eigenvalues should be 3 and 1
-        let a = Tensor::<f64>::from_vec(vec![2.0, 1.0, 1.0, 2.0], &[2, 2]).unwrap();
-        let (eigenvals, _eigenvecs) = eig(&a).unwrap();
-        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
-
-        // Sort the eigenvalues for comparison
-        let mut sorted_vals = vals.to_vec();
-        sorted_vals.sort_by(|a, b| {
-            b.partial_cmp(a)
-                .expect("partial_cmp should not return None for valid values")
-        });
-
-        assert_relative_eq!(sorted_vals[0], 3.0, epsilon = 1e-8);
-        assert_relative_eq!(sorted_vals[1], 1.0, epsilon = 1e-8);
-    }
-
-    #[test]
-    fn test_eigenvalues_diagonal() {
-        // Test with diagonal matrix - eigenvalues should be the diagonal elements
-        let a = Tensor::<f64>::from_vec(vec![3.0, 0.0, 0.0, 5.0], &[2, 2]).unwrap();
-        let (eigenvals, _eigenvecs) = eig(&a).unwrap();
-        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
-
-        // Sort the eigenvalues for comparison
-        let mut sorted_vals = vals.to_vec();
-        sorted_vals.sort_by(|a, b| {
-            b.partial_cmp(a)
-                .expect("partial_cmp should not return None for valid values")
-        });
-
-        assert_relative_eq!(sorted_vals[0], 5.0, epsilon = 1e-8);
-        assert_relative_eq!(sorted_vals[1], 3.0, epsilon = 1e-8);
-    }
-
-    #[test]
-    fn test_svd_2x2() {
-        // Test SVD with a simple 2x2 matrix
-        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let result = svd(&a);
-
-        // SVD should succeed (even if values aren't perfectly accurate due to iterative algorithm)
-        assert!(result.is_ok());
-
-        let (u, sigma, v) = result.unwrap();
-        assert_eq!(u.shape().dims(), &[2, 2]);
-        assert_eq!(sigma.shape().dims(), &[2, 2]);
-        assert_eq!(v.shape().dims(), &[2, 2]);
-    }
-
-    #[test]
-    fn test_svd_rank_one() {
-        // Test SVD with rank-1 matrix (outer product of two vectors)
-        let a = Tensor::<f64>::from_vec(vec![2.0, 4.0, 1.0, 2.0], &[2, 2]).unwrap();
-        let result = svd(&a);
-
-        assert!(result.is_ok());
-        let (u, sigma, v) = result.unwrap();
-
-        // Check shapes
-        assert_eq!(u.shape().dims(), &[2, 2]);
-        assert_eq!(sigma.shape().dims(), &[2, 2]);
-        assert_eq!(v.shape().dims(), &[2, 2]);
-
-        // For rank-1 matrix, one singular value should be much larger than the other
-        let sigma_data = sigma.as_slice().expect("tensor should be contiguous");
-        let s1 = sigma_data[0]; // σ[0,0]
-        let s2 = sigma_data[3]; // σ[1,1]
-
-        // One should be significantly larger (this is a rank-1 matrix)
-        assert!(s1 > s2 || s2 > s1);
-    }
-}
-
 /// LU decomposition with partial pivoting
 /// Returns (L, U, P) where PA = LU
 pub fn lu<T>(input: &Tensor<T>) -> Result<(Tensor<T>, Tensor<T>, Tensor<T>)>
@@ -975,4 +835,152 @@ where
         Tensor::from_vec(u, &[min_dim, n])?,
         Tensor::from_vec(p, &[m, m])?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_det_2x2() {
+        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let det_result = det(&a).expect("test: det should succeed");
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
+        assert_relative_eq!(det_val, -2.0, epsilon = 1e-10); // det = 1*4 - 2*3 = -2
+    }
+
+    #[test]
+    fn test_det_3x3() {
+        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0], &[3, 3])
+            .expect("test: operation should succeed");
+        let det_result = det(&a).expect("test: det should succeed");
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
+        assert_relative_eq!(det_val, 1.0, epsilon = 1e-10); // Computed manually
+    }
+
+    #[test]
+    fn test_inv_2x2() {
+        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let inv_result = inv(&a).expect("test: inv should succeed");
+        let inv_data = inv_result.as_slice().expect("tensor should be contiguous");
+
+        // Expected inverse of [[1,2],[3,4]] is [[-2,1],[1.5,-0.5]]
+        assert_relative_eq!(inv_data[0], -2.0, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[1], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[2], 1.5, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[3], -0.5, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_cholesky_2x2() {
+        // Test with a positive definite matrix [[4,2],[2,2]]
+        let a = Tensor::<f64>::from_vec(vec![4.0, 2.0, 2.0, 2.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let chol_result = cholesky(&a).expect("test: cholesky should succeed");
+        let chol_data = chol_result.as_slice().expect("tensor should be contiguous");
+
+        // Expected Cholesky decomposition [[2,0],[1,1]]
+        assert_relative_eq!(chol_data[0], 2.0, epsilon = 1e-10);
+        assert_relative_eq!(chol_data[1], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(chol_data[2], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(chol_data[3], 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_lu_decomposition() {
+        let a = Tensor::<f64>::from_vec(vec![2.0, 1.0, 1.0, 3.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let (l, u, _p) = lu(&a).expect("test: lu should succeed");
+
+        // Basic sanity check - L should be lower triangular with 1s on diagonal
+        let l_data = l.as_slice().expect("tensor should be contiguous");
+        assert_relative_eq!(l_data[0], 1.0, epsilon = 1e-10); // L[0,0] = 1
+        assert_relative_eq!(l_data[1], 0.0, epsilon = 1e-10); // L[0,1] = 0
+
+        // U should be upper triangular
+        let u_data = u.as_slice().expect("tensor should be contiguous");
+        assert!(u_data[0] != 0.0); // U[0,0] should be non-zero
+    }
+
+    #[test]
+    fn test_eigenvalues_2x2() {
+        // Test with a simple 2x2 matrix [[2, 1], [1, 2]]
+        // Eigenvalues should be 3 and 1
+        let a = Tensor::<f64>::from_vec(vec![2.0, 1.0, 1.0, 2.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let (eigenvals, _eigenvecs) = eig(&a).expect("test: eig should succeed");
+        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
+
+        // Sort the eigenvalues for comparison
+        let mut sorted_vals = vals.to_vec();
+        sorted_vals.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("partial_cmp should not return None for valid values")
+        });
+
+        assert_relative_eq!(sorted_vals[0], 3.0, epsilon = 1e-8);
+        assert_relative_eq!(sorted_vals[1], 1.0, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_eigenvalues_diagonal() {
+        // Test with diagonal matrix - eigenvalues should be the diagonal elements
+        let a = Tensor::<f64>::from_vec(vec![3.0, 0.0, 0.0, 5.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let (eigenvals, _eigenvecs) = eig(&a).expect("test: eig should succeed");
+        let vals = eigenvals.as_slice().expect("tensor should be contiguous");
+
+        // Sort the eigenvalues for comparison
+        let mut sorted_vals = vals.to_vec();
+        sorted_vals.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("partial_cmp should not return None for valid values")
+        });
+
+        assert_relative_eq!(sorted_vals[0], 5.0, epsilon = 1e-8);
+        assert_relative_eq!(sorted_vals[1], 3.0, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_svd_2x2() {
+        // Test SVD with a simple 2x2 matrix
+        let a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let result = svd(&a);
+
+        // SVD should succeed (even if values aren't perfectly accurate due to iterative algorithm)
+        assert!(result.is_ok());
+
+        let (u, sigma, v) = result.expect("test: operation should succeed");
+        assert_eq!(u.shape().dims(), &[2, 2]);
+        assert_eq!(sigma.shape().dims(), &[2, 2]);
+        assert_eq!(v.shape().dims(), &[2, 2]);
+    }
+
+    #[test]
+    fn test_svd_rank_one() {
+        // Test SVD with rank-1 matrix (outer product of two vectors)
+        let a = Tensor::<f64>::from_vec(vec![2.0, 4.0, 1.0, 2.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let result = svd(&a);
+
+        assert!(result.is_ok());
+        let (u, sigma, v) = result.expect("test: operation should succeed");
+
+        // Check shapes
+        assert_eq!(u.shape().dims(), &[2, 2]);
+        assert_eq!(sigma.shape().dims(), &[2, 2]);
+        assert_eq!(v.shape().dims(), &[2, 2]);
+
+        // For rank-1 matrix, one singular value should be much larger than the other
+        let sigma_data = sigma.as_slice().expect("tensor should be contiguous");
+        let s1 = sigma_data[0]; // σ[0,0]
+        let s2 = sigma_data[3]; // σ[1,1]
+
+        // One should be significantly larger (this is a rank-1 matrix)
+        assert!(s1 > s2 || s2 > s1);
+    }
 }

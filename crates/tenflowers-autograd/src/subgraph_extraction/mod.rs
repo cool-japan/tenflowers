@@ -75,7 +75,7 @@ mod integration_tests {
         let result = extractor.extract_subgraphs(&operations);
         assert!(result.is_ok());
 
-        let extraction_result = result.unwrap();
+        let extraction_result = result.expect("test: extraction should succeed");
         assert!(!extraction_result.subgraphs.is_empty());
         assert!(extraction_result.load_balance_score >= 0.0);
         assert!(extraction_result.parallel_efficiency >= 0.0);

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Comprehensive Dispatch System Integration Example
 //!
 //! This example demonstrates the full power of TenfloweRS core infrastructure:

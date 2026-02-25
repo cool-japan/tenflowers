@@ -673,9 +673,11 @@ mod tests {
 
         manager
             .create_group("test_group".to_string(), devices)
-            .unwrap();
+            .expect("test: operation should succeed");
 
-        let group = manager.get_group("test_group").unwrap();
+        let group = manager
+            .get_group("test_group")
+            .expect("test: get_group should succeed");
         #[cfg(feature = "gpu")]
         assert_eq!(group.size(), 2);
         #[cfg(not(feature = "gpu"))]
@@ -688,12 +690,12 @@ mod tests {
         let devices = vec![Device::Cpu];
         manager
             .create_group("test_group".to_string(), devices)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[2, 2]);
         let results = manager
             .broadcast(&tensor, Device::Cpu, Some("test_group"))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].device(), &Device::Cpu);

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🏆 Comprehensive Ultra-MatMul Performance Comparison: V1 vs V2 vs V3
 //!
 //! This definitive analysis compares all three ultra-performance approaches

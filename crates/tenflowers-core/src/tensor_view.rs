@@ -973,8 +973,9 @@ mod tests {
 
     #[test]
     fn test_tensor_view_creation() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let view = TensorView::from_tensor(&tensor).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let view = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
 
         assert_eq!(view.shape(), &[2, 2]);
         assert_eq!(view.numel(), 4);
@@ -983,37 +984,45 @@ mod tests {
 
     #[test]
     fn test_zero_copy_transpose() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
-        let view = TensorView::from_tensor(&tensor).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: from_vec should succeed");
+        let view = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
 
-        let transposed = view.transpose(&[1, 0]).unwrap();
+        let transposed = view
+            .transpose(&[1, 0])
+            .expect("test: transpose should succeed");
         assert_eq!(transposed.shape(), &[3, 2]);
         assert_eq!(transposed.strides(), &[4, 12]); // Strides change for transpose
     }
 
     #[test]
     fn test_zero_copy_reshape() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
-        let view = TensorView::from_tensor(&tensor).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: from_vec should succeed");
+        let view = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
 
-        let reshaped = view.reshape(&[3, 2]).unwrap();
+        let reshaped = view.reshape(&[3, 2]).expect("test: reshape should succeed");
         assert_eq!(reshaped.shape(), &[3, 2]);
         assert!(reshaped.is_contiguous());
     }
 
     #[test]
     fn test_zero_copy_slice() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
-        let view = TensorView::from_tensor(&tensor).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: from_vec should succeed");
+        let view = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
 
-        let sliced = view.slice(&[(0, 1), (1, 3)]).unwrap();
+        let sliced = view
+            .slice(&[(0, 1), (1, 3)])
+            .expect("test: operation should succeed");
         assert_eq!(sliced.shape(), &[1, 2]);
     }
 
     #[test]
     fn test_memory_stats() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let view = TensorView::from_tensor(&tensor).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let view = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
 
         let stats = TensorViewOps::memory_stats(&view);
         assert_eq!(stats.total_elements, 4);
@@ -1023,9 +1032,12 @@ mod tests {
 
     #[test]
     fn test_shares_memory() {
-        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let view1 = TensorView::from_tensor(&tensor).unwrap();
-        let view2 = view1.transpose(&[1, 0]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let view1 = TensorView::from_tensor(&tensor).expect("test: from_tensor should succeed");
+        let view2 = view1
+            .transpose(&[1, 0])
+            .expect("test: transpose should succeed");
 
         assert!(TensorViewOps::shares_memory(&view1, &view2));
     }

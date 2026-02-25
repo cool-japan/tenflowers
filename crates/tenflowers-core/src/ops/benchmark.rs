@@ -1061,7 +1061,7 @@ mod tests {
         summary.add_sample(4.0);
         summary.add_sample(5.0);
 
-        let stats = summary.finalize().unwrap();
+        let stats = summary.finalize().expect("test: finalize should succeed");
         assert_eq!(stats.count, 5);
         assert_eq!(stats.mean, 3.0);
         assert_eq!(stats.median, 3.0);
@@ -1163,13 +1163,15 @@ mod tests {
         let stats = suite.generate_statistics();
         assert_eq!(stats.total_benchmarks, 5);
 
-        let duration_stats = stats.duration_stats.unwrap();
+        let duration_stats = stats
+            .duration_stats
+            .expect("test: operation should succeed");
         assert_eq!(duration_stats.count, 5);
         assert_eq!(duration_stats.mean, 0.003); // 3ms average
         assert_eq!(duration_stats.min, 0.001); // 1ms
         assert_eq!(duration_stats.max, 0.005); // 5ms
 
-        let memory_stats = stats.memory_stats.unwrap();
+        let memory_stats = stats.memory_stats.expect("test: operation should succeed");
         assert_eq!(memory_stats.mean, 3000.0); // Average 3000 bytes
     }
 }

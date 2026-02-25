@@ -186,7 +186,11 @@ impl SystemHealthChecker {
             cuda_available: self.is_cuda_available(),
             metal_available: self.is_metal_available(),
             rocm_available: self.is_rocm_available(),
-            blas_acceleration: cfg!(any(feature = "blas-openblas", feature = "blas-mkl")),
+            blas_acceleration: cfg!(any(
+                feature = "blas-openblas",
+                feature = "blas-oxiblas",
+                feature = "blas-mkl"
+            )),
             mixed_precision: true,
             distributed_training: true,
         }

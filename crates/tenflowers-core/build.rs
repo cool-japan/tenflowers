@@ -3,16 +3,20 @@ use std::path::Path;
 fn main() {
     // Inform cargo about our custom cfg flags (using single colon for MSRV compatibility)
     println!("cargo:rustc-check-cfg=cfg(cuda_available)");
-    println!("cargo:rustc-check-cfg=cfg(selected_blas_backend, values(\"mkl\", \"accelerate\", \"openblas\"))");
+    println!("cargo:rustc-check-cfg=cfg(selected_blas_backend, values(\"mkl\", \"accelerate\", \"openblas\", \"oxiblas\"))");
     println!("cargo:rustc-check-cfg=cfg(has_blas_backend)");
     // Select BLAS backend based on priority when multiple are enabled
-    // Priority: MKL > Accelerate > OpenBLAS
+    // Priority: OxiBLAS > MKL > Accelerate > OpenBLAS (COOLJAPAN Pure Rust Policy prefers OxiBLAS)
 
+    let oxiblas_enabled = cfg!(feature = "blas-oxiblas");
     let mkl_enabled = cfg!(feature = "blas-mkl");
     let accelerate_enabled = cfg!(feature = "blas-accelerate");
     let openblas_enabled = cfg!(feature = "blas-openblas");
 
-    if mkl_enabled {
+    if oxiblas_enabled {
+        println!("cargo:rustc-cfg=selected_blas_backend=\"oxiblas\"");
+        println!("cargo:rustc-cfg=has_blas_backend");
+    } else if mkl_enabled {
         println!("cargo:rustc-cfg=selected_blas_backend=\"mkl\"");
         println!("cargo:rustc-cfg=has_blas_backend");
     } else if accelerate_enabled {

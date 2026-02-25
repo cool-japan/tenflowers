@@ -338,7 +338,7 @@ mod tests {
         };
         let optimizer = AdaBelief::<f32>::new(config.clone());
         assert_eq!(optimizer.config().lr, 0.01);
-        assert_eq!(optimizer.config().amsgrad, false);
+        assert!(!optimizer.config().amsgrad);
     }
 
     #[test]

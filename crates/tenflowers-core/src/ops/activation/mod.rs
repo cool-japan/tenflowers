@@ -53,20 +53,20 @@
 //! use tenflowers_core::Tensor;
 //!
 //! // Basic usage
-//! let x = Tensor::<f32>::from_vec(vec![-1.0, 0.0, 1.0], &[3]).unwrap();
-//! let output = relu(&x).unwrap();
+//! let x = Tensor::<f32>::from_vec(vec![-1.0, 0.0, 1.0], &[3]).expect("from_vec should succeed");
+//! let output = relu(&x).expect("relu should succeed");
 //!
 //! // Optimized f32 functions
-//! let sigmoid_out = sigmoid_f32(&x).unwrap();
-//! let gelu_out = gelu_f32(&x).unwrap();
+//! let sigmoid_out = sigmoid_f32(&x).expect("sigmoid_f32 should succeed");
+//! let gelu_out = gelu_f32(&x).expect("gelu_f32 should succeed");
 //!
 //! // Parameterized activations
-//! let elu_out = elu(&x, 1.0).unwrap();
-//! let leaky_relu_out = leaky_relu(&x, 0.01).unwrap();
+//! let elu_out = elu(&x, 1.0).expect("elu should succeed");
+//! let leaky_relu_out = leaky_relu(&x, 0.01).expect("leaky_relu should succeed");
 //!
 //! // Softmax with axis specification
-//! let softmax_out = softmax(&x, None).unwrap(); // Last axis
-//! let softmax_axis0 = softmax(&x, Some(0)).unwrap(); // Specific axis
+//! let softmax_out = softmax(&x, None).expect("softmax should succeed"); // Last axis
+//! let softmax_axis0 = softmax(&x, Some(0)).expect("operation should succeed"); // Specific axis
 //! ```
 //!
 //! ## Performance Analytics

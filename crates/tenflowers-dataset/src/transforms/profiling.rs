@@ -530,7 +530,9 @@ mod tests {
             false,
         );
 
-        let stats = profiler.get_stats("test_transform").unwrap();
+        let stats = profiler
+            .get_stats("test_transform")
+            .expect("test: operation should succeed");
         assert_eq!(stats.sample_count, 1);
         assert_eq!(stats.error_count, 0);
     }
@@ -552,7 +554,10 @@ mod tests {
         assert!(!all_stats.is_empty(), "No stats were recorded");
 
         // Get the first (and should be only) stats entry
-        let stats = all_stats.values().next().unwrap();
+        let stats = all_stats
+            .values()
+            .next()
+            .expect("test: iterator should have next");
         assert_eq!(stats.sample_count, 1);
     }
 }

@@ -235,14 +235,14 @@ logging:
 
         let config = manager
             .load_from_string(yaml_config, ConfigFormat::Yaml)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(config.dataset.batch_size, 64);
         assert_eq!(config.dataloader.num_workers, 8);
     }
 
     #[test]
     fn test_config_file_loading() {
-        let mut file = NamedTempFile::with_suffix(".toml").unwrap();
+        let mut file = NamedTempFile::with_suffix(".toml").expect("test: operation should succeed");
         writeln!(
             file,
             r#"
@@ -286,10 +286,12 @@ lazy_loading = false
 level = "info"
 "#
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let mut manager = ConfigManager::new();
-        let config = manager.load_from_file(file.path()).unwrap();
+        let config = manager
+            .load_from_file(file.path())
+            .expect("test: load from file should succeed");
         assert_eq!(config.dataset.batch_size, 128);
         assert_eq!(config.dataloader.num_workers, 16);
     }
@@ -334,7 +336,7 @@ logging:
 
         manager
             .load_from_string(base_config, ConfigFormat::Yaml)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let override_config = GlobalConfig {
             dataset: DatasetConfig {
@@ -344,7 +346,9 @@ logging:
             ..Default::default()
         };
 
-        manager.merge_config(override_config).unwrap();
+        manager
+            .merge_config(override_config)
+            .expect("test: operation should succeed");
         assert_eq!(manager.config().dataset.batch_size, 64);
         assert_eq!(manager.config().dataloader.num_workers, 4); // Should keep original
     }

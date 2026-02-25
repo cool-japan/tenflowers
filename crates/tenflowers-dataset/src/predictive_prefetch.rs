@@ -674,9 +674,10 @@ mod tests {
     #[test]
     fn test_predictive_prefetcher() {
         // Create test dataset
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
         let dataset = Arc::new(TensorDataset::new(features, labels));
 
         let config = PrefetchConfig {
@@ -704,8 +705,10 @@ mod tests {
 
     #[test]
     fn test_predictive_prefetch_dataset() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let base_dataset = TensorDataset::new(features, labels);
 
         let dataset = PredictivePrefetchDataset::new(base_dataset);

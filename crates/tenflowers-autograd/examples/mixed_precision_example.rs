@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 /// Automatic Mixed Precision (AMP) Training Example
 ///
 /// This example demonstrates how to use automatic mixed precision training

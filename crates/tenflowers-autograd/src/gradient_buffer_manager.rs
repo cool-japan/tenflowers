@@ -702,21 +702,21 @@ mod tests {
     #[test]
     fn test_gradient_buffer_allocation() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager = GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
         let allocation = manager.allocate_gradient_buffer::<f32>(&[2, 2]);
         assert!(allocation.is_ok());
 
-        let allocation = allocation.unwrap();
+        let allocation = allocation.expect("test: memory operation should succeed");
         assert_eq!(allocation.buffer.shape().dims(), &[2, 2]);
     }
 
     #[test]
     fn test_gradient_buffer_deallocation() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager = GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
-        let allocation = manager.allocate_gradient_buffer::<f32>(&[2, 2]).unwrap();
+        let allocation = manager.allocate_gradient_buffer::<f32>(&[2, 2]).expect("test: gradient computation should succeed");
         let result = manager.deallocate_gradient_buffer(allocation.buffer);
         assert!(result.is_ok());
     }
@@ -724,36 +724,36 @@ mod tests {
     #[test]
     fn test_multiple_buffer_allocation() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager = GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
         let shapes = vec![&[2, 2][..], &[3, 3], &[4, 4]];
         let allocations = manager.allocate_gradient_buffers::<f32>(&shapes);
         assert!(allocations.is_ok());
 
-        let allocations = allocations.unwrap();
+        let allocations = allocations.expect("test: memory operation should succeed");
         assert_eq!(allocations.len(), 3);
     }
 
     #[test]
     fn test_gradient_tensor_creation() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager = GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
         let tensor = manager.create_gradient_tensor(&[2, 2], 1.0f32);
         assert!(tensor.is_ok());
 
-        let tensor = tensor.unwrap();
+        let tensor = tensor.expect("test: operation should succeed");
         assert_eq!(tensor.shape().dims(), &[2, 2]);
     }
 
     #[test]
     fn test_memory_statistics() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager = GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
         let _allocation = manager
             .allocate_gradient_buffer::<f32>(&[100, 100])
-            .unwrap();
+            .expect("test: operation should succeed");
         let stats = manager.get_memory_statistics();
         assert!(stats.is_ok());
     }

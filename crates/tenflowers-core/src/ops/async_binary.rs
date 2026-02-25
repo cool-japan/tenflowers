@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_async_executor_creation() {
-        let executor = AsyncBinaryOperationExecutor::new(0).unwrap();
+        let executor = AsyncBinaryOperationExecutor::new(0).expect("test: new should succeed");
 
         // Test that executor starts idle
         assert!(executor.is_idle());
@@ -526,11 +526,13 @@ mod tests {
 
     #[test]
     fn test_sync_fallback() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0, 6.0], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0, 6.0], &[3])
+            .expect("test: from_vec should succeed");
 
         // Test that sync operations still work
-        let result = crate::ops::add(&a, &b).unwrap();
+        let result = crate::ops::add(&a, &b).expect("test: add should succeed");
         let expected = vec![5.0, 7.0, 9.0];
 
         if let TensorStorage::Cpu(arr) = &result.storage {

@@ -2,7 +2,7 @@
 
 Data loading and preprocessing utilities for TenfloweRS, providing efficient dataset management, transformations, and data pipelines for machine learning workflows.
 
-> Alpha Notice (0.1.0-alpha.1 · 2025-09-27)
+> Release Candidate (0.1.0-rc.1 · 2026-02-12)
 > Core dataset abstractions and transform pipeline are present; advanced distributed sharding, streaming, and some format loaders are placeholders or partial.
 
 ## Overview

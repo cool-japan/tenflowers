@@ -437,15 +437,32 @@ mod tests {
     #[test]
     fn test_linear_index() {
         let layout = StridedLayout::new(vec![2, 3, 4]);
-        assert_eq!(layout.linear_index(&[0, 0, 0]).unwrap(), 0);
-        assert_eq!(layout.linear_index(&[1, 2, 3]).unwrap(), 23);
-        assert_eq!(layout.linear_index(&[1, 0, 0]).unwrap(), 12);
+        assert_eq!(
+            layout
+                .linear_index(&[0, 0, 0])
+                .expect("test: linear_index should succeed"),
+            0
+        );
+        assert_eq!(
+            layout
+                .linear_index(&[1, 2, 3])
+                .expect("test: linear_index should succeed"),
+            23
+        );
+        assert_eq!(
+            layout
+                .linear_index(&[1, 0, 0])
+                .expect("test: linear_index should succeed"),
+            12
+        );
     }
 
     #[test]
     fn test_slice() {
         let layout = StridedLayout::new(vec![4, 5, 6]);
-        let sliced = layout.slice(&[1..3, 0..5, 2..4]).unwrap();
+        let sliced = layout
+            .slice(&[1..3, 0..5, 2..4])
+            .expect("test: slice should succeed");
         assert_eq!(sliced.shape(), &[2, 5, 2]);
         assert_eq!(sliced.strides(), &[30, 6, 1]);
         assert_eq!(sliced.offset(), 32); // 1*30 + 0*6 + 2*1
@@ -454,7 +471,9 @@ mod tests {
     #[test]
     fn test_transpose() {
         let layout = StridedLayout::new(vec![2, 3, 4]);
-        let transposed = layout.transpose(Some(&[2, 0, 1])).unwrap();
+        let transposed = layout
+            .transpose(Some(&[2, 0, 1]))
+            .expect("test: operation should succeed");
         assert_eq!(transposed.shape(), &[4, 2, 3]);
         assert_eq!(transposed.strides(), &[1, 12, 4]);
     }
@@ -462,7 +481,9 @@ mod tests {
     #[test]
     fn test_broadcast() {
         let layout = StridedLayout::new(vec![1, 3, 1]);
-        let broadcasted = layout.broadcast_to(&[2, 3, 4]).unwrap();
+        let broadcasted = layout
+            .broadcast_to(&[2, 3, 4])
+            .expect("test: broadcast_to should succeed");
         assert_eq!(broadcasted.shape(), &[2, 3, 4]);
         assert_eq!(broadcasted.strides(), &[0, 1, 0]);
     }
@@ -470,14 +491,14 @@ mod tests {
     #[test]
     fn test_slice_params_normalize() {
         let params = SliceParams::with_step(Some(1), Some(4), Some(2));
-        let (start, end, step) = params.normalize(6).unwrap();
+        let (start, end, step) = params.normalize(6).expect("test: normalize should succeed");
         assert_eq!(start, 1);
         assert_eq!(end, 4);
         assert_eq!(step, 2);
 
         // Test negative indices
         let params = SliceParams::with_step(Some(-2), Some(-1), Some(1));
-        let (start, end, step) = params.normalize(6).unwrap();
+        let (start, end, step) = params.normalize(6).expect("test: normalize should succeed");
         assert_eq!(start, 4);
         assert_eq!(end, 5);
         assert_eq!(step, 1);
@@ -492,7 +513,9 @@ mod tests {
             SliceParams::with_step(Some(0), Some(6), Some(2)),
             SliceParams::with_step(Some(0), Some(4), Some(1)),
         ];
-        let sliced = layout.slice_with_stride(&slice_params).unwrap();
+        let sliced = layout
+            .slice_with_stride(&slice_params)
+            .expect("test: slice_with_stride should succeed");
         assert_eq!(sliced.shape(), &[3, 4]);
         assert_eq!(sliced.strides(), &[8, 1]); // stride doubled for dimension 0
         assert_eq!(sliced.offset(), 0);
@@ -502,7 +525,9 @@ mod tests {
             SliceParams::with_step(Some(5), Some(0), Some(-2)),
             SliceParams::with_step(Some(0), Some(4), Some(1)),
         ];
-        let sliced = layout.slice_with_stride(&slice_params).unwrap();
+        let sliced = layout
+            .slice_with_stride(&slice_params)
+            .expect("test: slice_with_stride should succeed");
         assert_eq!(sliced.shape(), &[3, 4]);
         assert_eq!(sliced.strides(), &[-8, 1]); // negative stride for dimension 0
         assert_eq!(sliced.offset(), 20); // 5*4 + 0*1
@@ -514,7 +539,9 @@ mod tests {
 
         // Test with default parameters (equivalent to full slice)
         let slice_params = vec![SliceParams::default(), SliceParams::default()];
-        let sliced = layout.slice_with_stride(&slice_params).unwrap();
+        let sliced = layout
+            .slice_with_stride(&slice_params)
+            .expect("test: slice_with_stride should succeed");
         assert_eq!(sliced.shape(), &[4, 4]);
         assert_eq!(sliced.strides(), &[4, 1]);
         assert_eq!(sliced.offset(), 0);
@@ -526,7 +553,9 @@ mod tests {
 
         // Test converting from Range to SliceParams
         let slice_params = vec![SliceParams::from(1..5), SliceParams::from(0..4)];
-        let sliced = layout.slice_with_stride(&slice_params).unwrap();
+        let sliced = layout
+            .slice_with_stride(&slice_params)
+            .expect("test: slice_with_stride should succeed");
         assert_eq!(sliced.shape(), &[4, 4]);
         assert_eq!(sliced.strides(), &[4, 1]);
         assert_eq!(sliced.offset(), 4); // 1*4 + 0*1

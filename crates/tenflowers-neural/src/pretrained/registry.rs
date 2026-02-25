@@ -479,11 +479,16 @@ mod tests {
         let metadata =
             ModelMetadata::new("test1", "Test 1", "1.0").with_domain(ModelDomain::Vision);
 
-        registry.register(metadata).unwrap();
+        registry
+            .register(metadata)
+            .expect("test: registration should succeed");
 
         let retrieved = registry.get_model("test1", Some("1.0"));
         assert!(retrieved.is_ok());
-        assert_eq!(retrieved.unwrap().id, "test1");
+        assert_eq!(
+            retrieved.expect("test: operation should succeed").id,
+            "test1"
+        );
     }
 
     #[test]
@@ -491,10 +496,10 @@ mod tests {
         let registry = ModelRegistry::new();
         registry
             .register(ModelMetadata::new("model1", "Model 1", "1.0"))
-            .unwrap();
+            .expect("test: operation should succeed");
         registry
             .register(ModelMetadata::new("model2", "Model 2", "1.0"))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let models = registry.list_models();
         assert_eq!(models.len(), 2);
@@ -507,10 +512,10 @@ mod tests {
             .register(
                 ModelMetadata::new("vision1", "Vision 1", "1.0").with_domain(ModelDomain::Vision),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
         registry
             .register(ModelMetadata::new("nlp1", "NLP 1", "1.0").with_domain(ModelDomain::NLP))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let vision_models = registry.list_models_by_domain(&ModelDomain::Vision);
         assert_eq!(vision_models.len(), 1);
@@ -525,7 +530,7 @@ mod tests {
                 ModelMetadata::new("model1", "Model 1", "1.0")
                     .with_tags(vec!["cnn".to_string(), "classification".to_string()]),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let results = registry.search_by_tag("cnn");
         assert_eq!(results.len(), 1);
@@ -537,10 +542,10 @@ mod tests {
         let registry = ModelRegistry::new();
         registry
             .register(ModelMetadata::new("resnet", "ResNet-50", "1.0"))
-            .unwrap();
+            .expect("test: operation should succeed");
         registry
             .register(ModelMetadata::new("vgg", "VGG-16", "1.0"))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let results = registry.search_by_name("resnet");
         assert_eq!(results.len(), 1);
@@ -552,7 +557,9 @@ mod tests {
         let registry = ModelRegistry::new();
         let metadata = ModelMetadata::new("test1", "Test 1", "1.0");
 
-        registry.register(metadata).unwrap();
+        registry
+            .register(metadata)
+            .expect("test: registration should succeed");
         assert_eq!(registry.count(), 1);
 
         let removed = registry.unregister("test1", "1.0");

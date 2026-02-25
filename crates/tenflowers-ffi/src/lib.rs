@@ -541,7 +541,7 @@ fn setup_default_pytorch_compatibility(
 #[pymodule]
 fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add version info
-    m.setattr("__version__", "0.1.0-alpha.1")?;
+    m.setattr("__version__", "0.1.0-rc.1")?;
     m.setattr("__author__", "TenfloweRS Team")?;
 
     // Register custom exceptions

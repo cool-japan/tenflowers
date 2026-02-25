@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Custom Gradient Operations Example
 //!
 //! This example demonstrates how to:

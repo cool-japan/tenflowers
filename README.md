@@ -2,15 +2,15 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.1-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.1.0--rc.1-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/tests-2357%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
+[![Tests](https://img.shields.io/badge/tests-2635%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
 [![Security](https://img.shields.io/badge/vulnerabilities-0-brightgreen)](https://github.com/cool-japan/tenflowers)
 
-> **Beta Release Notice (0.1.0-beta.1 · 2025-02-02)**
+> **Release Candidate (0.1.0-rc.1 · 2026-02-24)**
 >
-> First beta release with production-ready core functionality! All 2357 tests passing, zero security vulnerabilities, and comprehensive documentation. The core API is stabilizing for 1.0.
+> Release candidate with production-ready core functionality! All 2635 tests passing, zero security vulnerabilities, and comprehensive documentation. The core API is stabilizing for 1.0.
 >
 > ⚠️ **Note:** This release temporarily excludes Python bindings (FFI) and tensorboard integration. See [CHANGELOG.md](CHANGELOG.md) for details and timeline.
 
@@ -50,16 +50,16 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 - **🐍 Python Bindings**: ⚠️ Temporarily excluded in beta.1 (requires Python environment setup)
 - **📦 ONNX Support**: Import and export models for cross-framework compatibility
 - **⚡ Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
-- **✅ Production Ready**: 2357 tests passing, 0 security vulnerabilities, comprehensive docs
+- **✅ Production Ready**: 2635 tests passing, 0 security vulnerabilities, comprehensive docs
 
 ## Project Status
 
-**Current Version: 0.1.0-beta.1** (Released 2025-02-02)
+**Current Version: 0.1.0-rc.1** (Released 2026-02-24)
 
-First beta release with production-ready core functionality! The core API is stabilizing for 1.0 release.
+Release candidate with production-ready core functionality! The core API is stabilizing for 1.0 release.
 
-### Beta 1 Quality Metrics ✅
-- **Tests:** 2357/2357 passing (100% pass rate)
+### RC 1 Quality Metrics ✅
+- **Tests:** 2635/2635 passing (100% pass rate)
 - **Security:** 0 vulnerabilities (all known issues resolved)
 - **Code Quality:** Zero clippy warnings, full formatting compliance
 - **Documentation:** Complete crate-level docs and READMEs for all published crates
@@ -72,7 +72,7 @@ First beta release with production-ready core functionality! The core API is sta
 4. ✅ **tenflowers-neural** (3.0 MiB) - Neural network layers and training
 5. ✅ **tenflowers** (182 KiB) - Unified API and prelude
 
-### Temporarily Excluded (Beta 1)
+### Temporarily Excluded (RC 1)
 - ⚠️ **tenflowers-ffi**: Python bindings (requires Python dev environment)
   - Will be re-enabled in future release with proper CI/CD
   - Use Rust API directly for now
@@ -81,9 +81,9 @@ First beta release with production-ready core functionality! The core API is sta
   - Will be re-added once dependency updated
   - Use alternative logging temporarily
 
-See [CHANGELOG.md](CHANGELOG.md#010-beta1---2025-02-02) for complete details and migration guide.
+See [CHANGELOG.md](CHANGELOG.md#010-rc1---2026-02-24) for complete details and migration guide.
 
-### Beta 1 Scope (Delivered 2025-02-02)
+### RC 1 Scope (Delivered 2026-02-24)
 - ✅ Core tensor operations fully tested and validated
 - ✅ Automatic differentiation engine with comprehensive gradient support
 - ✅ Neural network layers (Dense, Conv2D, BatchNorm, Dropout, etc.)
@@ -94,7 +94,7 @@ See [CHANGELOG.md](CHANGELOG.md#010-beta1---2025-02-02) for complete details and
 - ✅ Security hardening (zero vulnerabilities)
 - ✅ Comprehensive documentation
 
-### Known Limitations (Beta 1)
+### Known Limitations (RC 1)
 - Python bindings not available (see Temporarily Excluded above)
 - Tensorboard logging not available (see Temporarily Excluded above)
 - Graph mode optimization passes still in development
@@ -110,8 +110,8 @@ See [CHANGELOG.md](CHANGELOG.md#010-beta1---2025-02-02) for complete details and
 6. ONNX import/export finalization
 7. API stability guarantee for 1.0
 
-### Beta 1 Release Checklist ✅
-- [x] All 2357 tests passing
+### RC 1 Release Checklist ✅
+- [x] All 2635 tests passing
 - [x] Zero security vulnerabilities
 - [x] Zero clippy warnings
 - [x] All crates properly documented
@@ -145,14 +145,14 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.1.0-beta.1"
-tenflowers-neural = "0.1.0-beta.1"
+tenflowers-core = "0.1.0-rc.1"
+tenflowers-neural = "0.1.0-rc.1"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.0-beta.1", features = ["gpu"] }
+tenflowers-core = { version = "0.1.0-rc.1", features = ["gpu"] }
 ```
 
 ## Quick Start

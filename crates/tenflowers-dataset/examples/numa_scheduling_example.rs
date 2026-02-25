@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Example demonstrating NUMA-aware scheduling for multi-threaded data loading
 //!
 //! This example shows how to configure and use NUMA-aware scheduling to optimize

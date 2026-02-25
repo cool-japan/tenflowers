@@ -155,7 +155,7 @@ pub fn clip_by_value(gradients: &[Tensor<f32>], clip_value: f32) -> Result<Vec<T
 /// use tenflowers_autograd::gradient_ops::compute_gradient_statistics;
 /// use tenflowers_core::Tensor;
 ///
-/// let grads = vec![Tensor::from_data(vec![1.0f32, &2.0, 3.0], vec![3])?];
+/// let grads = vec![Tensor::from_data(vec![1.0f32, 2.0, 3.0], &[3])?];
 /// let stats = compute_gradient_statistics(&grads)?;
 ///
 /// if !stats.is_healthy() {

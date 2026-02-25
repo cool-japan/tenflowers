@@ -615,9 +615,9 @@ mod tests {
     fn test_tfrecord_config_default() {
         let config = TFRecordConfig::default();
         assert_eq!(config.batch_size, 1000);
-        assert_eq!(config.compression, false);
-        assert_eq!(config.cache_records, true);
-        assert_eq!(config.validate_crc, true);
+        assert!(!config.compression);
+        assert!(config.cache_records);
+        assert!(config.validate_crc);
         assert!(config.feature_keys.is_none());
     }
 
@@ -629,9 +629,16 @@ mod tests {
             .with_feature_keys(vec!["image".to_string(), "label".to_string()])
             .with_max_records(1000);
 
-        assert_eq!(config.compression, true);
+        assert!(config.compression);
         assert_eq!(config.batch_size, 500);
-        assert_eq!(config.feature_keys.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            config
+                .feature_keys
+                .as_ref()
+                .expect("test: value should be present")
+                .len(),
+            2
+        );
         assert_eq!(config.max_records, Some(1000));
     }
 
@@ -641,8 +648,16 @@ mod tests {
             .compression(true)
             .feature_keys(vec!["data".to_string()]);
 
-        assert_eq!(builder.config.compression, true);
-        assert_eq!(builder.config.feature_keys.as_ref().unwrap().len(), 1);
+        assert!(builder.config.compression);
+        assert_eq!(
+            builder
+                .config
+                .feature_keys
+                .as_ref()
+                .expect("test: value should be present")
+                .len(),
+            1
+        );
     }
 
     #[test]

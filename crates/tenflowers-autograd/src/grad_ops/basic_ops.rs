@@ -297,11 +297,15 @@ mod tests {
     #[test]
     fn test_add_backward() {
         // Test basic addition gradient
-        let a = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
-        let b = Tensor::from_vec(vec![3.0f32, 4.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let a = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::from_vec(vec![3.0f32, 4.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (grad_a, grad_b) = add_backward(&grad_output, &a, &b).unwrap();
+        let (grad_a, grad_b) =
+            add_backward(&grad_output, &a, &b).expect("test: gradient computation should succeed");
 
         // For addition, gradients should equal the output gradient
         assert_eq!(grad_a.shape().dims(), a.shape().dims());
@@ -311,11 +315,15 @@ mod tests {
     #[test]
     fn test_mul_backward() {
         // Test basic multiplication gradient
-        let a = Tensor::from_vec(vec![2.0f32, 3.0], &[2]).unwrap();
-        let b = Tensor::from_vec(vec![4.0f32, 5.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let a = Tensor::from_vec(vec![2.0f32, 3.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::from_vec(vec![4.0f32, 5.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (grad_a, grad_b) = mul_backward(&grad_output, &a, &b).unwrap();
+        let (grad_a, grad_b) =
+            mul_backward(&grad_output, &a, &b).expect("test: gradient computation should succeed");
 
         // For multiplication: grad_a = grad_output * b, grad_b = grad_output * a
         assert_eq!(grad_a.shape().dims(), a.shape().dims());
@@ -325,11 +333,15 @@ mod tests {
     #[test]
     fn test_sub_backward() {
         // Test basic subtraction gradient
-        let a = Tensor::from_vec(vec![5.0f32, 6.0], &[2]).unwrap();
-        let b = Tensor::from_vec(vec![2.0f32, 3.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let a = Tensor::from_vec(vec![5.0f32, 6.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::from_vec(vec![2.0f32, 3.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (grad_a, grad_b) = sub_backward(&grad_output, &a, &b).unwrap();
+        let (grad_a, grad_b) =
+            sub_backward(&grad_output, &a, &b).expect("test: gradient computation should succeed");
 
         // For subtraction: grad_a = grad_output, grad_b = -grad_output
         assert_eq!(grad_a.shape().dims(), a.shape().dims());
@@ -339,11 +351,15 @@ mod tests {
     #[test]
     fn test_div_backward() {
         // Test basic division gradient
-        let a = Tensor::from_vec(vec![6.0f32, 8.0], &[2]).unwrap();
-        let b = Tensor::from_vec(vec![2.0f32, 4.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let a = Tensor::from_vec(vec![6.0f32, 8.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::from_vec(vec![2.0f32, 4.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (grad_a, grad_b) = div_backward(&grad_output, &a, &b).unwrap();
+        let (grad_a, grad_b) =
+            div_backward(&grad_output, &a, &b).expect("test: gradient computation should succeed");
 
         // Check that shapes match
         assert_eq!(grad_a.shape().dims(), a.shape().dims());
@@ -353,21 +369,24 @@ mod tests {
     #[test]
     fn test_is_integer_power() {
         // Test integer detection
-        let integer_tensor = Tensor::from_vec(vec![2.0f32, 3.0, 4.0], &[3]).unwrap();
-        assert!(is_integer_power(&integer_tensor).unwrap());
+        let integer_tensor = Tensor::from_vec(vec![2.0f32, 3.0, 4.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        assert!(is_integer_power(&integer_tensor).expect("test: operation should succeed"));
 
-        let float_tensor = Tensor::from_vec(vec![2.5f32, 3.7, 4.1], &[3]).unwrap();
-        assert!(!is_integer_power(&float_tensor).unwrap());
+        let float_tensor = Tensor::from_vec(vec![2.5f32, 3.7, 4.1], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        assert!(!is_integer_power(&float_tensor).expect("test: operation should succeed"));
     }
 
     #[test]
     fn test_log_approximation() {
         // Test log approximation for various values
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.5], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 0.5], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         let result = compute_log_approximation(&input);
 
         assert!(result.is_ok(), "Log approximation should succeed");
-        let log_approx = result.unwrap();
+        let log_approx = result.expect("test: operation result should be valid");
         assert_eq!(log_approx.shape().dims(), input.shape().dims());
     }
 }

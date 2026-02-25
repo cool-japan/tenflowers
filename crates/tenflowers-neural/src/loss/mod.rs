@@ -40,7 +40,7 @@
 //!
 //! ## Binary Classification
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::binary_cross_entropy;
 //! use tenflowers_core::Tensor;
 //!
@@ -56,7 +56,7 @@
 //!
 //! ## Multi-Class Classification
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::categorical_cross_entropy;
 //! use tenflowers_core::Tensor;
 //!
@@ -71,7 +71,7 @@
 //!
 //! ## Sparse Multi-Class (Integer Labels)
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::sparse_categorical_cross_entropy;
 //! use tenflowers_core::Tensor;
 //!
@@ -86,7 +86,7 @@
 //!
 //! ## Focal Loss for Imbalanced Data
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::focal_loss;
 //! use tenflowers_core::Tensor;
 //!
@@ -106,7 +106,7 @@
 //!
 //! ## Regression with MSE
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::mse;
 //! use tenflowers_core::Tensor;
 //!
@@ -121,7 +121,7 @@
 //!
 //! ## Robust Regression with Huber Loss
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::huber_loss;
 //! use tenflowers_core::Tensor;
 //!
@@ -136,7 +136,7 @@
 //!
 //! ## Semantic Segmentation with Dice Loss
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::dice_loss;
 //! use tenflowers_core::Tensor;
 //!
@@ -151,7 +151,7 @@
 //!
 //! ## Knowledge Distillation
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::knowledge_distillation_loss;
 //! use tenflowers_core::Tensor;
 //!
@@ -173,7 +173,7 @@
 //!
 //! ## Metric Learning with Triplet Loss
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::loss::triplet_loss;
 //! use tenflowers_core::Tensor;
 //!

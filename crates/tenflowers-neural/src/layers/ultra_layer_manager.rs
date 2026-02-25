@@ -926,9 +926,9 @@ mod tests {
     #[test]
     fn test_layer_registration() {
         let config = UltraLayerManagerConfig::default();
-        let manager = UltraLayerManager::new(config).unwrap();
+        let manager = UltraLayerManager::new(config).expect("test: UltraLayerManager creation should succeed");
 
-        let dense_layer = UltraDense::<f32>::new(10, 5, true).unwrap();
+        let dense_layer = UltraDense::<f32>::new(10, 5, true).expect("test: UltraDense creation should succeed");
         let layer_id = manager.register_layer(dense_layer);
         assert!(layer_id.is_ok());
     }
@@ -936,35 +936,35 @@ mod tests {
     #[test]
     fn test_ultra_forward() {
         let config = UltraLayerManagerConfig::default();
-        let manager = UltraLayerManager::new(config).unwrap();
+        let manager = UltraLayerManager::new(config).expect("test: UltraLayerManager creation should succeed");
 
-        let dense_layer = UltraDense::<f32>::new(4, 3, true).unwrap();
-        let layer_id = manager.register_layer(dense_layer).unwrap();
+        let dense_layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
+        let layer_id = manager.register_layer(dense_layer).expect("test: registration should succeed");
 
         let input = Tensor::<f32>::ones(&[2, 4]);
         let result = manager.forward_ultra(layer_id, &input);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: result should be valid");
         assert_eq!(result.output.shape().dims(), &[2, 3]);
     }
 
     #[test]
     fn test_sequence_forward() {
         let config = UltraLayerManagerConfig::default();
-        let manager = UltraLayerManager::new(config).unwrap();
+        let manager = UltraLayerManager::new(config).expect("test: UltraLayerManager creation should succeed");
 
-        let layer1 = UltraDense::<f32>::new(4, 8, true).unwrap();
-        let layer2 = UltraDense::<f32>::new(8, 3, true).unwrap();
+        let layer1 = UltraDense::<f32>::new(4, 8, true).expect("test: UltraDense creation should succeed");
+        let layer2 = UltraDense::<f32>::new(8, 3, true).expect("test: UltraDense creation should succeed");
 
-        let id1 = manager.register_layer(layer1).unwrap();
-        let id2 = manager.register_layer(layer2).unwrap();
+        let id1 = manager.register_layer(layer1).expect("test: registration should succeed");
+        let id2 = manager.register_layer(layer2).expect("test: registration should succeed");
 
         let input = Tensor::<f32>::ones(&[2, 4]);
         let result = manager.forward_sequence_ultra(&[id1, id2], &input);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: result should be valid");
         assert_eq!(result.output.shape().dims(), &[2, 3]);
         assert_eq!(result.layer_results.len(), 2);
     }
@@ -972,25 +972,25 @@ mod tests {
     #[test]
     fn test_performance_statistics() {
         let config = UltraLayerManagerConfig::default();
-        let manager = UltraLayerManager::new(config).unwrap();
+        let manager = UltraLayerManager::new(config).expect("test: UltraLayerManager creation should succeed");
 
-        let dense_layer = UltraDense::<f32>::new(4, 3, true).unwrap();
-        let _layer_id = manager.register_layer(dense_layer).unwrap();
+        let dense_layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
+        let _layer_id = manager.register_layer(dense_layer).expect("test: registration should succeed");
 
         let stats = manager.get_performance_statistics();
         assert!(stats.is_ok());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: operation should succeed");
         assert_eq!(stats.total_layers, 1);
     }
 
     #[test]
     fn test_global_optimization() {
         let config = UltraLayerManagerConfig::default();
-        let manager = UltraLayerManager::new(config).unwrap();
+        let manager = UltraLayerManager::new(config).expect("test: UltraLayerManager creation should succeed");
 
-        let dense_layer = UltraDense::<f32>::new(4, 3, true).unwrap();
-        let _layer_id = manager.register_layer(dense_layer).unwrap();
+        let dense_layer = UltraDense::<f32>::new(4, 3, true).expect("test: UltraDense creation should succeed");
+        let _layer_id = manager.register_layer(dense_layer).expect("test: registration should succeed");
 
         let result = manager.optimize_globally();
         assert!(result.is_ok());

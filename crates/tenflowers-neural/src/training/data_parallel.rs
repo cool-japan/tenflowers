@@ -661,13 +661,18 @@ mod tests {
     #[test]
     fn test_gradient_compressor() {
         let compressor = GradientCompressor::<f32>::new(0.5);
-        let gradient = Tensor::from_vec(vec![1.0, 0.1, -2.0, 0.05, 3.0, -0.02], &[6]).unwrap();
+        let gradient = Tensor::from_vec(vec![1.0, 0.1, -2.0, 0.05, 3.0, -0.02], &[6])
+            .expect("test: tensor creation should succeed");
 
-        let compressed = compressor.compress(&gradient).unwrap();
+        let compressed = compressor
+            .compress(&gradient)
+            .expect("test: operation should succeed");
         assert_eq!(compressed.compression_ratio, 0.5);
         assert_eq!(compressed.indices.len(), 3); // 50% of 6 elements
 
-        let decompressed = compressor.decompress(&compressed).unwrap();
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("test: operation should succeed");
         assert_eq!(decompressed.shape().dims(), &[6]);
     }
 
@@ -688,13 +693,16 @@ mod tests {
     #[test]
     fn test_thread_all_reduce() {
         let all_reduce = ThreadAllReduce::<f32>::new(2, 0);
-        let tensor = Tensor::from_vec(vec![2.0, 4.0, 6.0], &[3]).unwrap();
+        let tensor = Tensor::from_vec(vec![2.0, 4.0, 6.0], &[3])
+            .expect("test: tensor creation should succeed");
 
-        let result = all_reduce.all_reduce(&tensor).unwrap();
+        let result = all_reduce
+            .all_reduce(&tensor)
+            .expect("test: result should be valid");
         // Should divide by world_size (2)
-        assert_eq!(result.get(&[0]).unwrap(), 1.0);
-        assert_eq!(result.get(&[1]).unwrap(), 2.0);
-        assert_eq!(result.get(&[2]).unwrap(), 3.0);
+        assert_eq!(result.get(&[0]).expect("test: result should be valid"), 1.0);
+        assert_eq!(result.get(&[1]).expect("test: result should be valid"), 2.0);
+        assert_eq!(result.get(&[2]).expect("test: result should be valid"), 3.0);
     }
 
     #[test]

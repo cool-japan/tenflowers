@@ -5,10 +5,40 @@
 
 use crate::half_precision::{bf16, f16};
 use crate::{Result, Tensor, TensorError};
-use rustfft::num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+use num_complex::Complex;
+use oxifft::{Direction, Flags, Plan};
 // Note: SIMD optimizations available when scirs2_core::simd API is complete
 use std::sync::Arc;
+
+/// Convert num_complex slice to oxifft Complex slice
+/// Both types have identical #[repr(C)] memory layout, making this conversion safe
+#[inline]
+fn to_oxifft_complex<T: oxifft::Float>(data: &[Complex<T>]) -> &[oxifft::kernel::Complex<T>] {
+    // Safety: Both num_complex::Complex and oxifft::Complex have #[repr(C)] layout
+    // with identical memory representation (re: T, im: T)
+    unsafe {
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const oxifft::kernel::Complex<T>,
+            data.len(),
+        )
+    }
+}
+
+/// Convert num_complex mutable slice to oxifft Complex mutable slice
+/// Both types have identical #[repr(C)] memory layout, making this conversion safe
+#[inline]
+fn to_oxifft_complex_mut<T: oxifft::Float>(
+    data: &mut [Complex<T>],
+) -> &mut [oxifft::kernel::Complex<T>] {
+    // Safety: Both num_complex::Complex and oxifft::Complex have #[repr(C)] layout
+    // with identical memory representation (re: T, im: T)
+    unsafe {
+        std::slice::from_raw_parts_mut(
+            data.as_mut_ptr() as *mut oxifft::kernel::Complex<T>,
+            data.len(),
+        )
+    }
+}
 
 /// Ultra-optimized 1D FFT for f16 precision with SIMD acceleration
 pub fn fft_f16(input: &Tensor<f16>) -> Result<Tensor<Complex<f16>>> {
@@ -24,12 +54,13 @@ pub fn fft_f16(input: &Tensor<f16>) -> Result<Tensor<Complex<f16>>> {
     // Convert f16 to f32 for high-precision computation
     let input_f32 = convert_f16_to_f32_tensor(input)?;
 
-    // Create FFT planner for maximum performance
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(n);
+    // Create FFT plan for maximum performance
+    let fft = Plan::dft_1d(n, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create FFT plan for f16".to_string())
+    })?;
 
     // Execute optimized FFT with SIMD acceleration
-    let output_f32 = execute_optimized_fft_1d(&input_f32, fft, n)?;
+    let output_f32 = execute_optimized_fft_1d(&input_f32, &fft, n)?;
 
     // Convert back to f16 Complex for memory efficiency
     convert_complex_f32_to_f16_tensor(&output_f32, shape)
@@ -49,12 +80,13 @@ pub fn ifft_f16(input: &Tensor<Complex<f16>>) -> Result<Tensor<Complex<f16>>> {
     // Convert f16 to f32 for high-precision computation
     let input_f32 = convert_complex_f16_to_f32_tensor(input)?;
 
-    // Create inverse FFT planner for maximum performance
-    let mut planner = FftPlanner::<f32>::new();
-    let ifft = planner.plan_fft_inverse(n);
+    // Create inverse FFT plan for maximum performance
+    let ifft = Plan::dft_1d(n, Direction::Backward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create IFFT plan for f16".to_string())
+    })?;
 
     // Execute optimized inverse FFT with SIMD acceleration
-    let output_f32 = execute_optimized_ifft_1d(&input_f32, ifft, n)?;
+    let output_f32 = execute_optimized_ifft_1d(&input_f32, &ifft, n)?;
 
     // Convert back to f16 Complex for memory efficiency
     convert_complex_f32_to_f16_tensor(&output_f32, shape)
@@ -74,12 +106,13 @@ pub fn fft_bf16(input: &Tensor<bf16>) -> Result<Tensor<Complex<bf16>>> {
     // Convert bf16 to f32 for high-precision computation
     let input_f32 = convert_bf16_to_f32_tensor(input)?;
 
-    // Create FFT planner optimized for bf16 patterns
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(n);
+    // Create FFT plan optimized for bf16 patterns
+    let fft = Plan::dft_1d(n, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create FFT plan for bf16".to_string())
+    })?;
 
     // Execute optimized FFT with mixed precision acceleration
-    let output_f32 = execute_optimized_fft_1d(&input_f32, fft, n)?;
+    let output_f32 = execute_optimized_fft_1d(&input_f32, &fft, n)?;
 
     // Convert back to bf16 Complex for maximum memory efficiency
     convert_complex_f32_to_bf16_tensor(&output_f32, shape)
@@ -99,12 +132,13 @@ pub fn ifft_bf16(input: &Tensor<Complex<bf16>>) -> Result<Tensor<Complex<bf16>>>
     // Convert bf16 to f32 for high-precision computation
     let input_f32 = convert_complex_bf16_to_f32_tensor(input)?;
 
-    // Create inverse FFT planner optimized for bf16
-    let mut planner = FftPlanner::<f32>::new();
-    let ifft = planner.plan_fft_inverse(n);
+    // Create inverse FFT plan optimized for bf16
+    let ifft = Plan::dft_1d(n, Direction::Backward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create IFFT plan for bf16".to_string())
+    })?;
 
     // Execute optimized inverse FFT with mixed precision
-    let output_f32 = execute_optimized_ifft_1d(&input_f32, ifft, n)?;
+    let output_f32 = execute_optimized_ifft_1d(&input_f32, &ifft, n)?;
 
     // Convert back to bf16 Complex for memory efficiency
     convert_complex_f32_to_bf16_tensor(&output_f32, shape)
@@ -281,40 +315,49 @@ fn convert_complex_f32_to_bf16_tensor(
 /// Execute ultra-optimized 1D FFT with SIMD acceleration and cache optimization
 fn execute_optimized_fft_1d(
     input: &Tensor<f32>,
-    fft: Arc<dyn Fft<f32>>,
+    fft: &Plan<f32>,
     n: usize,
 ) -> Result<Tensor<Complex<f32>>> {
-    let mut data: Vec<Complex<f32>> = input
+    let mut input_data: Vec<Complex<f32>> = input
         .data()
         .to_vec()
         .iter()
         .map(|&x| Complex::new(x, 0.0))
         .collect();
 
-    // Apply FFT with optimized memory access patterns
-    fft.process(&mut data);
+    let mut output_data = vec![Complex::new(0.0, 0.0); n];
 
-    Tensor::from_data(data, &[n])
+    // Apply FFT with optimized memory access patterns - convert to oxifft types
+    fft.execute(
+        to_oxifft_complex(&input_data),
+        to_oxifft_complex_mut(&mut output_data),
+    );
+
+    Tensor::from_data(output_data, &[n])
 }
 
 /// Execute ultra-optimized 1D inverse FFT with normalization
 fn execute_optimized_ifft_1d(
     input: &Tensor<Complex<f32>>,
-    ifft: Arc<dyn Fft<f32>>,
+    ifft: &Plan<f32>,
     n: usize,
 ) -> Result<Tensor<Complex<f32>>> {
-    let mut data: Vec<Complex<f32>> = input.data().to_vec().to_vec();
+    let mut input_data: Vec<Complex<f32>> = input.data().to_vec().to_vec();
+    let mut output_data = vec![Complex::new(0.0, 0.0); n];
 
-    // Apply inverse FFT
-    ifft.process(&mut data);
+    // Apply inverse FFT - convert to oxifft types
+    ifft.execute(
+        to_oxifft_complex(&input_data),
+        to_oxifft_complex_mut(&mut output_data),
+    );
 
     // Normalize by n for correct inverse transform
     let n_inv = 1.0 / (n as f32);
-    for sample in &mut data {
+    for sample in &mut output_data {
         *sample *= n_inv;
     }
 
-    Tensor::from_data(data, &[n])
+    Tensor::from_data(output_data, &[n])
 }
 
 /// Execute ultra-optimized 2D FFT using row-column decomposition with cache-friendly access
@@ -331,32 +374,45 @@ fn execute_optimized_fft_2d(
         .map(|&x| Complex::new(x, 0.0))
         .collect();
 
-    // Create FFT planners for both dimensions
-    let mut planner = FftPlanner::<f32>::new();
-    let fft_cols = planner.plan_fft_forward(cols);
-    let fft_rows = planner.plan_fft_forward(rows);
+    // Create FFT plans for both dimensions
+    let fft_cols = Plan::dft_1d(cols, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create column FFT plan".to_string())
+    })?;
+    let fft_rows = Plan::dft_1d(rows, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create row FFT plan".to_string())
+    })?;
 
     // Row-wise FFT with optimized memory access patterns
     for row in 0..rows {
         let start = row * cols;
         let end = start + cols;
-        fft_cols.process(&mut data[start..end]);
+        let mut row_input = data[start..end].to_vec();
+        let mut row_output = vec![Complex::new(0.0, 0.0); cols];
+        fft_cols.execute(
+            to_oxifft_complex(&row_input),
+            to_oxifft_complex_mut(&mut row_output),
+        );
+        data[start..end].copy_from_slice(&row_output);
     }
 
     // Column-wise FFT with cache-optimized transpose
-    let mut col_data = vec![Complex::new(0.0, 0.0); rows];
+    let mut col_input = vec![Complex::new(0.0, 0.0); rows];
+    let mut col_output = vec![Complex::new(0.0, 0.0); rows];
     for col in 0..cols {
         // Extract column with stride access optimization
         for row in 0..rows {
-            col_data[row] = data[row * cols + col];
+            col_input[row] = data[row * cols + col];
         }
 
-        // Apply FFT to column
-        fft_rows.process(&mut col_data);
+        // Apply FFT to column - convert to oxifft types
+        fft_rows.execute(
+            to_oxifft_complex(&col_input),
+            to_oxifft_complex_mut(&mut col_output),
+        );
 
         // Write back with optimized access patterns
         for row in 0..rows {
-            data[row * cols + col] = col_data[row];
+            data[row * cols + col] = col_output[row];
         }
     }
 
@@ -371,20 +427,27 @@ fn execute_optimized_ifft_2d(
 ) -> Result<Tensor<Complex<f32>>> {
     let mut data: Vec<Complex<f32>> = input.data().to_vec().to_vec();
 
-    // Create inverse FFT planners
-    let mut planner = FftPlanner::<f32>::new();
-    let ifft_cols = planner.plan_fft_inverse(cols);
-    let ifft_rows = planner.plan_fft_inverse(rows);
+    // Create inverse FFT plans
+    let ifft_cols = Plan::dft_1d(cols, Direction::Backward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create column IFFT plan".to_string())
+    })?;
+    let ifft_rows = Plan::dft_1d(rows, Direction::Backward, Flags::ESTIMATE).ok_or_else(|| {
+        TensorError::invalid_shape_simple("Failed to create row IFFT plan".to_string())
+    })?;
 
     // Column-wise inverse FFT
-    let mut col_data = vec![Complex::new(0.0, 0.0); rows];
+    let mut col_input = vec![Complex::new(0.0, 0.0); rows];
+    let mut col_output = vec![Complex::new(0.0, 0.0); rows];
     for col in 0..cols {
         for row in 0..rows {
-            col_data[row] = data[row * cols + col];
+            col_input[row] = data[row * cols + col];
         }
-        ifft_rows.process(&mut col_data);
+        ifft_rows.execute(
+            to_oxifft_complex(&col_input),
+            to_oxifft_complex_mut(&mut col_output),
+        );
         for row in 0..rows {
-            data[row * cols + col] = col_data[row];
+            data[row * cols + col] = col_output[row];
         }
     }
 
@@ -392,7 +455,13 @@ fn execute_optimized_ifft_2d(
     for row in 0..rows {
         let start = row * cols;
         let end = start + cols;
-        ifft_cols.process(&mut data[start..end]);
+        let mut row_input = data[start..end].to_vec();
+        let mut row_output = vec![Complex::new(0.0, 0.0); cols];
+        ifft_cols.execute(
+            to_oxifft_complex(&row_input),
+            to_oxifft_complex_mut(&mut row_output),
+        );
+        data[start..end].copy_from_slice(&row_output);
     }
 
     // Normalize by total size for correct 2D inverse transform

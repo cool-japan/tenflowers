@@ -4,20 +4,19 @@ build-backend = "maturin"
 
 [project]
 name = "tenflowers"
-version = "0.1.0a2"
+version = "0.1.0rc1"
 description = "A pure Rust machine learning framework with Python bindings - TensorFlow-compatible API"
 authors = [
-    { name = "TenfloweRS Team", email = "tenflowers@example.com" }
+    { name = "COOLJAPAN OU (Team KitaSan)", email = "tenflowers@example.com" }
 ]
 readme = "README.md"
-license = { text = "Apache-2.0 OR MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",

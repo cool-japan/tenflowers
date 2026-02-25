@@ -371,7 +371,7 @@ fn test_utils_create_feedforward_network() {
     // Create simple feedforward network manually
     let layer1 = MockDenseLayer::new(10, 5, true);
     let layer2 = MockDenseLayer::new(5, 2, true);
-    let layers = vec![layer1, layer2];
+    let layers = [layer1, layer2];
 
     assert_eq!(layers.len(), 2); // 10->5 and 5->2
 
@@ -398,7 +398,7 @@ fn test_simple_training_loop() {
     let target_data1 = Array1::from_vec(vec![5.0f32]).into_dyn();
     let target_data2 = Array1::from_vec(vec![8.0f32]).into_dyn();
 
-    let inputs = vec![
+    let inputs = [
         {
             let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(input_data1))
@@ -409,7 +409,7 @@ fn test_simple_training_loop() {
         },
     ];
 
-    let targets = vec![
+    let targets = [
         {
             let tape_ref = tape.lock().expect("lock should not be poisoned");
             tape_ref.watch(Tensor::from_array(target_data1))

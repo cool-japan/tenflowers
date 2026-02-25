@@ -787,46 +787,46 @@ mod tests {
         let layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true);
         assert!(layer.is_ok());
 
-        let layer = layer.unwrap();
+        let layer = layer.expect("test: operation should succeed");
         assert_eq!(layer.weight.shape().dims(), &[16, 3, 3, 3]);
         assert!(layer.bias.is_some());
-        assert_eq!(layer.bias.as_ref().unwrap().shape().dims(), &[16]);
+        assert_eq!(layer.bias.as_ref().expect("test: bias should exist").shape().dims(), &[16]);
     }
 
     #[test]
     fn test_ultra_conv2d_forward() {
-        let layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).unwrap();
+        let layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).expect("test: UltraConv2D creation should succeed");
         let input = Tensor::<f32>::ones(&[2, 3, 32, 32]);
 
         let result = layer.forward(&input);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         assert_eq!(output.shape().dims(), &[2, 16, 32, 32]);
     }
 
     #[test]
     fn test_ultra_conv2d_forward_ultra() {
-        let layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).unwrap();
+        let layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).expect("test: UltraConv2D creation should succeed");
         let input = Tensor::<f32>::ones(&[2, 3, 32, 32]);
 
         let result = layer.forward_ultra(&input);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: result should be valid");
         assert_eq!(result.output.shape().dims(), &[2, 16, 32, 32]);
         assert!(result.metrics.forward_time.as_nanos() > 0);
     }
 
     #[test]
     fn test_ultra_conv2d_output_dimensions() {
-        let layer = UltraConv2D::<f32>::new(1, 1, (3, 3), (2, 2), (0, 0), false).unwrap();
+        let layer = UltraConv2D::<f32>::new(1, 1, (3, 3), (2, 2), (0, 0), false).expect("test: UltraConv2D creation should succeed");
         let input = Tensor::<f32>::ones(&[1, 1, 8, 8]);
 
         let result = layer.forward(&input);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         // Output size = (8 - 3) / 2 + 1 = 3
         assert_eq!(output.shape().dims(), &[1, 1, 3, 3]);
     }
@@ -845,7 +845,7 @@ mod tests {
 
     #[test]
     fn test_layer_trait_implementation() {
-        let mut layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).unwrap();
+        let mut layer = UltraConv2D::<f32>::new(3, 16, (3, 3), (1, 1), (1, 1), true).expect("test: UltraConv2D creation should succeed");
 
         // Test parameters
         let params = layer.parameters();

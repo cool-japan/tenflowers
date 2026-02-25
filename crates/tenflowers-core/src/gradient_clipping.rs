@@ -468,7 +468,9 @@ mod tests {
         let large_grad = Tensor::from_array(Array1::from_vec(vec![5.0, 5.0, 5.0, 5.0]).into_dyn());
         let mut gradients = vec![large_grad];
 
-        let norm = clipper.clip_gradients(&mut gradients).unwrap();
+        let norm = clipper
+            .clip_gradients(&mut gradients)
+            .expect("test: clip_gradients should succeed");
 
         // Should have clipped since norm > 1.0
         assert!(norm > 1.0);
@@ -485,7 +487,9 @@ mod tests {
             let grad = Tensor::from_array(Array1::from_vec(vec![scale, scale]).into_dyn());
             let mut gradients = vec![grad];
 
-            let _norm = clipper.clip_gradients(&mut gradients).unwrap();
+            let _norm = clipper
+                .clip_gradients(&mut gradients)
+                .expect("test: clip_gradients should succeed");
         }
 
         // Adaptive threshold should have adjusted
@@ -510,7 +514,7 @@ mod tests {
         // Should clip with embedding threshold (0.5)
         let norm = clipper
             .clip_parameter_group("embeddings", &mut gradients)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert!(norm > 0.5);
     }
 
@@ -526,7 +530,9 @@ mod tests {
         let grad = Tensor::from_array(Array1::from_vec(vec![2.0, 2.0]).into_dyn());
         let mut gradients = vec![grad];
 
-        let norm = l1_clipper.clip_gradients(&mut gradients).unwrap();
+        let norm = l1_clipper
+            .clip_gradients(&mut gradients)
+            .expect("test: clip_gradients should succeed");
         assert_eq!(norm, 4.0); // L1 norm should be 4.0
     }
 }

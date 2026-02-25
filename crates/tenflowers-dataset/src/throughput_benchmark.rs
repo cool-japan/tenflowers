@@ -716,8 +716,10 @@ mod tests {
     #[test]
     fn test_basic_benchmark() {
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0], &[4])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {
@@ -740,8 +742,9 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             &[5, 2],
         )
-        .unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0], &[5]).unwrap();
+        .expect("test: operation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0], &[5])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {
@@ -759,8 +762,10 @@ mod tests {
 
     #[test]
     fn test_generate_report() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {
@@ -780,8 +785,10 @@ mod tests {
 
     #[test]
     fn test_csv_export() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0], &[1]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {
@@ -799,8 +806,10 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0], &[1]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {
@@ -827,12 +836,16 @@ mod tests {
 
     #[test]
     fn test_compare_datasets() {
-        let features1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2]).unwrap();
-        let labels1 = Tensor::<f32>::from_vec(vec![0.0], &[1]).unwrap();
+        let features1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels1 =
+            Tensor::<f32>::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed");
         let dataset1 = TensorDataset::new(features1, labels1);
 
-        let features2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[1, 2]).unwrap();
-        let labels2 = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
+        let features2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[1, 2])
+            .expect("test: tensor creation should succeed");
+        let labels2 =
+            Tensor::<f32>::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
         let dataset2 = TensorDataset::new(features2, labels2);
 
         let mut harness = ThroughputBenchmarkHarness::new(ThroughputBenchmarkConfig {

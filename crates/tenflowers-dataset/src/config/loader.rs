@@ -226,27 +226,35 @@ mod tests {
         // Test YAML
         let yaml_path = std::path::Path::new("config.yaml");
         assert!(matches!(
-            loader.detect_format(yaml_path).unwrap(),
+            loader
+                .detect_format(yaml_path)
+                .expect("test: operation should succeed"),
             ConfigFormat::Yaml
         ));
 
         let yml_path = std::path::Path::new("config.yml");
         assert!(matches!(
-            loader.detect_format(yml_path).unwrap(),
+            loader
+                .detect_format(yml_path)
+                .expect("test: operation should succeed"),
             ConfigFormat::Yaml
         ));
 
         // Test TOML
         let toml_path = std::path::Path::new("config.toml");
         assert!(matches!(
-            loader.detect_format(toml_path).unwrap(),
+            loader
+                .detect_format(toml_path)
+                .expect("test: operation should succeed"),
             ConfigFormat::Toml
         ));
 
         // Test JSON
         let json_path = std::path::Path::new("config.json");
         assert!(matches!(
-            loader.detect_format(json_path).unwrap(),
+            loader
+                .detect_format(json_path)
+                .expect("test: operation should succeed"),
             ConfigFormat::Json
         ));
 
@@ -331,12 +339,12 @@ parallel_io = false
 
         let config = loader
             .load_from_string(toml_content, ConfigFormat::Toml)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(config.dataset.batch_size, 64);
-        assert_eq!(config.dataset.shuffle, true);
+        assert!(config.dataset.shuffle);
         assert_eq!(config.performance.num_threads, 8);
-        assert_eq!(config.performance.enable_mmap, false);
-        assert_eq!(config.cache.enabled, true);
+        assert!(!config.performance.enable_mmap);
+        assert!(config.cache.enabled);
         assert_eq!(config.cache.size_mb, 256);
     }
 
@@ -416,14 +424,14 @@ formats:
 
         let config = loader
             .load_from_string(yaml_content, ConfigFormat::Yaml)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(config.dataset.batch_size, 128);
-        assert_eq!(config.dataset.shuffle, false);
+        assert!(!config.dataset.shuffle);
         assert_eq!(config.dataset.seed, Some(42));
         assert_eq!(config.performance.num_threads, 16);
         assert_eq!(config.performance.memory_pool_size, 2048);
-        assert_eq!(config.transforms.enable_simd, true);
-        assert_eq!(config.transforms.enable_gpu, false);
+        assert!(config.transforms.enable_simd);
+        assert!(!config.transforms.enable_gpu);
     }
 
     #[test]
@@ -509,18 +517,18 @@ formats:
 
         let config = loader
             .load_from_string(json_content, ConfigFormat::Json)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(config.dataset.batch_size, 32);
-        assert_eq!(config.dataset.shuffle, true);
+        assert!(config.dataset.shuffle);
         assert_eq!(config.dataloader.num_workers, 4);
         assert_eq!(config.dataloader.prefetch_factor, 3);
-        assert_eq!(config.gpu.enabled, true);
+        assert!(config.gpu.enabled);
         assert_eq!(config.gpu.device_id, Some(0));
     }
 
     #[test]
     fn test_file_loading() {
-        let mut file = NamedTempFile::with_suffix(".toml").unwrap();
+        let mut file = NamedTempFile::with_suffix(".toml").expect("test: operation should succeed");
         writeln!(
             file,
             r#"
@@ -593,12 +601,14 @@ chunk_cache_size = 131072
 parallel_io = false
 "#
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let mut loader = ConfigLoader::new();
-        let config = loader.load_from_file(file.path()).unwrap();
+        let config = loader
+            .load_from_file(file.path())
+            .expect("test: load from file should succeed");
         assert_eq!(config.dataset.batch_size, 256);
-        assert_eq!(config.cache.enabled, false);
+        assert!(!config.cache.enabled);
 
         // Check load history
         let history = loader.load_history();
@@ -615,7 +625,9 @@ parallel_io = false
         let config = GlobalConfig::default();
 
         // Test TOML serialization
-        let toml_content = loader.serialize_toml(&config).unwrap();
+        let toml_content = loader
+            .serialize_toml(&config)
+            .expect("test: serialization should succeed");
         assert!(toml_content.contains("[dataset]"));
         assert!(toml_content.contains("batch_size = 32"));
 
@@ -623,7 +635,7 @@ parallel_io = false
         let mut loader2 = ConfigLoader::new();
         let parsed_config = loader2
             .load_from_string(&toml_content, ConfigFormat::Toml)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(parsed_config.dataset.batch_size, config.dataset.batch_size);
     }
 
@@ -634,15 +646,20 @@ parallel_io = false
         config.performance.num_threads = 16;
         config.cache.size_mb = 1024;
 
-        let temp_file = NamedTempFile::with_suffix(".toml").unwrap();
+        let temp_file =
+            NamedTempFile::with_suffix(".toml").expect("test: operation should succeed");
         let loader = ConfigLoader::new();
 
         // Save configuration
-        loader.save_to_file(&config, temp_file.path()).unwrap();
+        loader
+            .save_to_file(&config, temp_file.path())
+            .expect("test: save to file should succeed");
 
         // Load it back
         let mut loader2 = ConfigLoader::new();
-        let loaded_config = loader2.load_from_file(temp_file.path()).unwrap();
+        let loaded_config = loader2
+            .load_from_file(temp_file.path())
+            .expect("test: load from file should succeed");
 
         assert_eq!(loaded_config.dataset.batch_size, 128);
         assert_eq!(loaded_config.performance.num_threads, 16);

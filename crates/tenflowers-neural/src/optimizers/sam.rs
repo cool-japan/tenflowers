@@ -429,8 +429,11 @@ mod tests {
         let sam = SAM::<f32>::with_sgd(0.1, 0.9, 0.05);
 
         // Test with known values
-        let tensor = Tensor::from_vec(vec![3.0, 4.0], &[2]).unwrap();
-        let norm = sam.compute_l2_norm(&tensor).unwrap();
+        let tensor =
+            Tensor::from_vec(vec![3.0, 4.0], &[2]).expect("test: tensor creation should succeed");
+        let norm = sam
+            .compute_l2_norm(&tensor)
+            .expect("test: computation should succeed");
 
         // ||[3, 4]||_2 = sqrt(3^2 + 4^2) = sqrt(9 + 16) = sqrt(25) = 5.0
         assert!((norm - 5.0).abs() < 1e-6);
@@ -440,8 +443,11 @@ mod tests {
     fn test_scale_tensor() {
         let sam = SAM::<f32>::with_sgd(0.1, 0.9, 0.05);
 
-        let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let scaled = sam.scale_tensor(&tensor, 2.0).unwrap();
+        let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let scaled = sam
+            .scale_tensor(&tensor, 2.0)
+            .expect("test: operation should succeed");
 
         if let Some(data) = scaled.as_slice() {
             assert_eq!(data, &[2.0, 4.0, 6.0]);
@@ -454,9 +460,13 @@ mod tests {
     fn test_add_tensors() {
         let sam = SAM::<f32>::with_sgd(0.1, 0.9, 0.05);
 
-        let a = Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::from_vec(vec![4.0, 5.0, 6.0], &[3]).unwrap();
-        let result = sam.add_tensors(&a, &b).unwrap();
+        let a = Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let b = Tensor::from_vec(vec![4.0, 5.0, 6.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let result = sam
+            .add_tensors(&a, &b)
+            .expect("test: result should be valid");
 
         if let Some(data) = result.as_slice() {
             assert_eq!(data, &[5.0, 7.0, 9.0]);

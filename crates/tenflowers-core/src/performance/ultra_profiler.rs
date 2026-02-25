@@ -865,11 +865,11 @@ mod tests {
 
     #[test]
     fn test_operation_profiling() {
-        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).unwrap();
+        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).expect("test: operation should succeed");
 
         let (result, record) = profiler.profile_operation("test_operation", || {
             Ok(42)
-        }).unwrap();
+        }).expect("test: operation should succeed");
 
         assert_eq!(result, 42);
         assert_eq!(record.operation_name, "test_operation");
@@ -890,13 +890,13 @@ mod tests {
         let mut config = ProfilerConfig::default();
         config.performance_thresholds.max_operation_latency = 1.0; // 1ms threshold
 
-        let profiler = UltraHighPerformanceProfiler::new(config).unwrap();
+        let profiler = UltraHighPerformanceProfiler::new(config).expect("test: new should succeed");
 
         // This should generate an alert due to the low threshold
         let (_result, _record) = profiler.profile_operation("slow_operation", || {
             thread::sleep(Duration::from_millis(10)); // Sleep for 10ms
             Ok(())
-        }).unwrap();
+        }).expect("test: operation should succeed");
 
         let data = profiler.performance_data.read().expect("read lock should not be poisoned");
         assert!(!data.alerts.is_empty());
@@ -904,14 +904,14 @@ mod tests {
 
     #[test]
     fn test_benchmark_suite() {
-        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).unwrap();
+        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).expect("test: operation should succeed");
         let benchmark_results = profiler.run_benchmark_suite();
         assert!(benchmark_results.is_ok());
     }
 
     #[test]
     fn test_performance_report_generation() {
-        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).unwrap();
+        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).expect("test: operation should succeed");
 
         // Run some operations to generate data
         let _ = profiler.profile_operation("test_op1", || Ok(1));
@@ -923,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_data() {
-        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).unwrap();
+        let profiler = UltraHighPerformanceProfiler::new(ProfilerConfig::default()).expect("test: operation should succeed");
         let dashboard_data = profiler.get_dashboard_data();
 
         assert!(dashboard_data.system_status.active_operations >= 0);

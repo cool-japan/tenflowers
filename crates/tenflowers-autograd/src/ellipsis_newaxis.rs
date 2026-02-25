@@ -358,7 +358,8 @@ mod tests {
             IndexSpec::Index(1),
         ];
 
-        let indexer = AdvancedIndexer::new(shape, indices).unwrap();
+        let indexer =
+            AdvancedIndexer::new(shape, indices).expect("test: construction should succeed");
         assert_eq!(indexer.output_shape(), &[2, 5]);
     }
 
@@ -371,7 +372,8 @@ mod tests {
             IndexSpec::Index(2),
         ];
 
-        let indexer = AdvancedIndexer::new(shape, indices).unwrap();
+        let indexer =
+            AdvancedIndexer::new(shape, indices).expect("test: construction should succeed");
         // Should be: index(0), slice(:), slice(:), index(2)
         // Output shape: [3, 4] (first and last dims removed by indexing)
         assert_eq!(indexer.output_shape(), &[3, 4]);
@@ -390,7 +392,8 @@ mod tests {
             IndexSpec::NewAxis,
         ];
 
-        let indexer = AdvancedIndexer::new(shape, indices).unwrap();
+        let indexer =
+            AdvancedIndexer::new(shape, indices).expect("test: construction should succeed");
         // Should insert newaxis dims: [1, 3, 1, 4]
         assert_eq!(indexer.output_shape(), &[1, 3, 1, 4]);
     }
@@ -422,7 +425,8 @@ mod tests {
         let shape = vec![5, 3];
         let indices = vec![IndexSpec::IntArray(vec![0, 2, 4])];
 
-        let indexer = AdvancedIndexer::new(shape, indices).unwrap();
+        let indexer =
+            AdvancedIndexer::new(shape, indices).expect("test: construction should succeed");
         assert_eq!(indexer.output_shape(), &[3, 3]); // Selected 3 elements from first dim
     }
 }

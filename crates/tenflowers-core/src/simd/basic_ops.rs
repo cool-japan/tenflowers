@@ -347,7 +347,8 @@ mod tests {
         let mut result = vec![0.0; 10];
         let expected = vec![3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0];
 
-        BasicOps::add_f32_optimized(&a, &b, &mut result).unwrap();
+        BasicOps::add_f32_optimized(&a, &b, &mut result)
+            .expect("test: add_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -359,9 +360,10 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let b = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let mut result = vec![0.0; 8];
-        let expected = vec![2.0, 6.0, 12.0, 20.0, 30.0, 42.0, 56.0, 72.0];
+        let expected = [2.0, 6.0, 12.0, 20.0, 30.0, 42.0, 56.0, 72.0];
 
-        BasicOps::mul_f32_optimized(&a, &b, &mut result).unwrap();
+        BasicOps::mul_f32_optimized(&a, &b, &mut result)
+            .expect("test: mul_f32_optimized should succeed");
 
         for (i, &val) in result.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -374,7 +376,7 @@ mod tests {
         let b = vec![3.0, 4.0, 5.0, 6.0];
         let c = vec![1.0, 2.0, 3.0, 4.0];
         let mut result = vec![0.0; 4];
-        let expected = vec![7.0, 14.0, 23.0, 34.0]; // a*b+c
+        let expected = [7.0, 14.0, 23.0, 34.0]; // a*b+c
 
         BasicOps::fma_f32_unchecked(&a, &b, &c, &mut result);
 

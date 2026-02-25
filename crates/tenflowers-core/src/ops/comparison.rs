@@ -566,78 +566,6 @@ where
     }
 }
 
-#[cfg(test)]
-#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_eq_same_shape() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![1.0, 2.0, 4.0], &[3]).unwrap();
-
-        let c = eq(&a, &b).unwrap();
-        let expected = vec![1u8, 1u8, 0u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_lt_broadcast() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0, 1.0], &[1, 2]).unwrap();
-
-        let c = lt(&a, &b).unwrap();
-        assert_eq!(c.shape().dims(), &[3, 2]);
-
-        // Expected: [[1, 0], [0, 0], [0, 0]] (1.0 < 2.0, but not < 1.0, etc.)
-        let expected = vec![1u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_ne_integers() {
-        let a = Tensor::<i32>::from_vec(vec![1, 2, 3], &[3]).unwrap();
-        let b = Tensor::<i32>::from_vec(vec![1, 3, 3], &[3]).unwrap();
-
-        let c = ne(&a, &b).unwrap();
-        let expected = vec![0u8, 1u8, 0u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_ge_scalar_broadcast() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let scalar = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
-
-        let c = ge(&a, &scalar).unwrap();
-        let expected = vec![0u8, 1u8, 1u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-}
-
 /// Convert a GPU buffer of u32 values (0 or 1) to u8 values
 #[cfg(feature = "gpu")]
 fn convert_u32_to_u8_gpu_buffer(
@@ -788,4 +716,84 @@ fn convert_u32_to_u8_gpu_buffer(
         crate::Device::Gpu(device_id),
         output_len,
     ))
+}
+
+#[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_eq_same_shape() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![1.0, 2.0, 4.0], &[3])
+            .expect("test: from_vec should succeed");
+
+        let c = eq(&a, &b).expect("test: eq should succeed");
+        let expected = vec![1u8, 1u8, 0u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_lt_broadcast() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0, 1.0], &[1, 2])
+            .expect("test: from_vec should succeed");
+
+        let c = lt(&a, &b).expect("test: lt should succeed");
+        assert_eq!(c.shape().dims(), &[3, 2]);
+
+        // Expected: [[1, 0], [0, 0], [0, 0]] (1.0 < 2.0, but not < 1.0, etc.)
+        let expected = vec![1u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_ne_integers() {
+        let a =
+            Tensor::<i32>::from_vec(vec![1, 2, 3], &[3]).expect("test: from_vec should succeed");
+        let b =
+            Tensor::<i32>::from_vec(vec![1, 3, 3], &[3]).expect("test: from_vec should succeed");
+
+        let c = ne(&a, &b).expect("test: ne should succeed");
+        let expected = vec![0u8, 1u8, 0u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_ge_scalar_broadcast() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let scalar =
+            Tensor::<f32>::from_vec(vec![2.0], &[1]).expect("test: from_vec should succeed");
+
+        let c = ge(&a, &scalar).expect("test: ge should succeed");
+        let expected = vec![0u8, 1u8, 1u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
 }

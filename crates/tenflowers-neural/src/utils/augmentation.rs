@@ -675,7 +675,7 @@ mod tests {
 
         let most_used = stats.most_used();
         assert!(most_used.is_some());
-        let (name, count) = most_used.unwrap();
+        let (name, count) = most_used.expect("test: operation should succeed");
         assert_eq!(name, "flip");
         assert_eq!(count, 3);
     }
@@ -691,7 +691,7 @@ mod tests {
 
         let least_used = stats.least_used();
         assert!(least_used.is_some());
-        let (name, count) = least_used.unwrap();
+        let (name, count) = least_used.expect("test: operation should succeed");
         assert_eq!(name, "rotation");
         assert_eq!(count, 1);
     }

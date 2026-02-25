@@ -5,7 +5,8 @@
 
 use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
-use rustfft::{num_complex::Complex, FftPlanner};
+use num_complex::Complex;
+use oxifft::{Direction, Flags, Plan};
 use scirs2_core::ndarray::{ArrayD, IxDyn};
 use scirs2_core::numeric::{Float, FromPrimitive, Signed, Zero};
 use std::fmt::Debug;
@@ -13,6 +14,36 @@ use std::fmt::Debug;
 use super::fft1d::fft;
 
 // GPU FFT kernels are not yet implemented, using CPU fallbacks
+
+/// Convert num_complex slice to oxifft Complex slice
+/// Both types have identical #[repr(C)] memory layout, making this conversion safe
+#[inline]
+fn to_oxifft_complex<T: oxifft::Float>(data: &[Complex<T>]) -> &[oxifft::kernel::Complex<T>] {
+    // Safety: Both num_complex::Complex and oxifft::Complex have #[repr(C)] layout
+    // with identical memory representation (re: T, im: T)
+    unsafe {
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const oxifft::kernel::Complex<T>,
+            data.len(),
+        )
+    }
+}
+
+/// Convert num_complex mutable slice to oxifft Complex mutable slice
+/// Both types have identical #[repr(C)] memory layout, making this conversion safe
+#[inline]
+fn to_oxifft_complex_mut<T: oxifft::Float>(
+    data: &mut [Complex<T>],
+) -> &mut [oxifft::kernel::Complex<T>] {
+    // Safety: Both num_complex::Complex and oxifft::Complex have #[repr(C)] layout
+    // with identical memory representation (re: T, im: T)
+    unsafe {
+        std::slice::from_raw_parts_mut(
+            data.as_mut_ptr() as *mut oxifft::kernel::Complex<T>,
+            data.len(),
+        )
+    }
+}
 
 /// 2D FFT along the last two axes
 pub fn fft2<T>(input: &Tensor<T>) -> Result<Tensor<Complex<T>>>
@@ -26,7 +57,8 @@ where
         + Debug
         + Default
         + bytemuck::Pod
-        + bytemuck::Zeroable,
+        + bytemuck::Zeroable
+        + oxifft::Float,
     Complex<T>: Default,
 {
     match &input.storage {
@@ -53,9 +85,24 @@ where
             // This requires transposing the last two dimensions, applying FFT, and transposing back
 
             // For now, implement a simpler version that processes each row and column
-            let mut planners = (FftPlanner::new(), FftPlanner::new());
-            let fft_width = planners.0.plan_fft_forward(width);
-            let fft_height = planners.1.plan_fft_forward(height);
+            let fft_width =
+                Plan::dft_1d(width, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+                    TensorError::InvalidShape {
+                        operation: "fft2".to_string(),
+                        reason: "Failed to create width FFT plan".to_string(),
+                        shape: Some(shape.to_vec()),
+                        context: None,
+                    }
+                })?;
+            let fft_height =
+                Plan::dft_1d(height, Direction::Forward, Flags::ESTIMATE).ok_or_else(|| {
+                    TensorError::InvalidShape {
+                        operation: "fft2".to_string(),
+                        reason: "Failed to create height FFT plan".to_string(),
+                        shape: Some(shape.to_vec()),
+                        context: None,
+                    }
+                })?;
 
             // Calculate the number of 2D slices to process
             let total_elements: usize = shape.iter().product();
@@ -80,19 +127,27 @@ where
                     for row in 0..height {
                         let row_start = row * width;
                         let row_end = row_start + width;
-                        let mut row_buffer = slice_data[row_start..row_end].to_vec();
-                        fft_width.process(&mut row_buffer);
-                        slice_data[row_start..row_end].copy_from_slice(&row_buffer);
+                        let mut row_input = slice_data[row_start..row_end].to_vec();
+                        let mut row_output = vec![Complex::zero(); width];
+                        fft_width.execute(
+                            to_oxifft_complex(&row_input),
+                            to_oxifft_complex_mut(&mut row_output),
+                        );
+                        slice_data[row_start..row_end].copy_from_slice(&row_output);
                     }
 
                     // Apply FFT along columns (height dimension)
                     for col in 0..width {
-                        let mut col_buffer = Vec::with_capacity(height);
+                        let mut col_input = Vec::with_capacity(height);
                         for row in 0..height {
-                            col_buffer.push(slice_data[row * width + col]);
+                            col_input.push(slice_data[row * width + col]);
                         }
-                        fft_height.process(&mut col_buffer);
-                        for (row, &val) in col_buffer.iter().enumerate() {
+                        let mut col_output = vec![Complex::zero(); height];
+                        fft_height.execute(
+                            to_oxifft_complex(&col_input),
+                            to_oxifft_complex_mut(&mut col_output),
+                        );
+                        for (row, &val) in col_output.iter().enumerate() {
                             slice_data[row * width + col] = val;
                         }
                     }
@@ -141,7 +196,8 @@ where
         + Debug
         + Default
         + bytemuck::Pod
-        + bytemuck::Zeroable,
+        + bytemuck::Zeroable
+        + oxifft::Float,
     Complex<T>: Default,
 {
     match &input.storage {
@@ -161,9 +217,22 @@ where
             let height = shape[ndim - 2];
             let width = shape[ndim - 1];
 
-            let mut planners = (FftPlanner::new(), FftPlanner::new());
-            let ifft_width = planners.0.plan_fft_inverse(width);
-            let ifft_height = planners.1.plan_fft_inverse(height);
+            let ifft_width =
+                Plan::dft_1d(width, Direction::Backward, Flags::ESTIMATE).ok_or_else(|| {
+                    TensorError::InvalidShape {
+                        operation: "ifft2".to_string(),
+                        reason: "Failed to create width IFFT plan".to_string(),
+                        shape: Some(shape.to_vec()),
+                        context: None,
+                    }
+                })?;
+            let ifft_height = Plan::dft_1d(height, Direction::Backward, Flags::ESTIMATE)
+                .ok_or_else(|| TensorError::InvalidShape {
+                    operation: "ifft2".to_string(),
+                    reason: "Failed to create height IFFT plan".to_string(),
+                    shape: Some(shape.to_vec()),
+                    context: None,
+                })?;
 
             // Calculate the number of 2D slices to process
             let total_elements: usize = shape.iter().product();
@@ -185,34 +254,42 @@ where
                     for row in 0..height {
                         let row_start = row * width;
                         let row_end = row_start + width;
-                        let mut row_buffer = slice_data[row_start..row_end].to_vec();
-                        ifft_width.process(&mut row_buffer);
+                        let mut row_input = slice_data[row_start..row_end].to_vec();
+                        let mut row_output = vec![Complex::zero(); width];
+                        ifft_width.execute(
+                            to_oxifft_complex(&row_input),
+                            to_oxifft_complex_mut(&mut row_output),
+                        );
 
                         // Normalize by width
                         let width_t = T::from(width).expect("width should convert to float type");
-                        for val in &mut row_buffer {
-                            *val = *val / width_t;
+                        for val in &mut row_output {
+                            *val /= width_t;
                         }
 
-                        slice_data[row_start..row_end].copy_from_slice(&row_buffer);
+                        slice_data[row_start..row_end].copy_from_slice(&row_output);
                     }
 
                     // Apply IFFT along columns (height dimension)
                     for col in 0..width {
-                        let mut col_buffer = Vec::with_capacity(height);
+                        let mut col_input = Vec::with_capacity(height);
                         for row in 0..height {
-                            col_buffer.push(slice_data[row * width + col]);
+                            col_input.push(slice_data[row * width + col]);
                         }
-                        ifft_height.process(&mut col_buffer);
+                        let mut col_output = vec![Complex::zero(); height];
+                        ifft_height.execute(
+                            to_oxifft_complex(&col_input),
+                            to_oxifft_complex_mut(&mut col_output),
+                        );
 
                         // Normalize by height
                         let height_t =
                             T::from(height).expect("height should convert to float type");
-                        for val in &mut col_buffer {
-                            *val = *val / height_t;
+                        for val in &mut col_output {
+                            *val /= height_t;
                         }
 
-                        for (row, &val) in col_buffer.iter().enumerate() {
+                        for (row, &val) in col_output.iter().enumerate() {
                             slice_data[row * width + col] = val;
                         }
                     }

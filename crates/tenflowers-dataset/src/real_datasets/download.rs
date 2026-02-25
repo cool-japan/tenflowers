@@ -352,38 +352,39 @@ mod tests {
 
     #[test]
     fn test_get_file_size() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let test_file = temp_dir.path().join("test.txt");
 
         // Create a test file
-        std::fs::write(&test_file, b"Hello, World!").unwrap();
+        std::fs::write(&test_file, b"Hello, World!").expect("test: write should succeed");
 
-        let size = get_file_size(&test_file).unwrap();
+        let size = get_file_size(&test_file).expect("test: operation should succeed");
         assert_eq!(size, 13); // "Hello, World!" is 13 bytes
     }
 
     #[test]
     fn test_verify_checksum_no_hash() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let test_file = temp_dir.path().join("test.txt");
 
         // Create a test file
-        std::fs::write(&test_file, b"test").unwrap();
+        std::fs::write(&test_file, b"test").expect("test: write should succeed");
 
-        let result = verify_checksum(&test_file, None).unwrap();
+        let result = verify_checksum(&test_file, None).expect("test: operation should succeed");
         assert!(result);
     }
 
     #[test]
     fn test_verify_checksum_with_hash() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let test_file = temp_dir.path().join("test.txt");
 
         // Create a test file
-        std::fs::write(&test_file, b"test").unwrap();
+        std::fs::write(&test_file, b"test").expect("test: write should succeed");
 
         // For now, this should always return true
-        let result = verify_checksum(&test_file, Some("dummy_hash")).unwrap();
+        let result = verify_checksum(&test_file, Some("dummy_hash"))
+            .expect("test: operation should succeed");
         assert!(result);
     }
 }

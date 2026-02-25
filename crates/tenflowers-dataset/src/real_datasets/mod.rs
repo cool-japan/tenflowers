@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn test_mnist_builder_integration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealMnistBuilder::new()
             .root(temp_dir.path())
             .train(true)
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_cifar10_builder_integration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealCifar10Builder::new()
             .root(temp_dir.path())
             .train(true)
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_imagenet_builder_integration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealImageNetBuilder::new()
             .root(temp_dir.path())
             .train(false) // Use validation set
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_imdb_builder_integration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealImdbBuilder::new()
             .root(temp_dir.path())
             .train(true)
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_ag_news_builder_integration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let builder = RealAgNewsBuilder::new()
             .root(temp_dir.path())
             .train(true)

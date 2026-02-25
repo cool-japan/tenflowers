@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! Large Model Optimization Demo (1B+ Parameters)
 //!
 //! This example demonstrates the large model optimization features

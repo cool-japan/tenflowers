@@ -20,12 +20,16 @@ mod cpu_gpu_overlap_tests {
     #[tokio::test]
     #[ignore = "Slow test - run with --ignored if needed"]
     async fn test_basic_async_operations() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[4]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[4])
+            .expect("test: from_vec should succeed");
 
         // Test async add
         let start = Instant::now();
-        let result = add_async(&a, &b).await.unwrap();
+        let result = add_async(&a, &b)
+            .await
+            .expect("test: operation should succeed");
         let add_time = start.elapsed();
 
         println!("Async add took: {:?}", add_time);
@@ -39,7 +43,9 @@ mod cpu_gpu_overlap_tests {
 
         // Test async mul
         let start = Instant::now();
-        let result = mul_async(&a, &b).await.unwrap();
+        let result = mul_async(&a, &b)
+            .await
+            .expect("test: operation should succeed");
         let mul_time = start.elapsed();
 
         println!("Async mul took: {:?}", mul_time);
@@ -56,14 +62,16 @@ mod cpu_gpu_overlap_tests {
     #[tokio::test]
     #[ignore = "Slow test - run with --ignored if needed"]
     async fn test_priority_based_execution() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0, 6.0], &[3]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0, 6.0], &[3])
+            .expect("test: from_vec should succeed");
 
         // Test high priority operation
         let start = Instant::now();
         let result = add_async_priority(&a, &b, WorkPriority::High)
             .await
-            .unwrap();
+            .expect("test: operation should succeed");
         let high_priority_time = start.elapsed();
 
         println!("High priority async add took: {:?}", high_priority_time);
@@ -79,7 +87,7 @@ mod cpu_gpu_overlap_tests {
         let start = Instant::now();
         let result = add_async_priority(&a, &b, WorkPriority::Normal)
             .await
-            .unwrap();
+            .expect("test: operation should succeed");
         let normal_priority_time = start.elapsed();
 
         println!("Normal priority async add took: {:?}", normal_priority_time);
@@ -96,24 +104,26 @@ mod cpu_gpu_overlap_tests {
     #[tokio::test]
     #[ignore = "Slow test - run with --ignored if needed"]
     async fn test_batch_processing() {
-        let tensors_a = vec![
-            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![5.0, 6.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![7.0, 8.0], &[2]).unwrap(),
+        let tensors_a = [
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![5.0, 6.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![7.0, 8.0], &[2]).expect("test: from_vec should succeed"),
         ];
 
-        let tensors_b = vec![
-            Tensor::<f32>::from_vec(vec![2.0, 3.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![4.0, 5.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![6.0, 7.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![8.0, 9.0], &[2]).unwrap(),
+        let tensors_b = [
+            Tensor::<f32>::from_vec(vec![2.0, 3.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![4.0, 5.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![6.0, 7.0], &[2]).expect("test: from_vec should succeed"),
+            Tensor::<f32>::from_vec(vec![8.0, 9.0], &[2]).expect("test: from_vec should succeed"),
         ];
 
         let operations: Vec<_> = tensors_a.iter().zip(tensors_b.iter()).collect();
 
         let start = Instant::now();
-        let results = batch_add_async(operations).await.unwrap();
+        let results = batch_add_async(operations)
+            .await
+            .expect("test: operation should succeed");
         let batch_time = start.elapsed();
 
         println!(
@@ -125,7 +135,7 @@ mod cpu_gpu_overlap_tests {
         assert_eq!(results.len(), 4);
 
         // Check results
-        let expected_results = vec![
+        let expected_results = [
             vec![3.0, 5.0],
             vec![7.0, 9.0],
             vec![11.0, 13.0],
@@ -150,8 +160,8 @@ mod cpu_gpu_overlap_tests {
         let data_a: Vec<f32> = (0..size).map(|i| i as f32).collect();
         let data_b: Vec<f32> = (0..size).map(|i| (i + 1) as f32).collect();
 
-        let a = Tensor::<f32>::from_vec(data_a, &[size]).unwrap();
-        let b = Tensor::<f32>::from_vec(data_b, &[size]).unwrap();
+        let a = Tensor::<f32>::from_vec(data_a, &[size]).expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(data_b, &[size]).expect("test: from_vec should succeed");
 
         // Create multiple concurrent operations
         let num_operations = 10usize;
@@ -164,7 +174,9 @@ mod cpu_gpu_overlap_tests {
             let b_ref = &b;
 
             let future = async move {
-                let result = add_async(a_ref, b_ref).await.unwrap();
+                let result = add_async(a_ref, b_ref)
+                    .await
+                    .expect("test: operation should succeed");
                 println!("Operation {} completed", i);
                 result
             };
@@ -205,8 +217,10 @@ mod cpu_gpu_overlap_tests {
         let executor = global_async_executor();
 
         // Create test tensors
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 4.0, 3.0, 2.0, 1.0], &[5]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 4.0, 3.0, 2.0, 1.0], &[5])
+            .expect("test: from_vec should succeed");
 
         // Test that executor starts idle
         assert!(executor.is_idle());
@@ -216,7 +230,7 @@ mod cpu_gpu_overlap_tests {
         let result = executor
             .execute_async(&a, &b, crate::ops::binary::AddOp)
             .await
-            .unwrap();
+            .expect("test: operation should succeed");
         let execution_time = start.elapsed();
 
         println!("Hybrid scheduler execution took: {:?}", execution_time);
@@ -243,8 +257,10 @@ mod cpu_gpu_overlap_tests {
         let monitor = global_monitor();
         monitor.clear(); // Clear previous metrics
 
-        let a = Tensor::<f32>::from_vec(vec![1.0; 1000], &[1000]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0; 1000], &[1000]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0; 1000], &[1000])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0; 1000], &[1000])
+            .expect("test: from_vec should succeed");
 
         // Time multiple operations
         let num_ops = 5;
@@ -255,7 +271,9 @@ mod cpu_gpu_overlap_tests {
                 crate::memory::global_monitor_arc(),
             );
 
-            let _result = add_async(&a, &b).await.unwrap();
+            let _result = add_async(&a, &b)
+                .await
+                .expect("test: operation should succeed");
         }
 
         // Check performance metrics
@@ -286,13 +304,17 @@ mod cpu_gpu_overlap_tests {
         let data_a: Vec<f32> = (0..size).map(|i| (i % 100) as f32).collect();
         let data_b: Vec<f32> = (0..size).map(|i| ((i + 50) % 100) as f32).collect();
 
-        let a = Tensor::<f32>::from_vec(data_a, &[size]).unwrap();
-        let b = Tensor::<f32>::from_vec(data_b, &[size]).unwrap();
+        let a = Tensor::<f32>::from_vec(data_a, &[size]).expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(data_b, &[size]).expect("test: from_vec should succeed");
 
         // Test sequential execution
         let start = Instant::now();
-        let result1 = add_async(&a, &b).await.unwrap();
-        let result2 = mul_async(&a, &b).await.unwrap();
+        let result1 = add_async(&a, &b)
+            .await
+            .expect("test: operation should succeed");
+        let result2 = mul_async(&a, &b)
+            .await
+            .expect("test: operation should succeed");
         let sequential_time = start.elapsed();
 
         println!("Sequential execution took: {:?}", sequential_time);
@@ -305,8 +327,20 @@ mod cpu_gpu_overlap_tests {
         println!("Concurrent execution took: {:?}", concurrent_time);
 
         // Verify results are the same
-        assert_eq!(result1.shape(), result3.as_ref().unwrap().shape());
-        assert_eq!(result2.shape(), result4.as_ref().unwrap().shape());
+        assert_eq!(
+            result1.shape(),
+            result3
+                .as_ref()
+                .expect("test: value should be present")
+                .shape()
+        );
+        assert_eq!(
+            result2.shape(),
+            result4
+                .as_ref()
+                .expect("test: value should be present")
+                .shape()
+        );
 
         // Concurrent should be faster (or at least not significantly slower)
         let speedup_ratio = sequential_time.as_secs_f64() / concurrent_time.as_secs_f64();
@@ -321,8 +355,10 @@ mod cpu_gpu_overlap_tests {
     #[tokio::test]
     #[ignore = "Slow test - run with --ignored if needed"]
     async fn test_error_handling() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0], &[2]).unwrap(); // Different shape
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b =
+            Tensor::<f32>::from_vec(vec![4.0, 5.0], &[2]).expect("test: from_vec should succeed"); // Different shape
 
         // This should fail due to shape mismatch
         let result = add_async(&a, &b).await;
@@ -341,13 +377,15 @@ mod cpu_gpu_overlap_tests {
         use tokio_stream::{self as stream};
 
         let base_data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let base_tensor = Tensor::<f32>::from_vec(base_data, &[5]).unwrap();
+        let base_tensor =
+            Tensor::<f32>::from_vec(base_data, &[5]).expect("test: from_vec should succeed");
 
         // Create a stream of operations
         let operation_stream = stream::iter(0..10)
             .map(|i| {
                 let scalar_data = vec![i as f32; 5];
-                let scalar_tensor = Tensor::<f32>::from_vec(scalar_data, &[5]).unwrap();
+                let scalar_tensor = Tensor::<f32>::from_vec(scalar_data, &[5])
+                    .expect("test: from_vec should succeed");
                 (base_tensor.clone(), scalar_tensor)
             })
             .map(|(a, b)| async move { add_async(&a, &b).await })

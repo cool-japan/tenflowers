@@ -1,3 +1,8 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::doc_lazy_continuation)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2, Array3, Array4};
 use serde_json::{json, Value};
@@ -54,7 +59,7 @@ impl BenchmarkConfig {
 }
 
 /// Benchmark result for cross-framework comparison
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BenchmarkResult {
     pub framework: String,
     pub operation: String,
@@ -143,7 +148,8 @@ fn bench_basic_operations_comparison(c: &mut Criterion) {
                     let start = Instant::now();
                     for _ in 0..iters {
                         let z = x.add(&y).unwrap();
-                        let _grads = tape.gradient(&z, &[&x, &y]).unwrap();
+                        let inputs = vec![x.clone(), y.clone()];
+                        let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                         black_box(z);
                     }
                     start.elapsed()
@@ -166,7 +172,8 @@ fn bench_basic_operations_comparison(c: &mut Criterion) {
                     let start = Instant::now();
                     for _ in 0..iters {
                         let z = x.mul(&y).unwrap();
-                        let _grads = tape.gradient(&z, &[&x, &y]).unwrap();
+                        let inputs = vec![x.clone(), y.clone()];
+                        let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                         black_box(z);
                     }
                     start.elapsed()
@@ -185,7 +192,8 @@ fn bench_basic_operations_comparison(c: &mut Criterion) {
                 let start = Instant::now();
                 for _ in 0..iters {
                     let z = x.pow(&exponent).unwrap();
-                    let _grads = tape.gradient(&z, &[&x]).unwrap();
+                    let inputs = vec![x.clone()];
+                    let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                     black_box(z);
                 }
                 start.elapsed()
@@ -208,8 +216,8 @@ fn bench_matrix_operations_comparison(c: &mut Criterion) {
         // Matrix multiplication
         group.bench_with_input(BenchmarkId::new("matmul", size), &size, |b, &size| {
             let tape = GradientTape::new();
-            let x_data = Array2::zeros((size, size)).into_dyn();
-            let y_data = Array2::eye(size).into_dyn();
+            let x_data = Array2::<f32>::zeros((size, size)).into_dyn();
+            let y_data = Array2::<f32>::eye(size).into_dyn();
             let x = tape.watch(Tensor::from_array(x_data));
             let y = tape.watch(Tensor::from_array(y_data));
 
@@ -217,7 +225,8 @@ fn bench_matrix_operations_comparison(c: &mut Criterion) {
                 let start = Instant::now();
                 for _ in 0..iters {
                     let z = x.matmul(&y).unwrap();
-                    let _grads = tape.gradient(&z, &[&x, &y]).unwrap();
+                    let inputs = vec![x.clone(), y.clone()];
+                    let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                     black_box(z);
                 }
                 start.elapsed()
@@ -227,14 +236,15 @@ fn bench_matrix_operations_comparison(c: &mut Criterion) {
         // Matrix transpose
         group.bench_with_input(BenchmarkId::new("transpose", size), &size, |b, &size| {
             let tape = GradientTape::new();
-            let x_data = Array2::zeros((size, size)).into_dyn();
+            let x_data = Array2::<f32>::zeros((size, size)).into_dyn();
             let x = tape.watch(Tensor::from_array(x_data));
 
             b.iter_custom(|iters| {
                 let start = Instant::now();
                 for _ in 0..iters {
-                    let z = x.transpose().unwrap();
-                    let _grads = tape.gradient(&z, &[&x]).unwrap();
+                    let z = x.transpose(None).unwrap();
+                    let inputs = vec![x.clone()];
+                    let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                     black_box(z);
                 }
                 start.elapsed()
@@ -246,7 +256,7 @@ fn bench_matrix_operations_comparison(c: &mut Criterion) {
             // Limit size for determinant computation
             group.bench_with_input(BenchmarkId::new("determinant", size), &size, |b, &size| {
                 let tape = GradientTape::new();
-                let x_data = Array2::eye(size).into_dyn();
+                let x_data = Array2::<f32>::eye(size).into_dyn();
                 let x = tape.watch(Tensor::from_array(x_data));
 
                 b.iter_custom(|iters| {
@@ -255,7 +265,8 @@ fn bench_matrix_operations_comparison(c: &mut Criterion) {
                         // Note: This would require det operation to be implemented
                         // For now, use a placeholder operation
                         let z = x.sum(None, false).unwrap();
-                        let _grads = tape.gradient(&z, &[&x]).unwrap();
+                        let inputs = vec![x.clone()];
+                        let _grads = tape.gradient(&[z.clone()], &inputs).unwrap();
                         black_box(z);
                     }
                     start.elapsed()
@@ -313,7 +324,8 @@ fn bench_neural_network_comparison(c: &mut Criterion) {
                         let loss = output.sum(None, false).unwrap();
 
                         // Backward pass
-                        let _grads = tape.gradient(&loss, &[&w1, &b1, &w2, &b2]).unwrap();
+                        let inputs = vec![w1.clone(), b1.clone(), w2.clone(), b2.clone()];
+                        let _grads = tape.gradient(&[loss.clone()], &inputs).unwrap();
                         black_box(loss);
                     }
                     start.elapsed()
@@ -354,17 +366,22 @@ fn bench_convolution_comparison(c: &mut Criterion) {
 
                 let x = tape.watch(Tensor::from_array(x_data));
                 let w = tape.watch(Tensor::from_array(w_data));
-                let b = tape.watch(Tensor::from_array(b_data));
+                let bias = tape.watch(Tensor::from_array(b_data));
 
                 b.iter_custom(|iters| {
                     let start = Instant::now();
                     for _ in 0..iters {
                         // Simplified convolution using matrix operations
-                        let conv_out = x.matmul(&w.transpose().unwrap()).unwrap().add(&b).unwrap();
+                        let conv_out = x
+                            .matmul(&w.transpose(None).unwrap())
+                            .unwrap()
+                            .add(&bias)
+                            .unwrap();
                         let activated = conv_out.relu().unwrap();
                         let loss = activated.sum(None, false).unwrap();
 
-                        let _grads = tape.gradient(&loss, &[&w, &b]).unwrap();
+                        let inputs = vec![w.clone(), bias.clone()];
+                        let _grads = tape.gradient(&[loss.clone()], &inputs).unwrap();
                         black_box(loss);
                     }
                     start.elapsed()
@@ -391,7 +408,8 @@ fn bench_advanced_math_comparison(c: &mut Criterion) {
             &size,
             |b, &size| {
                 let tape = GradientTape::new();
-                let x_data = Array1::linspace(-3.14f32, 3.14, size).into_dyn();
+                let x_data =
+                    Array1::linspace(-std::f32::consts::PI, std::f32::consts::PI, size).into_dyn();
                 let x = tape.watch(Tensor::from_array(x_data));
 
                 b.iter_custom(|iters| {
@@ -403,7 +421,8 @@ fn bench_advanced_math_comparison(c: &mut Criterion) {
                         let w = z.add(&y).unwrap();
                         let loss = w.sum(None, false).unwrap();
 
-                        let _grads = tape.gradient(&loss, &[&x]).unwrap();
+                        let inputs = vec![x.clone()];
+                        let _grads = tape.gradient(&[loss.clone()], &inputs).unwrap();
                         black_box(loss);
                     }
                     start.elapsed()
@@ -425,11 +444,14 @@ fn bench_advanced_math_comparison(c: &mut Criterion) {
                     for _ in 0..iters {
                         // Chain using available operations as approximations
                         let y = x.sigmoid().unwrap(); // Has exp-like behavior
-                        let z = y.add(&Tensor::from_scalar(1e-8)).unwrap(); // Add small epsilon
-                        let w = z.pow(&Tensor::from_scalar(0.5)).unwrap(); // Approximation for sqrt/log
+                        let epsilon = tape.watch(Tensor::from_scalar(1e-8f32));
+                        let z = y.add(&epsilon).unwrap(); // Add small epsilon
+                        let power = tape.watch(Tensor::from_scalar(0.5f32));
+                        let w = z.pow(&power).unwrap(); // Approximation for sqrt/log
                         let loss = w.sum(None, false).unwrap();
 
-                        let _grads = tape.gradient(&loss, &[&x]).unwrap();
+                        let inputs = vec![x.clone()];
+                        let _grads = tape.gradient(&[loss.clone()], &inputs).unwrap();
                         black_box(loss);
                     }
                     start.elapsed()
@@ -457,15 +479,20 @@ fn bench_higher_order_derivatives(c: &mut Criterion) {
                 let start = Instant::now();
                 for _ in 0..iters {
                     // First-order gradient
-                    let y = x.pow(&Tensor::from_scalar(3.0)).unwrap();
+                    let power = tape1.watch(Tensor::from_scalar(3.0f32));
+                    let y = x.pow(&power).unwrap();
                     let loss = y.sum(None, false).unwrap();
-                    let first_grad = tape1.gradient(&loss, &[&x]).unwrap();
+                    let inputs1 = vec![x.clone()];
+                    let first_grad = tape1.gradient(&[loss.clone()], &inputs1).unwrap();
 
                     // Second-order gradient (simplified)
                     let tape2 = GradientTape::new();
-                    let grad_tensor = tape2.watch(first_grad[0].clone());
-                    let grad_loss = grad_tensor.sum(None, false).unwrap();
-                    let _second_grad = tape2.gradient(&grad_loss, &[&grad_tensor]).unwrap();
+                    if let Some(grad) = &first_grad[0] {
+                        let grad_tensor = tape2.watch(grad.clone());
+                        let grad_loss = grad_tensor.sum(None, false).unwrap();
+                        let inputs2 = vec![grad_tensor.clone()];
+                        let _second_grad = tape2.gradient(&[grad_loss.clone()], &inputs2).unwrap();
+                    }
 
                     black_box(loss);
                 }

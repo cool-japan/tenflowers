@@ -481,7 +481,7 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let (output, weights) = result.unwrap();
+        let (output, weights) = result.expect("test: result should be valid");
 
         // Check that output has the right shape: [1, 2, 4]
         assert_eq!(output.shape().dims(), &[1, 2, 4]);
@@ -572,7 +572,7 @@ mod tests {
         let result = apply_rotary_position_embedding(&input, &positions, &cos_cache, &sin_cache);
 
         assert!(result.is_ok());
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
 
         // Check that output has the same shape as input
         assert_eq!(output.shape().dims(), &[1, 2, 4]);

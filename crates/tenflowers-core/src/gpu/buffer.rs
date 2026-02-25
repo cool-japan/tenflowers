@@ -615,7 +615,7 @@ mod tests {
         let buffer = GpuBuffer::<f32>::zeros(1024, 0);
 
         // Verify allocation was tracked if buffer creation succeeded
-        if buffer.is_ok() {
+        if let Ok(buf) = buffer {
             let usage_after_alloc = current_gpu_memory_usage();
             assert!(
                 usage_after_alloc >= initial_usage,
@@ -623,7 +623,6 @@ mod tests {
             );
 
             // Verify allocation ID was assigned
-            let buf = buffer.unwrap();
             assert!(
                 buf.allocation_id().is_some(),
                 "Buffer should have an allocation ID"

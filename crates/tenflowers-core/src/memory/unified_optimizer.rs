@@ -766,19 +766,19 @@ mod tests {
     #[test]
     fn test_strategy_selection() {
         let config = UnifiedOptimizerConfig::default();
-        let optimizer = UnifiedOptimizationEngine::new(config).unwrap();
+        let optimizer = UnifiedOptimizationEngine::new(config).expect("test: new should succeed");
 
         let strategy = optimizer.select_optimization_strategy("matrix_multiply", 1024);
         assert!(strategy.is_ok());
 
-        let strategy = strategy.unwrap();
+        let strategy = strategy.expect("test: operation should succeed");
         assert!(strategy.expected_performance_multiplier > 1.0);
     }
 
     #[test]
     fn test_elementwise_optimization() {
         let config = UnifiedOptimizerConfig::default();
-        let optimizer = UnifiedOptimizationEngine::new(config).unwrap();
+        let optimizer = UnifiedOptimizationEngine::new(config).expect("test: new should succeed");
 
         let a = vec![1.0; 16];
         let b = vec![2.0; 16];
@@ -787,7 +787,7 @@ mod tests {
         let result = optimizer.optimize_operation("elementwise_add", &a, &b, &mut c);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: operation should succeed");
         assert_eq!(result.operation, "elementwise_add");
         assert!(result.performance_improvement >= 0.0);
 
@@ -800,7 +800,7 @@ mod tests {
     #[test]
     fn test_matrix_multiply_optimization() {
         let config = UnifiedOptimizerConfig::default();
-        let optimizer = UnifiedOptimizationEngine::new(config).unwrap();
+        let optimizer = UnifiedOptimizationEngine::new(config).expect("test: new should succeed");
 
         let a = vec![1.0; 16];
         let b = vec![2.0; 16];
@@ -809,7 +809,7 @@ mod tests {
         let result = optimizer.optimize_operation("matrix_multiply", &a, &b, &mut c);
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.expect("test: operation should succeed");
         assert_eq!(result.operation, "matrix_multiply");
         assert!(result.performance_improvement >= 0.0);
     }
@@ -817,7 +817,7 @@ mod tests {
     #[test]
     fn test_optimization_statistics() {
         let config = UnifiedOptimizerConfig::default();
-        let optimizer = UnifiedOptimizationEngine::new(config).unwrap();
+        let optimizer = UnifiedOptimizationEngine::new(config).expect("test: new should succeed");
 
         // Perform some operations to generate statistics
         let a = vec![1.0; 16];
@@ -830,7 +830,7 @@ mod tests {
         let stats = optimizer.get_optimization_statistics();
         assert!(stats.is_ok());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: operation should succeed");
         assert!(stats.total_operations_optimized > 0);
         assert!(!stats.operation_profiles.is_empty());
     }
@@ -847,7 +847,7 @@ mod tests {
     #[test]
     fn test_performance_tracking() {
         let config = UnifiedOptimizerConfig::default();
-        let optimizer = UnifiedOptimizationEngine::new(config).unwrap();
+        let optimizer = UnifiedOptimizationEngine::new(config).expect("test: new should succeed");
 
         let strategy = OptimizationStrategy {
             simd_strategy: SimdStrategy::HardwareSpecific { vector_width: 256 },

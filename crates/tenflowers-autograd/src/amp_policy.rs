@@ -619,7 +619,9 @@ mod tests {
     fn test_scale_loss_passthrough_when_disabled() {
         let policy = AMPPolicy::disabled();
         let loss = Tensor::<f32>::from_scalar(1.0);
-        let scaled = policy.scale_loss(&loss).unwrap();
+        let scaled = policy
+            .scale_loss(&loss)
+            .expect("test: scaling should succeed");
 
         // Should be unchanged
         assert_eq!(
@@ -637,7 +639,9 @@ mod tests {
         };
         let policy = AMPPolicy::new(config);
         let loss = Tensor::<f32>::from_scalar(1.0);
-        let scaled = policy.scale_loss(&loss).unwrap();
+        let scaled = policy
+            .scale_loss(&loss)
+            .expect("test: scaling should succeed");
 
         // Should be scaled by 1024
         assert_eq!(
@@ -656,9 +660,12 @@ mod tests {
         let mut policy = AMPPolicy::new(config);
 
         // Create gradients without overflow
-        let mut gradients = vec![Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap()];
+        let mut gradients = vec![Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed")];
 
-        let should_step = policy.unscale_and_check(&mut gradients).unwrap();
+        let should_step = policy
+            .unscale_and_check(&mut gradients)
+            .expect("test: gradient computation should succeed");
 
         assert!(should_step);
         assert_eq!(policy.metrics.total_steps, 1);
@@ -721,7 +728,9 @@ mod tests {
         // Simulate multiple successful steps
         for _ in 0..10 {
             let mut gradients = vec![Tensor::<f32>::ones(&[5])];
-            policy.unscale_and_check(&mut gradients).unwrap();
+            policy
+                .unscale_and_check(&mut gradients)
+                .expect("test: gradient computation should succeed");
         }
 
         let metrics = policy.get_stability_metrics();
@@ -741,7 +750,9 @@ mod tests {
         // Simulate some steps
         for _ in 0..5 {
             let mut gradients = vec![Tensor::<f32>::ones(&[5])];
-            policy.unscale_and_check(&mut gradients).unwrap();
+            policy
+                .unscale_and_check(&mut gradients)
+                .expect("test: gradient computation should succeed");
         }
 
         assert_eq!(policy.metrics.total_steps, 5);

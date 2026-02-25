@@ -482,7 +482,7 @@ mod tests {
     #[test]
     #[ignore = "long-running"]
     fn test_forward_pass() {
-        let layer = ultra_conv2d::<f32>(3, 64, (3, 3)).unwrap();
+        let layer = ultra_conv2d::<f32>(3, 64, (3, 3)).expect("test: operation should succeed");
         let input = Tensor::<f32>::zeros(&[1, 3, 224, 224]);
         let output = layer.forward(&input);
         assert!(output.is_ok());
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_performance_metrics() {
-        let layer = ultra_conv2d::<f32>(3, 32, (3, 3)).unwrap();
+        let layer = ultra_conv2d::<f32>(3, 32, (3, 3)).expect("test: operation should succeed");
         let metrics = layer.get_performance_metrics();
         assert!(metrics.flops > 0.0);
     }

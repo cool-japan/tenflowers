@@ -664,7 +664,8 @@ mod tests {
         let bytes = value.to_bytes(4);
         assert_eq!(bytes.len(), 4);
 
-        let recovered = FieldValue::from_bytes(&bytes, DType::Float32).unwrap();
+        let recovered = FieldValue::from_bytes(&bytes, DType::Float32)
+            .expect("test: from_bytes should succeed");
         if let FieldValue::Float32(v) = recovered {
             assert!((v - 3.15).abs() < 1e-6);
         } else {
@@ -698,23 +699,39 @@ mod tests {
         let mut array = StructuredArray::new(fields, 2);
 
         // Set values
-        array.set_field_value(0, "id", 42i32.into()).unwrap();
-        array.set_field_value(0, "score", 95.5f32.into()).unwrap();
-        array.set_field_value(0, "name", "Alice".into()).unwrap();
+        array
+            .set_field_value(0, "id", 42i32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(0, "score", 95.5f32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(0, "name", "Alice".into())
+            .expect("test: operation should succeed");
 
-        array.set_field_value(1, "id", 43i32.into()).unwrap();
-        array.set_field_value(1, "score", 87.2f32.into()).unwrap();
-        array.set_field_value(1, "name", "Bob".into()).unwrap();
+        array
+            .set_field_value(1, "id", 43i32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(1, "score", 87.2f32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(1, "name", "Bob".into())
+            .expect("test: operation should succeed");
 
         // Get values
-        let id0 = array.get_field_value(0, "id").unwrap();
+        let id0 = array
+            .get_field_value(0, "id")
+            .expect("test: get_field_value should succeed");
         if let FieldValue::Int32(v) = id0 {
             assert_eq!(v, 42);
         } else {
             panic!("Wrong type");
         }
 
-        let name1 = array.get_field_value(1, "name").unwrap();
+        let name1 = array
+            .get_field_value(1, "name")
+            .expect("test: get_field_value should succeed");
         if let FieldValue::String(s) = name1 {
             assert_eq!(s, "Bob");
         } else {
@@ -735,9 +752,13 @@ mod tests {
         record.insert("x".to_string(), 1.0f32.into());
         record.insert("y".to_string(), 2.0f32.into());
 
-        array.set_record(0, record).unwrap();
+        array
+            .set_record(0, record)
+            .expect("test: set_record should succeed");
 
-        let retrieved = array.get_record(0).unwrap();
+        let retrieved = array
+            .get_record(0)
+            .expect("test: get_record should succeed");
         assert_eq!(retrieved.len(), 2);
 
         if let Some(FieldValue::Float32(x)) = retrieved.get("x") {
@@ -753,11 +774,19 @@ mod tests {
 
         let mut array = StructuredArray::new(fields, 3);
 
-        array.set_field_value(0, "values", 1.0f32.into()).unwrap();
-        array.set_field_value(1, "values", 2.0f32.into()).unwrap();
-        array.set_field_value(2, "values", 3.0f32.into()).unwrap();
+        array
+            .set_field_value(0, "values", 1.0f32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(1, "values", 2.0f32.into())
+            .expect("test: operation should succeed");
+        array
+            .set_field_value(2, "values", 3.0f32.into())
+            .expect("test: operation should succeed");
 
-        let column = array.get_column("values").unwrap();
+        let column = array
+            .get_column("values")
+            .expect("test: get_column should succeed");
         assert_eq!(column.len(), 3);
 
         if let FieldValue::Float32(v) = &column[1] {
@@ -774,13 +803,17 @@ mod tests {
         let mut array = StructuredArray::new(fields, 5);
 
         for i in 0..5 {
-            array.set_field_value(i, "id", (i as i32).into()).unwrap();
+            array
+                .set_field_value(i, "id", (i as i32).into())
+                .expect("test: operation should succeed");
         }
 
-        let slice = array.slice(1, 4).unwrap();
+        let slice = array.slice(1, 4).expect("test: slice should succeed");
         assert_eq!(slice.len(), 3);
 
-        let id = slice.get_field_value(0, "id").unwrap();
+        let id = slice
+            .get_field_value(0, "id")
+            .expect("test: get_field_value should succeed");
         if let FieldValue::Int32(v) = id {
             assert_eq!(v, 1); // First element of slice should be original index 1
         } else {

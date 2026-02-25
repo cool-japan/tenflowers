@@ -860,7 +860,9 @@ mod tests {
     #[test]
     fn test_sharding_config_calculation() {
         let manager = PyLargeModelManager::new(Some(32.0));
-        let shard_config = manager.create_sharding_config(2_000_000_000, 16.0).unwrap();
+        let shard_config = manager
+            .create_sharding_config(2_000_000_000, 16.0)
+            .expect("test: operation should succeed");
 
         assert!(shard_config.num_shards >= 2); // Should shard a 2B parameter model
         assert!(shard_config.shard_size_gb > 0.0);

@@ -835,7 +835,9 @@ mod tests {
             ),
         ];
 
-        let fusions = optimizer.optimize_gradient_fusions(&operations).unwrap();
+        let fusions = optimizer
+            .optimize_gradient_fusions(&operations)
+            .expect("test: gradient computation should succeed");
         assert!(!fusions.is_empty());
     }
 
@@ -859,7 +861,9 @@ mod tests {
             ),
         ];
 
-        let memory_opts = optimizer.optimize_memory_usage(&operations).unwrap();
+        let memory_opts = optimizer
+            .optimize_memory_usage(&operations)
+            .expect("test: memory operation should succeed");
         assert!(!memory_opts.is_empty());
     }
 
@@ -901,7 +905,9 @@ mod tests {
             .with_tensor_sizes(vec![1000, 1000]),
         ];
 
-        let result = optimizer.optimize_graph(&operations).unwrap();
+        let result = optimizer
+            .optimize_graph(&operations)
+            .expect("test: graph operation should succeed");
         // The speedup estimation may not always be > 1.0 depending on the optimization heuristics
         // Just check that we get a reasonable speedup value (> 0)
         assert!(result.estimated_speedup > 0.0);

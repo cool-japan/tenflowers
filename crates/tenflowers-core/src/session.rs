@@ -781,7 +781,7 @@ mod tests {
                 Device::Cpu,
                 HashMap::new(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Create identity operation
         let identity_id = graph
@@ -791,7 +791,7 @@ mod tests {
                 Device::Cpu,
                 HashMap::new(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Connect them
         graph
@@ -804,19 +804,22 @@ mod tests {
                 Shape::new(vec![2, 2]),
                 false,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let graph = Arc::new(RwLock::new(graph));
         let mut session = create_session(graph, None, None);
 
         // Create input tensor
-        let input_tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let input_tensor = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
         let mut feed_dict = FeedDict::new();
         feed_dict.insert("input".to_string(), input_tensor.clone());
 
         // Run session
         let fetches = vec![FetchSpec::Name("output".to_string())];
-        let results = session.run(&fetches, &feed_dict).unwrap();
+        let results = session
+            .run(&fetches, &feed_dict)
+            .expect("test: run should succeed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].shape(), input_tensor.shape());
@@ -837,7 +840,7 @@ mod tests {
                 Device::Cpu,
                 HashMap::new(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let input2_id = graph
             .add_node(
@@ -849,7 +852,7 @@ mod tests {
                 Device::Cpu,
                 HashMap::new(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Create add operation
         let add_id = graph
@@ -859,7 +862,7 @@ mod tests {
                 Device::Cpu,
                 HashMap::new(),
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Connect inputs to add
         graph
@@ -872,7 +875,7 @@ mod tests {
                 Shape::new(vec![2]),
                 false,
             )
-            .unwrap();
+            .expect("test: operation should succeed");
 
         graph
             .add_edge(
@@ -884,14 +887,16 @@ mod tests {
                 Shape::new(vec![2]),
                 false,
             )
-            .unwrap();
+            .expect("operation should succeed");
 
         let graph = Arc::new(RwLock::new(graph));
         let mut session = create_session(graph, None, None);
 
         // Create input tensors
-        let input1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-        let input2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap();
+        let input1 =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("from_vec should succeed");
+        let input2 =
+            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).expect("from_vec should succeed");
 
         let mut feed_dict = FeedDict::new();
         feed_dict.insert("input1".to_string(), input1);
@@ -899,7 +904,9 @@ mod tests {
 
         // Run session
         let fetches = vec![FetchSpec::Name("add".to_string())];
-        let results = session.run(&fetches, &feed_dict).unwrap();
+        let results = session
+            .run(&fetches, &feed_dict)
+            .expect("run should succeed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].shape(), &Shape::new(vec![2]));
@@ -918,7 +925,7 @@ mod tests {
         let graph = Arc::new(RwLock::new(Graph::new()));
         let mut session = create_session(graph, None, None);
 
-        session.close().unwrap();
+        session.close().expect("test: close should succeed");
         assert!(session.closed);
 
         // Trying to run after close should fail

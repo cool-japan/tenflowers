@@ -296,10 +296,15 @@ mod tests {
         let mut debugger = GradientDebugger::new();
 
         // Create a normal gradient tensor
-        let gradient = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
-        debugger.check_gradient(1, "test_op", &gradient).unwrap();
+        let gradient = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        debugger
+            .check_gradient(1, "test_op", &gradient)
+            .expect("test: gradient computation should succeed");
 
-        let info = debugger.get_debug_info(1).unwrap();
+        let info = debugger
+            .get_debug_info(1)
+            .expect("test: operation should succeed");
         assert!(!info.has_nan);
         assert!(!info.has_inf);
         assert!(info.gradient_norm > 0.0);
@@ -309,7 +314,8 @@ mod tests {
     fn test_nan_detection() {
         use std::f32;
 
-        let tensor = Tensor::from_vec(vec![1.0f32, f32::NAN, 3.0], &[3]).unwrap();
+        let tensor = Tensor::from_vec(vec![1.0f32, f32::NAN, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         assert!(utils::has_nan(&tensor));
         assert!(!utils::has_inf(&tensor));
     }
@@ -318,7 +324,8 @@ mod tests {
     fn test_inf_detection() {
         use std::f32;
 
-        let tensor = Tensor::from_vec(vec![1.0f32, f32::INFINITY, 3.0], &[3]).unwrap();
+        let tensor = Tensor::from_vec(vec![1.0f32, f32::INFINITY, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         assert!(!utils::has_nan(&tensor));
         assert!(utils::has_inf(&tensor));
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::layers::{AvgPool2D, BatchNorm, Layer, MaxPool2D};
 

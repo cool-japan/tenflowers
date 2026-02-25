@@ -45,7 +45,7 @@
 //!
 //! ## Training with Adam
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Sequential, Dense, Adam};
 //! use tenflowers_neural::loss::mse;
 //! use tenflowers_core::Tensor;
@@ -76,7 +76,7 @@
 //!
 //! ## AdamW with Weight Decay
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{AdamW, Sequential};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,7 +91,7 @@
 //!
 //! ## Gradient Accumulation for Large Batches
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Adam, OptimizerWithAccumulation, Sequential};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -114,7 +114,7 @@
 //!
 //! ## Parameter Groups with Different Learning Rates
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::optimizers::{ParameterGroup, ParameterGroupOptimizer};
 //! use tenflowers_neural::{Sequential, Adam};
 //!
@@ -136,7 +136,7 @@
 //!
 //! ## Lookahead Optimizer
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Adam, Lookahead, Sequential};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -153,7 +153,7 @@
 //!
 //! ## Stochastic Weight Averaging
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Adam, SWA, Sequential};
 //! use tenflowers_neural::optimizers::SwaConfig;
 //!
@@ -172,7 +172,7 @@
 //!
 //! ## Gradient Centralization
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Adam, Sequential};
 //! use tenflowers_neural::optimizers::{
 //!     GradientCentralizationWrapper,

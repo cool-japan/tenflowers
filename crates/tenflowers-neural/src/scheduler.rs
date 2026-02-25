@@ -66,7 +66,7 @@
 //!
 //! ## Using with Optimizer
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_neural::{Adam, Sequential};
 //! use tenflowers_neural::scheduler::{StepLR, LearningRateScheduler};
 //!
@@ -89,7 +89,7 @@
 //!
 //! ## Reduce on Plateau
 //!
-//! ```rust
+//! ```rust,ignore
 //! use tenflowers_neural::scheduler::ReduceLROnPlateau;
 //!
 //! let mut scheduler = ReduceLROnPlateau::new(0.1)

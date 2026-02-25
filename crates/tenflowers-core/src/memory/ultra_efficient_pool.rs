@@ -714,13 +714,13 @@ mod tests {
 
     #[test]
     fn test_memory_pool_basic_allocation() {
-        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).unwrap();
-        let buffer: UltraEfficientBuffer<f32> = pool.allocate(1000).unwrap();
+        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).expect("test: operation should succeed");
+        let buffer: UltraEfficientBuffer<f32> = pool.allocate(1000).expect("test: allocate should succeed");
 
         assert_eq!(buffer.size(), 1000);
         assert!(buffer.capacity() >= 1000);
 
-        pool.deallocate(buffer).unwrap();
+        pool.deallocate(buffer).expect("test: deallocate should succeed");
     }
 
     #[test]
@@ -733,16 +733,16 @@ mod tests {
 
     #[test]
     fn test_memory_stats() {
-        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).unwrap();
+        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).expect("test: operation should succeed");
         let initial_stats = pool.get_stats();
 
-        let buffer: UltraEfficientBuffer<i32> = pool.allocate(500).unwrap();
+        let buffer: UltraEfficientBuffer<i32> = pool.allocate(500).expect("test: allocate should succeed");
         let stats_after_alloc = pool.get_stats();
 
         assert!(stats_after_alloc.allocation_count > initial_stats.allocation_count);
         assert!(stats_after_alloc.current_usage > initial_stats.current_usage);
 
-        pool.deallocate(buffer).unwrap();
+        pool.deallocate(buffer).expect("test: deallocate should succeed");
         let final_stats = pool.get_stats();
 
         assert!(final_stats.deallocation_count > initial_stats.deallocation_count);
@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_optimal_size_calculation() {
-        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).unwrap();
+        let pool = UltraEfficientMemoryPool::new(PoolConfig::default()).expect("test: operation should succeed");
 
         let optimal_small = pool.optimal_size_for::<f32>(100);
         let optimal_medium = pool.optimal_size_for::<f32>(50_000);
@@ -766,11 +766,11 @@ mod tests {
         config.memory_pressure_threshold = 0.1; // Very low threshold for testing
         config.max_pool_size = 1024; // Small pool for testing
 
-        let pool = UltraEfficientMemoryPool::new(config).unwrap();
+        let pool = UltraEfficientMemoryPool::new(config).expect("test: new should succeed");
 
         // Allocate enough to trigger pressure
         let _buffers: Vec<UltraEfficientBuffer<u8>> = (0..100)
-            .map(|_| pool.allocate(100).unwrap())
+            .map(|_| pool.allocate(100).expect("test: map should succeed"))
             .collect();
 
         // Should handle pressure gracefully
@@ -783,8 +783,8 @@ mod tests {
         let profiler = profiling::MemoryProfiler::start();
 
         let pool = global_memory_pool();
-        let buffer: UltraEfficientBuffer<f64> = pool.allocate(1000).unwrap();
-        pool.deallocate(buffer).unwrap();
+        let buffer: UltraEfficientBuffer<f64> = pool.allocate(1000).expect("test: allocate should succeed");
+        pool.deallocate(buffer).expect("test: deallocate should succeed");
 
         let report = profiler.finish();
         let metrics = report.performance_metrics();

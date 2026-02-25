@@ -33,8 +33,8 @@ use std::sync::Arc;
 /// ```
 /// use tenflowers_core::{Tensor, ops::cumsum};
 ///
-/// let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-/// let result = cumsum(&tensor, Some(1)).unwrap();
+/// let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
+/// let result = cumsum(&tensor, Some(1)).expect("operation should succeed");
 /// // Result: [[1.0, 3.0], [3.0, 7.0]]
 /// ```
 pub fn cumsum<T>(x: &Tensor<T>, axis: Option<i32>) -> Result<Tensor<T>>
@@ -117,8 +117,8 @@ where
 /// ```
 /// use tenflowers_core::{Tensor, ops::cumprod};
 ///
-/// let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-/// let result = cumprod(&tensor, Some(1)).unwrap();
+/// let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).expect("from_vec should succeed");
+/// let result = cumprod(&tensor, Some(1)).expect("operation should succeed");
 /// // Result: [[1.0, 2.0], [3.0, 12.0]]
 /// ```
 pub fn cumprod<T>(x: &Tensor<T>, axis: Option<i32>) -> Result<Tensor<T>>

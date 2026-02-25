@@ -965,6 +965,6 @@ mod tests {
         let mut pool = FastMemoryPool::new(64); // 64MB pool
         let block = pool.allocate_fast(1024);
         assert!(block.is_some());
-        assert_eq!(block.unwrap().size, 1024);
+        assert_eq!(block.expect("test: operation should succeed").size, 1024);
     }
 }

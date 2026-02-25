@@ -85,7 +85,7 @@ mod tests {
         let result = WasmOptimizedTensor::new(data, shape);
         assert!(result.is_ok());
 
-        let tensor = result.unwrap();
+        let tensor = result.expect("test: operation should succeed");
         assert_eq!(tensor.shape(), &[5]);
     }
 

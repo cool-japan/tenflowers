@@ -1,4 +1,4 @@
-name: Performance Regression Gates
+name: Performance Regression Detection
 
 on:
   pull_request:
@@ -10,12 +10,15 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  PERFORMANCE_REGRESSION_THRESHOLD: 10  # Allow 10% regression by default
+  CRITICAL_OPERATION_THRESHOLD: 5      # Allow 5% regression for critical ops
 
 jobs:
-  performance-validation:
-    name: Performance Regression Detection
+  benchmark-main:
+    name: Benchmark Main Branch Baseline
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -25,6 +28,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config
 
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
@@ -39,91 +47,325 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-perf-
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config
-
       - name: Build workspace in release mode
         run: cargo build --release --workspace
 
-      - name: Run performance gate validation
-        run: cargo run --release --bin performance_gate_validation
-        working-directory: crates/tenflowers-core
-
-      - name: Run criterion benchmarks (baseline)
+      - name: Run criterion benchmarks (tenflowers-core)
         run: |
           cargo bench --bench dispatch_benchmarks -- --save-baseline main
           cargo bench --bench ultra_performance_benchmark -- --save-baseline main
         working-directory: crates/tenflowers-core
+        continue-on-error: true
 
-      - name: Check for performance regressions
+      - name: Run criterion benchmarks (tenflowers-autograd)
         run: |
-          # Compare current performance against baseline
-          cargo bench --bench dispatch_benchmarks -- --baseline main
-          cargo bench --bench ultra_performance_benchmark -- --baseline main
+          cargo bench --bench gradient_performance -- --save-baseline main
+          cargo bench --bench advanced_gradient_benchmarks -- --save-baseline main
+        working-directory: crates/tenflowers-autograd
+        continue-on-error: true
+
+      - name: Run performance gate validation
+        run: cargo run --release --bin performance_gate_validation
         working-directory: crates/tenflowers-core
         continue-on-error: true
 
-      - name: Archive benchmark results
+      - name: Upload benchmark baselines
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: performance-results
+          name: criterion-baselines-main
           path: |
             target/criterion/
             crates/tenflowers-core/target/criterion/
-          retention-days: 30
+            crates/tenflowers-autograd/target/criterion/
+          retention-days: 90
 
-      - name: Performance Summary
-        run: |
-          echo "## Performance Gate Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All performance gates passed!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Benchmark results are available in the artifacts." >> $GITHUB_STEP_SUMMARY
-
-  benchmark-comparison:
-    name: Benchmark Comparison vs Main
+  benchmark-pr:
+    name: Performance Regression Detection
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    timeout-minutes: 45
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 90
+    outputs:
+      regression_detected: ${{ steps.compare.outputs.regression_detected }}
+      regression_summary: ${{ steps.compare.outputs.regression_summary }}
 
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: Cache dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config python3 python3-pip
+
+      - name: Install Python analysis tools
+        run: |
+          python3 -m pip install --quiet numpy pandas matplotlib
+
+      - name: Cache Cargo dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-perf-
 
-      - name: Run benchmarks on PR branch
+      - name: Build workspace in release mode
+        run: cargo build --release --workspace
+
+      - name: Run criterion benchmarks on PR (tenflowers-core)
+        id: bench_core
         run: |
-          cargo bench --workspace --no-fail-fast -- --save-baseline pr-branch
+          cargo bench --bench dispatch_benchmarks -- --save-baseline pr-current --output-format bencher 2>&1 | tee bench_core.txt
+          cargo bench --bench ultra_performance_benchmark -- --save-baseline pr-current --output-format bencher 2>&1 | tee -a bench_core.txt
+        working-directory: crates/tenflowers-core
         continue-on-error: true
 
-      - name: Checkout main branch
-        uses: actions/checkout@v4
+      - name: Run criterion benchmarks on PR (tenflowers-autograd)
+        id: bench_autograd
+        run: |
+          cargo bench --bench gradient_performance -- --save-baseline pr-current --output-format bencher 2>&1 | tee bench_autograd.txt
+          cargo bench --bench advanced_gradient_benchmarks -- --save-baseline pr-current --output-format bencher 2>&1 | tee -a bench_autograd.txt
+        working-directory: crates/tenflowers-autograd
+        continue-on-error: true
+
+      - name: Download main branch baselines
+        uses: actions/download-artifact@v4
         with:
-          ref: main
-
-      - name: Run benchmarks on main branch
-        run: |
-          cargo bench --workspace --no-fail-fast -- --save-baseline main-branch
+          name: criterion-baselines-main
+          path: baselines/
         continue-on-error: true
 
-      - name: Compare results
+      - name: Merge baseline results
         run: |
-          echo "## Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
+          mkdir -p target/criterion
+          mkdir -p crates/tenflowers-core/target/criterion
+          mkdir -p crates/tenflowers-autograd/target/criterion
+
+          if [ -d "baselines/target/criterion" ]; then
+            cp -r baselines/target/criterion/* target/criterion/ 2>/dev/null || true
+          fi
+          if [ -d "baselines/crates/tenflowers-core/target/criterion" ]; then
+            cp -r baselines/crates/tenflowers-core/target/criterion/* crates/tenflowers-core/target/criterion/ 2>/dev/null || true
+          fi
+          if [ -d "baselines/crates/tenflowers-autograd/target/criterion" ]; then
+            cp -r baselines/crates/tenflowers-autograd/target/criterion/* crates/tenflowers-autograd/target/criterion/ 2>/dev/null || true
+          fi
+
+      - name: Run comparison benchmarks (tenflowers-core)
+        id: compare_core
+        run: |
+          cargo bench --bench dispatch_benchmarks -- --baseline main 2>&1 | tee compare_core.txt || true
+          cargo bench --bench ultra_performance_benchmark -- --baseline main 2>&1 | tee -a compare_core.txt || true
+        working-directory: crates/tenflowers-core
+        continue-on-error: true
+
+      - name: Run comparison benchmarks (tenflowers-autograd)
+        id: compare_autograd
+        run: |
+          cargo bench --bench gradient_performance -- --baseline main 2>&1 | tee compare_autograd.txt || true
+          cargo bench --bench advanced_gradient_benchmarks -- --baseline main 2>&1 | tee -a compare_autograd.txt || true
+        working-directory: crates/tenflowers-autograd
+        continue-on-error: true
+
+      - name: Create regression analysis script
+        run: |
+          cat > analyze_regressions.py << 'EOF'
+          #!/usr/bin/env python3
+          import os
+          import json
+          import sys
+          from pathlib import Path
+          from typing import Dict, List, Tuple
+
+          REGRESSION_THRESHOLD = float(os.environ.get('PERFORMANCE_REGRESSION_THRESHOLD', 10.0))
+          CRITICAL_THRESHOLD = float(os.environ.get('CRITICAL_OPERATION_THRESHOLD', 5.0))
+
+          CRITICAL_OPERATIONS = {
+              'matmul',
+              'add',
+              'mul',
+              'sum',
+              'mean',
+              'dispatch',
+              'gradient',
+          }
+
+          def extract_regressions(benchmark_dir: Path) -> List[Tuple[str, float, float, float]]:
+              """Extract regressions from criterion JSON output."""
+              regressions = []
+
+              for baseline_dir in benchmark_dir.glob('**/base/raw.json'):
+                  if not baseline_dir.exists():
+                      continue
+
+                  # Compare main vs pr-current
+                  bench_name = baseline_dir.parent.parent.name
+                  current_file = baseline_dir.parent.parent / 'pr-current' / 'raw.json'
+
+                  if not current_file.exists():
+                      continue
+
+                  try:
+                      with open(baseline_dir) as f:
+                          baseline_data = json.load(f)
+                      with open(current_file) as f:
+                          current_data = json.load(f)
+
+                      baseline_mean = baseline_data.get('mean', {}).get('point_estimate', 0)
+                      current_mean = current_data.get('mean', {}).get('point_estimate', 0)
+
+                      if baseline_mean > 0:
+                          regression_pct = ((current_mean - baseline_mean) / baseline_mean) * 100.0
+                          if regression_pct > 0:  # Only report regressions (positive values)
+                              regressions.append((bench_name, baseline_mean, current_mean, regression_pct))
+                  except Exception as e:
+                      print(f"Warning: Could not parse {baseline_dir}: {e}")
+
+              return sorted(regressions, key=lambda x: -x[3])
+
+          def generate_report(regressions: List[Tuple[str, float, float, float]]) -> Tuple[str, bool, str]:
+              """Generate regression report and determine if failure should occur."""
+              if not regressions:
+                  return "No performance regressions detected!", False, ""
+
+              report_lines = ["## 📊 Performance Regression Analysis\n"]
+
+              significant_regressions = []
+              warnings = []
+
+              for bench_name, baseline, current, regression_pct in regressions:
+                  is_critical = any(op in bench_name.lower() for op in CRITICAL_OPERATIONS)
+                  threshold = CRITICAL_THRESHOLD if is_critical else REGRESSION_THRESHOLD
+
+                  status_icon = "⚠️" if regression_pct <= threshold else "❌"
+                  critical_note = " (CRITICAL)" if is_critical else ""
+
+                  line = f"{status_icon} **{bench_name}**: {regression_pct:+.2f}% (baseline: {baseline:.0f}ns, current: {current:.0f}ns){critical_note}"
+
+                  if regression_pct > threshold:
+                      significant_regressions.append((bench_name, regression_pct, threshold))
+                      report_lines.append(line)
+                  else:
+                      warnings.append(line)
+
+              if significant_regressions:
+                  report_lines.append("\n### Significant Regressions (exceeding threshold):\n")
+                  for bench_name, regression_pct, threshold in significant_regressions:
+                      report_lines.append(f"- **{bench_name}**: {regression_pct:.2f}% (threshold: {threshold:.2f}%)")
+
+              if warnings:
+                  report_lines.append("\n### Warnings (within acceptable threshold):\n")
+                  for line in warnings:
+                      report_lines.append(f"- {line}")
+
+              should_fail = len(significant_regressions) > 0
+              summary = f"Found {len(regressions)} regressions, {len(significant_regressions)} exceeding thresholds"
+
+              return '\n'.join(report_lines), should_fail, summary
+
+          # Main analysis
+          criterion_dirs = [
+              Path('target/criterion'),
+              Path('crates/tenflowers-core/target/criterion'),
+              Path('crates/tenflowers-autograd/target/criterion'),
+          ]
+
+          all_regressions = []
+          for criterion_dir in criterion_dirs:
+              if criterion_dir.exists():
+                  all_regressions.extend(extract_regressions(criterion_dir))
+
+          report, should_fail, summary = generate_report(all_regressions)
+
+          # Write to environment for GitHub Actions
+          with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+              f.write(f"report={report.replace(chr(10), '%0A')}\n")
+              f.write(f"regression_detected={'true' if should_fail else 'false'}\n")
+              f.write(f"regression_summary={summary}\n")
+
+          print(report)
+          sys.exit(1 if should_fail else 0)
+          EOF
+          chmod +x analyze_regressions.py
+
+      - name: Analyze regressions
+        id: compare
+        run: python3 analyze_regressions.py
+        continue-on-error: true
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const regression_detected = process.env.REGRESSION_DETECTED === 'true';
+            const regression_summary = process.env.REGRESSION_SUMMARY || 'Performance analysis completed';
+
+            const comment = `
+            ## ⚡ Performance Benchmark Results
+
+            **Status**: ${regression_detected ? '❌ Regressions Detected' : '✅ No Significant Regressions'}
+
+            ${regression_summary}
+
+            **Thresholds**:
+            - General operations: ${process.env.PERFORMANCE_REGRESSION_THRESHOLD}% regression allowed
+            - Critical operations: ${process.env.CRITICAL_OPERATION_THRESHOLD}% regression allowed
+
+            For detailed results, check the workflow artifacts.
+
+            _This comment is automatically generated by the performance regression detection workflow._
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+        env:
+          REGRESSION_DETECTED: ${{ steps.compare.outputs.regression_detected }}
+          REGRESSION_SUMMARY: ${{ steps.compare.outputs.regression_summary }}
+          PERFORMANCE_REGRESSION_THRESHOLD: ${{ env.PERFORMANCE_REGRESSION_THRESHOLD }}
+          CRITICAL_OPERATION_THRESHOLD: ${{ env.CRITICAL_OPERATION_THRESHOLD }}
+
+      - name: Archive benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results-${{ github.run_id }}
+          path: |
+            target/criterion/
+            crates/*/target/criterion/
+            *.txt
+          retention-days: 30
+
+      - name: Performance Summary
+        run: |
+          echo "## Performance Regression Detection" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Comparing PR branch against main branch..." >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compare.outputs.regression_detected }}" == "true" ]; then
+            echo "❌ **Performance regressions detected!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No significant performance regressions detected**" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Detailed results available in criterion output." >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.compare.outputs.regression_summary }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View detailed results in artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if regressions detected
+        if: steps.compare.outputs.regression_detected == 'true'
+        run: exit 1

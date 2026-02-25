@@ -458,13 +458,19 @@ mod tests {
 
     #[test]
     fn test_result_type() {
-        let result = PyDType::Float32.result_type(&PyDType::Float64).unwrap();
+        let result = PyDType::Float32
+            .result_type(&PyDType::Float64)
+            .expect("test: type conversion should succeed");
         assert_eq!(result, PyDType::Float64);
 
-        let result = PyDType::Int32.result_type(&PyDType::Int64).unwrap();
+        let result = PyDType::Int32
+            .result_type(&PyDType::Int64)
+            .expect("test: type conversion should succeed");
         assert_eq!(result, PyDType::Int64);
 
-        let result = PyDType::Float32.result_type(&PyDType::Int32).unwrap();
+        let result = PyDType::Float32
+            .result_type(&PyDType::Int32)
+            .expect("test: type conversion should succeed");
         assert_eq!(result, PyDType::Float32);
     }
 }

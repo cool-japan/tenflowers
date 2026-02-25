@@ -2,6 +2,8 @@
 //!
 //! Tests for Vanilla RNN and Bahdanau Attention implementations
 
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::{array, Array3};
 use tenflowers_core::{Result, Tensor};
 use tenflowers_neural::layers::rnn::{attention::bahdanau::BahdanauAttention, vanilla_rnn::RNN};

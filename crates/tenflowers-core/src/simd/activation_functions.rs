@@ -280,9 +280,10 @@ mod tests {
     fn test_relu_f32_optimized() {
         let input = vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
         let mut output = vec![0.0; 8];
-        let expected = vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let expected = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
 
-        ActivationFunctions::relu_f32_optimized(&input, &mut output).unwrap();
+        ActivationFunctions::relu_f32_optimized(&input, &mut output)
+            .expect("test: relu_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
             assert_relative_eq!(val, expected[i], epsilon = 1e-6);
@@ -294,7 +295,8 @@ mod tests {
         let input = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
         let mut output = vec![0.0; 5];
 
-        ActivationFunctions::sigmoid_f32_optimized(&input, &mut output).unwrap();
+        ActivationFunctions::sigmoid_f32_optimized(&input, &mut output)
+            .expect("test: sigmoid_f32_optimized should succeed");
 
         // Check that outputs are in valid range [0, 1]
         for &val in output.iter() {
@@ -314,7 +316,8 @@ mod tests {
         let input = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
         let mut output = vec![0.0; 5];
 
-        ActivationFunctions::tanh_f32_optimized(&input, &mut output).unwrap();
+        ActivationFunctions::tanh_f32_optimized(&input, &mut output)
+            .expect("test: tanh_f32_optimized should succeed");
 
         // Check that outputs are in valid range [-1, 1]
         for &val in output.iter() {
@@ -335,7 +338,8 @@ mod tests {
         let mut output = vec![0.0; 5];
         let negative_slope = 0.01;
 
-        ActivationFunctions::leaky_relu_f32_optimized(&input, &mut output, negative_slope).unwrap();
+        ActivationFunctions::leaky_relu_f32_optimized(&input, &mut output, negative_slope)
+            .expect("test: leaky_relu_f32_optimized should succeed");
 
         // Check positive values pass through unchanged
         assert_relative_eq!(output[3], 1.0, epsilon = 1e-6);
@@ -352,7 +356,8 @@ mod tests {
         let mut output = vec![0.0; 3];
         let alpha = 1.0;
 
-        ActivationFunctions::elu_f32_optimized(&input, &mut output, alpha).unwrap();
+        ActivationFunctions::elu_f32_optimized(&input, &mut output, alpha)
+            .expect("test: elu_f32_optimized should succeed");
 
         // Check that positive values pass through unchanged
         assert_relative_eq!(output[2], 1.0, epsilon = 1e-6);
@@ -369,7 +374,8 @@ mod tests {
         let input = vec![1.0, 2.0, 3.0, 4.0];
         let mut output = vec![0.0; 4];
 
-        ActivationFunctions::softmax_f32_optimized(&input, &mut output).unwrap();
+        ActivationFunctions::softmax_f32_optimized(&input, &mut output)
+            .expect("test: softmax_f32_optimized should succeed");
 
         // Check that probabilities sum to 1
         let sum: f32 = output.iter().sum();

@@ -521,10 +521,12 @@ mod tests {
     fn test_dataloader_iterator_single_threaded() {
         let dataset = MockDataset::new(5);
         let sampler = SequentialSampler::new();
-        let mut config = DataLoaderConfig::default();
-        config.batch_size = 2;
-        config.num_workers = 1;
-        config.prefetch_factor = 0; // Disable prefetching for simpler test
+        let config = DataLoaderConfig {
+            batch_size: 2,
+            num_workers: 1,
+            prefetch_factor: 0, // Disable prefetching for simpler test
+            ..Default::default()
+        };
 
         let dataloader = DataLoader::new(dataset, sampler, config);
         let mut iter = dataloader.iter();
@@ -532,15 +534,15 @@ mod tests {
         // Should get 3 batches: [0,1], [2,3], [4]
         let batch1 = iter.next();
         assert!(batch1.is_some());
-        assert!(batch1.unwrap().is_ok());
+        assert!(batch1.expect("test: operation should succeed").is_ok());
 
         let batch2 = iter.next();
         assert!(batch2.is_some());
-        assert!(batch2.unwrap().is_ok());
+        assert!(batch2.expect("test: operation should succeed").is_ok());
 
         let batch3 = iter.next();
         assert!(batch3.is_some());
-        assert!(batch3.unwrap().is_ok());
+        assert!(batch3.expect("test: operation should succeed").is_ok());
 
         let batch4 = iter.next();
         assert!(batch4.is_none());
@@ -550,10 +552,12 @@ mod tests {
     fn test_dataloader_drop_last() {
         let dataset = MockDataset::new(5);
         let sampler = SequentialSampler::new();
-        let mut config = DataLoaderConfig::default();
-        config.batch_size = 2;
-        config.drop_last = true;
-        config.prefetch_factor = 0; // Disable prefetching
+        let config = DataLoaderConfig {
+            batch_size: 2,
+            drop_last: true,
+            prefetch_factor: 0, // Disable prefetching
+            ..Default::default()
+        };
 
         let dataloader = DataLoader::new(dataset, sampler, config);
         let mut iter = dataloader.iter();

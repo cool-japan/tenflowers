@@ -512,7 +512,7 @@ mod tests {
         let shape_b = Shape::from_slice(&[4, 5]);
         let result = validate_matmul_shapes("matmul", &shape_a, &shape_b, false, false);
         assert!(result.is_ok());
-        let output_shape = result.unwrap();
+        let output_shape = result.expect("test: operation should succeed");
         assert_eq!(output_shape.dims(), &[3, 5]);
     }
 

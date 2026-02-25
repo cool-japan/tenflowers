@@ -858,10 +858,10 @@ mod tests {
         use crate::Tensor;
 
         // Test f32 to f16 conversion
-        let f32_tensor =
-            Tensor::<f32>::from_vec(vec![1.0, 2.5, -std::f32::consts::PI], &[3]).unwrap();
-        let f16_tensor = to_half_f32(&f32_tensor).unwrap();
-        let f32_back = from_half_f32(&f16_tensor).unwrap();
+        let f32_tensor = Tensor::<f32>::from_vec(vec![1.0, 2.5, -std::f32::consts::PI], &[3])
+            .expect("test: from_vec should succeed");
+        let f16_tensor = to_half_f32(&f32_tensor).expect("test: to_half_f32 should succeed");
+        let f32_back = from_half_f32(&f16_tensor).expect("test: from_half_f32 should succeed");
 
         // Check that conversion is reasonably close (f16 has limited precision)
         let original_data = f32_tensor.as_slice().expect("tensor should be contiguous");
@@ -876,8 +876,10 @@ mod tests {
         }
 
         // Test f32 to bf16 conversion
-        let bf16_tensor = to_bfloat16_f32(&f32_tensor).unwrap();
-        let f32_back_bf16 = from_bfloat16_f32(&bf16_tensor).unwrap();
+        let bf16_tensor =
+            to_bfloat16_f32(&f32_tensor).expect("test: to_bfloat16_f32 should succeed");
+        let f32_back_bf16 =
+            from_bfloat16_f32(&bf16_tensor).expect("test: from_bfloat16_f32 should succeed");
 
         // bf16 should have better precision than f16 in this range
         let bf16_data = f32_back_bf16
@@ -1022,7 +1024,9 @@ mod tests {
         // Update from gradients (SGD step)
         manager.update_from_gradients("layer1", &[0.1, 0.2, 0.3], 0.1);
 
-        let updated = manager.retrieve("layer1").unwrap();
+        let updated = manager
+            .retrieve("layer1")
+            .expect("test: retrieve should succeed");
         assert!((updated[0] - 0.99).abs() < 1e-5); // 1.0 - 0.1 * 0.1
         assert!((updated[1] - 1.98).abs() < 1e-5); // 2.0 - 0.1 * 0.2
         assert!((updated[2] - 2.97).abs() < 1e-5); // 3.0 - 0.1 * 0.3

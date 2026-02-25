@@ -413,10 +413,12 @@ mod tests {
         assert_eq!(manager.checkpoint_count(), 1);
 
         // Restore checkpoint
-        let restored: Option<Tensor<f32>> = manager.restore_checkpoint(1).unwrap();
+        let restored: Option<Tensor<f32>> = manager
+            .restore_checkpoint(1)
+            .expect("test: checkpoint operation should succeed");
         assert!(restored.is_some());
 
-        let restored_tensor = restored.unwrap();
+        let restored_tensor = restored.expect("test: operation should succeed");
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = restored_tensor.storage else {
             panic!("Expected CPU storage in test");
         };
@@ -425,7 +427,9 @@ mod tests {
         assert_eq!(array[[2]], 3.0);
 
         // Test non-existent checkpoint
-        let missing: Option<Tensor<f32>> = manager.restore_checkpoint(999).unwrap();
+        let missing: Option<Tensor<f32>> = manager
+            .restore_checkpoint(999)
+            .expect("test: checkpoint operation should succeed");
         assert!(missing.is_none());
 
         // Clear checkpoints
@@ -448,7 +452,9 @@ mod tests {
         let input = tape.watch(Tensor::from_array(data));
 
         // Execute checkpointed function
-        let result = checkpointed_fn.execute(&input, 0).unwrap();
+        let result = checkpointed_fn
+            .execute(&input, 0)
+            .expect("test: checkpoint operation should succeed");
 
         // Verify result
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {
@@ -473,7 +479,8 @@ mod tests {
         let input = tape.watch(Tensor::from_array(data));
 
         // Execute sequence with checkpointing every 2 operations
-        let result = checkpoint_sequence(ops, CheckpointStrategy::EveryNLayers(2), input).unwrap();
+        let result = checkpoint_sequence(ops, CheckpointStrategy::EveryNLayers(2), input)
+            .expect("test: checkpoint operation should succeed");
 
         // Result should be 1 * 2 * 2 * 2 = 8
         let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {

@@ -358,7 +358,14 @@ mod tests {
         let dense = Dense::<f32>::new(3, 2, true);
         assert_eq!(dense.weight().shape().dims(), &[3, 2]);
         assert!(dense.bias().is_some());
-        assert_eq!(dense.bias().unwrap().shape().dims(), &[2]);
+        assert_eq!(
+            dense
+                .bias()
+                .expect("test: bias should exist")
+                .shape()
+                .dims(),
+            &[2]
+        );
     }
 
     #[test]

@@ -420,12 +420,13 @@ mod tests {
     #[ignore = "Fails on Linux/CUDA, passes on macOS - platform-specific memory alignment behavior"]
     fn test_buffer_allocation() {
         let config = GradientBufferConfig::default();
-        let manager = GradientBufferManager::new(config).unwrap();
+        let manager =
+            GradientBufferManager::new(config).expect("test: gradient computation should succeed");
 
         let buffer = manager.allocate_gradient_buffer(1024);
         assert!(buffer.is_ok());
 
-        let buffer = buffer.unwrap();
+        let buffer = buffer.expect("test: operation should succeed");
         assert!(buffer.size >= 1024);
         assert!(buffer.is_simd_aligned);
     }

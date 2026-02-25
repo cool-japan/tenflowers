@@ -317,9 +317,10 @@ mod tests {
 
     #[test]
     fn test_compute_sign() {
-        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let tensor = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: tensor creation should succeed");
 
-        let sign_tensor = compute_sign(&tensor).unwrap();
+        let sign_tensor = compute_sign(&tensor).expect("test: computation should succeed");
 
         if let Some(data) = sign_tensor.as_slice() {
             assert_eq!(data, &[-1.0, -1.0, 0.0, 1.0, 1.0]);

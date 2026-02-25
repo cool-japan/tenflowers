@@ -315,8 +315,10 @@ mod tests {
     #[test]
     fn test_no_compression() {
         let data = b"Hello, World!";
-        let compressed = Compressor::compress(data, CompressionAlgorithm::None, 0).unwrap();
-        let decompressed = Compressor::decompress(&compressed, CompressionAlgorithm::None).unwrap();
+        let compressed = Compressor::compress(data, CompressionAlgorithm::None, 0)
+            .expect("test: operation should succeed");
+        let decompressed = Compressor::decompress(&compressed, CompressionAlgorithm::None)
+            .expect("test: operation should succeed");
 
         assert_eq!(data, compressed.as_slice());
         assert_eq!(data, decompressed.as_slice());

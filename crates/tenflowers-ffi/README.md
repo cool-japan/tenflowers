@@ -2,7 +2,7 @@
 
 Foreign Function Interface for TenfloweRS, providing Python bindings and C API for seamless integration with other languages and frameworks.
 
-> Alpha Notice (0.1.0-alpha.1 · 2025-09-27)
+> Release Candidate (0.1.0-rc.1 · 2026-02-12)
 > Python bindings are in-progress: the API surface shown below reflects intended design; many functions still map to provisional Rust implementations. Wheels are not yet published—build from source via maturin.
 
 ## Overview

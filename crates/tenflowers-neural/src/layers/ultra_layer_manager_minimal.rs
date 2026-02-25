@@ -390,22 +390,24 @@ mod tests {
 
     #[test]
     fn test_layer_registration() {
-        let manager = create_ultra_layer_manager().unwrap();
+        let manager = create_ultra_layer_manager().expect("test: operation should succeed");
         let layer_id = manager.register_layer(LayerType::Dense);
         assert!(layer_id.is_ok());
     }
 
     #[test]
     fn test_performance_report() {
-        let manager = create_ultra_layer_manager().unwrap();
+        let manager = create_ultra_layer_manager().expect("test: operation should succeed");
         let report = manager.get_performance_report();
         assert!(report.is_ok());
     }
 
     #[test]
     fn test_execution_recording() {
-        let manager = create_ultra_layer_manager().unwrap();
-        let layer_id = manager.register_layer(LayerType::Dense).unwrap();
+        let manager = create_ultra_layer_manager().expect("test: operation should succeed");
+        let layer_id = manager
+            .register_layer(LayerType::Dense)
+            .expect("test: registration should succeed");
         let result = manager.record_execution(layer_id, std::time::Duration::from_millis(10), 1024);
         assert!(result.is_ok());
     }

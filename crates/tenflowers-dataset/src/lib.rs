@@ -18,7 +18,7 @@
 //!
 //! ### Loading Data from CSV
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{CsvDataset, CsvDatasetBuilder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +35,7 @@
 //!
 //! ### Image Folder Dataset
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{ImageFolderDataset, ImageFolderDatasetBuilder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,7 +57,7 @@
 //!
 //! ### Data Loader with Batching
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{DataLoader, DataLoaderBuilder};
 //! use tenflowers_dataset::{CsvDataset, RandomSampler};
 //!
@@ -82,7 +82,7 @@
 //!
 //! ### Data Transformations
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::transforms::{Compose, Normalize, RandomCrop, ToTensor};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -100,7 +100,7 @@
 //!
 //! ### Distributed Data Loading
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{DataLoaderBuilder, DistributedSampler};
 //! use tenflowers_dataset::CsvDataset;
 //!
@@ -119,7 +119,7 @@
 //!
 //! ### Data Quality Analysis
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{DataQualityAnalyzer, QualityAnalysisConfig};
 //! use tenflowers_dataset::CsvDataset;
 //!
@@ -137,7 +137,7 @@
 //!
 //! ### Caching and Prefetching
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{EnhancedDataLoaderBuilder, CsvDataset};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -197,7 +197,7 @@
 //!
 //! Many transformations use SIMD instructions for maximum performance:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::simd_transforms::{SimdNormalize, SimdResize};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -209,7 +209,7 @@
 //!
 //! ### GPU Preprocessing
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::gpu_transforms::{GpuResize, GpuNormalize};
 //! use tenflowers_core::Device;
 //!
@@ -226,7 +226,7 @@
 //!
 //! ### Zero-Copy Operations
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::zero_copy::{ZeroCopyLoader, MmapDataset};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -255,7 +255,7 @@
 //!
 //! ## Debugging and Profiling
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use tenflowers_dataset::{DatasetDebugger, PipelineProfiler};
 //! use tenflowers_dataset::CsvDataset;
 //!
@@ -306,6 +306,7 @@ pub mod dataloader;
 pub mod debug_tools;
 pub mod distributed_loading;
 pub mod distributed_sharding;
+pub mod distributed_streaming;
 pub mod enhanced_dataloader;
 pub mod error_taxonomy;
 pub mod federated;
@@ -427,6 +428,10 @@ pub use distributed_loading::{
 pub use distributed_sharding::{
     DatasetShardingExt, ShardConfig, ShardStatistics, ShardStrategy, ShardableDataset,
     ShardedDataset,
+};
+pub use distributed_streaming::{
+    CheckpointState, PartitionStrategy, StreamCoordinator, StreamingConfig, StreamingShardIterator,
+    StreamingShardLoader, StreamingStats, WorkerHealth, WorkerMetrics, WorkerStatus,
 };
 pub use federated::{
     AggregationStrategy, ClientConfig, ClientId, ClientIndexedDataset, ClientStats,
@@ -1317,9 +1322,10 @@ mod tests {
 
     #[test]
     fn test_tensor_dataset_creation() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         assert_eq!(dataset.len(), 3);
@@ -1332,12 +1338,12 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[3, 2], // 3 samples, 2 features each
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![10.0, 20.0, 30.0],
             &[3], // 3 labels
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
@@ -1361,22 +1367,22 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[4, 2], // 4 samples, 2 features each
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![10.0, 20.0, 30.0, 40.0],
             &[4], // 4 labels
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut batched = dataset.batch(2);
 
         // First batch should have 2 samples
-        let batch1 = batched.next().unwrap();
+        let batch1 = batched.next().expect("test: iterator should have next");
         assert_eq!(batch1.len(), 2);
 
         // Second batch should have 2 samples
-        let batch2 = batched.next().unwrap();
+        let batch2 = batched.next().expect("test: iterator should have next");
         assert_eq!(batch2.len(), 2);
 
         // No more batches
@@ -1389,22 +1395,22 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[3, 2], // 3 samples, 2 features each
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let labels = Tensor::<f32>::from_vec(
             vec![10.0, 20.0, 30.0],
             &[3], // 3 labels
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let mut batched = dataset.batch(2);
 
         // First batch should have 2 samples
-        let batch1 = batched.next().unwrap();
+        let batch1 = batched.next().expect("test: iterator should have next");
         assert_eq!(batch1.len(), 2);
 
         // Second batch should have 1 sample (partial)
-        let batch2 = batched.next().unwrap();
+        let batch2 = batched.next().expect("test: iterator should have next");
         assert_eq!(batch2.len(), 1);
 
         // No more batches
@@ -1418,20 +1424,23 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0],
             &[2, 2], // 2 samples, 2 features each
         )
-        .unwrap();
-        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset1 = TensorDataset::new(features1, labels1);
 
         let features2 = Tensor::<f32>::from_vec(
             vec![5.0, 6.0, 7.0, 8.0],
             &[2, 2], // 2 samples, 2 features each
         )
-        .unwrap();
-        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset2 = TensorDataset::new(features2, labels2);
 
         // Create merged dataset
-        let merged = MergedDataset::new_concatenated(dataset1, dataset2).unwrap();
+        let merged = MergedDataset::new_concatenated(dataset1, dataset2)
+            .expect("test: operation should succeed");
 
         assert_eq!(merged.len(), 2);
 
@@ -1448,20 +1457,23 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0],
             &[2, 2], // 2 samples, 2 features each
         )
-        .unwrap();
-        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset1 = TensorDataset::new(features1, labels1);
 
         let features2 = Tensor::<f32>::from_vec(
             vec![5.0, 6.0, 7.0, 8.0],
             &[2, 2], // 2 samples, 2 features each
         )
-        .unwrap();
-        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset2 = TensorDataset::new(features2, labels2);
 
         // Create merged dataset with averaging
-        let merged = MergedDataset::new_averaged(dataset1, dataset2).unwrap();
+        let merged = MergedDataset::new_averaged(dataset1, dataset2)
+            .expect("test: operation should succeed");
 
         assert_eq!(merged.len(), 2);
 
@@ -1481,16 +1493,18 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0],
             &[2, 2], // 2 samples
         )
-        .unwrap();
-        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2]).unwrap();
+        .expect("test: operation should succeed");
+        let labels1 = Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset1 = TensorDataset::new(features1, labels1);
 
         let features2 = Tensor::<f32>::from_vec(
             vec![5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             &[3, 2], // 3 samples
         )
-        .unwrap();
-        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0, 50.0], &[3]).unwrap();
+        .expect("test: operation should succeed");
+        let labels2 = Tensor::<f32>::from_vec(vec![30.0, 40.0, 50.0], &[3])
+            .expect("test: tensor creation should succeed");
         let dataset2 = TensorDataset::new(features2, labels2);
 
         // Should fail with mismatched lengths

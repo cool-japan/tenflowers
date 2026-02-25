@@ -95,11 +95,21 @@ fn test_benchmark_infrastructure_integration() {
 
 #[test]
 fn test_benchmark_suite_functionality() {
-    let suite = BenchmarkSuite::new_default();
+    // Use faster config for regular tests
+    let config = BenchmarkConfig {
+        warmup_iterations: 1,
+        measurement_iterations: 2,
+        measure_memory: false,
+        calculate_flops: true,
+        min_execution_time: Duration::from_micros(1),
+        max_execution_time: Duration::from_secs(5),
+    };
+    let suite = BenchmarkSuite::new(config);
 
     // Test that we can create benchmark results and they contain FLOPS
-    let tensor_a: Tensor<f32> = Tensor::ones(&[50, 50]);
-    let tensor_b: Tensor<f32> = Tensor::ones(&[50, 50]);
+    // Reduced tensor size for faster tests
+    let tensor_a: Tensor<f32> = Tensor::ones(&[20, 20]);
+    let tensor_b: Tensor<f32> = Tensor::ones(&[20, 20]);
 
     let inputs = vec![&tensor_a, &tensor_b];
     let attrs = std::collections::HashMap::new();
@@ -116,13 +126,13 @@ fn test_benchmark_suite_functionality() {
     );
     assert_eq!(
         add_result.flops.unwrap(),
-        2500.0,
+        400.0,
         "Add should have 1 FLOP per element"
     );
 
-    // Test MatMul operation
-    let tensor_c: Tensor<f32> = Tensor::ones(&[32, 64]);
-    let tensor_d: Tensor<f32> = Tensor::ones(&[64, 128]);
+    // Test MatMul operation with reduced dimensions
+    let tensor_c: Tensor<f32> = Tensor::ones(&[16, 32]);
+    let tensor_d: Tensor<f32> = Tensor::ones(&[32, 64]);
     let matmul_inputs = vec![&tensor_c, &tensor_d];
 
     let matmul_result = suite.benchmark_operation("MatMul", &matmul_inputs, &attrs);
@@ -135,8 +145,8 @@ fn test_benchmark_suite_functionality() {
         "MatMul should have FLOPS calculated"
     );
 
-    // FLOPS for MatMul should be 2 * M * N * K = 2 * 32 * 128 * 64
-    let expected_flops = 2.0 * 32.0 * 128.0 * 64.0;
+    // FLOPS for MatMul should be 2 * M * N * K = 2 * 16 * 64 * 32
+    let expected_flops = 2.0 * 16.0 * 64.0 * 32.0;
     assert_eq!(
         matmul_result.flops.unwrap(),
         expected_flops,
@@ -164,4 +174,46 @@ fn test_benchmark_error_handling() {
 
     let result = suite.benchmark_operation("NonExistentOp", &inputs, &attrs);
     assert!(result.is_err(), "Should fail for non-existent operation");
+}
+
+/// Comprehensive benchmark test (marked as ignored by default)
+/// Run with: cargo test -- --ignored
+#[test]
+#[ignore]
+fn test_benchmark_suite_comprehensive() {
+    let suite = BenchmarkSuite::new_default();
+
+    // Test with original larger tensor sizes for comprehensive benchmarking
+    let tensor_a: Tensor<f32> = Tensor::ones(&[64, 64]);
+    let tensor_b: Tensor<f32> = Tensor::ones(&[64, 64]);
+
+    let inputs = vec![&tensor_a, &tensor_b];
+    let attrs = std::collections::HashMap::new();
+
+    // Test Add operation
+    let add_result = suite.benchmark_operation("Add", &inputs, &attrs);
+    assert!(add_result.is_ok(), "Add benchmark should succeed");
+
+    let add_result = add_result.unwrap();
+    assert_eq!(add_result.operation, "Add");
+    assert!(add_result.flops.is_some());
+    assert_eq!(add_result.flops.unwrap(), 4096.0);
+
+    // Test MatMul operation with larger dimensions
+    let tensor_c: Tensor<f32> = Tensor::ones(&[64, 128]);
+    let tensor_d: Tensor<f32> = Tensor::ones(&[128, 256]);
+    let matmul_inputs = vec![&tensor_c, &tensor_d];
+
+    let matmul_result = suite.benchmark_operation("MatMul", &matmul_inputs, &attrs);
+    assert!(matmul_result.is_ok(), "MatMul benchmark should succeed");
+
+    let matmul_result = matmul_result.unwrap();
+    assert_eq!(matmul_result.operation, "MatMul");
+    assert!(matmul_result.flops.is_some());
+
+    // FLOPS for MatMul should be 2 * M * N * K = 2 * 64 * 256 * 128
+    let expected_flops = 2.0 * 64.0 * 256.0 * 128.0;
+    assert_eq!(matmul_result.flops.unwrap(), expected_flops);
+
+    println!("✓ Comprehensive benchmark test passed");
 }

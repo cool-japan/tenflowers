@@ -549,7 +549,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_deployment(&model, "edge", None);
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(deployment_model.metadata().target_device, "edge");
         assert!(deployment_model.stats().speedup_ratio >= 1.0);
     }
@@ -564,7 +564,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_tensorrt(&model, "gpu");
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(deployment_model.metadata().target_device, "gpu");
     }
 
@@ -575,7 +575,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_mobile(&model);
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(deployment_model.metadata().target_device, "mobile_device");
     }
 
@@ -586,7 +586,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_edge(&model, 512);
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(deployment_model.metadata().target_device, "edge_device");
     }
 
@@ -597,7 +597,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_inference_server(&model, 16);
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(
             deployment_model.metadata().target_device,
             "inference_server"
@@ -612,7 +612,7 @@ mod tests {
         let result = DeploymentOptimizer::optimize_for_architecture(&model, &architecture);
         assert!(result.is_ok());
 
-        let deployment_model = result.unwrap();
+        let deployment_model = result.expect("test: result should be valid");
         assert_eq!(deployment_model.metadata().target_device, "Apple Silicon");
     }
 

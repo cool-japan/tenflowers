@@ -611,7 +611,8 @@ mod tests {
             nodes.insert(i, node);
         }
 
-        let positions = GradientFlowFormatter::grid_layout(&nodes).unwrap();
+        let positions = GradientFlowFormatter::grid_layout(&nodes)
+            .expect("test: gradient computation should succeed");
         assert_eq!(positions.len(), 4);
 
         // All positions should be valid
@@ -635,7 +636,8 @@ mod tests {
             nodes.insert(i, node);
         }
 
-        let positions = GradientFlowFormatter::circular_layout(&nodes).unwrap();
+        let positions = GradientFlowFormatter::circular_layout(&nodes)
+            .expect("test: gradient computation should succeed");
         assert_eq!(positions.len(), 3);
 
         // Check that positions form a circle around (400, 300)
@@ -659,7 +661,8 @@ mod tests {
 
         let edges = vec![GradientFlowEdge::new(0, 1, EdgeType::Forward)];
 
-        let text = GradientFlowFormatter::export_text(&nodes, &edges, None).unwrap();
+        let text = GradientFlowFormatter::export_text(&nodes, &edges, None)
+            .expect("test: gradient computation should succeed");
         assert!(text.contains("Gradient Flow Analysis Report"));
         assert!(text.contains("test_node"));
         assert!(text.contains("relu"));
@@ -680,7 +683,8 @@ mod tests {
         let edges = vec![GradientFlowEdge::new(0, 1, EdgeType::Forward)];
         let settings = VisualizationSettings::default();
 
-        let dot = GradientFlowFormatter::export_dot(&nodes, &edges, &settings).unwrap();
+        let dot = GradientFlowFormatter::export_dot(&nodes, &edges, &settings)
+            .expect("test: gradient computation should succeed");
         assert!(dot.contains("digraph GradientFlow"));
         assert!(dot.contains("test_node"));
         assert!(dot.contains("0 -> 1"));

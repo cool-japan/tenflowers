@@ -279,7 +279,7 @@ mod tests {
         let result = collate_fn.collate(batch);
         assert!(result.is_ok());
 
-        let (features, labels) = result.unwrap();
+        let (features, labels) = result.expect("test: operation should succeed");
         assert_eq!(features.shape().dims(), &[2, 2, 3]); // [batch_size, feature_dim1, feature_dim2]
         assert_eq!(labels.shape().dims(), &[2, 1]); // [batch_size, label_dim]
     }
@@ -297,7 +297,9 @@ mod tests {
     fn test_padding_strategy_max_length() {
         let strategy = PaddingStrategy::MaxLength;
         match strategy {
-            PaddingStrategy::MaxLength => assert!(true),
+            PaddingStrategy::MaxLength => {
+                // Match successful
+            }
             _ => panic!("Expected MaxLength strategy"),
         }
     }

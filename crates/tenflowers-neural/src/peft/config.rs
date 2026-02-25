@@ -688,7 +688,9 @@ mod tests {
         assert!(adalora_config.qlora_config().is_none());
 
         // Check config properties
-        let config = adalora_config.adalora_config().unwrap();
+        let config = adalora_config
+            .adalora_config()
+            .expect("test: operation should succeed");
         assert!(config.target_rank <= config.init_rank);
         assert!(config.budget_ratio > 0.0 && config.budget_ratio < 1.0);
     }
@@ -738,7 +740,9 @@ mod tests {
         assert!(ia3_config.adalora_config().is_none());
 
         // Check config properties
-        let config = ia3_config.ia3_config().unwrap();
+        let config = ia3_config
+            .ia3_config()
+            .expect("test: operation should succeed");
         assert!(config.scale_attention);
         assert!(config.learning_rate_multiplier > 1.0); // IA³ typically needs higher LR
     }

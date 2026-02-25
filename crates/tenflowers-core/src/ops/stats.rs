@@ -1549,7 +1549,8 @@ mod tests {
     fn test_histogram_basic() {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
             .expect("test tensor creation should succeed");
-        let (counts, edges) = histogram(&x, 5, Some((0.0, 6.0))).unwrap();
+        let (counts, edges) =
+            histogram(&x, 5, Some((0.0, 6.0))).expect("test: operation should succeed");
 
         assert_eq!(counts.shape().dims(), &[5]);
         assert_eq!(edges.shape().dims(), &[6]);
@@ -1570,7 +1571,7 @@ mod tests {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
             .expect("test tensor creation should succeed");
         let q = vec![0.0, 0.25, 0.5, 0.75, 1.0];
-        let result = quantile(&x, &q, None).unwrap();
+        let result = quantile(&x, &q, None).expect("test: quantile should succeed");
 
         assert_eq!(result.shape().dims(), &[5]);
 
@@ -1584,7 +1585,7 @@ mod tests {
     fn test_median() {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])
             .expect("test tensor creation should succeed");
-        let result = median(&x, None).unwrap();
+        let result = median(&x, None).expect("test: median should succeed");
 
         assert_eq!(result.shape().dims(), &[1]);
         assert_relative_eq!(
@@ -1600,7 +1601,7 @@ mod tests {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
             .expect("test tensor creation should succeed");
 
-        let result = covariance(&x, false).unwrap();
+        let result = covariance(&x, false).expect("test: covariance should succeed");
 
         assert_eq!(result.shape().dims(), &[2, 2]);
 
@@ -1617,7 +1618,7 @@ mod tests {
         let x = Tensor::<f64>::from_vec(vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2])
             .expect("test tensor creation should succeed");
 
-        let result = correlation(&x).unwrap();
+        let result = correlation(&x).expect("test: correlation should succeed");
 
         assert_eq!(result.shape().dims(), &[2, 2]);
 
@@ -1636,10 +1637,10 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             &[10],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
         let percentiles = vec![0.0, 25.0, 50.0, 75.0, 100.0];
 
-        let result = percentile(&x, &percentiles, None).unwrap();
+        let result = percentile(&x, &percentiles, None).expect("test: percentile should succeed");
 
         assert_eq!(result.shape().dims(), &[5]);
         let vals = result.as_slice().expect("tensor should be contiguous");
@@ -1654,7 +1655,7 @@ mod tests {
     fn test_range() {
         let x = Tensor::<f32>::from_vec(vec![1.0, 5.0, 2.0, 8.0, 3.0], &[5])
             .expect("test tensor creation should succeed");
-        let result = range(&x, None).unwrap();
+        let result = range(&x, None).expect("test: range should succeed");
 
         assert_eq!(result.shape().dims(), &[] as &[usize]);
         let val = result.as_slice().expect("tensor should be contiguous")[0];
@@ -1667,7 +1668,7 @@ mod tests {
         let symmetric_data = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
         let x = Tensor::<f64>::from_vec(symmetric_data, &[5])
             .expect("test tensor creation should succeed");
-        let result = skewness(&x, None, false).unwrap();
+        let result = skewness(&x, None, false).expect("test: skewness should succeed");
 
         let val = result.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(val, 0.0, epsilon = 1e-6);
@@ -1676,7 +1677,8 @@ mod tests {
         let skewed_data = vec![1.0, 2.0, 3.0, 4.0, 10.0];
         let x_skewed = Tensor::<f64>::from_vec(skewed_data, &[5])
             .expect("test tensor creation should succeed");
-        let result_skewed = skewness(&x_skewed, None, false).unwrap();
+        let result_skewed =
+            skewness(&x_skewed, None, false).expect("test: skewness should succeed");
 
         let val_skewed = result_skewed
             .as_slice()
@@ -1692,13 +1694,14 @@ mod tests {
             .expect("test tensor creation should succeed");
 
         // Fisher's definition (normal = 0)
-        let result_fisher = kurtosis(&x, None, false, true).unwrap();
+        let result_fisher = kurtosis(&x, None, false, true).expect("test: kurtosis should succeed");
         let val_fisher = result_fisher
             .as_slice()
             .expect("tensor should be contiguous")[0];
 
         // Pearson's definition (normal = 3)
-        let result_pearson = kurtosis(&x, None, false, false).unwrap();
+        let result_pearson =
+            kurtosis(&x, None, false, false).expect("test: kurtosis should succeed");
         let val_pearson = result_pearson
             .as_slice()
             .expect("tensor should be contiguous")[0];
@@ -1713,12 +1716,12 @@ mod tests {
             .expect("test tensor creation should succeed");
 
         // First moment should be 0 (by definition of central moment)
-        let m1 = moment(&x, 1, None, false).unwrap();
+        let m1 = moment(&x, 1, None, false).expect("test: moment should succeed");
         let val1 = m1.as_slice().expect("tensor should be contiguous")[0];
         assert_relative_eq!(val1, 0.0, epsilon = 1e-10);
 
         // Second moment should be variance
-        let m2 = moment(&x, 2, None, false).unwrap();
+        let m2 = moment(&x, 2, None, false).expect("test: moment should succeed");
         let val2 = m2.as_slice().expect("tensor should be contiguous")[0];
 
         // Manual variance calculation: E[(X - μ)²]

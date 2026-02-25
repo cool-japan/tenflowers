@@ -808,7 +808,7 @@ mod tests {
         let features = UltraSimdEngine::detect_cpu_features();
         assert!(features.is_ok());
 
-        let features = features.unwrap();
+        let features = features.expect("test: operation should succeed");
         assert!(features.max_vector_width >= 128);
         assert!(features.simd_register_count >= 16);
     }
@@ -816,7 +816,7 @@ mod tests {
     #[test]
     fn test_kernel_selection() {
         let config = SimdEngineConfig::default();
-        let engine = UltraSimdEngine::new(config).unwrap();
+        let engine = UltraSimdEngine::new(config).expect("test: new should succeed");
 
         let kernel = engine.select_optimal_kernel("matmul", 1024);
         assert!(kernel.is_ok());
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn test_optimized_matmul() {
         let config = SimdEngineConfig::default();
-        let engine = UltraSimdEngine::new(config).unwrap();
+        let engine = UltraSimdEngine::new(config).expect("test: new should succeed");
 
         let a = vec![1.0; 16];
         let b = vec![2.0; 16];
@@ -843,7 +843,7 @@ mod tests {
     #[test]
     fn test_optimized_elementwise() {
         let config = SimdEngineConfig::default();
-        let engine = UltraSimdEngine::new(config).unwrap();
+        let engine = UltraSimdEngine::new(config).expect("test: new should succeed");
 
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![2.0, 3.0, 4.0, 5.0];
@@ -868,12 +868,12 @@ mod tests {
     #[test]
     fn test_performance_stats() {
         let config = SimdEngineConfig::default();
-        let engine = UltraSimdEngine::new(config).unwrap();
+        let engine = UltraSimdEngine::new(config).expect("test: new should succeed");
 
         let stats = engine.get_performance_stats();
         assert!(stats.is_ok());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: operation should succeed");
         assert!(stats.total_kernels_available > 0);
         assert!(stats.max_theoretical_throughput > 0.0);
     }

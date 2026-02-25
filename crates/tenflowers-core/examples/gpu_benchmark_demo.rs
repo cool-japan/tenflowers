@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! GPU Benchmark Demo
 //!
 //! This example demonstrates the GPU benchmarking capabilities for measuring

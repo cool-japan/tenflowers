@@ -273,93 +273,6 @@ fn gpu_logical_unary_op_dispatch(
     Ok(Tensor::from_gpu_buffer(result_buffer, shape.clone()))
 }
 
-#[cfg(test)]
-#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_logical_and_same_shape() {
-        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8], &[3]).unwrap();
-        let b = Tensor::<u8>::from_vec(vec![1u8, 1u8, 0u8], &[3]).unwrap();
-
-        let c = logical_and(&a, &b).unwrap();
-        let expected = vec![1u8, 0u8, 0u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_logical_or_broadcast() {
-        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8], &[2, 1]).unwrap();
-        let b = Tensor::<u8>::from_vec(vec![0u8, 1u8], &[1, 2]).unwrap();
-
-        let c = logical_or(&a, &b).unwrap();
-        assert_eq!(c.shape().dims(), &[2, 2]);
-
-        // Expected: [[1, 1], [0, 1]]
-        let expected = vec![1u8, 1u8, 0u8, 1u8];
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_logical_xor() {
-        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8, 0u8], &[4]).unwrap();
-        let b = Tensor::<u8>::from_vec(vec![1u8, 1u8, 0u8, 0u8], &[4]).unwrap();
-
-        let c = logical_xor(&a, &b).unwrap();
-        let expected = vec![0u8, 1u8, 1u8, 0u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_logical_not() {
-        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8, 0u8], &[4]).unwrap();
-
-        let c = logical_not(&a).unwrap();
-        let expected = vec![0u8, 1u8, 0u8, 1u8];
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_logical_and_scalar_broadcast() {
-        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8], &[3]).unwrap();
-        let scalar = Tensor::<u8>::from_vec(vec![1u8], &[1]).unwrap();
-
-        let c = logical_and(&a, &scalar).unwrap();
-        let expected = vec![1u8, 0u8, 1u8]; // AND with 1 preserves the original
-
-        if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
-                arr.as_slice().expect("tensor should be contiguous"),
-                &expected
-            );
-        }
-    }
-}
-
 /// Convert a GPU buffer of u8 values to u32 values for shader compatibility
 #[cfg(feature = "gpu")]
 fn convert_u8_to_u32_gpu_buffer(
@@ -660,4 +573,100 @@ fn convert_u32_to_u8_gpu_buffer(
         crate::Device::Gpu(device_id),
         output_len,
     ))
+}
+
+#[cfg(test)]
+#[allow(irrefutable_let_patterns)] // Pattern matching on TensorStorage is irrefutable when GPU feature is disabled
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_logical_and_same_shape() {
+        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8], &[3])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<u8>::from_vec(vec![1u8, 1u8, 0u8], &[3])
+            .expect("test: from_vec should succeed");
+
+        let c = logical_and(&a, &b).expect("test: logical_and should succeed");
+        let expected = vec![1u8, 0u8, 0u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_logical_or_broadcast() {
+        let a =
+            Tensor::<u8>::from_vec(vec![1u8, 0u8], &[2, 1]).expect("test: from_vec should succeed");
+        let b =
+            Tensor::<u8>::from_vec(vec![0u8, 1u8], &[1, 2]).expect("test: from_vec should succeed");
+
+        let c = logical_or(&a, &b).expect("test: logical_or should succeed");
+        assert_eq!(c.shape().dims(), &[2, 2]);
+
+        // Expected: [[1, 1], [0, 1]]
+        let expected = vec![1u8, 1u8, 0u8, 1u8];
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_logical_xor() {
+        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8, 0u8], &[4])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<u8>::from_vec(vec![1u8, 1u8, 0u8, 0u8], &[4])
+            .expect("test: from_vec should succeed");
+
+        let c = logical_xor(&a, &b).expect("test: logical_xor should succeed");
+        let expected = vec![0u8, 1u8, 1u8, 0u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_logical_not() {
+        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8, 0u8], &[4])
+            .expect("test: from_vec should succeed");
+
+        let c = logical_not(&a).expect("test: logical_not should succeed");
+        let expected = vec![0u8, 1u8, 0u8, 1u8];
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_logical_and_scalar_broadcast() {
+        let a = Tensor::<u8>::from_vec(vec![1u8, 0u8, 1u8], &[3])
+            .expect("test: from_vec should succeed");
+        let scalar =
+            Tensor::<u8>::from_vec(vec![1u8], &[1]).expect("test: from_vec should succeed");
+
+        let c = logical_and(&a, &scalar).expect("test: logical_and should succeed");
+        let expected = vec![1u8, 0u8, 1u8]; // AND with 1 preserves the original
+
+        if let TensorStorage::Cpu(arr) = &c.storage {
+            assert_eq!(
+                arr.as_slice().expect("tensor should be contiguous"),
+                &expected
+            );
+        }
+    }
 }

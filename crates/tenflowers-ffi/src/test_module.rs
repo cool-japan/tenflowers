@@ -16,7 +16,7 @@ mod tests {
 
         Python::with_gil(|py| {
             // Test basic tensor creation with new constructor
-            let tensor = PyTensor::new(vec![2, 3]).unwrap();
+            let tensor = PyTensor::new(vec![2, 3]).expect("test: construction should succeed");
 
             // Verify shape
             let shape = tensor.shape();
@@ -33,7 +33,7 @@ mod tests {
 
         Python::with_gil(|py| {
             // Create test tensor
-            let tensor = PyTensor::new(vec![4, 4]).unwrap();
+            let tensor = PyTensor::new(vec![4, 4]).expect("test: construction should succeed");
 
             // Test basic properties
             let shape = tensor.shape();
@@ -56,8 +56,8 @@ mod tests {
 
             // Test that tape can be created without errors
             // Basic functionality test - creating a tensor and watching it
-            let tensor = PyTensor::new(vec![2, 2]).unwrap();
-            let _tracked = tape.watch(&tensor).unwrap();
+            let tensor = PyTensor::new(vec![2, 2]).expect("test: construction should succeed");
+            let _tracked = tape.watch(&tensor).expect("test: operation should succeed");
 
             // Test tape control methods
             tape.stop_recording();
@@ -99,7 +99,7 @@ mod tests {
 
             Ok(())
         })
-        .unwrap();
+        .expect("test: operation should succeed");
     }
 
     /// Test sequential model creation
@@ -120,7 +120,7 @@ mod tests {
 
             Ok(())
         })
-        .unwrap();
+        .expect("test: operation should succeed");
     }
 
     /// Test parameter creation
@@ -130,7 +130,7 @@ mod tests {
 
         Python::with_gil(|py| {
             // Create a parameter tensor
-            let tensor = PyTensor::new(vec![3, 3]).unwrap();
+            let tensor = PyTensor::new(vec![3, 3]).expect("test: construction should succeed");
             let param = PyParameter::new(tensor, Some(true));
 
             // Verify parameter was created successfully
@@ -160,7 +160,7 @@ mod tests {
 
     //         Ok(())
     //     })
-    //     .unwrap();
+    //     .expect("test: operation should succeed");
     // }
 
     /// Test tensor size and ndim methods
@@ -170,9 +170,10 @@ mod tests {
 
         Python::with_gil(|py| {
             // Test different tensor shapes
-            let tensor_1d = PyTensor::new(vec![5]).unwrap();
-            let tensor_2d = PyTensor::new(vec![3, 4]).unwrap();
-            let tensor_3d = PyTensor::new(vec![2, 3, 4]).unwrap();
+            let tensor_1d = PyTensor::new(vec![5]).expect("test: construction should succeed");
+            let tensor_2d = PyTensor::new(vec![3, 4]).expect("test: construction should succeed");
+            let tensor_3d =
+                PyTensor::new(vec![2, 3, 4]).expect("test: construction should succeed");
 
             // Verify dimensions
             assert_eq!(tensor_1d.ndim(), 1);
@@ -193,7 +194,7 @@ mod tests {
 
         Python::with_gil(|py| {
             // Create and clone tensor
-            let original = PyTensor::new(vec![2, 3]).unwrap();
+            let original = PyTensor::new(vec![2, 3]).expect("test: construction should succeed");
             let cloned = original.clone();
 
             // Verify shapes are equal

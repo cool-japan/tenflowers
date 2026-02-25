@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! TenfloweRS Performance Benchmark
 //!
 //! A comprehensive benchmarking utility to test TenfloweRS performance
@@ -179,13 +181,13 @@ fn run_neural_benchmarks(suite: &mut BenchmarkSuite) -> Result<(), Box<dyn std::
 
     for (shape, size_desc) in batch_shapes {
         // ReLU activation
-        benchmark_unary_op(suite, "ReLU", &device, &shape, size_desc, |a| relu(a))?;
+        benchmark_unary_op(suite, "ReLU", &device, &shape, size_desc, relu)?;
 
         // Sigmoid activation
-        benchmark_unary_op(suite, "Sigmoid", &device, &shape, size_desc, |a| sigmoid(a))?;
+        benchmark_unary_op(suite, "Sigmoid", &device, &shape, size_desc, sigmoid)?;
 
         // Tanh activation
-        benchmark_unary_op(suite, "Tanh", &device, &shape, size_desc, |a| tanh(a))?;
+        benchmark_unary_op(suite, "Tanh", &device, &shape, size_desc, tanh)?;
 
         // Softmax (only for 2D tensors)
         if shape.len() == 2 {

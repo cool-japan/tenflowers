@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! 🔬 Performance Comparison: V1 vs V2 Ultra-Performance Implementations
 //!
 //! This analysis compares the original ultra_matmul with the redesigned ultra_matmul_v2

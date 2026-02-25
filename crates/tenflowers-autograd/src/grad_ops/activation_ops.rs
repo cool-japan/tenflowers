@@ -429,10 +429,13 @@ mod tests {
     #[test]
     fn test_relu_backward() {
         // Test ReLU gradient computation
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let grad_input = relu_backward(&grad_output, &input).unwrap();
+        let grad_input =
+            relu_backward(&grad_output, &input).expect("test: gradient computation should succeed");
 
         // ReLU gradient should be 0 for negative inputs, 1 for positive inputs
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
@@ -441,10 +444,13 @@ mod tests {
     #[test]
     fn test_sigmoid_backward() {
         // Test sigmoid gradient computation
-        let output = Tensor::from_vec(vec![0.5f32, 0.73, 0.27, 0.88], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let output = Tensor::from_vec(vec![0.5f32, 0.73, 0.27, 0.88], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let grad_input = sigmoid_backward(&grad_output, &output).unwrap();
+        let grad_input = sigmoid_backward(&grad_output, &output)
+            .expect("test: gradient computation should succeed");
 
         // Gradient should have same shape as input
         assert_eq!(grad_input.shape().dims(), output.shape().dims());
@@ -453,10 +459,13 @@ mod tests {
     #[test]
     fn test_tanh_backward() {
         // Test tanh gradient computation
-        let output = Tensor::from_vec(vec![-0.5f32, 0.0, 0.5, 0.9], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let output = Tensor::from_vec(vec![-0.5f32, 0.0, 0.5, 0.9], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let grad_input = tanh_backward(&grad_output, &output).unwrap();
+        let grad_input = tanh_backward(&grad_output, &output)
+            .expect("test: gradient computation should succeed");
 
         // Gradient should have same shape as input
         assert_eq!(grad_input.shape().dims(), output.shape().dims());
@@ -465,11 +474,14 @@ mod tests {
     #[test]
     fn test_leaky_relu_backward() {
         // Test LeakyReLU gradient computation
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
         let alpha = 0.1f32;
 
-        let grad_input = leaky_relu_backward(&grad_output, &input, alpha).unwrap();
+        let grad_input = leaky_relu_backward(&grad_output, &input, alpha)
+            .expect("test: gradient computation should succeed");
 
         // Gradient should have same shape as input
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
@@ -478,10 +490,13 @@ mod tests {
     #[test]
     fn test_softmax_backward() {
         // Test softmax gradient computation
-        let output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let grad_input = softmax_backward(&grad_output, &output, Some(-1)).unwrap();
+        let grad_input = softmax_backward(&grad_output, &output, Some(-1))
+            .expect("test: gradient computation should succeed");
 
         // Gradient should have same shape as input
         assert_eq!(grad_input.shape().dims(), output.shape().dims());
@@ -490,11 +505,14 @@ mod tests {
     #[test]
     fn test_elu_backward() {
         // Test ELU gradient computation
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
         let alpha = 1.0f32;
 
-        let grad_input = elu_backward(&grad_output, &input, alpha).unwrap();
+        let grad_input = elu_backward(&grad_output, &input, alpha)
+            .expect("test: gradient computation should succeed");
 
         // Gradient should have same shape as input
         assert_eq!(grad_input.shape().dims(), input.shape().dims());

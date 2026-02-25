@@ -1362,12 +1362,16 @@ mod tests {
     fn test_wasm_allocator() {
         let allocator = WasmAllocator::new(1024 * 1024); // 1MB limit
 
-        let ptr = allocator.allocate(1024).unwrap();
+        let ptr = allocator
+            .allocate(1024)
+            .expect("test: allocate should succeed");
         assert!(!ptr.is_null());
         assert_eq!(allocator.total_allocated(), 1024);
 
         unsafe {
-            allocator.deallocate(ptr).unwrap();
+            allocator
+                .deallocate(ptr)
+                .expect("test: deallocate should succeed");
         }
         assert_eq!(allocator.total_allocated(), 0);
     }
@@ -1380,13 +1384,19 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
 
-        let result = registry.execute("add", &a, &b).unwrap();
+        let result = registry
+            .execute("add", &a, &b)
+            .expect("test: execute should succeed");
         assert_eq!(result, vec![5.0, 7.0, 9.0]);
 
-        let result = registry.execute("mul", &a, &b).unwrap();
+        let result = registry
+            .execute("mul", &a, &b)
+            .expect("test: execute should succeed");
         assert_eq!(result, vec![4.0, 10.0, 18.0]);
 
-        let result = registry.execute("sub", &a, &b).unwrap();
+        let result = registry
+            .execute("sub", &a, &b)
+            .expect("test: execute should succeed");
         assert_eq!(result, vec![-3.0, -3.0, -3.0]);
     }
 
@@ -1399,7 +1409,8 @@ mod tests {
         let b = vec![5.0, 6.0, 7.0, 8.0];
         let mut result = vec![0.0; 4];
 
-        ops.add_simd(&a, &b, &mut result).unwrap();
+        ops.add_simd(&a, &b, &mut result)
+            .expect("test: add_simd should succeed");
         assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
     }
 
@@ -1413,7 +1424,8 @@ mod tests {
         let b = vec![5.0, 6.0, 7.0, 8.0]; // [[5,6], [7,8]]
         let mut result = vec![0.0; 4];
 
-        ops.matmul_wasm(&a, &b, &mut result, 2, 2, 2).unwrap();
+        ops.matmul_wasm(&a, &b, &mut result, 2, 2, 2)
+            .expect("test: matmul_wasm should succeed");
         // Expected: [[19,22], [43,50]]
         assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
     }
@@ -1430,14 +1442,16 @@ mod tests {
 
         // Test multiplication
         let mut result = vec![0.0; size];
-        ops.mul_simd(&a, &b, &mut result).unwrap();
+        ops.mul_simd(&a, &b, &mut result)
+            .expect("test: mul_simd should succeed");
         for i in 0..size {
             assert_eq!(result[i], (i as f32) * ((i + 1) as f32));
         }
 
         // Test subtraction
         let mut result = vec![0.0; size];
-        ops.sub_simd(&a, &b, &mut result).unwrap();
+        ops.sub_simd(&a, &b, &mut result)
+            .expect("test: sub_simd should succeed");
         for i in 0..size {
             assert_eq!(result[i], (i as f32) - ((i + 1) as f32));
         }
@@ -1445,7 +1459,8 @@ mod tests {
         // Test ReLU
         let input: Vec<f32> = (-8..8).map(|i| i as f32).collect();
         let mut result = vec![0.0; input.len()];
-        ops.relu_simd(&input, &mut result).unwrap();
+        ops.relu_simd(&input, &mut result)
+            .expect("test: relu_simd should succeed");
 
         for (i, &val) in input.iter().enumerate() {
             assert_eq!(result[i], val.max(0.0));
@@ -1466,7 +1481,8 @@ mod tests {
             let mut result = vec![0.0; size];
 
             // Test that operations work correctly with non-aligned sizes
-            ops.add_simd(&a, &b, &mut result).unwrap();
+            ops.add_simd(&a, &b, &mut result)
+                .expect("test: add_simd should succeed");
             for i in 0..size {
                 assert_eq!(result[i], (i as f32) + ((i + 10) as f32));
             }

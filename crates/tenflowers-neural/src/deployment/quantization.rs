@@ -967,7 +967,14 @@ mod tests {
         };
 
         assert_eq!(stats.compression_ratio(), 4.0);
-        assert!((stats.accuracy_drop().unwrap() - 0.02).abs() < 0.01); // Allow for floating-point precision
+        assert!(
+            (stats
+                .accuracy_drop()
+                .expect("test: operation should succeed")
+                - 0.02)
+                .abs()
+                < 0.01
+        ); // Allow for floating-point precision
     }
 
     #[test]
@@ -1015,7 +1022,7 @@ mod tests {
         let result = quantize_model(&model, None);
         assert!(result.is_ok());
 
-        let (_quantized_model, stats) = result.unwrap();
+        let (_quantized_model, stats) = result.expect("test: result should be valid");
         assert!(stats.layers_quantized > 0);
         assert!(stats.compression_ratio() > 1.0);
         assert!(stats.inference_speedup >= 1.0);
@@ -1050,8 +1057,9 @@ mod tests {
     #[cfg(feature = "serialize")]
     fn test_quantization_serialization() {
         let params = QuantizationParams::int8();
-        let serialized = serde_json::to_string(&params).unwrap();
-        let deserialized: QuantizationParams = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&params).expect("test: operation should succeed");
+        let deserialized: QuantizationParams =
+            serde_json::from_str(&serialized).expect("test: operation should succeed");
         assert_eq!(params.scale, deserialized.scale);
         assert_eq!(params.zero_point, deserialized.zero_point);
     }
@@ -1104,7 +1112,9 @@ mod tests {
 
         // Check statistics
         assert_eq!(observer.count(), 2);
-        let (min, max) = observer.get_min_max().unwrap();
+        let (min, max) = observer
+            .get_min_max()
+            .expect("test: operation should succeed");
         assert_eq!(min, -2.0);
         assert_eq!(max, 5.0);
 
@@ -1130,7 +1140,7 @@ mod tests {
         let result = quantizer.quantize_sequential(&model);
         assert!(result.is_ok());
 
-        let (_quantized_model, stats) = result.unwrap();
+        let (_quantized_model, stats) = result.expect("test: result should be valid");
         assert_eq!(stats.layers_quantized, 5); // QAT should prepare 5 layers
         assert_eq!(stats.parameters_quantized, 2500);
     }
@@ -1166,7 +1176,7 @@ mod tests {
         let result = finalize_qat_model(&mut model, None);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.compression_ratio() > 1.0);
         assert!(stats.inference_speedup >= 1.0);
         assert!(stats.memory_reduction > 0.0);

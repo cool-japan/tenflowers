@@ -1091,7 +1091,7 @@ mod tests {
 
         let found = utils::find_checkpoint_by_id(&checkpoints, "checkpoint_2_200");
         assert!(found.is_some());
-        assert_eq!(found.unwrap().epoch, 2);
+        assert_eq!(found.expect("test: operation should succeed").epoch, 2);
 
         let not_found = utils::find_checkpoint_by_id(&checkpoints, "checkpoint_99_999");
         assert!(not_found.is_none());
@@ -1107,8 +1107,8 @@ mod tests {
 
         let best = utils::find_best_checkpoint_by_loss(&checkpoints);
         assert!(best.is_some());
-        assert_eq!(best.unwrap().loss, 0.7);
-        assert_eq!(best.unwrap().epoch, 3);
+        assert_eq!(best.expect("test: operation should succeed").loss, 0.7);
+        assert_eq!(best.expect("test: operation should succeed").epoch, 3);
     }
 
     #[test]
@@ -1126,7 +1126,7 @@ mod tests {
 
         let latest = utils::find_latest_checkpoint(&checkpoints);
         assert!(latest.is_some());
-        assert_eq!(latest.unwrap().epoch, 3);
+        assert_eq!(latest.expect("test: operation should succeed").epoch, 3);
     }
 
     #[test]
@@ -1166,10 +1166,12 @@ mod tests {
             compression_info: None,
         };
 
-        let serialized = serde_json::to_string(&checkpoint_data).unwrap();
+        let serialized =
+            serde_json::to_string(&checkpoint_data).expect("test: operation should succeed");
         assert!(!serialized.is_empty());
 
-        let deserialized: CheckpointData = serde_json::from_str(&serialized).unwrap();
+        let deserialized: CheckpointData =
+            serde_json::from_str(&serialized).expect("test: operation should succeed");
         assert_eq!(deserialized.info.epoch, 1);
         assert_eq!(deserialized.info.step, 100);
     }
@@ -1202,7 +1204,7 @@ mod tests {
         }"#;
 
         let parsed: std::collections::HashMap<String, serde_json::Value> =
-            serde_json::from_str(model_state).unwrap();
+            serde_json::from_str(model_state).expect("test: operation should succeed");
 
         // Verify structure
         assert!(parsed.contains_key("serialization_version"));
@@ -1225,9 +1227,9 @@ mod tests {
         let optimizer_state_result = checkpoint_manager.serialize_optimizer_state();
         assert!(optimizer_state_result.is_ok());
 
-        let optimizer_state = optimizer_state_result.unwrap();
+        let optimizer_state = optimizer_state_result.expect("test: optimization should succeed");
         let parsed: std::collections::HashMap<String, serde_json::Value> =
-            serde_json::from_str(&optimizer_state).unwrap();
+            serde_json::from_str(&optimizer_state).expect("test: optimization should succeed");
 
         // Verify enhanced structure
         assert!(parsed.contains_key("optimizer_type"));
@@ -1278,7 +1280,9 @@ mod tests {
             ),
             (
                 "learning_rate".to_string(),
-                serde_json::Value::Number(serde_json::Number::from_f64(0.001).unwrap()),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(0.001).expect("test: operation should succeed"),
+                ),
             ),
         ]);
 
@@ -1315,7 +1319,9 @@ mod tests {
             ),
             (
                 "learning_rate".to_string(),
-                serde_json::Value::Number(serde_json::Number::from_f64(-0.001).unwrap()),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(-0.001).expect("test: operation should succeed"),
+                ),
             ),
         ]);
 

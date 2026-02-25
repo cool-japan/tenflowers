@@ -31,8 +31,8 @@ use crate::GradientTape;
 /// use tenflowers_autograd::second_order::hessian_vector_product_fd;
 /// use tenflowers_core::Tensor;
 ///
-/// let x = Tensor::from_vec(vec![1.0f32, 2.0], vec![2])?;
-/// let v = Tensor::from_vec(vec![1.0f32, 0.0], vec![2])?;
+/// let x = Tensor::from_vec(vec![1.0f32, 2.0], &[2])?;
+/// let v = Tensor::from_vec(vec![1.0f32, 0.0], &[2])?;
 ///
 /// let hv = hessian_vector_product_fd(
 ///     |x_val| {
@@ -102,7 +102,7 @@ where
 /// use tenflowers_autograd::second_order::diagonal_hessian_fd;
 /// use tenflowers_core::Tensor;
 ///
-/// let x = Tensor::from_vec(vec![1.0f32, 2.0], vec![2])?;
+/// let x = Tensor::from_vec(vec![1.0f32, 2.0], &[2])?;
 ///
 /// let diag_h = diagonal_hessian_fd(
 ///     |x_val| {
@@ -238,9 +238,9 @@ pub fn gauss_newton_hessian(jacobian: &Tensor<f32>) -> Result<Tensor<f32>> {
 /// use tenflowers_autograd::second_order::bfgs_update;
 /// use tenflowers_core::Tensor;
 ///
-/// let b_k = Tensor::eye(5)?;  // Initial inverse Hessian (identity)
-/// let s_k = Tensor::from_vec(vec![0.1f32; 5], vec![5])?;  // Step
-/// let y_k = Tensor::from_vec(vec![0.2f32; 5], vec![5])?;  // Gradient change
+/// let b_k = Tensor::<f32>::eye(5);  // Initial inverse Hessian (identity)
+/// let s_k = Tensor::from_vec(vec![0.1f32; 5], &[5])?;  // Step
+/// let y_k = Tensor::from_vec(vec![0.2f32; 5], &[5])?;  // Gradient change
 ///
 /// let b_k_plus_1 = bfgs_update(&b_k, &s_k, &y_k)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -557,20 +557,24 @@ mod tests {
     #[test]
     fn test_hessian_vector_product() {
         // Test on f(x) = x^2, where Hessian is constant = 2
-        let x = Tensor::from_data(vec![1.0f32], &[1]).unwrap();
-        let v = Tensor::from_data(vec![1.0f32], &[1]).unwrap();
+        let x = Tensor::from_data(vec![1.0f32], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let v = Tensor::from_data(vec![1.0f32], &[1])
+            .expect("test: tensor creation from valid data should succeed");
 
         let hv = hessian_vector_product_fd(
             |x_val| {
                 // Gradient of x^2 is 2x
-                let grad = x_val.mul(&Tensor::from_scalar(2.0f32)).unwrap();
+                let grad = x_val
+                    .mul(&Tensor::from_scalar(2.0f32))
+                    .expect("test: tensor multiplication should succeed");
                 Ok(vec![grad])
             },
             &x,
             &v,
             Some(1e-5),
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         let hv_data = hv.as_slice().expect("tensor should be contiguous");
         // Hv should be approximately 2 * 1 = 2
@@ -587,17 +591,24 @@ mod tests {
         let mut storage = LBFGSStorage::new(3);
 
         // Add some vector pairs
-        let s1 = Tensor::from_data(vec![0.1f32, 0.2], &[2]).unwrap();
-        let y1 = Tensor::from_data(vec![0.15f32, 0.25], &[2]).unwrap();
+        let s1 = Tensor::from_data(vec![0.1f32, 0.2], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let y1 = Tensor::from_data(vec![0.15f32, 0.25], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        storage.push(s1, y1).unwrap();
+        storage
+            .push(s1, y1)
+            .expect("test: operation should succeed");
 
         assert_eq!(storage.len(), 1);
         assert!(!storage.is_empty());
 
         // Test multiply
-        let grad = Tensor::from_data(vec![1.0f32, 1.0], &[2]).unwrap();
-        let result = storage.multiply(&grad, 1.0).unwrap();
+        let grad = Tensor::from_data(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let result = storage
+            .multiply(&grad, 1.0)
+            .expect("test: gradient computation should succeed");
 
         assert_eq!(result.shape().dims(), vec![2]);
     }
@@ -605,11 +616,14 @@ mod tests {
     #[test]
     fn test_diagonal_fisher() {
         let grads = vec![
-            Tensor::from_data(vec![1.0f32, 2.0], &[2]).unwrap(),
-            Tensor::from_data(vec![2.0f32, 3.0], &[2]).unwrap(),
+            Tensor::from_data(vec![1.0f32, 2.0], &[2])
+                .expect("test: tensor creation from valid data should succeed"),
+            Tensor::from_data(vec![2.0f32, 3.0], &[2])
+                .expect("test: tensor creation from valid data should succeed"),
         ];
 
-        let fisher_diag = fisher::diagonal_fisher(&grads).unwrap();
+        let fisher_diag =
+            fisher::diagonal_fisher(&grads).expect("test: gradient computation should succeed");
         let fisher_data = fisher_diag.as_slice().expect("tensor should be contiguous");
 
         // F[0,0] = (1^2 + 2^2) / 2 = 2.5
@@ -622,9 +636,10 @@ mod tests {
     fn test_gauss_newton_hessian() {
         // Test with a simple 3x2 Jacobian
         let jac_data = vec![1.0f32, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let jacobian = Tensor::from_data(jac_data, &[3, 2]).unwrap();
+        let jacobian = Tensor::from_data(jac_data, &[3, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let hessian = gauss_newton_hessian(&jacobian).unwrap();
+        let hessian = gauss_newton_hessian(&jacobian).expect("test: operation should succeed");
 
         assert_eq!(hessian.shape().dims(), vec![2, 2]);
     }

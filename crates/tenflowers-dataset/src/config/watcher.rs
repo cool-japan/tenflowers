@@ -389,25 +389,29 @@ mod tests {
 
     #[test]
     fn test_file_change_detection() {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let mut watcher =
             ConfigWatcher::with_poll_interval(temp_file.path(), Duration::from_millis(10))
                 .expect("watcher creation should succeed");
 
         // Initial check should return no changes
-        let initial_check = watcher.check_changes().unwrap();
+        let initial_check = watcher
+            .check_changes()
+            .expect("test: operation should succeed");
         assert!(initial_check.is_none());
 
         // Wait a bit and modify the file
         std::thread::sleep(Duration::from_millis(20));
-        writeln!(temp_file, "new content").unwrap();
-        temp_file.flush().unwrap();
+        writeln!(temp_file, "new content").expect("test: writeln should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         // Wait for polling interval
         std::thread::sleep(Duration::from_millis(20));
 
         // Should detect change
-        let change_check = watcher.force_check().unwrap();
+        let change_check = watcher
+            .force_check()
+            .expect("test: operation should succeed");
         match change_check {
             Some(WatchEvent::Modified(path)) => {
                 assert_eq!(path, temp_file.path());
@@ -418,13 +422,13 @@ mod tests {
 
     #[test]
     fn test_file_info() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "test content").unwrap();
-        temp_file.flush().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
+        writeln!(temp_file, "test content").expect("test: writeln should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         let watcher =
             ConfigWatcher::new(temp_file.path()).expect("watcher creation should succeed");
-        let file_info = watcher.file_info().unwrap();
+        let file_info = watcher.file_info().expect("test: operation should succeed");
 
         assert_eq!(file_info.path, temp_file.path());
         assert!(file_info.is_file);
@@ -448,7 +452,9 @@ mod tests {
         let result = watcher
             .wait_for_change(Some(Duration::from_millis(50)))
             .expect("operation should succeed");
-        let elapsed = start_time.elapsed().unwrap();
+        let elapsed = start_time
+            .elapsed()
+            .expect("test: operation should succeed");
 
         assert!(result.is_none()); // Should timeout
         assert!(elapsed >= Duration::from_millis(50));
@@ -457,14 +463,18 @@ mod tests {
 
     #[test]
     fn test_multi_file_watcher() {
-        let temp_file1 = NamedTempFile::new().unwrap();
-        let temp_file2 = NamedTempFile::new().unwrap();
+        let temp_file1 = NamedTempFile::new().expect("test: temp file creation should succeed");
+        let temp_file2 = NamedTempFile::new().expect("test: temp file creation should succeed");
 
         let mut multi_watcher = MultiFileWatcher::new();
         assert_eq!(multi_watcher.file_count(), 0);
 
-        multi_watcher.add_file(temp_file1.path()).unwrap();
-        multi_watcher.add_file(temp_file2.path()).unwrap();
+        multi_watcher
+            .add_file(temp_file1.path())
+            .expect("test: operation should succeed");
+        multi_watcher
+            .add_file(temp_file2.path())
+            .expect("test: operation should succeed");
         assert_eq!(multi_watcher.file_count(), 2);
 
         let watched_paths = multi_watcher.watched_paths();
@@ -483,30 +493,38 @@ mod tests {
 
     #[test]
     fn test_multi_file_watcher_changes() {
-        let mut temp_file1 = NamedTempFile::new().unwrap();
-        let mut temp_file2 = NamedTempFile::new().unwrap();
+        let mut temp_file1 = NamedTempFile::new().expect("test: temp file creation should succeed");
+        let mut temp_file2 = NamedTempFile::new().expect("test: temp file creation should succeed");
 
         let mut multi_watcher = MultiFileWatcher::new();
         multi_watcher.set_poll_interval(Duration::from_millis(10));
-        multi_watcher.add_file(temp_file1.path()).unwrap();
-        multi_watcher.add_file(temp_file2.path()).unwrap();
+        multi_watcher
+            .add_file(temp_file1.path())
+            .expect("test: operation should succeed");
+        multi_watcher
+            .add_file(temp_file2.path())
+            .expect("test: operation should succeed");
 
         // Initial check should return no changes
-        let initial_changes = multi_watcher.check_changes().unwrap();
+        let initial_changes = multi_watcher
+            .check_changes()
+            .expect("test: operation should succeed");
         assert!(initial_changes.is_empty());
 
         // Modify both files
         std::thread::sleep(Duration::from_millis(20));
-        writeln!(temp_file1, "content1").unwrap();
-        temp_file1.flush().unwrap();
-        writeln!(temp_file2, "content2").unwrap();
-        temp_file2.flush().unwrap();
+        writeln!(temp_file1, "content1").expect("test: writeln should succeed");
+        temp_file1.flush().expect("test: flush should succeed");
+        writeln!(temp_file2, "content2").expect("test: writeln should succeed");
+        temp_file2.flush().expect("test: flush should succeed");
 
         // Wait for polling interval
         std::thread::sleep(Duration::from_millis(20));
 
         // Should detect changes in both files
-        let changes = multi_watcher.check_changes().unwrap();
+        let changes = multi_watcher
+            .check_changes()
+            .expect("test: operation should succeed");
         assert_eq!(changes.len(), 2);
 
         for change in changes {
@@ -524,10 +542,15 @@ mod tests {
         let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
         let watcher =
             ConfigWatcher::new(temp_file.path()).expect("watcher creation should succeed");
-        let file_info = watcher.file_info().unwrap();
+        let file_info = watcher.file_info().expect("test: operation should succeed");
 
         let description = file_info.description();
-        assert!(description.contains(temp_file.path().to_str().unwrap()));
+        assert!(description.contains(
+            temp_file
+                .path()
+                .to_str()
+                .expect("test: operation should succeed")
+        ));
         assert!(description.contains("file"));
         assert!(
             description.contains("B") || description.contains("KB") || description.contains("MB")
@@ -538,11 +561,14 @@ mod tests {
     #[test]
     fn test_watcher_state_management() {
         let temp_file = NamedTempFile::new().expect("temp file creation should succeed");
-        let mut watcher = ConfigWatcher::new(temp_file.path()).unwrap();
+        let mut watcher =
+            ConfigWatcher::new(temp_file.path()).expect("test: operation should succeed");
 
         assert!(!watcher.is_watching());
 
-        watcher.start_polling_watching().unwrap();
+        watcher
+            .start_polling_watching()
+            .expect("test: operation should succeed");
         // Polling watching doesn't change the is_watching state in this implementation
 
         watcher.stop_watching();

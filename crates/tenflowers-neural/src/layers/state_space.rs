@@ -362,33 +362,41 @@ mod tests {
 
     #[test]
     fn test_state_space_model_creation() {
-        let ssm = StateSpaceModel::<f32>::new(256, 16).unwrap();
+        let ssm = StateSpaceModel::<f32>::new(256, 16)
+            .expect("test: StateSpaceModel creation should succeed");
         assert_eq!(ssm.d_model, 256);
         assert_eq!(ssm.d_state, 16);
     }
 
     #[test]
     fn test_state_space_model_forward() {
-        let ssm = StateSpaceModel::<f32>::new(64, 8).unwrap();
+        let ssm = StateSpaceModel::<f32>::new(64, 8)
+            .expect("test: StateSpaceModel creation should succeed");
         let input = Tensor::ones(&[2, 10, 64]); // batch=2, seq=10, features=64
 
-        let output = ssm.forward(&input).unwrap();
+        let output = ssm
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[2, 10, 64]);
     }
 
     #[test]
     fn test_mamba_block_creation() {
-        let block = MambaBlock::<f32>::new(128, 16, 2).unwrap();
+        let block =
+            MambaBlock::<f32>::new(128, 16, 2).expect("test: MambaBlock creation should succeed");
         assert_eq!(block.d_model, 128);
         assert_eq!(block.d_inner, 256);
     }
 
     #[test]
     fn test_mamba_block_forward() {
-        let block = MambaBlock::<f32>::new(64, 8, 2).unwrap();
+        let block =
+            MambaBlock::<f32>::new(64, 8, 2).expect("test: MambaBlock creation should succeed");
         let input = Tensor::ones(&[1, 5, 64]); // batch=1, seq=5, features=64
 
-        let output = block.forward(&input).unwrap();
+        let output = block
+            .forward(&input)
+            .expect("test: forward pass should succeed");
         assert_eq!(output.shape().dims(), &[1, 5, 64]);
     }
 
@@ -400,7 +408,8 @@ mod tests {
 
     #[test]
     fn test_ssm_training_mode() {
-        let mut ssm = StateSpaceModel::<f32>::new(32, 8).unwrap();
+        let mut ssm = StateSpaceModel::<f32>::new(32, 8)
+            .expect("test: StateSpaceModel creation should succeed");
         ssm.set_training(true);
         // Training mode set successfully
     }
@@ -408,13 +417,18 @@ mod tests {
     #[test]
     fn test_mamba_selective_capabilities() {
         // Test that Mamba can handle variable length sequences
-        let block = MambaBlock::<f32>::new(32, 8, 2).unwrap();
+        let block =
+            MambaBlock::<f32>::new(32, 8, 2).expect("test: MambaBlock creation should succeed");
 
         let short_input = Tensor::ones(&[1, 3, 32]);
         let long_input = Tensor::ones(&[1, 100, 32]);
 
-        let short_output = block.forward(&short_input).unwrap();
-        let long_output = block.forward(&long_input).unwrap();
+        let short_output = block
+            .forward(&short_input)
+            .expect("test: forward pass should succeed");
+        let long_output = block
+            .forward(&long_input)
+            .expect("test: forward pass should succeed");
 
         assert_eq!(short_output.shape().dims(), &[1, 3, 32]);
         assert_eq!(long_output.shape().dims(), &[1, 100, 32]);
@@ -422,7 +436,8 @@ mod tests {
 
     #[test]
     fn test_ssm_parameter_access() {
-        let mut ssm = StateSpaceModel::<f32>::new(16, 4).unwrap();
+        let mut ssm = StateSpaceModel::<f32>::new(16, 4)
+            .expect("test: StateSpaceModel creation should succeed");
         let params = ssm.parameters();
         assert_eq!(params.len(), 5); // A, B, C, D, delta
 
@@ -432,16 +447,19 @@ mod tests {
 
     #[test]
     fn test_layer_type() {
-        let ssm = StateSpaceModel::<f32>::new(32, 8).unwrap();
+        let ssm = StateSpaceModel::<f32>::new(32, 8)
+            .expect("test: StateSpaceModel creation should succeed");
         assert_eq!(ssm.layer_type(), LayerType::StateSpaceModel);
 
-        let block = MambaBlock::<f32>::new(32, 8, 2).unwrap();
+        let block =
+            MambaBlock::<f32>::new(32, 8, 2).expect("test: MambaBlock creation should succeed");
         assert_eq!(block.layer_type(), LayerType::MambaBlock);
     }
 
     #[test]
     fn test_mamba_discretization() {
-        let mut ssm = StateSpaceModel::<f32>::new(16, 4).unwrap();
+        let mut ssm = StateSpaceModel::<f32>::new(16, 4)
+            .expect("test: StateSpaceModel creation should succeed");
         assert!(ssm.with_discretization("zoh").is_ok());
         assert!(ssm.with_discretization("euler").is_ok());
         assert!(ssm.with_discretization("invalid").is_err());

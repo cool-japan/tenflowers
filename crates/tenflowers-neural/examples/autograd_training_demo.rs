@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::{ArrayD, IxDyn};
 use std::time::Instant;
 /// Advanced Autograd Training Demo using TenfloweRS

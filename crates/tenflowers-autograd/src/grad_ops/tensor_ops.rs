@@ -797,16 +797,34 @@ mod tests {
     #[test]
     fn test_normalize_index() {
         // Test positive indices
-        assert_eq!(normalize_index(2, 10).unwrap(), 2);
-        assert_eq!(normalize_index(9, 10).unwrap(), 9);
+        assert_eq!(
+            normalize_index(2, 10).expect("test: shape/index operation should succeed"),
+            2
+        );
+        assert_eq!(
+            normalize_index(9, 10).expect("test: shape/index operation should succeed"),
+            9
+        );
 
         // Test negative indices
-        assert_eq!(normalize_index(-1, 10).unwrap(), 9);
-        assert_eq!(normalize_index(-3, 10).unwrap(), 7);
+        assert_eq!(
+            normalize_index(-1, 10).expect("test: shape/index operation should succeed"),
+            9
+        );
+        assert_eq!(
+            normalize_index(-3, 10).expect("test: shape/index operation should succeed"),
+            7
+        );
 
         // Test edge cases
-        assert_eq!(normalize_index(0, 10).unwrap(), 0);
-        assert_eq!(normalize_index(10, 10).unwrap(), 10); // Clamped to size
+        assert_eq!(
+            normalize_index(0, 10).expect("test: shape/index operation should succeed"),
+            0
+        );
+        assert_eq!(
+            normalize_index(10, 10).expect("test: shape/index operation should succeed"),
+            10
+        ); // Clamped to size
 
         // Test out of bounds negative
         assert!(normalize_index(-11, 10).is_err());
@@ -815,11 +833,12 @@ mod tests {
     #[test]
     fn test_stack_backward_basic() {
         // Test basic stack backward functionality
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
         let result = stack_backward(&grad_output, 2, 0);
 
         assert!(result.is_ok());
-        let gradients = result.unwrap();
+        let gradients = result.expect("test: gradient computation should succeed");
         assert_eq!(gradients.len(), 2);
 
         // Each gradient should have shape [3] after removing the stacking dimension
@@ -831,69 +850,78 @@ mod tests {
     #[test]
     fn test_split_backward_basic() {
         // Test basic split backward functionality
-        let grad1 = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
-        let grad2 = Tensor::from_vec(vec![3.0f32, 4.0], &[2]).unwrap();
+        let grad1 = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad2 = Tensor::from_vec(vec![3.0f32, 4.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let grad_outputs = vec![grad1, grad2];
 
         let result = split_backward(&grad_outputs, 0);
         assert!(result.is_ok());
 
-        let concatenated = result.unwrap();
+        let concatenated = result.expect("test: operation result should be valid");
         assert_eq!(concatenated.shape().dims(), &[4]); // 2 + 2
     }
 
     #[test]
     fn test_transpose_backward_identity() {
         // Test transpose backward with no axes (identity)
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = transpose_backward(&grad_output, None);
 
         assert!(result.is_ok());
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[2, 2]);
     }
 
     #[test]
     fn test_squeeze_unsqueeze_backward() {
         // Test squeeze backward
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         let original_shape = &[1, 3, 1];
         let result = squeeze_backward(&grad_output, original_shape);
 
         assert!(result.is_ok());
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), original_shape);
 
         // Test unsqueeze backward
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[1, 3, 1]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[1, 3, 1])
+            .expect("test: tensor creation from valid data should succeed");
         let axes = &[0, 2];
         let result = unsqueeze_backward(&grad_output, axes);
 
         assert!(result.is_ok());
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[3]);
     }
 
     #[test]
     fn test_gather_scatter_backward_interface() {
         // Test that the functions compile and basic structure works
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let input_shape = &[5];
-        let indices = Tensor::from_vec(vec![0i64, 2], &[2]).unwrap();
+        let indices = Tensor::from_vec(vec![0i64, 2], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test gather backward
         let result = gather_backward(&grad_output, input_shape, &indices, 0);
         assert!(result.is_ok());
-        let grad_input = result.unwrap();
+        let grad_input = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), input_shape);
 
         // Test scatter backward
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0], &[5]).unwrap();
-        let values = Tensor::from_vec(vec![10.0f32, 20.0], &[2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0], &[5])
+            .expect("test: tensor creation from valid data should succeed");
+        let values = Tensor::from_vec(vec![10.0f32, 20.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = scatter_backward(&grad_output, &input, &indices, &values, 0);
 
         assert!(result.is_ok());
-        let (grad_input, grad_values) = result.unwrap();
+        let (grad_input, grad_values) = result.expect("test: gradient computation should succeed");
         assert_eq!(grad_input.shape().dims(), &[2]);
         assert_eq!(grad_values.shape().dims(), &[2]);
     }
@@ -901,7 +929,8 @@ mod tests {
     #[test]
     fn test_4d_tensor_helpers() {
         // Test get_tensor_element_4d
-        let tensor = Tensor::from_vec((0..24).map(|i| i as f32).collect(), &[2, 3, 2, 2]).unwrap();
+        let tensor = Tensor::from_vec((0..24).map(|i| i as f32).collect(), &[2, 3, 2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let element = get_tensor_element_4d(&tensor, 0, 0, 0, 0);
         assert!(element.is_some());
@@ -913,7 +942,7 @@ mod tests {
         // Test slice_tensor_4d
         let result = slice_tensor_4d(&tensor, 0, 1, 0, 2, 0, 2, 0, 2);
         assert!(result.is_ok());
-        let sliced = result.unwrap();
+        let sliced = result.expect("test: operation result should be valid");
         assert_eq!(sliced.shape().dims(), &[1, 2, 2, 2]);
     }
 }

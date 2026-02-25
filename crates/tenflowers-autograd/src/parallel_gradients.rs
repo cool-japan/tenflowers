@@ -602,12 +602,13 @@ mod tests {
     async fn test_async_gradient_computation() {
         let config = ParallelGradientConfig::default();
         let devices = vec![Device::Cpu];
-        let engine = ParallelGradientEngine::new(config, devices).unwrap();
+        let engine = ParallelGradientEngine::new(config, devices)
+            .expect("test: gradient computation should succeed");
 
         let tape = GradientTape::new();
         let x = tape.watch(Tensor::<f32>::ones(&[2, 2]));
         let y = tape.watch(Tensor::<f32>::ones(&[2, 2]));
-        let z = x.add(&y).unwrap();
+        let z = x.add(&y).expect("test: tensor addition should succeed");
 
         let task = GradientTask {
             target: z,
@@ -617,10 +618,13 @@ mod tests {
         };
 
         let mut handles = engine.compute_gradients_async(vec![task]);
-        let result = handles.pop().unwrap().await;
+        let result = handles
+            .pop()
+            .expect("test: collection should not be empty")
+            .await;
 
         assert!(result.is_ok());
-        let result = result.unwrap();
+        let result = result.expect("test: operation result should be valid");
         assert_eq!(result.gradients.len(), 2);
     }
 
@@ -637,7 +641,9 @@ mod tests {
             .build();
 
         assert!(config.pipeline_config.is_some());
-        let pipeline = config.pipeline_config.unwrap();
+        let pipeline = config
+            .pipeline_config
+            .expect("test: operation should succeed");
         assert_eq!(pipeline.num_stages, 4);
         assert_eq!(pipeline.micro_batch_size, 8);
         assert_eq!(pipeline.devices_per_stage, 2);

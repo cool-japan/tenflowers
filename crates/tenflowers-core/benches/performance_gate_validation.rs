@@ -1,3 +1,7 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::useless_vec)]
+
 /// Performance Gate Validation Benchmark
 ///
 /// This benchmark validates that critical operations meet performance baselines

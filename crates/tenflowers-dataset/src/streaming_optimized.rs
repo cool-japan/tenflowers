@@ -775,24 +775,24 @@ mod tests {
         let mut buffer = AdaptiveBuffer::<f32>::new(100);
 
         let sample = (
-            Tensor::from_vec(vec![1.0, 2.0], &[2]).unwrap(),
-            Tensor::from_vec(vec![0.0], &[1]).unwrap(),
+            Tensor::from_vec(vec![1.0, 2.0], &[2]).expect("test: tensor creation should succeed"),
+            Tensor::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed"),
         );
 
         assert!(buffer.push(sample.clone()));
         assert_eq!(buffer.len(), 1);
 
-        let _popped = buffer.pop().unwrap();
+        let _popped = buffer.pop().expect("test: operation should succeed");
         assert_eq!(buffer.len(), 0);
     }
 
     #[test]
     fn test_streaming_dataset_builder() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let file_path = temp_dir.path().join("test.dat");
 
         // Create a temporary file
-        fs::write(&file_path, b"dummy data").unwrap();
+        fs::write(&file_path, b"dummy data").expect("test: write should succeed");
 
         let builder = StreamingOptimizedDatasetBuilder::<f32>::new()
             .add_file(file_path)

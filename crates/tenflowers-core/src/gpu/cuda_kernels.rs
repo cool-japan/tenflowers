@@ -926,7 +926,7 @@ mod tests {
             let config = device.calculate_gemm_config(1024, 1024, 1024);
             assert!(config.is_ok());
 
-            let cfg = config.unwrap();
+            let cfg = config.expect("test: operation should succeed");
             assert!(cfg.grid_dim.0 > 0);
             assert!(cfg.block_dim.0 > 0);
         }

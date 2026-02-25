@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use tenflowers_core::{
     collective::{broadcast, create_process_group, init_collective},
     Device, Result, Tensor,

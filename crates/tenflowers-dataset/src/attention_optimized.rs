@@ -833,11 +833,14 @@ mod tests {
 
     #[test]
     fn test_attention_sequence_creation() {
-        let tokens = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let label = Tensor::from_vec(vec![1.0], &[1]).unwrap();
+        let tokens = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: tensor creation should succeed");
+        let label =
+            Tensor::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
         let config = AttentionOptimizedConfig::default();
 
-        let sequence = AttentionSequence::new(tokens, label, &config).unwrap();
+        let sequence =
+            AttentionSequence::new(tokens, label, &config).expect("test: operation should succeed");
 
         assert_eq!(sequence.tokens.shape().dims(), &[4]);
         assert_eq!(sequence.attention_mask.shape().dims(), &[4]);
@@ -847,16 +850,24 @@ mod tests {
 
     #[test]
     fn test_sequence_packing() {
-        let tokens1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap();
-        let label1 = Tensor::from_vec(vec![1.0], &[1]).unwrap();
+        let tokens1 = Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2])
+            .expect("test: tensor creation should succeed");
+        let label1 =
+            Tensor::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
         let config = AttentionOptimizedConfig::default();
-        let seq1 = AttentionSequence::new(tokens1, label1, &config).unwrap();
+        let seq1 = AttentionSequence::new(tokens1, label1, &config)
+            .expect("test: operation should succeed");
 
-        let tokens2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap();
-        let label2 = Tensor::from_vec(vec![0.0], &[1]).unwrap();
-        let seq2 = AttentionSequence::new(tokens2, label2, &config).unwrap();
+        let tokens2 = Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+            .expect("test: tensor creation should succeed");
+        let label2 =
+            Tensor::from_vec(vec![0.0], &[1]).expect("test: tensor creation should succeed");
+        let seq2 = AttentionSequence::new(tokens2, label2, &config)
+            .expect("test: operation should succeed");
 
-        let packed = seq1.pack_with(&seq2, 8).unwrap();
+        let packed = seq1
+            .pack_with(&seq2, 8)
+            .expect("test: operation should succeed");
         assert_eq!(packed.tokens.shape().dims(), &[8]);
         assert_eq!(packed.metadata.original_length, 4);
         assert_eq!(packed.metadata.padding_length, 4);
@@ -870,12 +881,16 @@ mod tests {
             .max_seq_length(16);
 
         for i in 0..5 {
-            let tokens = Tensor::<f32>::from_vec(vec![i as f32; 4], &[4]).unwrap();
-            let label = Tensor::from_vec(vec![i as f32], &[1]).unwrap();
-            builder = builder.add_sequence(tokens, label).unwrap();
+            let tokens = Tensor::<f32>::from_vec(vec![i as f32; 4], &[4])
+                .expect("test: tensor creation should succeed");
+            let label = Tensor::from_vec(vec![i as f32], &[1])
+                .expect("test: tensor creation should succeed");
+            builder = builder
+                .add_sequence(tokens, label)
+                .expect("test: operation should succeed");
         }
 
-        let dataset = builder.build().unwrap();
+        let dataset = builder.build().expect("test: operation should succeed");
         assert_eq!(dataset.len(), 5);
 
         let (features, label) = dataset.get(0).expect("index should be in bounds");
@@ -907,7 +922,8 @@ mod tests {
 
         let sequences = vec![];
         let dataset: AttentionOptimizedDataset<f32> =
-            AttentionOptimizedDataset::new(sequences, config).unwrap();
+            AttentionOptimizedDataset::new(sequences, config)
+                .expect("test: operation should succeed");
 
         let memory_usage = dataset.estimate_memory_usage(8, 1024);
         assert!(memory_usage > 0.0);

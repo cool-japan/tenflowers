@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.1.0-beta.1"
+tenflowers = "0.1.0-rc.1"
 ```
 
 ### Basic Example
@@ -145,14 +145,14 @@ TenfloweRS provides several optional features:
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-beta.1", features = ["gpu"] }
+tenflowers = { version = "0.1.0-rc.1", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-beta.1", features = ["full"] }
+tenflowers = { version = "0.1.0-rc.1", features = ["full"] }
 ```
 
 ## Architecture
@@ -213,7 +213,7 @@ Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://
 
 ## Status
 
-TenfloweRS is currently in beta (v0.1.0-beta.1). The core API is stabilizing for 1.0 release. All 2357 tests passing, zero security vulnerabilities.
+TenfloweRS is currently in beta (v0.1.0-rc.1). The core API is stabilizing for 1.0 release. All 2629 tests passing, zero security vulnerabilities.
 
 ## Links
 

@@ -663,8 +663,8 @@ mod tests {
     #[test]
     fn test_ia3_adapter_creation() {
         let config = IA3Config::new();
-        let adapter: IA3Adapter<f32> =
-            IA3Adapter::new(100, IA3ScalingType::Attention, config).unwrap();
+        let adapter: IA3Adapter<f32> = IA3Adapter::new(100, IA3ScalingType::Attention, config)
+            .expect("test: IA3Adapter creation should succeed");
 
         // Check scaling vector shape
         assert_eq!(adapter.scaling_vector().shape().dims(), &[100]);
@@ -680,18 +680,26 @@ mod tests {
     fn test_initialization_strategies() {
         let config_ones = IA3Config::new().with_init_strategy(IA3InitStrategy::Ones);
         let adapter_ones: IA3Adapter<f32> =
-            IA3Adapter::new(5, IA3ScalingType::Activation, config_ones).unwrap();
+            IA3Adapter::new(5, IA3ScalingType::Activation, config_ones)
+                .expect("test: IA3Adapter creation should succeed");
 
-        let scaling_data = adapter_ones.scaling_vector().to_vec().unwrap();
+        let scaling_data = adapter_ones
+            .scaling_vector()
+            .to_vec()
+            .expect("test: tensor conversion should succeed");
         assert!(scaling_data.iter().all(|&x| (x - 1.0).abs() < 1e-6));
 
         let config_const = IA3Config::new()
             .with_init_strategy(IA3InitStrategy::Constant)
             .with_init_value(0.5);
         let adapter_const: IA3Adapter<f32> =
-            IA3Adapter::new(5, IA3ScalingType::Activation, config_const).unwrap();
+            IA3Adapter::new(5, IA3ScalingType::Activation, config_const)
+                .expect("test: IA3Adapter creation should succeed");
 
-        let scaling_data_const = adapter_const.scaling_vector().to_vec().unwrap();
+        let scaling_data_const = adapter_const
+            .scaling_vector()
+            .to_vec()
+            .expect("test: tensor conversion should succeed");
         assert!(scaling_data_const.iter().all(|&x| (x - 0.5).abs() < 1e-6));
     }
 
@@ -700,8 +708,8 @@ mod tests {
         let config = IA3Config::new()
             .with_init_strategy(IA3InitStrategy::Constant)
             .with_init_value(2.0);
-        let adapter: IA3Adapter<f32> =
-            IA3Adapter::new(5, IA3ScalingType::Activation, config).unwrap();
+        let adapter: IA3Adapter<f32> = IA3Adapter::new(5, IA3ScalingType::Activation, config)
+            .expect("test: IA3Adapter creation should succeed");
 
         let input = Tensor::ones(&[2, 5]); // Batch of 2, dimension 5
         let base_output = Tensor::zeros(&[2, 5]); // Not used in IA³
@@ -709,19 +717,21 @@ mod tests {
         let result = adapter.forward(&input, &base_output);
         assert!(result.is_ok());
 
-        let output = result.unwrap();
+        let output = result.expect("test: result should be valid");
         assert_eq!(output.shape().dims(), &[2, 5]);
 
         // With scaling factor 2.0, output should be 2.0 * input = 2.0 * 1.0 = 2.0
-        let output_data = output.to_vec().unwrap();
+        let output_data = output
+            .to_vec()
+            .expect("test: tensor conversion should succeed");
         assert!(output_data.iter().all(|&x| (x - 2.0).abs() < 1e-6));
     }
 
     #[test]
     fn test_parameter_efficiency() {
         let config = IA3Config::new();
-        let adapter: IA3Adapter<f32> =
-            IA3Adapter::new(1000, IA3ScalingType::Attention, config).unwrap();
+        let adapter: IA3Adapter<f32> = IA3Adapter::new(1000, IA3ScalingType::Attention, config)
+            .expect("test: IA3Adapter creation should succeed");
 
         // IA³ should have very few parameters (just the scaling vector)
         assert_eq!(adapter.num_trainable_parameters(), 1000);
@@ -741,8 +751,8 @@ mod tests {
     #[test]
     fn test_ia3_statistics() {
         let config = IA3Config::new().with_init_strategy(IA3InitStrategy::RandomNear1);
-        let adapter: IA3Adapter<f32> =
-            IA3Adapter::new(100, IA3ScalingType::Attention, config).unwrap();
+        let adapter: IA3Adapter<f32> = IA3Adapter::new(100, IA3ScalingType::Attention, config)
+            .expect("test: IA3Adapter creation should succeed");
 
         let stats = adapter.stats();
         assert_eq!(stats.dimension, 100);
@@ -765,13 +775,13 @@ mod tests {
         // Add different types of adapters
         multi_adapter
             .add_attention_adapter(512, "attn_qkv".to_string())
-            .unwrap();
+            .expect("test: operation should succeed");
         multi_adapter
             .add_feedforward_adapter(2048, "ffn_intermediate".to_string())
-            .unwrap();
+            .expect("test: operation should succeed");
         multi_adapter
             .add_activation_adapter(512, "output_proj".to_string())
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(multi_adapter.adapters().len(), 3);
         assert_eq!(multi_adapter.adapter_names().len(), 3);

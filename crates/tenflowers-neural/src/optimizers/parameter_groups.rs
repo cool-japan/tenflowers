@@ -381,10 +381,10 @@ mod tests {
 
         optimizer
             .add_group("backbone".to_string(), group1_config)
-            .unwrap();
+            .expect("test: operation should succeed");
         optimizer
             .add_group("classifier".to_string(), group2_config)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(optimizer.group_names(), vec!["backbone", "classifier"]);
         assert_eq!(optimizer.get_group_learning_rate(0), Some(0.01));
@@ -412,16 +412,18 @@ mod tests {
 
         optimizer
             .add_group("test".to_string(), ParameterGroupConfig::new(0.01))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Update learning rate by name
         optimizer
             .set_group_learning_rate_by_name("test", 0.005)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(optimizer.get_group_learning_rate(0), Some(0.005));
 
         // Update learning rate by index
-        optimizer.set_group_learning_rate(0, 0.002).unwrap();
+        optimizer
+            .set_group_learning_rate(0, 0.002)
+            .expect("test: optimization should succeed");
         assert_eq!(optimizer.get_group_learning_rate(0), Some(0.002));
     }
 
@@ -433,7 +435,7 @@ mod tests {
 
         optimizer
             .add_group("test".to_string(), ParameterGroupConfig::new(0.01))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Create some dummy parameters
         let param1 = Tensor::zeros(&[10, 10]);
@@ -442,7 +444,7 @@ mod tests {
         // Add parameters to group
         optimizer
             .add_parameters_to_group(0, &[&param1, &param2])
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Check if parameters are in the group
         assert_eq!(optimizer.find_parameter_group(&param1), Some(0));

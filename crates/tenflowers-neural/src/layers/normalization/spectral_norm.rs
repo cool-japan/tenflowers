@@ -178,7 +178,8 @@ mod tests {
 
     #[test]
     fn test_spectral_norm_creation() {
-        let spectral_norm = SpectralNorm::<f32>::new(&[128, 64]).unwrap();
+        let spectral_norm = SpectralNorm::<f32>::new(&[128, 64])
+            .expect("test: SpectralNorm creation should succeed");
         assert_eq!(spectral_norm.weight().shape().dims(), &[128, 64]);
         assert_eq!(spectral_norm.u().shape().dims(), &[128]);
         assert_eq!(spectral_norm.v().shape().dims(), &[64]);
@@ -195,7 +196,7 @@ mod tests {
     #[test]
     fn test_spectral_norm_with_power_iterations() {
         let spectral_norm = SpectralNorm::<f32>::new(&[64, 32])
-            .unwrap()
+            .expect("test: operation should succeed")
             .with_power_iterations(5);
         assert_eq!(spectral_norm.num_power_iterations(), 5);
     }
@@ -204,14 +205,15 @@ mod tests {
     fn test_spectral_norm_with_eps() {
         let eps_val = 1e-10_f32;
         let spectral_norm = SpectralNorm::<f32>::new(&[32, 16])
-            .unwrap()
+            .expect("test: operation should succeed")
             .with_eps(eps_val);
         assert_eq!(spectral_norm.eps(), eps_val);
     }
 
     #[test]
     fn test_spectral_norm_update_weight() {
-        let mut spectral_norm = SpectralNorm::<f32>::new(&[4, 3]).unwrap();
+        let mut spectral_norm =
+            SpectralNorm::<f32>::new(&[4, 3]).expect("test: SpectralNorm creation should succeed");
         let new_weight = Tensor::zeros(&[4, 3]);
 
         let result = spectral_norm.update_weight(new_weight);
@@ -220,7 +222,8 @@ mod tests {
 
     #[test]
     fn test_spectral_norm_update_weight_wrong_shape() {
-        let mut spectral_norm = SpectralNorm::<f32>::new(&[4, 3]).unwrap();
+        let mut spectral_norm =
+            SpectralNorm::<f32>::new(&[4, 3]).expect("test: SpectralNorm creation should succeed");
         let wrong_weight = Tensor::zeros(&[5, 3]); // Wrong shape
 
         let result = spectral_norm.update_weight(wrong_weight);
@@ -229,7 +232,8 @@ mod tests {
 
     #[test]
     fn test_spectral_norm_getters() {
-        let spectral_norm = SpectralNorm::<f32>::new(&[8, 6]).unwrap();
+        let spectral_norm =
+            SpectralNorm::<f32>::new(&[8, 6]).expect("test: SpectralNorm creation should succeed");
 
         // Test getter methods
         assert_eq!(spectral_norm.weight().shape().dims(), &[8, 6]);

@@ -571,8 +571,10 @@ mod tests {
     #[test]
     fn test_enhanced_dataloader_creation() {
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let sampler = SequentialSampler::new();
@@ -581,7 +583,7 @@ mod tests {
             .batch_size(2)
             .num_workers(2)
             .build(dataset, sampler)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Check queue statistics
         let (queue_lengths, total_tasks, _is_empty) = loader.get_queue_stats();
@@ -592,9 +594,10 @@ mod tests {
 
     #[test]
     fn test_enhanced_dataloader_processing() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let sampler = SequentialSampler::new();
@@ -604,26 +607,32 @@ mod tests {
             .num_workers(1)
             .collate_batches(true)
             .build(dataset, sampler)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Get first batch
-        let batch1 = loader.next().unwrap().unwrap();
+        let batch1 = loader
+            .next()
+            .expect("test: iterator should have next")
+            .expect("test: batch loading should succeed");
         match batch1 {
             BatchResult::Collated(features, labels) => {
                 assert_eq!(features.shape().dims(), &[2, 2]); // batch_size=2, feature_size=2
                 assert_eq!(labels.shape().dims(), &[2]); // batch_size=2
             }
-            _ => assert!(false, "Expected collated batch"),
+            _ => panic!("Expected collated batch"),
         }
 
         // Get second batch (partial)
-        let batch2 = loader.next().unwrap().unwrap();
+        let batch2 = loader
+            .next()
+            .expect("test: iterator should have next")
+            .expect("test: batch loading should succeed");
         match batch2 {
             BatchResult::Collated(features, labels) => {
                 assert_eq!(features.shape().dims(), &[1, 2]); // batch_size=1, feature_size=2
                 assert_eq!(labels.shape().dims(), &[1]); // batch_size=1
             }
-            _ => assert!(false, "Expected collated batch"),
+            _ => panic!("Expected collated batch"),
         }
 
         // No more batches
@@ -638,8 +647,10 @@ mod tests {
     #[test]
     fn test_enhanced_dataloader_worker_stats() {
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
         let sampler = SequentialSampler::new();
@@ -648,7 +659,7 @@ mod tests {
             .batch_size(1)
             .num_workers(2)
             .build(dataset, sampler)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Process all batches
         let _batches: Vec<_> = loader.collect();

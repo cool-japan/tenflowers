@@ -4,7 +4,10 @@
 //! when BLAS libraries (OpenBLAS, MKL, or Accelerate) are available.
 
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -15,7 +18,7 @@ use scirs2_core::numeric::{One, Zero};
 // BLAS optimizations for einsum operations
 #[cfg(all(
     any(
-        feature = "blas-openblas",
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
         feature = "blas-mkl",
         feature = "blas-accelerate"
     ),
@@ -25,7 +28,10 @@ use scirs2_core::ndarray::{s, Array2};
 
 /// Try BLAS-optimized patterns for CPU tensors
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -100,7 +106,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -127,7 +136,10 @@ where
 
 /// BLAS-optimized 2D matrix multiplication using GEMM
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -225,7 +237,10 @@ where
 
 /// BLAS-optimized batched matrix multiplication
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -259,7 +274,10 @@ where
 
 /// BLAS-optimized matrix-vector multiplication
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -307,7 +325,10 @@ where
 
 /// BLAS-optimized vector dot product
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -350,7 +371,10 @@ where
 
 /// BLAS-optimized vector outer product
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -374,7 +398,10 @@ where
 
 /// BLAS-optimized matrix transpose
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -395,7 +422,10 @@ where
 
 /// BLAS-optimized symmetric matrix multiplication
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -420,7 +450,10 @@ where
 
 /// BLAS-optimized triangular matrix solve
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -445,7 +478,10 @@ where
 
 /// Check if tensor is a triangular matrix candidate
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]
@@ -478,7 +514,10 @@ where
 
 // Fallback implementations when BLAS is not available
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -501,7 +540,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -524,7 +566,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -547,7 +592,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -570,7 +618,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -593,7 +644,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -606,7 +660,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -629,7 +686,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]
@@ -652,7 +712,10 @@ where
 }
 
 #[cfg(not(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 )))]

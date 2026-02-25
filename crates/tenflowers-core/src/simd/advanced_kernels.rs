@@ -710,7 +710,9 @@ mod tests {
     #[test]
     fn test_kernel_registry_creation() {
         let registry = AdvancedKernelRegistry::new(KernelOptimizationStrategy::MaxThroughput);
-        let stats = registry.get_registry_statistics().unwrap();
+        let stats = registry
+            .get_registry_statistics()
+            .expect("test: get_registry_statistics should succeed");
 
         assert!(stats.total_kernels > 0);
         assert!(stats.total_operations > 0);
@@ -746,7 +748,7 @@ mod tests {
 
         let kernel = registry
             .select_optimal_kernel("matmul", 512, &data_profile)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let a = vec![1.0; 64];
         let b = vec![2.0; 64];
@@ -763,7 +765,7 @@ mod tests {
         let result = registry.execute_kernel(&kernel, &a, &b, &mut c, &params);
         assert!(result.is_ok());
 
-        let execution_result = result.unwrap();
+        let execution_result = result.expect("test: operation should succeed");
         assert!(execution_result.success);
         assert!(execution_result.throughput > 0.0);
     }
@@ -783,7 +785,7 @@ mod tests {
 
         let kernel = registry
             .select_optimal_kernel("elementwise", 256, &data_profile)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let a = vec![1.0; 16];
         let b = vec![2.0; 16];
@@ -802,7 +804,9 @@ mod tests {
             let _ = registry.execute_kernel(&kernel, &a, &b, &mut c, &params);
         }
 
-        let stats = registry.get_registry_statistics().unwrap();
+        let stats = registry
+            .get_registry_statistics()
+            .expect("test: get_registry_statistics should succeed");
         assert!(stats.cached_performance_data > 0);
     }
 }

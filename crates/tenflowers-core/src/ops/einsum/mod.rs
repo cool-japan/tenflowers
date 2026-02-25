@@ -31,7 +31,10 @@ pub use utils::{batch_transpose, cache_friendly_trace, compute_outer_product};
 
 // Re-export BLAS functions when available
 #[cfg(any(
-    all(feature = "blas-openblas", feature = "std"),
+    all(
+        any(feature = "blas-openblas", feature = "blas-oxiblas"),
+        feature = "std"
+    ),
     all(feature = "blas-mkl", feature = "std"),
     all(feature = "blas-accelerate", feature = "std")
 ))]

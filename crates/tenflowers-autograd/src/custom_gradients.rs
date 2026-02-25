@@ -283,17 +283,22 @@ mod tests {
     #[test]
     fn test_stop_gradient() {
         let tape = GradientTape::new();
-        let x = tape.watch(Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap());
+        let x = tape.watch(
+            Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+                .expect("test: tensor creation from valid data should succeed"),
+        );
 
         // This should work once the full integration is complete
-        // let y = x.stop_gradient().unwrap();
+        // let y = x.stop_gradient().expect("test: gradient computation should succeed");
         // assert_eq!(y.tensor.as_slice(), x.tensor.as_slice());
     }
 
     #[test]
     fn test_gradient_clipping() {
-        let gradient = Tensor::from_vec(vec![10.0f32, 20.0, 30.0], &[3]).unwrap();
-        let clipped = clip_gradient_norm(&gradient, 5.0).unwrap();
+        let gradient = Tensor::from_vec(vec![10.0f32, 20.0, 30.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let clipped =
+            clip_gradient_norm(&gradient, 5.0).expect("test: gradient computation should succeed");
 
         // The clipped gradient should have a smaller norm
         if let Some(clipped_data) = clipped.as_slice() {

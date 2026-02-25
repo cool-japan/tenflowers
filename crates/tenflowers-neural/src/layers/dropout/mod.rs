@@ -195,6 +195,8 @@ mod tests {
         let input_data = array![[[1.0, 2.0], [3.0, 4.0]]];
         let input = Tensor::from_array(input_data.into_dyn());
 
-        let _ = spatial_dropout.forward(&input).unwrap();
+        let _ = spatial_dropout
+            .forward(&input)
+            .expect("test: forward pass should succeed");
     }
 }

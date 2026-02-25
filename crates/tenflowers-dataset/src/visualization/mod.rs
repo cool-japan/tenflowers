@@ -28,12 +28,15 @@ mod tests {
 
     #[test]
     fn test_sample_preview() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
-        let preview = dataset.sample_preview(2).unwrap();
+        let preview = dataset
+            .sample_preview(2)
+            .expect("test: sample preview should succeed");
 
         assert_eq!(preview.total_samples, 3);
         assert!(preview.samples_shown <= 2);
@@ -42,12 +45,15 @@ mod tests {
 
     #[test]
     fn test_feature_distribution() {
-        let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
-        let distribution = dataset.feature_distribution(None).unwrap();
+        let distribution = dataset
+            .feature_distribution(None)
+            .expect("test: feature distribution should succeed");
 
         assert_eq!(distribution.samples_analyzed, 3);
         assert_eq!(distribution.feature_stats.len(), 2); // 2 feature dimensions
@@ -56,11 +62,15 @@ mod tests {
 
     #[test]
     fn test_class_distribution() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
-        let class_dist = dataset.class_distribution().unwrap();
+        let class_dist = dataset
+            .class_distribution()
+            .expect("test: class distribution should succeed");
 
         assert_eq!(class_dist.total_samples, 2);
         assert!(!class_dist.class_counts.is_empty());
@@ -69,11 +79,15 @@ mod tests {
     #[test]
     fn test_feature_histogram() {
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0, 3.0], &[4])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
-        let histogram = dataset.feature_histogram(0, 3).unwrap();
+        let histogram = dataset
+            .feature_histogram(0, 3)
+            .expect("test: feature histogram should succeed");
 
         assert_eq!(histogram.feature_index, 0);
         assert_eq!(histogram.bin_counts.len(), 3);
@@ -82,25 +96,35 @@ mod tests {
 
     #[test]
     fn test_display_methods() {
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = TensorDataset::new(features, labels);
 
         // Test display methods don't panic
-        let preview = dataset.sample_preview(1).unwrap();
+        let preview = dataset
+            .sample_preview(1)
+            .expect("test: sample preview should succeed");
         let preview_text = preview.display();
         assert!(preview_text.contains("Dataset Sample Preview"));
 
-        let distribution = dataset.feature_distribution(None).unwrap();
+        let distribution = dataset
+            .feature_distribution(None)
+            .expect("test: feature distribution should succeed");
         let dist_text = distribution.display();
         assert!(dist_text.contains("Dataset Distribution Analysis"));
 
-        let class_dist = dataset.class_distribution().unwrap();
+        let class_dist = dataset
+            .class_distribution()
+            .expect("test: class distribution should succeed");
         let class_text = class_dist.display();
         assert!(class_text.contains("Class Distribution"));
 
-        let histogram = dataset.feature_histogram(0, 2).unwrap();
+        let histogram = dataset
+            .feature_histogram(0, 2)
+            .expect("test: feature histogram should succeed");
         let hist_text = histogram.display(10);
         assert!(hist_text.contains("Histogram"));
     }
@@ -134,13 +158,16 @@ mod tests {
 
         let features =
             tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
-                .unwrap();
-        let labels = tenflowers_core::Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3]).unwrap();
+                .expect("test: operation should succeed");
+        let labels = tenflowers_core::Tensor::<f32>::from_vec(vec![0.0, 1.0, 2.0], &[3])
+            .expect("test: tensor creation should succeed");
 
         let dataset = crate::TensorDataset::new(features, labels);
         let transform = AddOneTransform;
 
-        let analysis = dataset.analyze_augmentation_effects(&transform, 2).unwrap();
+        let analysis = dataset
+            .analyze_augmentation_effects(&transform, 2)
+            .expect("test: augmentation analysis should succeed");
 
         assert_eq!(analysis.samples_analyzed, 2);
         assert!(analysis.transform_success_rate > 0.0);
@@ -181,18 +208,23 @@ mod tests {
         }
 
         let sample1 = (
-            tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap(),
-            tenflowers_core::Tensor::<f32>::from_vec(vec![0.0], &[1]).unwrap(),
+            tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2])
+                .expect("test: tensor creation should succeed"),
+            tenflowers_core::Tensor::<f32>::from_vec(vec![0.0], &[1])
+                .expect("test: tensor creation should succeed"),
         );
         let sample2 = (
-            tenflowers_core::Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap(),
-            tenflowers_core::Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap(),
+            tenflowers_core::Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+                .expect("test: tensor creation should succeed"),
+            tenflowers_core::Tensor::<f32>::from_vec(vec![1.0], &[1])
+                .expect("test: tensor creation should succeed"),
         );
 
         let samples = vec![sample1, sample2];
         let transform = MultiplyByTwoTransform;
 
-        let comparisons = DatasetVisualizer::compare_samples(&samples, &transform, 2).unwrap();
+        let comparisons = DatasetVisualizer::compare_samples(&samples, &transform, 2)
+            .expect("test: compare samples should succeed");
 
         assert_eq!(comparisons.len(), 2);
 
@@ -220,14 +252,17 @@ mod tests {
             }
         }
 
-        let features =
-            tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = tenflowers_core::Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = tenflowers_core::Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
 
         let dataset = crate::TensorDataset::new(features, labels);
         let transform = IdentityTransform;
 
-        let analysis = dataset.analyze_augmentation_effects(&transform, 2).unwrap();
+        let analysis = dataset
+            .analyze_augmentation_effects(&transform, 2)
+            .expect("test: augmentation analysis should succeed");
         let display_text = analysis.display();
 
         assert!(display_text.contains("Augmentation Effects Analysis"));

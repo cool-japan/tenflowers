@@ -311,7 +311,7 @@ mod tests {
         let result = BasicOptimizations::apply_constant_folding(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         assert!(stats.memory_reduction >= 0.0);
     }
@@ -326,7 +326,7 @@ mod tests {
         let result = BasicOptimizations::apply_dead_code_elimination(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         // ops_removed and params_removed are unsigned, so >= 0 is always true
     }
@@ -338,7 +338,7 @@ mod tests {
         let result = BasicOptimizations::remove_redundant_operations(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         // ops_removed is unsigned, so >= 0 is always true
     }
@@ -353,7 +353,7 @@ mod tests {
         let result = BasicOptimizations::apply_batch_norm_folding(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
     }
 
@@ -364,7 +364,7 @@ mod tests {
         let result = BasicOptimizations::apply_operation_simplification(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
     }
 
@@ -375,7 +375,7 @@ mod tests {
         let result = BasicOptimizations::apply_algebraic_optimization(&mut model);
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
     }
 }

@@ -518,7 +518,9 @@ mod tests {
             vec![0.6, 0.4], // Medium-high entropy
         ];
 
-        let scores = sampler.calculate_uncertainty_scores(&predictions).unwrap();
+        let scores = sampler
+            .calculate_uncertainty_scores(&predictions)
+            .expect("test: uncertainty scores should succeed");
 
         // Higher entropy should have higher score
         assert!(scores[1] > scores[0]); // 0.5,0.5 > 0.9,0.1
@@ -529,8 +531,10 @@ mod tests {
     fn test_active_learning_dataset() {
         // Create test dataset
         let features =
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4]).unwrap();
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2])
+                .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Create active learning dataset with initial labeled samples
@@ -569,7 +573,7 @@ mod tests {
 
         let scores = sampler
             .calculate_diversity_scores(&features, &DiversityStrategy::Representative)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Points further from center should have higher diversity scores
         assert!(scores[1] > scores[2]); // (2,2) is further from center than (0.1,0.1)
@@ -589,7 +593,9 @@ mod tests {
             vec![0.8, 0.2],   // Medium margin
         ];
 
-        let scores = sampler.calculate_uncertainty_scores(&predictions).unwrap();
+        let scores = sampler
+            .calculate_uncertainty_scores(&predictions)
+            .expect("test: uncertainty scores should succeed");
 
         // Smaller margin should have higher uncertainty score (negative margin)
         assert!(scores[1] > scores[0]); // 0.51,0.49 > 0.9,0.1

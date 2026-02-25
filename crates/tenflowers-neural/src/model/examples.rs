@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_multi_input_model_creation() {
-        let model = create_multi_input_model().unwrap();
+        let model = create_multi_input_model().expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 2);
         assert_eq!(model.num_outputs(), 1);
         assert_eq!(model.name(), Some("MultiInputModel"));
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_multi_output_model_creation() {
-        let model = create_multi_output_model().unwrap();
+        let model = create_multi_output_model().expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 1);
         assert_eq!(model.num_outputs(), 2);
         assert_eq!(model.name(), Some("MultiOutputModel"));
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_shared_layer_model_creation() {
-        let model = create_shared_layer_model().unwrap();
+        let model = create_shared_layer_model().expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 2);
         assert_eq!(model.num_outputs(), 1);
         assert_eq!(model.name(), Some("SiameseModel"));
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_skip_connection_model_creation() {
-        let model = create_skip_connection_model().unwrap();
+        let model = create_skip_connection_model().expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 1);
         assert_eq!(model.num_outputs(), 1);
         assert_eq!(model.name(), Some("SkipConnectionModel"));

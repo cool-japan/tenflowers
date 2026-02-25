@@ -2,7 +2,7 @@
 
 The foundational crate of TenfloweRS, providing core tensor operations, device management, and the computational infrastructure for machine learning in Rust.
 
-> Alpha Release (0.1.0-alpha.1 · 2025-09-27)
+> Release Candidate (0.1.0-rc.1 · 2026-02-12)
 > This crate participates in the first public alpha. Expect API refinements and additional safety/shape checks before 0.1.0 stable. Pin the exact pre-release version if used in downstream experiments.
 
 ## Overview

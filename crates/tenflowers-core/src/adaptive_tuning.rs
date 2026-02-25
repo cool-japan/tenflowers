@@ -454,7 +454,9 @@ mod tests {
             });
 
         assert!(result.is_ok());
-        assert!(result.unwrap().contains("Executed with"));
+        assert!(result
+            .expect("test: operation should succeed")
+            .contains("Executed with"));
     }
 
     #[test]

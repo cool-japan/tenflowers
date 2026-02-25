@@ -624,10 +624,14 @@ mod tests {
         gradients.insert("layer1".to_string(), Tensor::ones(&[10, 20]));
         gradients.insert(
             "layer2".to_string(),
-            Tensor::from_scalar(1e-8f32).broadcast_to(&[5, 10]).unwrap(),
+            Tensor::from_scalar(1e-8f32)
+                .broadcast_to(&[5, 10])
+                .expect("test: type conversion should succeed"),
         );
 
-        let report = analyzer.analyze_gradients(&gradients).unwrap();
+        let report = analyzer
+            .analyze_gradients(&gradients)
+            .expect("test: gradient computation should succeed");
 
         // Should detect vanishing gradients in layer2
         assert!(report.potential_issues.iter().any(|issue| {
@@ -641,7 +645,9 @@ mod tests {
         let analyzer = GradientAnalyzer::<f32>::new(config);
 
         let sparse_tensor = Tensor::zeros(&[10, 10]);
-        let sparsity = analyzer.compute_sparsity_ratio(&sparse_tensor).unwrap();
+        let sparsity = analyzer
+            .compute_sparsity_ratio(&sparse_tensor)
+            .expect("test: sparse operation should succeed");
 
         assert!((sparsity - 1.0).abs() < 1e-6); // Should be fully sparse
     }

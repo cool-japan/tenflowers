@@ -72,7 +72,7 @@ impl CompressionStats {
 /// use tenflowers_autograd::gradient_compression_advanced::topk_sparsification;
 /// use tenflowers_core::Tensor;
 ///
-/// let grad = Tensor::from_vec(vec![0.1f32, -0.5, 0.3, -0.2, 0.05], vec![5])?;
+/// let grad = Tensor::from_vec(vec![0.1f32, -0.5, 0.3, -0.2, 0.05], &[5])?;
 /// let (sparse_grad, indices, stats) = topk_sparsification(&grad, 3, true)?;
 ///
 /// // Keeps: -0.5, 0.3, -0.2 (top 3 by absolute value)
@@ -152,7 +152,7 @@ pub fn topk_sparsification(
 /// use tenflowers_autograd::gradient_compression_advanced::random_k_sparsification;
 /// use tenflowers_core::Tensor;
 ///
-/// let grad = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], vec![4])?;
+/// let grad = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[4])?;
 /// let (sparse_grad, indices, stats) = random_k_sparsification(&grad, 2, Some(42), true)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -235,7 +235,7 @@ pub fn random_k_sparsification(
 /// use tenflowers_autograd::gradient_compression_advanced::uniform_quantization;
 /// use tenflowers_core::Tensor;
 ///
-/// let grad = Tensor::from_vec(vec![0.1f32, 0.5, -0.3, 0.8], vec![4])?;
+/// let grad = Tensor::from_vec(vec![0.1f32, 0.5, -0.3, 0.8], &[4])?;
 /// let (quant_grad, min_val, max_val, stats) = uniform_quantization(&grad, 256)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -326,8 +326,9 @@ pub fn uniform_quantization(
 ///     let grad = Tensor::ones(&[100]);  // Your gradient
 ///
 ///     // Compress with error feedback
-///     let (compressed, stats) = compressor.compress_with_feedback(
+///     let compressed = compressor.compress_with_feedback(
 ///         &grad,
+///         "param0",
 ///         |g| {
 ///             // Your compression function (e.g., Top-K)
 ///             Ok(g.clone())  // Placeholder
@@ -425,7 +426,7 @@ impl Default for ErrorFeedbackCompressor {
 /// use tenflowers_autograd::gradient_compression_advanced::power_law_quantization;
 /// use tenflowers_core::Tensor;
 ///
-/// let grad = Tensor::from_vec(vec![0.001f32, 0.1, 0.5], vec![3])?;
+/// let grad = Tensor::from_vec(vec![0.001f32, 0.1, 0.5], &[3])?;
 /// let (quant_grad, stats) = power_law_quantization(&grad, 256, 0.5)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -498,7 +499,7 @@ pub fn power_law_quantization(
 /// use tenflowers_autograd::gradient_compression_advanced::threshold_sparsification;
 /// use tenflowers_core::Tensor;
 ///
-/// let grad = Tensor::from_vec(vec![0.001f32, 0.1, -0.05, 0.2], vec![4])?;
+/// let grad = Tensor::from_vec(vec![0.001f32, 0.1, -0.05, 0.2], &[4])?;
 /// let (sparse_grad, stats) = threshold_sparsification(&grad, 0.05)?;
 /// // Keeps: 0.1, -0.05, 0.2
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -550,9 +551,11 @@ mod tests {
         grad_data[75] = -2.0;
         grad_data[90] = 1.5;
 
-        let grad = Tensor::from_data(grad_data.clone(), &[100]).unwrap();
+        let grad = Tensor::from_data(grad_data.clone(), &[100])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (sparse_grad, indices, stats) = topk_sparsification(&grad, 5, true).unwrap();
+        let (sparse_grad, indices, stats) =
+            topk_sparsification(&grad, 5, true).expect("test: gradient computation should succeed");
 
         // Should keep only the 5 largest absolute values
         assert_eq!(stats.num_nonzero, 5);
@@ -571,9 +574,11 @@ mod tests {
     #[test]
     fn test_uniform_quantization() {
         let grad_data = vec![0.0f32, 0.5, 1.0];
-        let grad = Tensor::from_data(grad_data, &[3]).unwrap();
+        let grad = Tensor::from_data(grad_data, &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (quant_grad, min_val, max_val, stats) = uniform_quantization(&grad, 256).unwrap();
+        let (quant_grad, min_val, max_val, stats) =
+            uniform_quantization(&grad, 256).expect("test: gradient computation should succeed");
 
         assert_eq!(min_val, 0.0);
         assert_eq!(max_val, 1.0);
@@ -589,14 +594,15 @@ mod tests {
     fn test_error_feedback() {
         let mut compressor = ErrorFeedbackCompressor::new();
 
-        let grad = Tensor::from_data(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+        let grad = Tensor::from_data(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Simple compression that zeros everything
         let compressed = compressor
             .compress_with_feedback(&grad, "param1", |_g| {
                 Tensor::from_data(vec![0.0f32, 0.0, 0.0], &[3])
             })
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // First compression should return zeros
         let compressed_data = compressed.as_slice().expect("tensor should be contiguous");
@@ -604,11 +610,12 @@ mod tests {
 
         // Error accumulator should now contain [1.0, 2.0, 3.0]
         // Next gradient should have this added
-        let grad2 = Tensor::from_data(vec![0.0f32, 0.0, 0.0], &[3]).unwrap();
+        let grad2 = Tensor::from_data(vec![0.0f32, 0.0, 0.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         let compressed2 = compressor
             .compress_with_feedback(&grad2, "param1", |g| Ok(g.clone()))
-            .unwrap();
+            .expect("test: operation should succeed");
 
         let compressed2_data = compressed2.as_slice().expect("tensor should be contiguous");
         // Should recover the lost information
@@ -620,9 +627,11 @@ mod tests {
     #[test]
     fn test_threshold_sparsification() {
         let grad_data = vec![0.001f32, 0.1, -0.05, 0.2, -0.001];
-        let grad = Tensor::from_data(grad_data, &[5]).unwrap();
+        let grad = Tensor::from_data(grad_data, &[5])
+            .expect("test: tensor creation from valid data should succeed");
 
-        let (sparse_grad, stats) = threshold_sparsification(&grad, 0.05).unwrap();
+        let (sparse_grad, stats) = threshold_sparsification(&grad, 0.05)
+            .expect("test: gradient computation should succeed");
 
         // Should keep 3 elements: 0.1, -0.05, 0.2
         assert_eq!(stats.num_nonzero, 3);

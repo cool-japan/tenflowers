@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 // # Second-Order Derivatives Example
 //
 // This example demonstrates computation of second-order derivatives including:

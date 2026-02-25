@@ -561,7 +561,9 @@ mod tests {
         }
 
         // Should not detect drift in stable data
-        assert!(!detector.detect_drift(&errors).unwrap());
+        assert!(!detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
 
         // Add significantly drifted data
         for i in 0..20 {
@@ -569,7 +571,9 @@ mod tests {
         }
 
         // Should detect drift with larger difference
-        assert!(detector.detect_drift(&errors).unwrap());
+        assert!(detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
     }
 
     #[test]
@@ -584,14 +588,18 @@ mod tests {
         }
 
         // Should detect drift
-        assert!(detector.detect_drift(&errors).unwrap());
+        assert!(detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
     }
 
     #[test]
     fn test_online_learning_dataset() {
         // Create test dataset
-        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2]).unwrap();
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let config = OnlineLearningConfig::default();
@@ -599,16 +607,22 @@ mod tests {
 
         // Process samples
         let sample1 = (
-            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![0.0], &[]).unwrap(),
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2])
+                .expect("test: tensor creation should succeed"),
+            Tensor::<f32>::from_vec(vec![0.0], &[]).expect("test: tensor creation should succeed"),
         );
         let sample2 = (
-            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).unwrap(),
-            Tensor::<f32>::from_vec(vec![1.0], &[]).unwrap(),
+            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])
+                .expect("test: tensor creation should succeed"),
+            Tensor::<f32>::from_vec(vec![1.0], &[]).expect("test: tensor creation should succeed"),
         );
 
-        assert!(!online_dataset.process_sample(sample1, 0.1).unwrap());
-        assert!(!online_dataset.process_sample(sample2, 0.15).unwrap());
+        assert!(!online_dataset
+            .process_sample(sample1, 0.1)
+            .expect("test: process sample should succeed"));
+        assert!(!online_dataset
+            .process_sample(sample2, 0.15)
+            .expect("test: process sample should succeed"));
 
         assert_eq!(online_dataset.len(), 2);
         assert_eq!(online_dataset.get_stats().samples_processed, 2);
@@ -624,14 +638,18 @@ mod tests {
             errors.push_back(0.05);
         }
 
-        assert!(!detector.detect_drift(&errors).unwrap());
+        assert!(!detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
 
         // Add high error rate (drift)
         for _ in 0..10 {
             errors.push_back(0.25);
         }
 
-        assert!(detector.detect_drift(&errors).unwrap());
+        assert!(detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
     }
 
     #[test]
@@ -652,6 +670,8 @@ mod tests {
         }
 
         // Should detect drift between different distributions
-        assert!(detector.detect_drift(&errors).unwrap());
+        assert!(detector
+            .detect_drift(&errors)
+            .expect("test: drift detection should succeed"));
     }
 }

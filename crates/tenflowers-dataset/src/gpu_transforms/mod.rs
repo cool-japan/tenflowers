@@ -134,7 +134,7 @@ mod tests {
         // Test GPU context creation through module re-export
         // In test environments, GPU may not be available, which is acceptable
         println!("GPU context integration test - GPU may not be available in test environment");
-        assert!(true); // Placeholder test
+        // Placeholder test - no assertion needed
     }
 
     #[test]

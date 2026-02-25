@@ -403,13 +403,15 @@ mod tests {
         let device = Device::Gpu(0);
         profiler
             .record_operation("matmul", device, Duration::from_millis(10), 1024)
-            .unwrap();
+            .expect("test: operation should succeed");
         profiler
             .record_operation("conv2d", device, Duration::from_millis(5), 512)
-            .unwrap();
+            .expect("test: operation should succeed");
 
         // Get stats
-        let stats = profiler.get_stats().unwrap();
+        let stats = profiler
+            .get_stats()
+            .expect("test: get_stats should succeed");
         assert_eq!(stats.op_count, 2);
         assert!(stats.total_time >= Duration::from_millis(15));
         assert_eq!(stats.peak_memory, 1536); // 1024 + 512
@@ -427,9 +429,11 @@ mod tests {
         let device = Device::Gpu(0);
         profiler
             .record_operation("test_op", device, Duration::from_millis(1), 100)
-            .unwrap();
+            .expect("test: operation should succeed");
 
-        let report = profiler.generate_report().unwrap();
+        let report = profiler
+            .generate_report()
+            .expect("test: generate_report should succeed");
         assert!(report.contains("GPU Profiling Report"));
         assert!(report.contains("test_op"));
         assert!(report.contains("Total Operations: 1"));
@@ -445,9 +449,10 @@ mod tests {
             Ok(42)
         });
 
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("test: operation should succeed"), 42);
 
-        let stats = get_gpu_profiling_stats().unwrap();
+        let stats =
+            get_gpu_profiling_stats().expect("test: get_gpu_profiling_stats should succeed");
         assert!(stats.op_count >= 1);
 
         disable_gpu_profiling();
@@ -461,14 +466,18 @@ mod tests {
         let device = Device::Gpu(0);
         profiler
             .record_operation("test", device, Duration::from_millis(1), 100)
-            .unwrap();
+            .expect("test: operation should succeed");
 
-        let stats_before = profiler.get_stats().unwrap();
+        let stats_before = profiler
+            .get_stats()
+            .expect("test: get_stats should succeed");
         assert_eq!(stats_before.op_count, 1);
 
         profiler.clear();
 
-        let stats_after = profiler.get_stats().unwrap();
+        let stats_after = profiler
+            .get_stats()
+            .expect("test: get_stats should succeed");
         assert_eq!(stats_after.op_count, 0);
     }
 }

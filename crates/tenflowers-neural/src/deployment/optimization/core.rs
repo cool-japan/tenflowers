@@ -375,7 +375,7 @@ mod tests {
         let result = optimizer.optimize_sequential(&model);
 
         assert!(result.is_ok());
-        let (optimized_model, stats) = result.unwrap();
+        let (optimized_model, stats) = result.expect("test: result should be valid");
         assert!(stats.speedup_ratio >= 1.0);
         assert_eq!(optimized_model.parameters().len(), 0);
         assert_eq!(stats.original_size, 16);

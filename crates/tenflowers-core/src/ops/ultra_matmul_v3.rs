@@ -367,14 +367,16 @@ mod tests {
 
     #[test]
     fn test_ultra_matmul_v3_basic() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("test: from_vec should succeed");
 
-        let result = ultra_matmul_v3(&a, &b).unwrap();
+        let result = ultra_matmul_v3(&a, &b).expect("test: ultra_matmul_v3 should succeed");
         assert_eq!(result.shape().dims(), &[2, 2]);
 
         // Should produce same results as standard matmul
-        let expected = crate::ops::matmul(&a, &b).unwrap();
+        let expected = crate::ops::matmul(&a, &b).expect("test: matmul should succeed");
 
         if let (Some(result_data), Some(expected_data)) = (result.as_slice(), expected.as_slice()) {
             for (r, e) in result_data.iter().zip(expected_data.iter()) {
@@ -385,8 +387,10 @@ mod tests {
 
     #[test]
     fn test_matrix_characteristics_analysis() {
-        let a = Tensor::<f32>::from_vec(vec![1.0; 200], &[10, 20]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0; 400], &[20, 20]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0; 200], &[10, 20])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![2.0; 400], &[20, 20])
+            .expect("test: from_vec should succeed");
 
         let characteristics = MatrixCharacteristics::analyze(&a, &b);
         assert_eq!(characteristics.m, 10);
@@ -401,8 +405,10 @@ mod tests {
 
     #[test]
     fn test_outer_product_detection() {
-        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0], &[1, 2]).unwrap();
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3, 1])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::<f32>::from_vec(vec![4.0, 5.0], &[1, 2])
+            .expect("test: from_vec should succeed");
 
         let characteristics = MatrixCharacteristics::analyze(&a, &b);
         matches!(
@@ -411,8 +417,8 @@ mod tests {
         );
 
         // Should work correctly and produce same results as standard matmul
-        let result = ultra_matmul_v3(&a, &b).unwrap();
-        let expected = crate::ops::matmul(&a, &b).unwrap();
+        let result = ultra_matmul_v3(&a, &b).expect("test: ultra_matmul_v3 should succeed");
+        let expected = crate::ops::matmul(&a, &b).expect("test: matmul should succeed");
 
         assert_eq!(result.shape(), expected.shape());
     }
@@ -421,14 +427,18 @@ mod tests {
     fn test_performance_analytics() {
         clear_performance_analytics();
 
-        let a = Tensor::<f32>::from_vec(vec![1.0; 16], &[4, 4]).unwrap();
-        let b = Tensor::<f32>::from_vec(vec![2.0; 16], &[4, 4]).unwrap();
+        let a =
+            Tensor::<f32>::from_vec(vec![1.0; 16], &[4, 4]).expect("test: from_vec should succeed");
+        let b =
+            Tensor::<f32>::from_vec(vec![2.0; 16], &[4, 4]).expect("test: from_vec should succeed");
 
-        let _result = ultra_matmul_v3(&a, &b).unwrap();
+        let _result = ultra_matmul_v3(&a, &b).expect("test: ultra_matmul_v3 should succeed");
 
         let analytics = get_performance_analytics();
         assert!(analytics.is_some());
-        assert!(analytics.unwrap().contains("Total operations tracked"));
+        assert!(analytics
+            .expect("test: operation should succeed")
+            .contains("Total operations tracked"));
     }
 
     #[test]

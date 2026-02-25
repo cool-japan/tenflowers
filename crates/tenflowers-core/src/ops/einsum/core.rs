@@ -8,7 +8,11 @@ use crate::{Result, Tensor, TensorError};
 use scirs2_core::numeric::{One, Zero};
 use std::collections::HashMap;
 
-#[cfg(any(feature = "blas-openblas", feature = "blas-mkl"))]
+#[cfg(any(
+    feature = "blas-openblas",
+    feature = "blas-oxiblas",
+    feature = "blas-mkl"
+))]
 use super::blas::try_blas_optimized_patterns;
 
 use super::cache::execute_contraction_path;

@@ -18,12 +18,16 @@ fn test_batch_norm_inference() {
         ],
         &[1, 2, 2, 4],
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
-    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).unwrap();
-    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).unwrap();
-    let running_mean = Tensor::<f32>::from_vec(vec![4.5, 4.5], &[2]).unwrap();
-    let running_var = Tensor::<f32>::from_vec(vec![5.25, 5.25], &[2]).unwrap();
+    let gamma =
+        Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).expect("test: from_vec should succeed");
+    let beta =
+        Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).expect("test: from_vec should succeed");
+    let running_mean =
+        Tensor::<f32>::from_vec(vec![4.5, 4.5], &[2]).expect("test: from_vec should succeed");
+    let running_var =
+        Tensor::<f32>::from_vec(vec![5.25, 5.25], &[2]).expect("test: from_vec should succeed");
 
     let output = batch_norm(
         &input,
@@ -34,7 +38,7 @@ fn test_batch_norm_inference() {
         1e-5,
         false,
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
     assert_eq!(output.shape().dims(), &[1, 2, 2, 4]);
 
@@ -48,12 +52,16 @@ fn test_batch_norm_inference() {
 
 #[test]
 fn test_layer_norm() {
-    let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+        .expect("test: from_vec should succeed");
 
-    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0], &[3]).unwrap();
-    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0], &[3]).unwrap();
+    let gamma =
+        Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0], &[3]).expect("test: from_vec should succeed");
+    let beta =
+        Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0], &[3]).expect("test: from_vec should succeed");
 
-    let output = layer_norm(&input, &gamma, &beta, &[3], 1e-5).unwrap();
+    let output =
+        layer_norm(&input, &gamma, &beta, &[3], 1e-5).expect("test: layer_norm should succeed");
 
     assert_eq!(output.shape().dims(), &[2, 3]);
 
@@ -82,12 +90,15 @@ fn test_group_norm() {
         ],
         &[1, 4, 2, 2],
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
-    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[4]).unwrap();
-    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0, 0.0], &[4]).unwrap();
+    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0, 1.0, 1.0], &[4])
+        .expect("test: from_vec should succeed");
+    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0, 0.0, 0.0], &[4])
+        .expect("test: from_vec should succeed");
 
-    let output = group_norm(&input, &gamma, &beta, 2, 1e-5).unwrap();
+    let output =
+        group_norm(&input, &gamma, &beta, 2, 1e-5).expect("test: group_norm should succeed");
 
     assert_eq!(output.shape().dims(), &[1, 4, 2, 2]);
 
@@ -111,12 +122,16 @@ fn test_sync_batch_norm_inference() {
         ],
         &[1, 2, 2, 4],
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
-    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).unwrap();
-    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).unwrap();
-    let running_mean = Tensor::<f32>::from_vec(vec![4.5, 4.5], &[2]).unwrap();
-    let running_var = Tensor::<f32>::from_vec(vec![5.25, 5.25], &[2]).unwrap();
+    let gamma =
+        Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).expect("test: from_vec should succeed");
+    let beta =
+        Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).expect("test: from_vec should succeed");
+    let running_mean =
+        Tensor::<f32>::from_vec(vec![4.5, 4.5], &[2]).expect("test: from_vec should succeed");
+    let running_var =
+        Tensor::<f32>::from_vec(vec![5.25, 5.25], &[2]).expect("test: from_vec should succeed");
 
     // In inference mode, should use running statistics (no synchronization needed)
     let (output, updated_mean, updated_var) = sync_batch_norm(
@@ -130,7 +145,7 @@ fn test_sync_batch_norm_inference() {
         None,
         None,
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
     assert_eq!(output.shape().dims(), &[1, 2, 2, 4]);
 
@@ -158,12 +173,16 @@ fn test_sync_batch_norm_training() {
         ],
         &[1, 2, 2, 4],
     )
-    .unwrap();
+    .expect("test: operation should succeed");
 
-    let gamma = Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).unwrap();
-    let beta = Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).unwrap();
-    let running_mean = Tensor::<f32>::from_vec(vec![4.0, 4.0], &[2]).unwrap();
-    let running_var = Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).unwrap();
+    let gamma =
+        Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).expect("test: from_vec should succeed");
+    let beta =
+        Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2]).expect("test: from_vec should succeed");
+    let running_mean =
+        Tensor::<f32>::from_vec(vec![4.0, 4.0], &[2]).expect("test: from_vec should succeed");
+    let running_var =
+        Tensor::<f32>::from_vec(vec![1.0, 1.0], &[2]).expect("test: from_vec should succeed");
 
     // In training mode, should compute batch statistics and update running stats
     // When collective communication is not available, it should fallback to local statistics

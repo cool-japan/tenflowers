@@ -717,13 +717,20 @@ mod tests {
 
     #[test]
     fn test_optimized_add_contiguous() {
-        let a = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let b = Tensor::from_vec(vec![5.0f32, 6.0, 7.0, 8.0], &[4]).unwrap();
+        let a = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+        let b = Tensor::from_vec(vec![5.0f32, 6.0, 7.0, 8.0], &[4])
+            .expect("test: from_vec should succeed");
 
-        let result = optimized_add(&a, &b).unwrap();
+        let result = optimized_add(&a, &b).expect("test: optimized_add should succeed");
         let expected = vec![6.0f32, 8.0, 10.0, 12.0];
 
-        assert_eq!(result.to_vec().unwrap(), expected);
+        assert_eq!(
+            result
+                .to_vec()
+                .expect("test: tensor data should be convertible to vec"),
+            expected
+        );
     }
 
     #[test]
@@ -732,11 +739,13 @@ mod tests {
         let a_data: Vec<f32> = (0..size).map(|i| i as f32).collect();
         let b_data: Vec<f32> = (0..size).map(|i| (i as f32) * 2.0).collect();
 
-        let a = Tensor::from_vec(a_data.clone(), &[size]).unwrap();
-        let b = Tensor::from_vec(b_data.clone(), &[size]).unwrap();
+        let a = Tensor::from_vec(a_data.clone(), &[size]).expect("test: operation should succeed");
+        let b = Tensor::from_vec(b_data.clone(), &[size]).expect("test: operation should succeed");
 
-        let result = optimized_mul(&a, &b).unwrap();
-        let result_data = result.to_vec().unwrap();
+        let result = optimized_mul(&a, &b).expect("test: optimized_mul should succeed");
+        let result_data = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec");
 
         // Check a few elements
         assert_eq!(result_data[0], 0.0); // 0 * 0
@@ -746,13 +755,19 @@ mod tests {
 
     #[test]
     fn test_scalar_broadcast() {
-        let a = Tensor::from_vec(vec![2.0f32], &[1]).unwrap();
-        let b = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+        let a = Tensor::from_vec(vec![2.0f32], &[1]).expect("test: from_vec should succeed");
+        let b =
+            Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).expect("test: from_vec should succeed");
 
-        let result = optimized_add(&a, &b).unwrap();
+        let result = optimized_add(&a, &b).expect("test: optimized_add should succeed");
         let expected = vec![3.0f32, 4.0, 5.0];
 
-        assert_eq!(result.to_vec().unwrap(), expected);
+        assert_eq!(
+            result
+                .to_vec()
+                .expect("test: tensor data should be convertible to vec"),
+            expected
+        );
     }
 
     #[test]
@@ -763,17 +778,17 @@ mod tests {
         let a_data: Vec<f32> = (0..size).map(|i| i as f32).collect();
         let b_data: Vec<f32> = (0..size).map(|i| (i as f32) + 1.0).collect();
 
-        let a = Tensor::from_vec(a_data, &[size]).unwrap();
-        let b = Tensor::from_vec(b_data, &[size]).unwrap();
+        let a = Tensor::from_vec(a_data, &[size]).expect("test: from_vec should succeed");
+        let b = Tensor::from_vec(b_data, &[size]).expect("test: from_vec should succeed");
 
         // Time optimized version
         let start = Instant::now();
-        let _result = optimized_add(&a, &b).unwrap();
+        let _result = optimized_add(&a, &b).expect("test: optimized_add should succeed");
         let optimized_time = start.elapsed();
 
         // Time original version
         let start = Instant::now();
-        let _result = binary::add(&a, &b).unwrap();
+        let _result = binary::add(&a, &b).expect("test: add should succeed");
         let original_time = start.elapsed();
 
         println!("Original time: {:?}", original_time);

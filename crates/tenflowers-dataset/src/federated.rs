@@ -926,7 +926,9 @@ mod tests {
         assert_eq!(privacy_manager.remaining_budget(), 10.0);
         assert!(privacy_manager.can_spend_budget(1.0));
 
-        let noisy_value = privacy_manager.add_noise(5.0, &config, 1.0).unwrap();
+        let noisy_value = privacy_manager
+            .add_noise(5.0, &config, 1.0)
+            .expect("test: operation should succeed");
         assert!(privacy_manager.remaining_budget() < 10.0);
         assert_ne!(noisy_value, 5.0); // Should have noise added
     }
@@ -936,8 +938,10 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let labels_data = vec![0.0, 1.0, 0.0];
-        let features = Tensor::from_vec(features_data, &[3, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[3]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[3, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[3]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let config = ClientConfig {
@@ -959,12 +963,16 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let labels_data = vec![0.0, 1.0, 0.0, 1.0];
-        let features = Tensor::from_vec(features_data, &[4, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[4]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[4, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[4]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let mut partitioner = FederatedPartitioner::new(2, PartitioningStrategy::Uniform, 42);
-        let client_datasets = partitioner.partition(dataset).unwrap();
+        let client_datasets = partitioner
+            .partition(dataset)
+            .expect("test: operation should succeed");
 
         assert_eq!(client_datasets.len(), 2);
 
@@ -977,8 +985,10 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let labels_data = vec![0.0, 1.0, 0.0];
-        let features = Tensor::from_vec(features_data, &[3, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[3]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[3, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[3]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let indices = vec![0, 2]; // Skip index 1
@@ -990,12 +1000,12 @@ mod tests {
         let (features, labels) = client_dataset.get(0).expect("index should be in bounds");
         let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[1.0, 2.0]); // First sample
-        assert_eq!(labels.get(&[]).unwrap(), 0.0);
+        assert_eq!(labels.get(&[]).expect("test: get should succeed"), 0.0);
 
         let (features, labels) = client_dataset.get(1).expect("index should be in bounds");
         let features_slice = features.as_slice().expect("tensor should be contiguous");
         assert_eq!(features_slice, &[5.0, 6.0]); // Third sample (index 2)
-        assert_eq!(labels.get(&[]).unwrap(), 0.0);
+        assert_eq!(labels.get(&[]).expect("test: get should succeed"), 0.0);
     }
 
     #[test]
@@ -1021,7 +1031,9 @@ mod tests {
             ),
         ];
 
-        let aggregated = aggregator.aggregate_statistics(client_stats).unwrap();
+        let aggregated = aggregator
+            .aggregate_statistics(client_stats)
+            .expect("test: operation should succeed");
 
         assert_eq!(aggregated.sample_count, 300);
         assert_eq!(aggregated.feature_means, vec![2.0, 3.0]); // Average of [1,2] and [3,4]
@@ -1037,10 +1049,11 @@ mod tests {
             privacy_budget: 10.0,
         };
 
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: PrivacyConfig = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&config).expect("test: serialization should succeed");
+        let deserialized: PrivacyConfig =
+            serde_json::from_str(&json).expect("test: JSON parsing should succeed");
 
-        assert_eq!(deserialized.enable_dp, true);
+        assert!(deserialized.enable_dp);
         assert_eq!(deserialized.epsilon, 1.0);
     }
 
@@ -1049,8 +1062,10 @@ mod tests {
         // Create test dataset
         let features_data = vec![1.0, 2.0, 3.0, 4.0];
         let labels_data = vec![0.0, 1.0];
-        let features = Tensor::from_vec(features_data, &[2, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[2]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[2, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[2]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         // Test federated client creation
@@ -1067,13 +1082,15 @@ mod tests {
         // Test partitioning
         let features_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let labels_data = vec![0.0, 1.0, 0.0, 1.0];
-        let features = Tensor::from_vec(features_data, &[4, 2]).unwrap();
-        let labels = Tensor::from_vec(labels_data, &[4]).unwrap();
+        let features =
+            Tensor::from_vec(features_data, &[4, 2]).expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::from_vec(labels_data, &[4]).expect("test: tensor creation should succeed");
         let dataset = TensorDataset::new(features, labels);
 
         let client_datasets = dataset
             .partition_federated(2, PartitioningStrategy::Uniform, 42)
-            .unwrap();
+            .expect("test: operation should succeed");
         assert_eq!(client_datasets.len(), 2);
     }
 }

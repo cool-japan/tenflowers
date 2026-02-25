@@ -85,9 +85,12 @@ mod integration_tests {
     #[test]
     fn test_backward_compatibility_basic_ops() {
         // Test that re-exported functions work as before
-        let a = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
-        let b = Tensor::from_vec(vec![3.0f32, 4.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let a = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::from_vec(vec![3.0f32, 4.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test add_backward (from basic_ops)
         let result = add_backward(&grad_output, &a, &b);
@@ -108,20 +111,24 @@ mod integration_tests {
 
     #[test]
     fn test_backward_compatibility_activation_ops() {
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test relu_backward (from activation_ops)
         let result = relu_backward(&grad_output, &input);
         assert!(result.is_ok());
 
         // Test sigmoid_backward (from activation_ops)
-        let sigmoid_output = tenflowers_core::ops::sigmoid(&input).unwrap();
+        let sigmoid_output =
+            tenflowers_core::ops::sigmoid(&input).expect("test: operation should succeed");
         let result = sigmoid_backward(&grad_output, &sigmoid_output);
         assert!(result.is_ok());
 
         // Test tanh_backward (from activation_ops)
-        let tanh_output = tenflowers_core::ops::tanh(&input).unwrap();
+        let tanh_output =
+            tenflowers_core::ops::tanh(&input).expect("test: operation should succeed");
         let result = tanh_backward(&grad_output, &tanh_output);
         assert!(result.is_ok());
 
@@ -133,28 +140,33 @@ mod integration_tests {
     #[test]
     fn test_backward_compatibility_tensor_ops() {
         // Test slice_backward (from tensor_ops)
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let input_shape = &[4];
         let slice_specs = vec![SliceSpec::range(1, 3)];
         let result = slice_backward(&grad_output, input_shape, &slice_specs);
         assert!(result.is_ok());
 
         // Test concat_backward (from tensor_ops)
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
         let input_shapes = vec![vec![2], vec![2]];
         let result = concat_backward(&grad_output, &input_shapes, 0);
         assert!(result.is_ok());
 
         // Test transpose_backward (from tensor_ops)
-        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = transpose_backward(&grad_output, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_backward_compatibility_fused_ops() {
-        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0], &[3]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test fused operations (from fused_ops)
         let result = fused_relu_forward_backward(&input, &grad_output);
@@ -169,23 +181,28 @@ mod integration_tests {
 
     #[test]
     fn test_backward_compatibility_advanced_ops() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test SVD backward (from advanced_ops)
         let result = svd_backward(&grad_output, &input);
         assert!(result.is_ok());
 
         // Test eigendecomposition backward (from advanced_ops)
-        let eigenvalues = Tensor::from_vec(vec![1.0f32, 3.0], &[2]).unwrap();
-        let eigenvectors = Tensor::from_vec(vec![1.0f32, -1.0, 1.0, 1.0], &[2, 2]).unwrap();
+        let eigenvalues = Tensor::from_vec(vec![1.0f32, 3.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let eigenvectors = Tensor::from_vec(vec![1.0f32, -1.0, 1.0, 1.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = eig_backward(&grad_output, &input, &eigenvalues, &eigenvectors);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_backward_compatibility_utility_functions() {
-        let grad = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+        let grad = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let target_shape = tenflowers_core::Shape::new(vec![2, 2]);
 
         // Test unbroadcast (from utils)
@@ -193,7 +210,8 @@ mod integration_tests {
         assert!(result.is_ok());
 
         // Test other utility functions
-        let reference = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
+        let reference = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = zeros_like(&reference);
         assert!(result.is_ok());
 
@@ -223,8 +241,10 @@ mod integration_tests {
         assert_eq!(stats.num_elements, 100);
 
         // Test gradient consistency check
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
-        let gradient = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let gradient = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3])
+            .expect("test: tensor creation from valid data should succeed");
         let tolerance = 1e-6_f32;
 
         let result = check_gradient_consistency(&input, &gradient, tolerance);
@@ -261,7 +281,8 @@ mod integration_tests {
         assert!(result.is_ok());
 
         // Test advanced_ops module (access through re-export)
-        let matrix = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 1.0], &[2, 2]).unwrap();
+        let matrix = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 1.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
         let result = svd_backward(&grad, &matrix);
         assert!(result.is_ok());
     }

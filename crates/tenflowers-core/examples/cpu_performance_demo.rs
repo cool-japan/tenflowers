@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::type_complexity)]
+
 //! CPU Performance Optimization Demo
 //!
 //! This example demonstrates the performance improvements achieved through

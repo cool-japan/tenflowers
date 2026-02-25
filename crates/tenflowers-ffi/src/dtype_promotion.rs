@@ -527,11 +527,15 @@ mod tests {
     fn test_same_dtype_promotion() {
         let promoter = DtypePromoter::new();
         assert_eq!(
-            promoter.promote(DType::Float32, DType::Float32).unwrap(),
+            promoter
+                .promote(DType::Float32, DType::Float32)
+                .expect("test: type conversion should succeed"),
             DType::Float32
         );
         assert_eq!(
-            promoter.promote(DType::Int32, DType::Int32).unwrap(),
+            promoter
+                .promote(DType::Int32, DType::Int32)
+                .expect("test: type conversion should succeed"),
             DType::Int32
         );
     }
@@ -540,11 +544,15 @@ mod tests {
     fn test_int_to_float_promotion() {
         let promoter = DtypePromoter::new();
         assert_eq!(
-            promoter.promote(DType::Int32, DType::Float32).unwrap(),
+            promoter
+                .promote(DType::Int32, DType::Float32)
+                .expect("test: type conversion should succeed"),
             DType::Float32
         );
         assert_eq!(
-            promoter.promote(DType::Float32, DType::Int32).unwrap(),
+            promoter
+                .promote(DType::Float32, DType::Int32)
+                .expect("test: type conversion should succeed"),
             DType::Float32
         );
     }
@@ -553,11 +561,15 @@ mod tests {
     fn test_bool_promotion() {
         let promoter = DtypePromoter::new();
         assert_eq!(
-            promoter.promote(DType::Bool, DType::Int32).unwrap(),
+            promoter
+                .promote(DType::Bool, DType::Int32)
+                .expect("test: type conversion should succeed"),
             DType::Int32
         );
         assert_eq!(
-            promoter.promote(DType::Bool, DType::Float64).unwrap(),
+            promoter
+                .promote(DType::Bool, DType::Float64)
+                .expect("test: type conversion should succeed"),
             DType::Float64
         );
     }
@@ -566,7 +578,12 @@ mod tests {
     fn test_multiple_dtype_promotion() {
         let promoter = DtypePromoter::new();
         let dtypes = vec![DType::UInt8, DType::Int16, DType::Float32];
-        assert_eq!(promoter.promote_multiple(&dtypes).unwrap(), DType::Float32);
+        assert_eq!(
+            promoter
+                .promote_multiple(&dtypes)
+                .expect("test: type conversion should succeed"),
+            DType::Float32
+        );
     }
 
     #[test]

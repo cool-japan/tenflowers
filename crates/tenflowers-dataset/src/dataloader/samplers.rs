@@ -634,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_distributed_sampler() {
-        let sampler = DistributedSampler::new(2, 0).unwrap();
+        let sampler = DistributedSampler::new(2, 0).expect("test: operation should succeed");
         let indices: Vec<usize> = sampler.sample_indices(10).collect();
         // Should get roughly half the indices for rank 0
         assert!(indices.len() >= 4 && indices.len() <= 6);

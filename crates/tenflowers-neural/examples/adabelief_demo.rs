@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 //! AdaBelief Optimizer Demonstration
 //!
 //! This example demonstrates how to use the new AdaBelief optimizer

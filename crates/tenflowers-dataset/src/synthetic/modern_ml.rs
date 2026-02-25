@@ -535,7 +535,8 @@ mod tests {
     #[test]
     fn test_few_shot_dataset_creation() {
         let config = ModernMLConfig::default();
-        let dataset = FewShotDataset::<f32>::new(5, 3, 2, 1, &config).unwrap();
+        let dataset = FewShotDataset::<f32>::new(5, 3, 2, 1, &config)
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.num_episodes(), 5);
 
@@ -551,7 +552,8 @@ mod tests {
     #[test]
     fn test_contrastive_learning_dataset() {
         let config = ModernMLConfig::default();
-        let dataset = ContrastiveLearningDataset::<f32>::new(10, 15, &config).unwrap();
+        let dataset = ContrastiveLearningDataset::<f32>::new(10, 15, &config)
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.positive_pairs().len(), 10);
         assert_eq!(dataset.negative_pairs().len(), 15);
@@ -560,21 +562,29 @@ mod tests {
     #[test]
     fn test_self_supervised_dataset() {
         let config = ModernMLConfig::default();
-        let dataset = SelfSupervisedDataset::<f32>::new(5, 3, &config).unwrap();
+        let dataset = SelfSupervisedDataset::<f32>::new(5, 3, &config)
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 5);
         assert!(!dataset.is_empty());
 
         // Check that each sample has the correct number of augmentations
         for i in 0..dataset.len() {
-            assert_eq!(dataset.get_augmentations(i).unwrap().len(), 3);
+            assert_eq!(
+                dataset
+                    .get_augmentations(i)
+                    .expect("test: operation should succeed")
+                    .len(),
+                3
+            );
         }
     }
 
     #[test]
     fn test_meta_learning_dataset() {
         let config = ModernMLConfig::default();
-        let dataset = MetaLearningDataset::<f32>::new(3, 20, 0.2, &config).unwrap();
+        let dataset = MetaLearningDataset::<f32>::new(3, 20, 0.2, &config)
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.num_tasks(), 3);
 
@@ -599,9 +609,11 @@ mod tests {
     fn test_noise_addition() {
         use scirs2_core::random::{rngs::StdRng, SeedableRng};
 
-        let original = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
+        let original = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
         let mut rng = StdRng::seed_from_u64(42);
-        let noisy = add_noise_to_vector(&original, &mut rng, 0.1).unwrap();
+        let noisy =
+            add_noise_to_vector(&original, &mut rng, 0.1).expect("test: operation should succeed");
 
         assert_eq!(noisy.shape().dims(), &[3]);
 

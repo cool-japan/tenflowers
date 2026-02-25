@@ -572,7 +572,9 @@ mod tests {
 
         let mut env_override = EnvironmentOverride::with_prefix("TEST_");
         let config = GlobalConfig::default();
-        let updated_config = env_override.apply_overrides(config).unwrap();
+        let updated_config = env_override
+            .apply_overrides(config)
+            .expect("test: operation should succeed");
 
         assert_eq!(updated_config.dataset.batch_size, 128);
         assert!(!updated_config.dataset.shuffle);
@@ -591,37 +593,49 @@ mod tests {
         // Test various boolean representations
         env::set_var("TEST_BOOL_TRUE", "true");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_TRUE").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_TRUE")
+                .expect("test: operation should succeed"),
             Some(true)
         );
 
         env::set_var("TEST_BOOL_FALSE", "false");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_FALSE").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_FALSE")
+                .expect("test: operation should succeed"),
             Some(false)
         );
 
         env::set_var("TEST_BOOL_1", "1");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_1").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_1")
+                .expect("test: operation should succeed"),
             Some(true)
         );
 
         env::set_var("TEST_BOOL_0", "0");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_0").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_0")
+                .expect("test: operation should succeed"),
             Some(false)
         );
 
         env::set_var("TEST_BOOL_YES", "yes");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_YES").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_YES")
+                .expect("test: operation should succeed"),
             Some(true)
         );
 
         env::set_var("TEST_BOOL_NO", "no");
         assert_eq!(
-            env_override.parse_bool_env_var("BOOL_NO").unwrap(),
+            env_override
+                .parse_bool_env_var("BOOL_NO")
+                .expect("test: operation should succeed"),
             Some(false)
         );
 
@@ -646,7 +660,9 @@ mod tests {
 
         let mut env_override = EnvironmentOverride::with_prefix("TEST_");
         let config = GlobalConfig::default();
-        let updated_config = env_override.apply_overrides(config).unwrap();
+        let updated_config = env_override
+            .apply_overrides(config)
+            .expect("test: operation should succeed");
 
         assert_eq!(updated_config.performance.num_threads, 16);
         assert!(!updated_config.performance.enable_mmap);

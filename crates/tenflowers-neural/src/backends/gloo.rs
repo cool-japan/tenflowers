@@ -461,7 +461,9 @@ mod tests {
     fn test_gloo_group_creation() {
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -478,7 +480,9 @@ mod tests {
     fn test_gloo_all_reduce() {
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -488,7 +492,9 @@ mod tests {
             backend: CommunicationBackend::Gloo,
         };
 
-        backend.create_group(&group).unwrap();
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[100, 50]);
         let result = backend.all_reduce_f32(&tensor, &group, ReductionOp::Sum);
@@ -500,7 +506,9 @@ mod tests {
     fn test_gloo_all_gather() {
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -510,20 +518,24 @@ mod tests {
             backend: CommunicationBackend::Gloo,
         };
 
-        backend.create_group(&group).unwrap();
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[50]);
         let result = backend.all_gather_f32(&tensor, &group);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 4);
+        assert_eq!(result.expect("test: result should be valid").len(), 4);
     }
 
     #[test]
     fn test_gloo_broadcast() {
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
-        backend.initialize(&config).unwrap();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
 
         let group = CommunicationGroup {
             group_id: "test".to_string(),
@@ -533,7 +545,9 @@ mod tests {
             backend: CommunicationBackend::Gloo,
         };
 
-        backend.create_group(&group).unwrap();
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[25, 25]);
         let result = backend.broadcast_f32(&tensor, 0, &group);

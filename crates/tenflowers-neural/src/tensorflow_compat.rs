@@ -491,9 +491,9 @@ mod tests {
 
     #[test]
     fn test_create_temp_saved_model_structure() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let model_dir = temp_dir.path().join("test_model");
-        fs::create_dir_all(&model_dir).unwrap();
+        fs::create_dir_all(&model_dir).expect("test: directory creation should succeed");
 
         // Create a dummy saved_model.pbtxt file
         let pbtxt_content = r#"
@@ -504,13 +504,14 @@ meta_graphs {
   }
 }
 "#;
-        fs::write(model_dir.join("saved_model.pbtxt"), pbtxt_content).unwrap();
+        fs::write(model_dir.join("saved_model.pbtxt"), pbtxt_content)
+            .expect("test: file write should succeed");
 
         let loader = SavedModelLoader::new();
         let result = loader.load_saved_model(&model_dir);
         assert!(result.is_ok());
 
-        let saved_model = result.unwrap();
+        let saved_model = result.expect("test: result should be valid");
         assert_eq!(saved_model.metadata.tensorflow_version, "2.8.0");
     }
 
@@ -544,7 +545,7 @@ meta_graphs {
         let result = loader.convert_to_sequential(&saved_model);
         assert!(result.is_ok());
 
-        let _model = result.unwrap();
+        let _model = result.expect("test: result should be valid");
         // Model created successfully (parameters length is unsigned, so >= 0 is always true)
     }
 
@@ -563,7 +564,7 @@ meta_graphs {
 
         let result = loader.convert_operation_to_layer(&matmul_op, &variables);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_some());
+        assert!(result.expect("test: result should be valid").is_some());
 
         let relu_op = Operation {
             name: "relu1".to_string(),
@@ -575,7 +576,7 @@ meta_graphs {
 
         let result = loader.convert_operation_to_layer(&relu_op, &variables);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none()); // ReLU is handled separately
+        assert!(result.expect("test: result should be valid").is_none()); // ReLU is handled separately
     }
 
     #[test]

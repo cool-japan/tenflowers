@@ -121,9 +121,35 @@ where
         });
     }
 
-    // For now, fall back to CPU implementation
-    // TODO: Implement actual GPU reduction kernels
-    super::statistical::reduce_axis_cpu(tensor, axis, op, keep_dims)
+    // Check if tensor is on GPU
+    if !tensor.device().is_gpu() {
+        // CPU fallback
+        return super::statistical::reduce_axis_cpu(tensor, axis, op, keep_dims);
+    }
+
+    // Use GPU execution
+    let gpu_op = super::gpu_execution::GpuReductionOp::from(op);
+    let result = super::gpu_execution::execute_gpu_reduction(tensor, axis, gpu_op, keep_dims)?;
+
+    // Handle special cases (StdDev needs additional sqrt)
+    match op {
+        ReductionOp::StdDev => {
+            // StdDev = sqrt(Variance)
+            result.sqrt()
+        }
+        ReductionOp::L2Norm => {
+            // L2Norm = sqrt(sum of squares)
+            // Note: This requires preprocessing (abs values before reduction)
+            // For now, use CPU fallback for L1/L2 norms
+            super::statistical::reduce_axis_cpu(tensor, axis, op, keep_dims)
+        }
+        ReductionOp::L1Norm => {
+            // L1Norm = sum of abs values
+            // Note: This requires preprocessing (abs values before reduction)
+            super::statistical::reduce_axis_cpu(tensor, axis, op, keep_dims)
+        }
+        _ => Ok(result),
+    }
 }
 
 /// Perform GPU full reduction (reduce all elements)
@@ -140,9 +166,29 @@ where
         + scirs2_core::num_traits::ops::mul_add::MulAdd
         + scirs2_core::ndarray::ScalarOperand,
 {
-    // For now, fall back to CPU implementation
-    // TODO: Implement actual GPU reduction kernels
-    super::statistical::reduce_all_cpu(tensor, op)
+    // Check if tensor is on GPU
+    if !tensor.device().is_gpu() {
+        // CPU fallback
+        return super::statistical::reduce_all_cpu(tensor, op);
+    }
+
+    // For full reduction, reduce along all axes sequentially
+    // Start with axis 0, then reduce the result along axis 0 again (since dimensions shift)
+    let mut result = tensor.clone();
+    let rank = tensor.shape().rank();
+
+    for _ in 0..rank {
+        result = gpu_reduce_axis(&result, 0, op, false)?;
+    }
+
+    // Extract scalar value
+    let data = result.data();
+    if data.is_empty() {
+        return Err(TensorError::invalid_operation_simple(
+            "Reduction produced empty result".to_string(),
+        ));
+    }
+    Ok(data[0])
 }
 
 /// GPU sum reduction along axis

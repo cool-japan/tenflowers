@@ -532,8 +532,10 @@ mod tests {
         let tape = GradientTape::new();
 
         // Many inputs, few outputs -> reverse mode
-        let x = Tensor::<f32>::from_vec(vec![1.0; 100], &[100]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0; 100], &[100])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 
@@ -547,8 +549,10 @@ mod tests {
     fn test_complexity_estimation() {
         let tape = GradientTape::new();
 
-        let x = Tensor::<f32>::from_vec(vec![1.0; 10], &[10]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0; 10], &[10])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 
@@ -594,8 +598,10 @@ mod tests {
         let tape = GradientTape::new();
 
         // Small problem - should prefer forward-over-reverse for Hessian
-        let x = Tensor::<f32>::from_vec(vec![1.0; 5], &[5]).unwrap();
-        let y = Tensor::<f32>::from_vec(vec![2.0], &[1]).unwrap();
+        let x = Tensor::<f32>::from_vec(vec![1.0; 5], &[5])
+            .expect("test: tensor creation from valid data should succeed");
+        let y = Tensor::<f32>::from_vec(vec![2.0], &[1])
+            .expect("test: tensor creation from valid data should succeed");
         let x_tracked = tape.watch(x);
         let y_tracked = tape.watch(y);
 

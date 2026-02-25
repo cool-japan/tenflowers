@@ -5,9 +5,10 @@ mod tests {
 
     #[test]
     fn test_relu() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = relu(&input).unwrap();
+        let output = relu(&input).expect("test: relu should succeed");
 
         if let Some(data) = output.as_slice() {
             assert_eq!(data, &[0.0, 0.0, 0.0, 1.0, 2.0]);
@@ -16,9 +17,10 @@ mod tests {
 
     #[test]
     fn test_sigmoid() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = sigmoid(&input).unwrap();
+        let output = sigmoid(&input).expect("test: sigmoid should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values
@@ -32,9 +34,10 @@ mod tests {
 
     #[test]
     fn test_tanh() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = tanh(&input).unwrap();
+        let output = tanh(&input).expect("test: tanh should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values
@@ -48,9 +51,10 @@ mod tests {
 
     #[test]
     fn test_softmax_1d() {
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
 
-        let output = softmax(&input, None).unwrap();
+        let output = softmax(&input, None).expect("test: softmax should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check that it sums to 1
@@ -65,10 +69,11 @@ mod tests {
 
     #[test]
     fn test_softmax_2d() {
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: from_vec should succeed");
 
         // Softmax along last axis (axis=1)
-        let output = softmax(&input, Some(1)).unwrap();
+        let output = softmax(&input, Some(1)).expect("test: operation should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check that each row sums to 1
@@ -79,7 +84,7 @@ mod tests {
         }
 
         // Softmax along first axis (axis=0)
-        let output = softmax(&input, Some(0)).unwrap();
+        let output = softmax(&input, Some(0)).expect("test: operation should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check that each column sums to 1
@@ -94,9 +99,10 @@ mod tests {
 
     #[test]
     fn test_relu_2d() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], &[2, 3]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], &[2, 3])
+            .expect("test: from_vec should succeed");
 
-        let output = relu(&input).unwrap();
+        let output = relu(&input).expect("test: relu should succeed");
 
         if let Some(data) = output.as_slice() {
             assert_eq!(data, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0]);
@@ -105,9 +111,10 @@ mod tests {
 
     #[test]
     fn test_gelu() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = gelu(&input).unwrap();
+        let output = gelu(&input).expect("test: gelu should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values for GELU
@@ -121,9 +128,10 @@ mod tests {
 
     #[test]
     fn test_swish() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = swish(&input).unwrap();
+        let output = swish(&input).expect("test: swish should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values for Swish
@@ -137,9 +145,10 @@ mod tests {
 
     #[test]
     fn test_mish() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = mish(&input).unwrap();
+        let output = mish(&input).expect("test: mish should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values for Mish
@@ -154,9 +163,10 @@ mod tests {
 
     #[test]
     fn test_elu() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = elu(&input, 1.0).unwrap();
+        let output = elu(&input, 1.0).expect("test: elu should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check values for ELU with alpha=1.0
@@ -170,9 +180,10 @@ mod tests {
 
     #[test]
     fn test_leaky_relu() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = leaky_relu(&input, 0.01).unwrap();
+        let output = leaky_relu(&input, 0.01).expect("test: leaky_relu should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check values for LeakyReLU with alpha=0.01
@@ -186,9 +197,10 @@ mod tests {
 
     #[test]
     fn test_hard_swish() {
-        let input = Tensor::<f32>::from_vec(vec![-3.0, -1.5, 0.0, 1.5, 3.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-3.0, -1.5, 0.0, 1.5, 3.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = hard_swish(&input).unwrap();
+        let output = hard_swish(&input).expect("test: hard_swish should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check values for HardSwish
@@ -203,10 +215,12 @@ mod tests {
 
     #[test]
     fn test_prelu_scalar() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let alpha = Tensor::<f32>::from_vec(vec![0.1], &[1]).unwrap();
-        let output = prelu(&input, &alpha).unwrap();
+        let alpha =
+            Tensor::<f32>::from_vec(vec![0.1], &[1]).expect("test: from_vec should succeed");
+        let output = prelu(&input, &alpha).expect("test: prelu should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check values for PReLU with alpha=0.1
@@ -228,10 +242,11 @@ mod tests {
             ],
             &[1, 2, 2],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
-        let alpha = Tensor::<f32>::from_vec(vec![0.1, 0.2], &[2]).unwrap();
-        let output = prelu(&input, &alpha).unwrap();
+        let alpha =
+            Tensor::<f32>::from_vec(vec![0.1, 0.2], &[2]).expect("test: from_vec should succeed");
+        let output = prelu(&input, &alpha).expect("test: prelu should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check values for channel-wise PReLU
@@ -244,10 +259,10 @@ mod tests {
 
     #[test]
     fn test_relu_f32_optimized() {
-        let input =
-            Tensor::<f32>::from_vec(vec![-5.0, -2.0, -1.0, 0.0, 1.0, 2.0, 5.0], &[7]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-5.0, -2.0, -1.0, 0.0, 1.0, 2.0, 5.0], &[7])
+            .expect("test: from_vec should succeed");
 
-        let output = relu_f32(&input).unwrap();
+        let output = relu_f32(&input).expect("test: relu_f32 should succeed");
 
         if let Some(data) = output.as_slice() {
             assert_eq!(data, &[0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 5.0]);
@@ -256,9 +271,10 @@ mod tests {
 
     #[test]
     fn test_sigmoid_f32_optimized() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = sigmoid_f32(&input).unwrap();
+        let output = sigmoid_f32(&input).expect("test: sigmoid_f32 should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values
@@ -272,9 +288,10 @@ mod tests {
 
     #[test]
     fn test_gelu_f32_optimized() {
-        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: from_vec should succeed");
 
-        let output = gelu_f32(&input).unwrap();
+        let output = gelu_f32(&input).expect("test: gelu_f32 should succeed");
 
         if let Some(data) = output.as_slice() {
             // Check approximate values for GELU
@@ -293,12 +310,13 @@ mod tests {
         let input_data: Vec<f32> = (0..size)
             .map(|i| (i as f32 - size as f32 / 2.0) / 1000.0)
             .collect();
-        let input = Tensor::<f32>::from_vec(input_data, &[size]).unwrap();
+        let input =
+            Tensor::<f32>::from_vec(input_data, &[size]).expect("test: from_vec should succeed");
 
         // Test that optimized functions complete without error on large inputs
-        let relu_result = relu_f32(&input).unwrap();
-        let sigmoid_result = sigmoid_f32(&input).unwrap();
-        let gelu_result = gelu_f32(&input).unwrap();
+        let relu_result = relu_f32(&input).expect("test: relu_f32 should succeed");
+        let sigmoid_result = sigmoid_f32(&input).expect("test: sigmoid_f32 should succeed");
+        let gelu_result = gelu_f32(&input).expect("test: gelu_f32 should succeed");
 
         // Basic sanity checks
         assert_eq!(relu_result.shape().dims(), &[size]);
@@ -312,11 +330,12 @@ mod tests {
 
         reset_activation_counters();
 
-        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let input = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
 
         // Perform some activations
-        let _relu_out = relu_f32(&input).unwrap();
-        let _sigmoid_out = sigmoid_f32(&input).unwrap();
+        let _relu_out = relu_f32(&input).expect("test: relu_f32 should succeed");
+        let _sigmoid_out = sigmoid_f32(&input).expect("test: sigmoid_f32 should succeed");
 
         // Get performance report
         let report = get_activation_performance_report();
@@ -332,7 +351,7 @@ mod tests {
             vec![f32::NEG_INFINITY, -1000.0, 0.0, 1000.0, f32::INFINITY],
             &[5],
         )
-        .unwrap();
+        .expect("test: operation should succeed");
 
         // These should not panic and should handle edge cases gracefully
         let relu_result = relu(&extreme_input);

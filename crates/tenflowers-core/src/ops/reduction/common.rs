@@ -22,9 +22,9 @@ use crate::{Result, TensorError};
 /// ```
 /// use tenflowers_core::ops::reduction::normalize_axis;
 /// // For a 3D tensor (rank = 3):
-/// assert_eq!(normalize_axis(0, 3).unwrap(), 0);  // First axis
-/// assert_eq!(normalize_axis(-1, 3).unwrap(), 2); // Last axis
-/// assert_eq!(normalize_axis(-3, 3).unwrap(), 0); // First axis (negative)
+/// assert_eq!(normalize_axis(0, 3).expect("normalize_axis should succeed"), 0);  // First axis
+/// assert_eq!(normalize_axis(-1, 3).expect("normalize_axis should succeed"), 2); // Last axis
+/// assert_eq!(normalize_axis(-3, 3).expect("normalize_axis should succeed"), 0); // First axis (negative)
 ///
 /// // Out of range examples:
 /// assert!(normalize_axis(3, 3).is_err());  // Too large

@@ -507,62 +507,74 @@ mod tests {
 
     #[test]
     fn test_fused_tanh_forward_backward() {
-        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![0.0f32, 1.0, -1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = fused_tanh_forward_backward(&input, &grad_output);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_fused_relu_forward_backward() {
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0, 2.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = fused_relu_forward_backward(&input, &grad_output);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_fused_sigmoid_forward_backward() {
-        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0, 1.0], &[5]).unwrap();
+        let input = Tensor::from_vec(vec![-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0, 1.0, 1.0], &[5])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = fused_sigmoid_forward_backward(&input, &grad_output);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_fused_gelu_forward_backward() {
-        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3]).unwrap();
-        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![-1.0f32, 0.0, 1.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 1.0, 1.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = fused_gelu_forward_backward(&input, &grad_output);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_batch_fused_activations() {
-        let input1 = Tensor::from_vec(vec![1.0f32, 2.0], &[2]).unwrap();
-        let input2 = Tensor::from_vec(vec![-1.0f32, 0.0], &[2]).unwrap();
-        let grad1 = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
-        let grad2 = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
+        let input1 = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let input2 = Tensor::from_vec(vec![-1.0f32, 0.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad1 = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad2 = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let inputs = vec![&input1, &input2];
         let grad_outputs = vec![&grad1, &grad2];
@@ -572,7 +584,7 @@ mod tests {
             batch_fused_activations_forward_backward(&inputs, &grad_outputs, &activation_types);
         assert!(result.is_ok());
 
-        let results = result.unwrap();
+        let results = result.expect("test: operation result should be valid");
         assert_eq!(results.len(), 2);
 
         for (output, grad_input) in results {
@@ -583,21 +595,25 @@ mod tests {
 
     #[test]
     fn test_fused_log_softmax_forward_backward() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3], &[3])
+            .expect("test: tensor creation from valid data should succeed");
 
         let result = fused_log_softmax_forward_backward(&input, &grad_output, -1);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
     }
 
     #[test]
     fn test_batch_fused_activations_unsupported() {
-        let input = Tensor::from_vec(vec![1.0f32], &[1]).unwrap();
-        let grad = Tensor::from_vec(vec![1.0f32], &[1]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad = Tensor::from_vec(vec![1.0f32], &[1])
+            .expect("test: tensor creation from valid data should succeed");
 
         let inputs = vec![&input];
         let grad_outputs = vec![&grad];
@@ -623,12 +639,18 @@ mod tests {
     #[test]
     fn test_fused_batch_norm_interface() {
         // Test that the function compiles and has correct interface
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-        let scale = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
-        let bias = Tensor::from_vec(vec![0.0f32, 0.0], &[2]).unwrap();
-        let running_mean = Tensor::from_vec(vec![0.0f32, 0.0], &[2]).unwrap();
-        let running_var = Tensor::from_vec(vec![1.0f32, 1.0], &[2]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let scale = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let bias = Tensor::from_vec(vec![0.0f32, 0.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let running_mean = Tensor::from_vec(vec![0.0f32, 0.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let running_var = Tensor::from_vec(vec![1.0f32, 1.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
 
         let config = BatchNormConfig {
             epsilon: 1e-5_f32,
@@ -647,7 +669,8 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let (output, grad_input, grad_scale, grad_bias) = result.unwrap();
+        let (output, grad_input, grad_scale, grad_bias) =
+            result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
         assert_eq!(grad_scale.shape().dims(), scale.shape().dims());
@@ -656,14 +679,16 @@ mod tests {
 
     #[test]
     fn test_fused_dropout_interface() {
-        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[4]).unwrap();
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![0.1f32, 0.2, 0.3, 0.4], &[4])
+            .expect("test: tensor creation from valid data should succeed");
 
         // Test inference mode
         let result = fused_dropout_forward_backward(&input, &grad_output, 0.5, false, None);
         assert!(result.is_ok());
 
-        let (output, grad_input) = result.unwrap();
+        let (output, grad_input) = result.expect("test: gradient computation should succeed");
         assert_eq!(output.shape().dims(), input.shape().dims());
         assert_eq!(grad_input.shape().dims(), input.shape().dims());
 

@@ -781,7 +781,7 @@ mod tests {
 
         let script = benchmark
             .generate_tensorflow_gpu_script("MatMul", &[vec![1024, 1024], vec![1024, 1024]])
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert!(script.contains("tf.linalg.matmul"));
         assert!(script.contains("tf.device('/GPU:0')"));
@@ -810,7 +810,7 @@ mod tests {
 
         let script = benchmark
             .generate_pytorch_gpu_script("Add", &[vec![1000000], vec![1000000]])
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert!(script.contains("torch.add"));
         assert!(script.contains("torch.cuda.is_available"));

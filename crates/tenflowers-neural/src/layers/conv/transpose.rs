@@ -973,7 +973,14 @@ mod tests {
 
         // Check bias is present
         assert!(conv.bias.is_some());
-        assert_eq!(conv.bias.as_ref().unwrap().shape().dims(), &[6]);
+        assert_eq!(
+            conv.bias
+                .as_ref()
+                .expect("test: bias should exist")
+                .shape()
+                .dims(),
+            &[6]
+        );
     }
 
     #[test]
@@ -1009,14 +1016,15 @@ mod tests {
 
         // Create a simple input tensor: [batch=1, channels=2, height=4, width=4]
         let input_data = vec![1.0f32; 2 * 4 * 4];
-        let input = tenflowers_core::Tensor::from_vec(input_data, &[1, 2, 4, 4]).unwrap();
+        let input = tenflowers_core::Tensor::from_vec(input_data, &[1, 2, 4, 4])
+            .expect("test: tensor creation should succeed");
 
         // Forward pass should work without errors
         let output = conv.forward(&input);
         assert!(output.is_ok());
 
         // Check output shape is reasonable (approximate due to fractional stride)
-        let output_tensor = output.unwrap();
+        let output_tensor = output.expect("test: operation should succeed");
         let output_shape = output_tensor.shape().dims();
         assert_eq!(output_shape[0], 1); // batch
         assert_eq!(output_shape[1], 4); // out_channels

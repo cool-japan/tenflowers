@@ -171,16 +171,20 @@ mod tests {
         let view = StridedView::new(0, vec![2, 3, 4], vec![48, 16, 4], 4);
 
         // Test transpose
-        let transposed = view.transpose(&[2, 0, 1]).unwrap();
+        let transposed = view
+            .transpose(&[2, 0, 1])
+            .expect("test: transpose should succeed");
         assert_eq!(transposed.shape, vec![4, 2, 3]);
 
         // Test reshape
-        let reshaped = view.reshape(&[6, 4]).unwrap();
+        let reshaped = view.reshape(&[6, 4]).expect("test: reshape should succeed");
         assert_eq!(reshaped.shape, vec![6, 4]);
 
         // Test slice
         let view_2d = StridedView::new(0, vec![4, 4], vec![16, 4], 4);
-        let sliced = view_2d.slice(&[(1, 3), (0, 2)]).unwrap();
+        let sliced = view_2d
+            .slice(&[(1, 3), (0, 2)])
+            .expect("test: operation should succeed");
         assert_eq!(sliced.shape, vec![2, 2]);
     }
 
@@ -207,7 +211,9 @@ mod tests {
         monitor.record_operation_time("test_op", Duration::from_millis(100));
         monitor.record_operation_time("test_op", Duration::from_millis(200));
 
-        let avg_time = monitor.get_average_time("test_op").unwrap();
+        let avg_time = monitor
+            .get_average_time("test_op")
+            .expect("test: get_average_time should succeed");
         assert_eq!(avg_time, Duration::from_millis(150));
 
         // Test memory tracking
@@ -311,7 +317,9 @@ mod tests {
 
         monitor.record_kernel_occupancy(stats);
 
-        let avg_occupancy = monitor.get_average_kernel_occupancy("test_kernel").unwrap();
+        let avg_occupancy = monitor
+            .get_average_kernel_occupancy("test_kernel")
+            .expect("test: get_average_kernel_occupancy should succeed");
         assert_eq!(avg_occupancy, 85.0);
 
         let occupancy_report = monitor.generate_occupancy_report();

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use scirs2_core::ndarray::Array2;
 use std::collections::HashMap;
 use std::fs;

@@ -369,7 +369,9 @@ mod tests {
         monitor.record_operation_time("test_op", Duration::from_millis(100));
         monitor.record_operation_time("test_op", Duration::from_millis(200));
 
-        let avg_time = monitor.get_average_time("test_op").unwrap();
+        let avg_time = monitor
+            .get_average_time("test_op")
+            .expect("test: get_average_time should succeed");
         assert_eq!(avg_time, Duration::from_millis(150));
 
         // Test memory tracking
@@ -399,7 +401,9 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
 
-        let avg_time = monitor.get_average_time("sleep_test").unwrap();
+        let avg_time = monitor
+            .get_average_time("sleep_test")
+            .expect("test: get_average_time should succeed");
         assert!(avg_time >= Duration::from_millis(9)); // Allow some variance
     }
 
@@ -450,7 +454,9 @@ mod tests {
 
         monitor.record_kernel_occupancy(stats);
 
-        let avg_occupancy = monitor.get_average_kernel_occupancy("test_kernel").unwrap();
+        let avg_occupancy = monitor
+            .get_average_kernel_occupancy("test_kernel")
+            .expect("test: get_average_kernel_occupancy should succeed");
         assert_eq!(avg_occupancy, 85.0);
 
         let occupancy_report = monitor.generate_occupancy_report();

@@ -41,11 +41,9 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create a simple feedforward network
-//! let mut model = Sequential::new();
-//! model.add(Dense::new(784, 128)?);
-//! model.add_activation(ActivationFunction::ReLU);
-//! model.add(Dense::new(128, 10)?);
-//! model.add_activation(ActivationFunction::Softmax);
+//! let model = Sequential::<f32>::new(vec![])
+//!     .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
+//!     .add(Box::new(Dense::new(128, 10, true).with_activation("sigmoid".to_string())));
 //!
 //! // Forward pass
 //! let input = Tensor::zeros(&[32, 784]);
@@ -60,19 +58,16 @@
 //! use tenflowers::prelude::*;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # let mut model = Sequential::new();
-//! # let x_train = Tensor::zeros(&[100, 10]);
-//! # let y_train = Tensor::zeros(&[100, 3]);
-//! // Quick training
-//! let results = quick_train(
-//!     model,
-//!     &x_train,
-//!     &y_train,
-//!     Box::new(SGD::new(0.01)),
-//!     categorical_cross_entropy,
-//!     10,  // epochs
-//!     32,  // batch_size
-//! )?;
+//! // Create model and data
+//! let model = Sequential::<f32>::new(vec![])
+//!     .add(Box::new(Dense::new(10, 64, true).with_activation("relu".to_string())))
+//!     .add(Box::new(Dense::new(64, 3, true)));
+//! let x_train = Tensor::<f32>::zeros(&[100, 10]);
+//! let y_train = Tensor::<f32>::zeros(&[100, 3]);
+//!
+//! // Create optimizer and loss function
+//! let optimizer = SGD::<f32>::new(0.01);
+//! // Training loop would go here using Trainer
 //! # Ok(())
 //! # }
 //! ```
@@ -86,8 +81,8 @@
 //! # #[cfg(feature = "gpu")]
 //! # {
 //! // Move computation to GPU
-//! let device = Device::gpu(0)?;
-//! let gpu_tensor = Tensor::<f32>::zeros(&[1000, 1000]).to_device(&device)?;
+//! let device = Device::try_gpu(0)?;
+//! let gpu_tensor = Tensor::<f32>::zeros(&[1000, 1000]).to_device(device)?;
 //! let result = ops::matmul(&gpu_tensor, &gpu_tensor)?;
 //! # }
 //! # Ok(())
@@ -117,23 +112,24 @@
 //!
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
+//! use tenflowers::dataset::RandomSampler;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Load dataset
-//! let dataset = CsvDatasetBuilder::new("data.csv")
+//! let dataset: CsvDataset<f32> = CsvDatasetBuilder::new()
+//!     .from_path("data.csv")
 //!     .has_header(true)
 //!     .build()?;
 //!
-//! // Create data loader with batching
+//! // Create data loader with batching and shuffling
 //! let loader = DataLoaderBuilder::new(dataset)
 //!     .batch_size(32)
-//!     .shuffle(true)
 //!     .num_workers(4)
-//!     .build()?;
+//!     .build(RandomSampler::new());
 //!
 //! // Iterate through batches
 //! for batch in loader.iter() {
-//!     let (features, labels) = batch?;
+//!     let (features, labels) = batch?.into_collated()?;
 //!     // Training step...
 //! }
 //! # Ok(())

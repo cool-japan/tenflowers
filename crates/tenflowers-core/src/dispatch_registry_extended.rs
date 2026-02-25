@@ -769,7 +769,9 @@ mod tests {
         initialize_extended_registrations();
 
         let input = Tensor::from_array(array![0.0f32, 1.0, -1.0].into_dyn());
-        let result = F32_REGISTRY.dispatch_unary("tanh", &input).unwrap();
+        let result = F32_REGISTRY
+            .dispatch_unary("tanh", &input)
+            .expect("test: dispatch_unary should succeed");
 
         assert!((result.data()[0] - 0.0).abs() < 1e-6);
         assert!((result.data()[1] - 0.7616).abs() < 1e-3);
@@ -781,7 +783,9 @@ mod tests {
         initialize_extended_registrations();
 
         let input = Tensor::from_array(array![-1.0f32, 0.0, 1.0, -5.0, 10.0].into_dyn());
-        let result = F32_REGISTRY.dispatch_unary("relu", &input).unwrap();
+        let result = F32_REGISTRY
+            .dispatch_unary("relu", &input)
+            .expect("test: dispatch_unary should succeed");
 
         assert_eq!(result.data(), &[0.0f32, 0.0, 1.0, 0.0, 10.0]);
     }
@@ -793,13 +797,19 @@ mod tests {
         let a = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
         let b = Tensor::from_array(array![2.0f32, 2.0, 1.0].into_dyn());
 
-        let less = F32_REGISTRY.dispatch_binary("less", &a, &b).unwrap();
+        let less = F32_REGISTRY
+            .dispatch_binary("less", &a, &b)
+            .expect("test: dispatch_binary should succeed");
         assert_eq!(less.data(), &[1.0f32, 0.0, 0.0]);
 
-        let equal = F32_REGISTRY.dispatch_binary("equal", &a, &b).unwrap();
+        let equal = F32_REGISTRY
+            .dispatch_binary("equal", &a, &b)
+            .expect("test: dispatch_binary should succeed");
         assert_eq!(equal.data(), &[0.0f32, 1.0, 0.0]);
 
-        let greater = F32_REGISTRY.dispatch_binary("greater", &a, &b).unwrap();
+        let greater = F32_REGISTRY
+            .dispatch_binary("greater", &a, &b)
+            .expect("test: dispatch_binary should succeed");
         assert_eq!(greater.data(), &[0.0f32, 0.0, 1.0]);
     }
 
@@ -808,7 +818,9 @@ mod tests {
         initialize_extended_registrations();
 
         let input = Tensor::from_array(array![2.0f32, 3.0, 4.0].into_dyn());
-        let result = F32_REGISTRY.dispatch_unary("prod", &input).unwrap();
+        let result = F32_REGISTRY
+            .dispatch_unary("prod", &input)
+            .expect("test: dispatch_unary should succeed");
 
         assert_eq!(result.data()[0], 24.0);
     }

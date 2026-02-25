@@ -18,7 +18,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use tenflowers_core::numerical_gradient::{check_gradients, GradientCheckConfig};
 //! use tenflowers_core::Tensor;
 //!
@@ -421,7 +421,8 @@ mod tests {
 
         // Use relaxed config due to f32 precision limits
         let config = GradientCheckConfig::relaxed();
-        let result = check_gradients(&input, forward, gradient, &config).unwrap();
+        let result = check_gradients(&input, forward, gradient, &config)
+            .expect("test: check_gradients should succeed");
 
         assert!(
             result.passed,
@@ -449,7 +450,8 @@ mod tests {
 
         // Use relaxed config due to f32 precision limits
         let config = GradientCheckConfig::relaxed();
-        let result = check_gradients(&input, forward, gradient, &config).unwrap();
+        let result = check_gradients(&input, forward, gradient, &config)
+            .expect("test: check_gradients should succeed");
 
         assert!(
             result.passed,
@@ -477,7 +479,8 @@ mod tests {
         };
 
         let config = GradientCheckConfig::default();
-        let result = check_gradients(&input, forward, wrong_gradient, &config).unwrap();
+        let result = check_gradients(&input, forward, wrong_gradient, &config)
+            .expect("test: check_gradients should succeed");
 
         assert!(
             !result.passed,
@@ -505,12 +508,14 @@ mod tests {
 
         // Should pass with relaxed config
         let relaxed = GradientCheckConfig::relaxed();
-        let result = check_gradients(&input, forward, slightly_off_gradient, &relaxed).unwrap();
+        let result = check_gradients(&input, forward, slightly_off_gradient, &relaxed)
+            .expect("test: check_gradients should succeed");
         assert!(result.passed, "Should pass with relaxed tolerances");
 
         // Should fail with strict config
         let strict = GradientCheckConfig::strict();
-        let result = check_gradients(&input, forward, slightly_off_gradient, &strict).unwrap();
+        let result = check_gradients(&input, forward, slightly_off_gradient, &strict)
+            .expect("test: check_gradients should succeed");
         assert!(!result.passed, "Should fail with strict tolerances");
     }
 

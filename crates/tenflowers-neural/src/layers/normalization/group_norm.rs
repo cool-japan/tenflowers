@@ -142,7 +142,8 @@ mod tests {
 
     #[test]
     fn test_group_norm_creation() {
-        let group_norm = GroupNorm::<f32>::new(8, 64).unwrap();
+        let group_norm =
+            GroupNorm::<f32>::new(8, 64).expect("test: GroupNorm creation should succeed");
         assert_eq!(group_norm.num_groups, 8);
         assert_eq!(group_norm.num_channels, 64);
         assert_eq!(group_norm.epsilon, 1e-5);
@@ -157,13 +158,16 @@ mod tests {
 
     #[test]
     fn test_group_norm_with_epsilon() {
-        let group_norm = GroupNorm::<f32>::new(4, 32).unwrap().with_epsilon(1e-6);
+        let group_norm = GroupNorm::<f32>::new(4, 32)
+            .expect("test: GroupNorm creation should succeed")
+            .with_epsilon(1e-6);
         assert_eq!(group_norm.epsilon, 1e-6);
     }
 
     #[test]
     fn test_group_norm_parameters() {
-        let group_norm = GroupNorm::<f32>::new(16, 128).unwrap();
+        let group_norm =
+            GroupNorm::<f32>::new(16, 128).expect("test: GroupNorm creation should succeed");
         let params = group_norm.parameters();
         assert_eq!(params.len(), 2); // gamma and beta
     }
@@ -171,18 +175,21 @@ mod tests {
     #[test]
     fn test_group_norm_special_cases() {
         // LayerNorm case: G=1
-        let layer_norm_like = GroupNorm::<f32>::new(1, 64).unwrap();
+        let layer_norm_like =
+            GroupNorm::<f32>::new(1, 64).expect("test: GroupNorm creation should succeed");
         assert_eq!(layer_norm_like.num_groups, 1);
 
         // InstanceNorm case: G=C (one group per channel)
-        let instance_norm_like = GroupNorm::<f32>::new(32, 32).unwrap();
+        let instance_norm_like =
+            GroupNorm::<f32>::new(32, 32).expect("test: GroupNorm creation should succeed");
         assert_eq!(instance_norm_like.num_groups, 32);
         assert_eq!(instance_norm_like.num_channels, 32);
     }
 
     #[test]
     fn test_group_norm_training_mode() {
-        let mut group_norm = GroupNorm::<f32>::new(8, 64).unwrap();
+        let mut group_norm =
+            GroupNorm::<f32>::new(8, 64).expect("test: GroupNorm creation should succeed");
 
         // GroupNorm doesn't change behavior based on training mode
         group_norm.set_training(true);

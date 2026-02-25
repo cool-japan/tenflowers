@@ -2,7 +2,7 @@
 
 High-level neural network APIs for TenfloweRS, providing layers, models, optimizers, and training utilities for deep learning in Rust.
 
-> Alpha Notice (0.1.0-alpha.1 · 2025-09-27)
+> Release Candidate (0.1.0-rc.1 · 2026-02-12)
 > Core layer/optimizer abstractions are stable; some advanced architectures (Transformer variants, large model tooling, distributed training) are skeletal or experimental in this release.
 
 ## Overview

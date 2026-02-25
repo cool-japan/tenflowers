@@ -20,26 +20,22 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = CheckerConfig::default();
-//! let checker = NumericalChecker::new(config);
+//! let mut checker = NumericalChecker::new(config.clone());
 //!
-//! let mut tape = GradientTape::new();
-//! let x = tape.watch(Tensor::<f32>::ones(&[2, 2]));
+//! let x = Tensor::<f32>::ones(&[2, 2]);
 //!
-//! // Check gradient using central difference
-//! let result = checker.check_gradient_central(
-//!     &mut tape,
+//! // Compute numerical gradient using central difference
+//! let epsilon = config.epsilon();
+//! let numerical_grad = checker.compute_numerical_gradient(
 //!     &x,
-//!     |tape, x| {
+//!     |x_val| {
 //!         // Forward function: y = x^2
-//!         tape.watch(tenflowers_core::ops::mul(x, x)?)
+//!         tenflowers_core::ops::mul(x_val, x_val)
 //!     },
+//!     epsilon,
 //! )?;
 //!
-//! if result.is_valid {
-//!     println!("Gradient check passed!");
-//! } else {
-//!     println!("Gradient check failed: max error = {}", result.max_error);
-//! }
+//! println!("Numerical gradient shape: {:?}", numerical_grad.shape());
 //! # Ok(())
 //! # }
 //! ```

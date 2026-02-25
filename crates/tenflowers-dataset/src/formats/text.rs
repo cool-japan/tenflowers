@@ -678,8 +678,10 @@ mod tests {
     fn test_encode_decode() {
         let texts = vec!["hello world".to_string(), "world peace".to_string()];
 
-        let mut config = TextConfig::default();
-        config.min_frequency = 1; // Allow single occurrence tokens
+        let config = TextConfig {
+            min_frequency: 1, // Allow single occurrence tokens
+            ..Default::default()
+        };
         let vocab = Vocabulary::from_texts(&texts, &config);
 
         let encoded = vocab.encode("hello world", &config);
@@ -696,13 +698,16 @@ mod tests {
     #[test]
     fn test_text_dataset_from_file() {
         // Create a temporary text file
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let text_content =
             "This is a positive review\nThis is another positive review\nGreat product!";
-        temp_file.write_all(text_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(text_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
-        let dataset = TextDataset::<f32>::from_file(temp_file.path()).unwrap();
+        let dataset = TextDataset::<f32>::from_file(temp_file.path())
+            .expect("test: loading from file should succeed");
 
         assert_eq!(dataset.len(), 3);
         assert!(dataset.vocabulary().len() > 0);
@@ -716,10 +721,12 @@ mod tests {
 
     #[test]
     fn test_text_dataset_builder() {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         let text_content = "Short text\nAnother text";
-        temp_file.write_all(text_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(text_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         let dataset = TextDatasetBuilder::new()
             .file_path(temp_file.path())
@@ -728,7 +735,7 @@ mod tests {
             .lowercase(true)
             .min_frequency(1)
             .build::<f32>()
-            .unwrap();
+            .expect("test: operation should succeed");
 
         assert_eq!(dataset.len(), 2);
         assert_eq!(dataset.config().max_sequence_length, 10);
@@ -741,10 +748,13 @@ mod tests {
     #[test]
     fn test_label_strategies() {
         // Test filename-based labeling
-        let mut temp_file = NamedTempFile::with_prefix("positive_").unwrap();
+        let mut temp_file = NamedTempFile::with_prefix("positive_")
+            .expect("test: temp file creation should succeed");
         let text_content = "This is positive text";
-        temp_file.write_all(text_content.as_bytes()).unwrap();
-        temp_file.flush().unwrap();
+        temp_file
+            .write_all(text_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
 
         let config = TextConfig {
             file_path: temp_file.path().to_path_buf(),
@@ -752,9 +762,13 @@ mod tests {
             ..Default::default()
         };
 
-        let dataset = TextDataset::<f32>::from_config(config).unwrap();
+        let dataset = TextDataset::<f32>::from_config(config)
+            .expect("test: loading from config should succeed");
         assert!(dataset.label_vocabulary().is_some());
-        assert!(dataset.label_vocabulary().unwrap().contains_key("positive"));
+        assert!(dataset
+            .label_vocabulary()
+            .expect("test: label vocabulary should be present")
+            .contains_key("positive"));
     }
 
     #[test]
@@ -781,7 +795,7 @@ mod tests {
 
     #[test]
     fn test_empty_text_file() {
-        let temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
         // Empty file
 
         let result = TextDataset::<f32>::from_file(temp_file.path());

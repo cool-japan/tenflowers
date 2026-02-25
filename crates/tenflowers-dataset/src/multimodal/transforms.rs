@@ -359,12 +359,17 @@ mod tests {
 
     #[test]
     fn test_identity_transform() {
-        let label = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
-        let sample = MultimodalSample::new(label.clone())
-            .with_text(Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap());
+        let label =
+            Tensor::<f32>::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
+        let sample = MultimodalSample::new(label.clone()).with_text(
+            Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3])
+                .expect("test: tensor creation should succeed"),
+        );
 
         let transform = Identity;
-        let transformed = transform.apply_multimodal(sample.clone()).unwrap();
+        let transformed = transform
+            .apply_multimodal(sample.clone())
+            .expect("test: operation should succeed");
 
         assert_eq!(
             transformed.available_modalities(),
@@ -374,15 +379,20 @@ mod tests {
 
     #[test]
     fn test_composed_transform() {
-        let label = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
-        let sample = MultimodalSample::new(label.clone())
-            .with_text(Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap());
+        let label =
+            Tensor::<f32>::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
+        let sample = MultimodalSample::new(label.clone()).with_text(
+            Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3])
+                .expect("test: tensor creation should succeed"),
+        );
 
         let transform = ComposedTransform::new()
             .add_transform(Identity)
             .add_transform(Identity);
 
-        let transformed = transform.apply_multimodal(sample.clone()).unwrap();
+        let transformed = transform
+            .apply_multimodal(sample.clone())
+            .expect("test: operation should succeed");
         assert_eq!(
             transformed.available_modalities(),
             sample.available_modalities()
@@ -391,13 +401,18 @@ mod tests {
 
     #[test]
     fn test_probabilistic_transform() {
-        let label = Tensor::<f32>::from_vec(vec![1.0], &[1]).unwrap();
-        let sample = MultimodalSample::new(label.clone())
-            .with_text(Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3]).unwrap());
+        let label =
+            Tensor::<f32>::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
+        let sample = MultimodalSample::new(label.clone()).with_text(
+            Tensor::from_vec(vec![1.0, 2.0, 3.0], &[3])
+                .expect("test: tensor creation should succeed"),
+        );
 
         // Test with probability 0.0 (should never apply)
         let transform = ProbabilisticTransform::new(Identity, 0.0);
-        let transformed = transform.apply_multimodal(sample.clone()).unwrap();
+        let transformed = transform
+            .apply_multimodal(sample.clone())
+            .expect("test: operation should succeed");
         assert_eq!(
             transformed.available_modalities(),
             sample.available_modalities()
@@ -405,7 +420,9 @@ mod tests {
 
         // Test with probability 1.0 (should always apply)
         let transform = ProbabilisticTransform::new(Identity, 1.0);
-        let transformed = transform.apply_multimodal(sample.clone()).unwrap();
+        let transformed = transform
+            .apply_multimodal(sample.clone())
+            .expect("test: operation should succeed");
         assert_eq!(
             transformed.available_modalities(),
             sample.available_modalities()
