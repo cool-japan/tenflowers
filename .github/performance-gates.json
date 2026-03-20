@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Performance regression detection thresholds and configuration",
+    "last_updated": "2026-03-20"
+  },
+  "global_settings": {
+    "default_regression_threshold_percent": 10,
+    "critical_operation_threshold_percent": 5,
+    "measurement_samples": 10,
+    "warmup_iterations": 3,
+    "enable_notifications": true
+  },
+  "critical_operations": [
+    "matmul",
+    "dispatch_binary",
+    "dispatch_unary",
+    "add",
+    "mul",
+    "sum",
+    "mean",
+    "gradient",
+    "backward"
+  ],
+  "benchmark_groups": {
+    "dispatch": {
+      "description": "Dispatch registry overhead measurements",
+      "operations": [
+        {
+          "name": "dispatch_binary/add_dispatch/tiny_10",
+          "baseline_ns": 500,
+          "threshold_percent": 5,
+          "critical": true
+        },
+        {
+          "name": "dispatch_binary/add_dispatch/small_100",
+          "baseline_ns": 600,
+          "threshold_percent": 5,
+          "critical": true
+        },
+        {
+          "name": "dispatch_binary/add_dispatch/medium_1k",
+          "baseline_ns": 2000,
+          "threshold_percent": 5,
+          "critical": true
+        },
+        {
+          "name": "dispatch_binary/mul_dispatch/tiny_10",
+          "baseline_ns": 500,
+          "threshold_percent": 5,
+          "critical": true
+        },
+        {
+          "name": "dispatch_overhead/full_dispatch",
+          "baseline_ns": 1000,
+          "threshold_percent": 5,
+          "critical": true
+        }
+      ]
+    },
+    "tensor_operations": {
+      "description": "Basic tensor operations",
+      "operations": [
+        {
+          "name": "matmul_sizes/standard_matmul/64",
+          "baseline_ns": 100000,
+          "threshold_percent": 10,
+          "critical": true
+        },
+        {
+          "name": "matmul_sizes/standard_matmul/128",
+          "baseline_ns": 800000,
+          "threshold_percent": 10,
+          "critical": true
+        },
+        {
+          "name": "matmul_sizes/standard_matmul/256",
+          "baseline_ns": 6000000,
+          "threshold_percent": 10,
+          "critical": true
+        },
+        {
+          "name": "matmul_aspect_ratios/square_small",
+          "baseline_ns": 100000,
+          "threshold_percent": 10,
+          "critical": true
+        }
+      ]
+    },
+    "gradient_operations": {
+      "description": "Gradient computation performance",
+      "operations": [
+        {
+          "name": "gradient_performance/simple_backprop",
+          "baseline_ns": 50000,
+          "threshold_percent": 5,
+          "critical": true
+        },
+        {
+          "name": "gradient_performance/complex_graph",
+          "baseline_ns": 200000,
+          "threshold_percent": 10,
+          "critical": true
+        },
+        {
+          "name": "advanced_gradient_benchmarks/multiway_merge",
+          "baseline_ns": 150000,
+          "threshold_percent": 10,
+          "critical": false
+        }
+      ]
+    }
+  },
+  "regression_response": {
+    "notify_on_regression": true,
+    "notification_channels": [
+      "github_pr_comment",
+      "workflow_summary"
+    ],
+    "fail_on_critical_regression": true,
+    "fail_on_threshold_exceeded": true,
+    "auto_bisect_on_regression": false
+  },
+  "monitoring": {
+    "track_historical_trends": true,
+    "alert_on_trend_degradation": true,
+    "trend_window_size": 10,
+    "degradation_threshold_percent": 2,
+    "archive_baselines": true,
+    "baseline_retention_days": 90
+  }
+}

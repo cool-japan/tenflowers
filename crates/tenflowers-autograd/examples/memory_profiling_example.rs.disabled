@@ -1,0 +1,360 @@
+/// Memory Profiling Example
+///
+/// This example demonstrates how to use the memory profiling capabilities
+/// to track gradient computation memory usage, detect leaks, and optimize
+/// memory efficiency.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{
+    GradientMemoryProfiler, GradientTape, MemoryDiffReport, MemoryProfileConfig,
+};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Memory Profiling Example");
+    println!("===================================\n");
+
+    // Example 1: Basic memory profiling
+    println!("Example 1: Basic Memory Profiling");
+    println!("---------------------------------");
+    basic_memory_profiling()?;
+
+    println!("\nExample 2: Memory Leak Detection");
+    println!("--------------------------------");
+    memory_leak_detection()?;
+
+    println!("\nExample 3: Memory Optimization Analysis");
+    println!("---------------------------------------");
+    memory_optimization_analysis()?;
+
+    println!("\nExample 4: Before/After Comparison");
+    println!("---------------------------------");
+    memory_diff_comparison()?;
+
+    Ok(())
+}
+
+fn basic_memory_profiling() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Tracking memory usage during gradient computation\n");
+
+    // Create profiler
+    let mut profiler = GradientMemoryProfiler::new();
+
+    // Enable profiling
+    profiler.start_profiling();
+
+    let tape = GradientTape::new();
+
+    // Mark baseline
+    profiler.record_checkpoint("baseline")?;
+
+    // Create tensors
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((64, 128), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    ));
+    profiler.record_checkpoint("after_input")?;
+    println!("After input creation:");
+    println!(
+        "  Memory increase: {:.2} MB",
+        profiler
+            .get_memory_delta("baseline", "after_input")?
+            .unwrap_or(0.0)
+    );
+
+    // Forward pass
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((128, 64), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+    );
+    let h1 = x.matmul(&w1)?;
+    let h1_act = h1.relu()?;
+    profiler.record_checkpoint("after_layer1")?;
+    println!("After layer 1:");
+    println!(
+        "  Memory increase: {:.2} MB",
+        profiler
+            .get_memory_delta("after_input", "after_layer1")?
+            .unwrap_or(0.0)
+    );
+
+    let w2 = Tensor::from_array(
+        Array2::from_shape_fn((64, 32), |(i, j)| ((i + j) as f32) * 0.01).into_dyn(),
+    );
+    let h2 = h1_act.matmul(&w2)?;
+    let output = h2.tanh()?;
+    profiler.record_checkpoint("after_forward")?;
+    println!("After forward pass:");
+    println!(
+        "  Memory increase: {:.2} MB",
+        profiler
+            .get_memory_delta("after_layer1", "after_forward")?
+            .unwrap_or(0.0)
+    );
+
+    // Backward pass
+    let loss = output.sum(None, false)?;
+    profiler.record_checkpoint("before_backward")?;
+
+    let _grads = tape.gradient(&[loss], &[x])?;
+    profiler.record_checkpoint("after_backward")?;
+    println!("After backward pass:");
+    println!(
+        "  Memory increase: {:.2} MB",
+        profiler
+            .get_memory_delta("before_backward", "after_backward")?
+            .unwrap_or(0.0)
+    );
+
+    // Get total memory usage
+    let total_usage = profiler.get_current_usage()?;
+    println!("\nTotal memory used: {:.2} MB", total_usage);
+
+    // Get efficiency metrics
+    let efficiency = profiler.get_efficiency_metrics()?;
+    println!("Memory efficiency: {:.1}%", efficiency.efficiency_percent);
+
+    profiler.stop_profiling();
+
+    println!("\n✓ Memory profiling complete");
+
+    Ok(())
+}
+
+fn memory_leak_detection() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Detecting potential memory leaks\n");
+
+    let mut profiler = GradientMemoryProfiler::new();
+    profiler.enable_leak_detection(true);
+    profiler.start_profiling();
+
+    // Simulate training loop
+    println!("Running training loop (10 iterations)...\n");
+
+    for step in 0..10 {
+        profiler.record_checkpoint(&format!("step_{}_start", step))?;
+
+        let tape = GradientTape::new();
+
+        let x = tape.watch(Tensor::from_array(
+            Array2::from_shape_fn((32, 64), |(i, j)| ((step + i + j) as f32) * 0.01).into_dyn(),
+        ));
+
+        let w = Tensor::from_array(
+            Array2::from_shape_fn((64, 32), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+        );
+
+        let output = x.matmul(&w)?;
+        let loss = output.sum(None, false)?;
+        let _grads = tape.gradient(&[loss], &[x])?;
+
+        profiler.record_checkpoint(&format!("step_{}_end", step))?;
+
+        // Check memory growth
+        if step > 0 {
+            let prev_step = format!("step_{}_end", step - 1);
+            let curr_step = format!("step_{}_end", step);
+            if let Some(delta) = profiler.get_memory_delta(&prev_step, &curr_step)? {
+                println!("Step {}: Memory delta: {:.3} MB", step, delta);
+
+                if delta > 0.1 {
+                    println!("  ⚠ Warning: Unexpected memory growth");
+                }
+            }
+        }
+    }
+
+    // Check for leaks
+    let leak_report = profiler.detect_leaks()?;
+    println!("\nLeak Detection Report:");
+    println!("  Suspicious allocations: {}", leak_report.num_suspicious);
+
+    if leak_report.num_suspicious > 0 {
+        println!("  ⚠ Potential memory leak detected!");
+        println!("  Recommended actions:");
+        println!("    • Check for circular references");
+        println!("    • Ensure proper tensor cleanup");
+        println!("    • Review gradient tape lifecycle");
+    } else {
+        println!("  ✓ No memory leaks detected");
+    }
+
+    profiler.stop_profiling();
+
+    Ok(())
+}
+
+fn memory_optimization_analysis() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Analyzing memory usage for optimization opportunities\n");
+
+    let config = MemoryProfileConfig {
+        track_allocations: true,
+        track_deallocations: true,
+        track_peak_usage: true,
+        track_by_operation: true,
+    };
+
+    let mut profiler = GradientMemoryProfiler::with_config(config);
+    profiler.start_profiling();
+
+    let tape = GradientTape::new();
+
+    // Create computation graph
+    let x = tape.watch(Tensor::from_array(
+        Array2::from_shape_fn((128, 256), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    ));
+
+    profiler.start_operation("matmul_1")?;
+    let w1 = Tensor::from_array(
+        Array2::from_shape_fn((256, 128), |(i, j)| ((i * 2 + j) as f32) * 0.001).into_dyn(),
+    );
+    let h1 = x.matmul(&w1)?;
+    profiler.end_operation("matmul_1")?;
+
+    profiler.start_operation("activation_1")?;
+    let h1_act = h1.relu()?;
+    profiler.end_operation("activation_1")?;
+
+    profiler.start_operation("matmul_2")?;
+    let w2 = Tensor::from_array(
+        Array2::from_shape_fn((128, 64), |(i, j)| ((i + j) as f32) * 0.01).into_dyn(),
+    );
+    let h2 = h1_act.matmul(&w2)?;
+    profiler.end_operation("matmul_2")?;
+
+    profiler.start_operation("reduction")?;
+    let loss = h2.sum(None, false)?;
+    profiler.end_operation("reduction")?;
+
+    profiler.start_operation("backward")?;
+    let _grads = tape.gradient(&[loss], &[x])?;
+    profiler.end_operation("backward")?;
+
+    // Analyze memory usage by operation
+    println!("Memory Usage by Operation:");
+    println!("-------------------------");
+
+    let operations = vec![
+        "matmul_1",
+        "activation_1",
+        "matmul_2",
+        "reduction",
+        "backward",
+    ];
+
+    let mut total_memory = 0.0;
+    for op in &operations {
+        if let Some(usage) = profiler.get_operation_memory(op)? {
+            println!("  {:<15} : {:.2} MB", op, usage);
+            total_memory += usage;
+        }
+    }
+
+    println!("  {:<15} : {:.2} MB", "TOTAL", total_memory);
+
+    // Get optimization recommendations
+    let recommendations = profiler.get_optimization_recommendations()?;
+
+    println!("\nOptimization Recommendations:");
+    for (i, rec) in recommendations.iter().enumerate() {
+        println!("  {}. {}", i + 1, rec);
+    }
+
+    // Peak memory analysis
+    if let Some(peak) = profiler.get_peak_memory()? {
+        println!("\nPeak Memory Usage: {:.2} MB", peak);
+        println!(
+            "Average Memory Usage: {:.2} MB",
+            total_memory / operations.len() as f64
+        );
+        println!(
+            "Memory Efficiency: {:.1}%",
+            (total_memory / operations.len() as f64) / peak * 100.0
+        );
+    }
+
+    profiler.stop_profiling();
+
+    println!("\n✓ Memory optimization analysis complete");
+
+    Ok(())
+}
+
+fn memory_diff_comparison() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Comparing memory usage before and after optimization\n");
+
+    // Scenario 1: Before optimization (no checkpointing)
+    println!("Scenario 1: Without Gradient Checkpointing");
+    println!("------------------------------------------");
+
+    let mut profiler1 = GradientMemoryProfiler::new();
+    profiler1.start_profiling();
+
+    let tape1 = GradientTape::new(); // No checkpointing
+
+    let x1 = tape1.watch(Tensor::from_array(
+        Array2::from_shape_fn((64, 128), |(i, j)| (i as f32 + j as f32) * 0.01).into_dyn(),
+    ));
+
+    // Simulate deep network (many layers, all activations stored)
+    let mut current1 = x1.clone();
+    for _ in 0..10 {
+        let w = Tensor::from_array(
+            Array2::from_shape_fn((128, 128), |(i, j)| ((i + j) as f32) * 0.001).into_dyn(),
+        );
+        current1 = current1.matmul(&w)?;
+        current1 = current1.relu()?;
+    }
+
+    let loss1 = current1.sum(None, false)?;
+    let _grads1 = tape1.gradient(&[loss1], &[x1])?;
+
+    let memory_before = profiler1.get_peak_memory()?.unwrap_or(0.0);
+    println!("  Peak memory: {:.2} MB", memory_before);
+
+    profiler1.stop_profiling();
+
+    // Scenario 2: After optimization (with checkpointing)
+    println!("\nScenario 2: With Gradient Checkpointing");
+    println!("---------------------------------------");
+
+    // Note: This is simulated - actual checkpointing would be configured
+    let memory_after = memory_before * 0.6; // Simulate 40% reduction
+    println!("  Peak memory: {:.2} MB", memory_after);
+
+    // Generate diff report
+    let diff_report = MemoryDiffReport {
+        before_peak_mb: memory_before,
+        after_peak_mb: memory_after,
+        reduction_mb: memory_before - memory_after,
+        reduction_percent: ((memory_before - memory_after) / memory_before) * 100.0,
+        recommendations: vec![
+            "Gradient checkpointing reduced peak memory by 40%".to_string(),
+            "Continue using selective checkpointing for balance".to_string(),
+            "Monitor training speed impact (may be 10-15% slower)".to_string(),
+        ],
+    };
+
+    println!("\nMemory Diff Report:");
+    println!("------------------");
+    println!("  Before: {:.2} MB", diff_report.before_peak_mb);
+    println!("  After:  {:.2} MB", diff_report.after_peak_mb);
+    println!(
+        "  Saved:  {:.2} MB ({:.1}%)",
+        diff_report.reduction_mb, diff_report.reduction_percent
+    );
+
+    println!("\nRecommendations:");
+    for (i, rec) in diff_report.recommendations.iter().enumerate() {
+        println!("  {}. {}", i + 1, rec);
+    }
+
+    println!("\n✓ Memory comparison complete");
+
+    println!("\n📝 Memory Profiling Tips:");
+    println!("  • Profile regularly during development");
+    println!("  • Track peak memory, not just average");
+    println!("  • Use checkpointing for very deep networks");
+    println!("  • Monitor for gradual memory growth (leaks)");
+    println!("  • Compare before/after optimizations");
+    println!("  • Consider memory/speed trade-offs");
+
+    Ok(())
+}

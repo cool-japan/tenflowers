@@ -1,0 +1,534 @@
+/// Full Training Pipeline Example
+///
+/// This comprehensive example demonstrates how to combine all advanced autograd features
+/// into a complete training pipeline with memory optimization, mixed precision,
+/// deterministic training, performance monitoring, and gradient validation.
+use scirs2_autograd::ndarray::Array2;
+use tenflowers_autograd::{
+    AmpConfig, BenchmarkConfig, CheckpointConfig, CheckpointStrategy, DeterministicConfig,
+    DeterministicMode, GradientMemoryProfiler, GradientTape, LossScaler, PerformanceBenchmark,
+    PrecisionMode, SchedulerConfig, SchedulingStrategy,
+};
+use tenflowers_core::{Device, Tensor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("TenfloweRS Full Training Pipeline Example");
+    println!("=========================================\n");
+
+    // Configure training environment
+    let config = TrainingConfig::production();
+
+    println!("Training Configuration:");
+    println!("  Epochs: {}", config.epochs);
+    println!("  Batch size: {}", config.batch_size);
+    println!("  Learning rate: {}", config.learning_rate);
+    println!("  Mixed precision: {}", config.use_amp);
+    println!("  Checkpointing: {}", config.use_checkpointing);
+    println!("  Deterministic: {}", config.deterministic);
+    println!();
+
+    // Initialize model and training state
+    let mut model = SimpleModel::new(config.input_size, config.hidden_size, config.output_size);
+    let mut optimizer = AdamOptimizer::new(config.learning_rate);
+
+    // Setup profiling and benchmarking
+    let mut profiler = GradientMemoryProfiler::new();
+    let mut benchmark = PerformanceBenchmark::new(BenchmarkConfig {
+        num_warmup: 5,
+        num_iterations: 10,
+        measure_throughput: true,
+        measure_memory: true,
+        statistical_analysis: true,
+    });
+
+    println!("Starting training...\n");
+
+    // Training loop
+    for epoch in 0..config.epochs {
+        println!("Epoch {}/{}", epoch + 1, config.epochs);
+        println!("-".repeat(40));
+
+        profiler.start_profiling();
+        profiler.record_checkpoint("epoch_start")?;
+
+        let mut epoch_loss = 0.0;
+        let num_batches = 10;
+
+        for batch_idx in 0..num_batches {
+            // Generate synthetic training data
+            let (inputs, targets) =
+                generate_training_batch(config.batch_size, config.input_size, config.output_size)?;
+
+            // Training step with all features
+            let loss = training_step(
+                &mut model,
+                &mut optimizer,
+                &inputs,
+                &targets,
+                &config,
+                &mut profiler,
+                &mut benchmark,
+                epoch,
+                batch_idx,
+            )?;
+
+            epoch_loss += loss;
+
+            if (batch_idx + 1) % 5 == 0 {
+                println!(
+                    "  Batch {}/{}: loss = {:.4}",
+                    batch_idx + 1,
+                    num_batches,
+                    loss
+                );
+            }
+        }
+
+        profiler.record_checkpoint("epoch_end")?;
+
+        let avg_loss = epoch_loss / num_batches as f32;
+        println!("  Average loss: {:.4}", avg_loss);
+
+        // Epoch-level reporting
+        if let Some(memory_used) = profiler.get_memory_delta("epoch_start", "epoch_end")? {
+            println!("  Memory used: {:.2} MB", memory_used);
+        }
+
+        // Memory leak detection
+        if epoch > 0 {
+            let leak_report = profiler.detect_leaks()?;
+            if leak_report.num_suspicious > 0 {
+                println!(
+                    "  ⚠ Warning: {} potential memory leaks detected",
+                    leak_report.num_suspicious
+                );
+            }
+        }
+
+        println!();
+        profiler.stop_profiling();
+    }
+
+    println!("Training complete!\n");
+
+    // Final performance report
+    generate_training_report(&benchmark, &profiler)?;
+
+    Ok(())
+}
+
+/// Training configuration
+#[derive(Clone)]
+struct TrainingConfig {
+    epochs: usize,
+    batch_size: usize,
+    learning_rate: f32,
+    input_size: usize,
+    hidden_size: usize,
+    output_size: usize,
+    use_amp: bool,
+    use_checkpointing: bool,
+    deterministic: bool,
+    gradient_clipping_norm: f32,
+    validation_frequency: usize,
+}
+
+impl TrainingConfig {
+    /// Production-ready configuration
+    fn production() -> Self {
+        Self {
+            epochs: 5,
+            batch_size: 32,
+            learning_rate: 0.001,
+            input_size: 128,
+            hidden_size: 256,
+            output_size: 10,
+            use_amp: true,
+            use_checkpointing: true,
+            deterministic: true,
+            gradient_clipping_norm: 1.0,
+            validation_frequency: 1,
+        }
+    }
+
+    /// Fast development configuration
+    #[allow(dead_code)]
+    fn development() -> Self {
+        Self {
+            epochs: 2,
+            batch_size: 16,
+            learning_rate: 0.01,
+            input_size: 64,
+            hidden_size: 128,
+            output_size: 10,
+            use_amp: false,
+            use_checkpointing: false,
+            deterministic: true,
+            gradient_clipping_norm: 5.0,
+            validation_frequency: 1,
+        }
+    }
+}
+
+/// Simple neural network model
+struct SimpleModel {
+    w1: Tensor<f32>,
+    b1: Tensor<f32>,
+    w2: Tensor<f32>,
+    b2: Tensor<f32>,
+    w3: Tensor<f32>,
+    b3: Tensor<f32>,
+}
+
+impl SimpleModel {
+    fn new(input_size: usize, hidden_size: usize, output_size: usize) -> Self {
+        // Xavier initialization
+        let scale1 = (2.0 / input_size as f32).sqrt();
+        let scale2 = (2.0 / hidden_size as f32).sqrt();
+
+        Self {
+            w1: Tensor::randn(&[input_size, hidden_size], Device::cpu())
+                .unwrap()
+                .mul(&Tensor::scalar(scale1))
+                .unwrap(),
+            b1: Tensor::zeros(&[hidden_size]),
+            w2: Tensor::randn(&[hidden_size, hidden_size], Device::cpu())
+                .unwrap()
+                .mul(&Tensor::scalar(scale2))
+                .unwrap(),
+            b2: Tensor::zeros(&[hidden_size]),
+            w3: Tensor::randn(&[hidden_size, output_size], Device::cpu())
+                .unwrap()
+                .mul(&Tensor::scalar(scale2))
+                .unwrap(),
+            b3: Tensor::zeros(&[output_size]),
+        }
+    }
+
+    fn parameters(&self) -> Vec<&Tensor<f32>> {
+        vec![&self.w1, &self.b1, &self.w2, &self.b2, &self.w3, &self.b3]
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor<f32>> {
+        vec![
+            &mut self.w1,
+            &mut self.b1,
+            &mut self.w2,
+            &mut self.b2,
+            &mut self.w3,
+            &mut self.b3,
+        ]
+    }
+}
+
+/// Adam optimizer
+struct AdamOptimizer {
+    learning_rate: f32,
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    step: usize,
+    m: Vec<Tensor<f32>>,
+    v: Vec<Tensor<f32>>,
+}
+
+impl AdamOptimizer {
+    fn new(learning_rate: f32) -> Self {
+        Self {
+            learning_rate,
+            beta1: 0.9,
+            beta2: 0.999,
+            epsilon: 1e-8,
+            step: 0,
+            m: Vec::new(),
+            v: Vec::new(),
+        }
+    }
+
+    fn step(
+        &mut self,
+        params: &mut [&mut Tensor<f32>],
+        grads: &[Tensor<f32>],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.step += 1;
+
+        // Initialize momentum if needed
+        if self.m.is_empty() {
+            self.m = grads
+                .iter()
+                .map(|g| Tensor::zeros(&g.shape().dims()))
+                .collect();
+            self.v = grads
+                .iter()
+                .map(|g| Tensor::zeros(&g.shape().dims()))
+                .collect();
+        }
+
+        for (idx, (param, grad)) in params.iter_mut().zip(grads.iter()).enumerate() {
+            // Update biased first moment estimate: m = β1*m + (1-β1)*g
+            self.m[idx] = self.m[idx]
+                .mul(&Tensor::scalar(self.beta1))?
+                .add(&grad.mul(&Tensor::scalar(1.0 - self.beta1))?)?;
+
+            // Update biased second moment estimate: v = β2*v + (1-β2)*g²
+            let grad_squared = grad.mul(grad)?;
+            self.v[idx] = self.v[idx]
+                .mul(&Tensor::scalar(self.beta2))?
+                .add(&grad_squared.mul(&Tensor::scalar(1.0 - self.beta2))?)?;
+
+            // Bias correction
+            let m_hat =
+                self.m[idx].div(&Tensor::scalar(1.0 - self.beta1.powi(self.step as i32)))?;
+            let v_hat =
+                self.v[idx].div(&Tensor::scalar(1.0 - self.beta2.powi(self.step as i32)))?;
+
+            // Update parameters: θ = θ - lr * m_hat / (sqrt(v_hat) + ε)
+            let denominator = v_hat.sqrt()?.add(&Tensor::scalar(self.epsilon))?;
+            let update = m_hat
+                .div(&denominator)?
+                .mul(&Tensor::scalar(self.learning_rate))?;
+            **param = param.sub(&update)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Single training step with all features
+fn training_step(
+    model: &mut SimpleModel,
+    optimizer: &mut AdamOptimizer,
+    inputs: &Tensor<f32>,
+    targets: &Tensor<f32>,
+    config: &TrainingConfig,
+    profiler: &mut GradientMemoryProfiler,
+    benchmark: &mut PerformanceBenchmark,
+    epoch: usize,
+    batch_idx: usize,
+) -> Result<f32, Box<dyn std::error::Error>> {
+    // Configure gradient tape with all features
+    let tape = configure_gradient_tape(config)?;
+
+    profiler.record_checkpoint(&format!("batch_{}_start", batch_idx))?;
+
+    // Benchmark forward pass
+    let bench_name = format!("forward_e{}_b{}", epoch, batch_idx);
+    benchmark.start_benchmark(&bench_name)?;
+
+    // Track model parameters
+    let w1 = tape.watch(model.w1.clone());
+    let b1 = tape.watch(model.b1.clone());
+    let w2 = tape.watch(model.w2.clone());
+    let b2 = tape.watch(model.b2.clone());
+    let w3 = tape.watch(model.w3.clone());
+    let b3 = tape.watch(model.b3.clone());
+
+    // Forward pass
+    let x = tape.watch(inputs.clone());
+
+    // Layer 1: input -> hidden
+    let h1 = x.matmul(&w1)?.add(&b1)?;
+    let h1_act = h1.relu()?;
+
+    // Layer 2: hidden -> hidden
+    let h2 = h1_act.matmul(&w2)?.add(&b2)?;
+    let h2_act = h2.relu()?;
+
+    // Layer 3: hidden -> output
+    let logits = h2_act.matmul(&w3)?.add(&b3)?;
+
+    // Compute loss (MSE for simplicity)
+    let targets_tracked = tape.watch(targets.clone());
+    let diff = logits.sub(&targets_tracked)?;
+    let squared = diff.mul(&diff)?;
+    let loss = squared.mean(None, false)?;
+
+    let loss_value = loss.tensor().as_slice().unwrap_or(&[0.0])[0];
+
+    benchmark.end_benchmark(&bench_name)?;
+
+    profiler.record_checkpoint(&format!("batch_{}_forward", batch_idx))?;
+
+    // Benchmark backward pass
+    let bench_name_back = format!("backward_e{}_b{}", epoch, batch_idx);
+    benchmark.start_benchmark(&bench_name_back)?;
+
+    // Compute gradients
+    let grads = tape.gradient(
+        &[loss],
+        &[
+            w1.clone(),
+            b1.clone(),
+            w2.clone(),
+            b2.clone(),
+            w3.clone(),
+            b3.clone(),
+        ],
+    )?;
+
+    benchmark.end_benchmark(&bench_name_back)?;
+
+    profiler.record_checkpoint(&format!("batch_{}_backward", batch_idx))?;
+
+    // Gradient clipping
+    let clipped_grads = clip_gradients(&grads, config.gradient_clipping_norm)?;
+
+    // Optimizer step
+    optimizer.step(&mut model.parameters_mut(), &clipped_grads)?;
+
+    profiler.record_checkpoint(&format!("batch_{}_end", batch_idx))?;
+
+    Ok(loss_value)
+}
+
+/// Configure gradient tape with all enabled features
+fn configure_gradient_tape(
+    config: &TrainingConfig,
+) -> Result<GradientTape, Box<dyn std::error::Error>> {
+    let mut tape = GradientTape::new();
+
+    // Enable checkpointing if configured
+    if config.use_checkpointing {
+        let checkpoint_config = CheckpointConfig {
+            strategy: CheckpointStrategy::Selective,
+            checkpoint_every_n: 2,
+            min_compute_cost: 100,
+            memory_budget_mb: Some(2048),
+        };
+        tape = GradientTape::with_checkpoint_config(checkpoint_config);
+    }
+
+    // Enable mixed precision if configured
+    if config.use_amp {
+        let amp_config = AmpConfig {
+            enabled: true,
+            precision_mode: PrecisionMode::Float16,
+            loss_scaler: LossScaler::Dynamic {
+                init_scale: 32768.0,
+                growth_factor: 2.0,
+                backoff_factor: 0.5,
+                growth_interval: 1000,
+            },
+            autocast_ops: vec!["matmul".to_string(), "conv2d".to_string()],
+            keep_fp32_ops: vec!["layer_norm".to_string()],
+        };
+        tape = GradientTape::with_amp_config(amp_config);
+    }
+
+    // Enable deterministic mode if configured
+    if config.deterministic {
+        let det_config = DeterministicConfig {
+            mode: DeterministicMode::Strict,
+            global_seed: Some(42),
+            operation_seeds: true,
+            cudnn_deterministic: true,
+        };
+        tape = GradientTape::with_deterministic_config(det_config);
+    }
+
+    // Configure hybrid scheduler
+    let scheduler_config = SchedulerConfig {
+        strategy: SchedulingStrategy::Auto,
+        forward_mode_threshold: 10.0,
+        reverse_mode_threshold: 0.1,
+        enable_mixed_mode: true,
+    };
+    tape = GradientTape::with_scheduler_config(scheduler_config);
+
+    Ok(tape)
+}
+
+/// Clip gradients by global norm
+fn clip_gradients(
+    gradients: &[Tensor<f32>],
+    max_norm: f32,
+) -> Result<Vec<Tensor<f32>>, Box<dyn std::error::Error>> {
+    // Compute global norm
+    let mut total_norm_sq = 0.0f32;
+    for grad in gradients {
+        let grad_norm_sq: f32 = grad
+            .mul(grad)?
+            .sum(None, false)?
+            .as_slice()
+            .unwrap_or(&[0.0])[0];
+        total_norm_sq += grad_norm_sq;
+    }
+
+    let global_norm = total_norm_sq.sqrt();
+
+    if global_norm <= max_norm {
+        // No clipping needed
+        return Ok(gradients.to_vec());
+    }
+
+    // Clip gradients
+    let clip_factor = max_norm / global_norm;
+    let mut clipped = Vec::new();
+
+    for grad in gradients {
+        let clipped_grad = grad.mul(&Tensor::scalar(clip_factor))?;
+        clipped.push(clipped_grad);
+    }
+
+    Ok(clipped)
+}
+
+/// Generate synthetic training batch
+fn generate_training_batch(
+    batch_size: usize,
+    input_size: usize,
+    output_size: usize,
+) -> Result<(Tensor<f32>, Tensor<f32>), Box<dyn std::error::Error>> {
+    let inputs = Tensor::from_array(
+        Array2::from_shape_fn((batch_size, input_size), |(i, j)| {
+            ((i + j) as f32 * 0.01).sin()
+        })
+        .into_dyn(),
+    );
+
+    let targets = Tensor::from_array(
+        Array2::from_shape_fn((batch_size, output_size), |(i, j)| {
+            ((i * 2 + j) as f32 * 0.01).cos()
+        })
+        .into_dyn(),
+    );
+
+    Ok((inputs, targets))
+}
+
+/// Generate comprehensive training report
+fn generate_training_report(
+    benchmark: &PerformanceBenchmark,
+    profiler: &GradientMemoryProfiler,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Training Report");
+    println!("=".repeat(50));
+
+    // Performance summary
+    println!("\nPerformance Summary:");
+    println!("  Total benchmarks run: {}", benchmark.num_benchmarks());
+
+    if let Some(peak_memory) = profiler.get_peak_memory()? {
+        println!("  Peak memory usage: {:.2} MB", peak_memory);
+    }
+
+    // Optimization recommendations
+    println!("\nOptimization Recommendations:");
+    let recommendations = profiler.get_optimization_recommendations()?;
+    for (i, rec) in recommendations.iter().enumerate().take(5) {
+        println!("  {}. {}", i + 1, rec);
+    }
+
+    println!("\n✓ Training pipeline executed successfully!");
+    println!("\nFeatures demonstrated:");
+    println!("  ✓ Mixed precision training (AMP)");
+    println!("  ✓ Gradient checkpointing");
+    println!("  ✓ Deterministic training");
+    println!("  ✓ Hybrid scheduler");
+    println!("  ✓ Performance benchmarking");
+    println!("  ✓ Memory profiling");
+    println!("  ✓ Gradient clipping");
+    println!("  ✓ Adam optimizer");
+
+    Ok(())
+}

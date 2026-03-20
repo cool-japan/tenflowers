@@ -1,0 +1,197 @@
+[workspace]
+members = [
+    "tenflowers",
+    "crates/tenflowers-core",
+    "crates/tenflowers-autograd",
+    "crates/tenflowers-neural",
+    "crates/tenflowers-dataset",
+    "crates/tenflowers-ffi",
+]
+# Disable FFI Temporarily (due to Python env issue)
+default-members = [
+    "tenflowers",
+    "crates/tenflowers-core",
+    "crates/tenflowers-autograd",
+    "crates/tenflowers-neural",
+    "crates/tenflowers-dataset",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["COOLJAPAN OU (Team KitaSan)"]
+edition = "2021"
+rust-version = "1.70"
+homepage = "https://github.com/cool-japan/tenflowers"
+repository = "https://github.com/cool-japan/tenflowers"
+license = "Apache-2.0"
+keywords = ["machine-learning", "neural-network", "tensor", "autograd", "gpu"]
+categories = ["science", "mathematics"]
+
+[workspace.lints.clippy]
+# Allow commonly triggered but low-priority lints
+clone_on_copy = "allow"
+empty_line_after_doc_comments = "allow"
+len_zero = "allow"
+new_without_default = "allow"
+unwrap_or_default = "allow"
+
+# Allow lints that are triggered by auto-generated code or common patterns
+too_many_arguments = "allow"
+module_inception = "allow"
+redundant_field_names = "allow"
+redundant_static_lifetimes = "allow"
+
+# Keep important lints as warnings
+needless_pass_by_value = "allow"  # Common in ML code with small structs
+large_enum_variant = "warn"
+inefficient_to_string = "warn"
+
+[workspace.lints.rust]
+# Allow commonly triggered warnings during development
+unused_imports = "allow"
+unused_variables = "allow"
+dead_code = "allow"
+unused_mut = "allow"
+unused_doc_comments = "allow"
+
+[workspace.dependencies]
+# Internal crates
+tenflowers-core = { path = "crates/tenflowers-core", version = "0.1.0" }
+tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.1.0" }
+tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.1.0" }
+tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.1.0" }
+
+# Core dependencies (using SciRS2 ecosystem)
+rayon = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+anyhow = "1.0"
+
+# NumRS2 and SciRS2 ecosystem (using latest versions)
+numrs2 = "0.3"
+scirs2-core = "0.3.4"
+scirs2-autograd = "0.3.4"
+scirs2-neural = "0.3.4"
+scirs2-linalg = "0.3.4"
+scirs2-numpy = "0.3.4"
+optirs = "0.2"
+
+# GPU support
+wgpu = { version = "28.0", features = ["wgsl"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+futures = "0.3"
+pollster = "0.4"
+tokio = { version = "1.50", features = ["full"] }
+num_cpus = "1.17"
+
+# Serialization
+oxicode = "0.2"
+serde_json = "1.0"
+rmp-serde = "1.3"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Python bindings - using scirs2-numpy for ndarray 0.17 compatibility
+pyo3 = { version = "0.28" }
+
+# Linear algebra (matching scirs2-linalg version)
+ndarray-linalg = { version = "0.18.1", default-features = false }
+
+# Testing and benchmarking
+criterion = { version = "0.8", features = ["html_reports"] }
+approx = "0.5"
+proptest = "1.10"
+
+# Half precision types
+half = { version = "2.7", features = ["bytemuck", "serde", "num-traits"] }
+
+# Image processing
+image = "0.25"
+
+# Data processing
+arrow = "58.0"
+parquet = "58.0"
+memmap2 = "0.9"
+regex = "1.12"
+csv = "1.4"
+
+# Tensorboard logging - REMOVED (RUSTSEC-2024-0437) due to protobuf 2.28.0 vulnerability
+# Will be re-added once tensorboard-rs updates to protobuf >=3.7.2
+# tensorboard-rs = "0.5.9"
+
+# ONNX export
+prost = "0.14.3"
+prost-build = "0.14.3"
+prost-types = "0.14.3"
+parking_lot = "0.12.5"
+
+# Graph algorithms
+petgraph = "0.8"
+
+# HTTP client for dataset downloading
+reqwest = { version = "0.13", features = ["blocking", "stream"] }
+
+# Compression and archives
+flate2 = "1.1"
+crc32fast = "1.5"
+tar = "0.4"
+
+# File formats
+hdf5 = "0.8"
+
+# Audio processing
+symphonia = { version = "0.5", features = ["wav", "mp3", "flac"] }
+rubato = "1.0"
+
+# Utilities
+uuid = { version = "1.22", features = ["v4"] }
+async-trait = "0.1"
+tempfile = "3.27"
+
+# Consolidated from subcrates
+oxiblas-ndarray = "0.2.1"
+lazy_static = "1.5"
+sys-info = "0.9"
+oxifft = "0.1.3"
+num-complex = "0.4"
+once_cell = "1.21"
+tokio-stream = { version = "0.1", features = ["sync"] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console", "Performance", "Window", "WorkerGlobalScope"] }
+metal = "0.33.0"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_ProcessStatus"] }
+libc = "0.2"
+toml = "1.0"
+serde_yaml = "0.9"
+libloading = "0.9"
+
+[profile.release]
+lto = "fat"                    # Full LTO for maximum optimization
+codegen-units = 1              # Single codegen unit for best optimization
+opt-level = 3                  # Maximum optimization level
+strip = "symbols"              # Strip symbols for smaller binary
+panic = "abort"                # Abort on panic for performance
+overflow-checks = false        # Disable overflow checks in release
+debug = false                  # No debug info in release
+rpath = false                  # Disable rpath for smaller binary
+
+[profile.release.build-override]
+opt-level = 3                  # Optimize build scripts too
+
+[profile.bench]
+inherits = "release"
+debug = true                   # Keep debug info for profiling
+
+# Ultra-performance profile for maximum optimization
+[profile.ultra]
+inherits = "release"
+lto = "fat"                    # Maximum LTO
+codegen-units = 1              # Single unit for best optimization
+opt-level = 3                  # Maximum optimization
+strip = "symbols"              # Strip all symbols
+panic = "abort"                # Abort on panic
+overflow-checks = false        # No overflow checks
+debug = false                  # No debug info
+rpath = false                  # No rpath
+
