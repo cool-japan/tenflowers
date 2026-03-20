@@ -44,8 +44,8 @@ impl PyHookHandle {
 /// Hook management functionality for neural network layers
 #[derive(Debug)]
 pub struct HookManager {
-    pub forward_hooks: Arc<std::sync::RwLock<HashMap<usize, PyObject>>>,
-    pub backward_hooks: Arc<std::sync::RwLock<HashMap<usize, PyObject>>>,
+    pub forward_hooks: Arc<std::sync::RwLock<HashMap<usize, Py<PyAny>>>>,
+    pub backward_hooks: Arc<std::sync::RwLock<HashMap<usize, Py<PyAny>>>>,
     pub next_hook_id: Arc<std::sync::RwLock<usize>>,
 }
 
@@ -60,7 +60,7 @@ impl HookManager {
     }
 
     /// Register a forward hook
-    pub fn register_forward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         let mut hooks = self
             .forward_hooks
             .write()
@@ -79,7 +79,7 @@ impl HookManager {
     }
 
     /// Register a backward hook
-    pub fn register_backward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         let mut hooks = self
             .backward_hooks
             .write()
@@ -157,7 +157,7 @@ impl HookManager {
             .read()
             .expect("read lock should not be poisoned");
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
                 if let Err(e) = hook.call1(py, (input.clone(), output.clone())) {
                     eprintln!("Warning: Forward hook failed: {}", e);
@@ -177,7 +177,7 @@ impl HookManager {
             .read()
             .expect("read lock should not be poisoned");
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
                 if let Err(e) = hook.call1(py, (grad_input.clone(),)) {
                     eprintln!("Warning: Backward hook failed: {}", e);
@@ -208,8 +208,8 @@ impl Clone for HookManager {
 /// Global hook registry for cross-layer hook management
 #[pyclass]
 pub struct PyGlobalHookRegistry {
-    forward_hooks: Arc<std::sync::RwLock<HashMap<usize, PyObject>>>,
-    backward_hooks: Arc<std::sync::RwLock<HashMap<usize, PyObject>>>,
+    forward_hooks: Arc<std::sync::RwLock<HashMap<usize, Py<PyAny>>>>,
+    backward_hooks: Arc<std::sync::RwLock<HashMap<usize, Py<PyAny>>>>,
     next_hook_id: Arc<std::sync::RwLock<usize>>,
 }
 
@@ -231,7 +231,7 @@ impl PyGlobalHookRegistry {
     }
 
     /// Register a global forward hook
-    pub fn register_forward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         let mut hooks = self
             .forward_hooks
             .write()
@@ -250,7 +250,7 @@ impl PyGlobalHookRegistry {
     }
 
     /// Register a global backward hook
-    pub fn register_backward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         let mut hooks = self
             .backward_hooks
             .write()
@@ -328,7 +328,7 @@ impl PyGlobalHookRegistry {
             .read()
             .expect("read lock should not be poisoned");
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
                 if let Err(e) = hook.call1(py, (input.clone(), output.clone())) {
                     eprintln!("Warning: Global forward hook failed: {}", e);
@@ -347,7 +347,7 @@ impl PyGlobalHookRegistry {
             .read()
             .expect("read lock should not be poisoned");
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
                 if let Err(e) = hook.call1(py, (grad_input.clone(),)) {
                     eprintln!("Warning: Global backward hook failed: {}", e);
@@ -360,7 +360,7 @@ impl PyGlobalHookRegistry {
     }
 
     /// List all registered hooks with metadata
-    pub fn list_hooks(&self, py: Python) -> PyResult<PyObject> {
+    pub fn list_hooks(&self, py: Python) -> PyResult<Py<PyAny>> {
         use pyo3::types::PyDict;
 
         let result = PyDict::new(py);

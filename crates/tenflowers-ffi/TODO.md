@@ -1,6 +1,6 @@
-# TenfloweRS FFI TODO & Roadmap (0.1.0-alpha.1)
+# TenfloweRS FFI TODO & Roadmap (v0.1.0)
 
-Alpha.1 focus: language binding capabilities and forward development plan. Historical logs removed.
+Initial release capabilities and forward development plan.
 
 ## 1. Current Capabilities
 
@@ -25,7 +25,7 @@ Alpha.1 focus: language binding capabilities and forward development plan. Histo
 - **Multi-GPU Support**: Basic multi-GPU tensor operations and device management
 
 ### C API Foundation
-- **Type System**: Basic C API scaffolding with fundamental types and tensor creation
+- **Type System**: C API scaffolding with fundamental types and tensor creation
 - **Memory Management**: C-compatible memory management and tensor lifecycle
 - **Function Bindings**: Core tensor operation bindings for C/C++ integration
 - **Safety**: Memory-safe C API design with proper error handling
@@ -61,7 +61,7 @@ Alpha.1 focus: language binding capabilities and forward development plan. Histo
 - **Performance Validation**: Missing comprehensive performance regression testing
 - **Cross-Platform Testing**: Limited testing across different platforms and Python versions
 
-## 3. Near-Term Roadmap (Beta Prep)
+## 3. Near-Term Roadmap
 
 ### Priority 1: Distribution & Packaging
 1. **Wheel Build CI**: GitHub Actions workflow for manylinux, macOS universal2, Windows
@@ -87,7 +87,7 @@ Alpha.1 focus: language binding capabilities and forward development plan. Histo
 15. **Extended C API**: Comprehensive operation coverage and functionality
 16. **C API Documentation**: Complete C API documentation and examples
 
-## 4. Mid-Term Roadmap (Post-Beta)
+## 4. Mid-Term Roadmap
 
 ### Advanced Language Bindings
 - **Multi-Language Support**: C++, Swift, and other language binding exploration
@@ -172,4 +172,4 @@ Alpha.1 focus: language binding capabilities and forward development plan. Histo
 
 ---
 
-**Alpha.1 Status**: TenfloweRS FFI provides functional Python bindings with comprehensive tensor operations, autograd support, and development tools. Ready for beta development focusing on packaging, distribution, and API completeness.
+Copyright 2025-2026 COOLJAPAN OU (Team KitaSan)

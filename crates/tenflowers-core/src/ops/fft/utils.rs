@@ -45,13 +45,6 @@ pub fn generate_bit_reversal_table(n: usize) -> Vec<u32> {
     table
 }
 
-// TODO: Move remaining utility functions from original fft.rs (lines 2914-4388, ~1474 lines)
-// This includes:
-// - Additional helper functions for GPU FFT
-// - Performance optimization utilities
-// - Memory management helpers
-// - Test functions and benchmarking utilities
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,7 +92,4 @@ mod tests {
         assert_eq!(table[2], 2);
         assert_eq!(table[3], 6);
     }
-
-    // TODO: Move complete test suite from original fft.rs
-    // This includes comprehensive FFT correctness tests for 1D, 2D, and 3D transforms
 }

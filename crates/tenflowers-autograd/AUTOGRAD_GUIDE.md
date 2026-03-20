@@ -160,9 +160,9 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-autograd = "0.1.0-beta.1"
-tenflowers-core = "0.1.0-beta.1"
-scirs2-autograd = "0.1.0-rc.1"  # Core dependency
+tenflowers-autograd = "0.3.0"
+tenflowers-core = "0.3.0"
+scirs2-autograd = "0.3.0"  # Core dependency
 ```
 
 ### Minimal Example

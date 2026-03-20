@@ -254,7 +254,7 @@ Common optimizations:
 
 ## Historical Performance Data
 
-### Baseline (v0.1.0-beta.1)
+### Baseline (v0.1.0)
 
 Measured on M1 MacBook Pro with Rust 1.75:
 ```

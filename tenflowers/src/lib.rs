@@ -215,7 +215,9 @@ pub use tenflowers_core as core;
 pub use tenflowers_dataset as dataset;
 pub use tenflowers_neural as neural;
 
-// Python bindings excluded from v0.1.0-beta.1
+// Declarative macros (tensor![], etc.)
+pub mod macros;
+
 // #[cfg(feature = "python")]
 // pub use tenflowers_ffi as ffi;
 
@@ -265,6 +267,60 @@ pub mod prelude {
     pub use crate::neural::Layer;
 }
 
+/// Neural network layers, activations, and models
+///
+/// Provides a convenient `tenflowers::nn` alias for the most commonly used
+/// layer types and neural network building blocks from `tenflowers_neural`.
+///
+/// # Example
+///
+/// ```rust
+/// use tenflowers::nn::Dense;
+/// let layer = Dense::<f32>::new(4, 2, true);
+/// ```
+pub mod nn {
+    pub use tenflowers_neural::layers::{BatchNorm, MaxPool2D};
+    pub use tenflowers_neural::{
+        ActivationFunction, Conv2D, Dense, Dropout, Layer, Model, MultiHeadAttention, RMSNorm,
+        Sequential, TransformerDecoder, TransformerEncoder, GRU, LSTM, RNN,
+    };
+}
+
+/// Optimization algorithms
+///
+/// Provides a convenient `tenflowers::optim` alias for the optimizer types
+/// exported from `tenflowers_neural`.
+///
+/// # Example
+///
+/// ```rust
+/// use tenflowers::optim::Adam;
+/// let opt = Adam::<f32>::new(0.001);
+/// ```
+pub mod optim {
+    pub use tenflowers_neural::{
+        Adadelta, Adagrad, Adam, AdamW, Lion, Lookahead, Nadam, Optimizer, ParameterGroup,
+        ParameterGroupOptimizer, RAdam, RMSprop, LAMB, SGD,
+    };
+}
+
+/// Data pipeline and dataset utilities
+///
+/// Provides a convenient `tenflowers::data` alias for the dataset types
+/// from `tenflowers_dataset`.
+///
+/// # Example
+///
+/// ```rust
+/// use tenflowers::data::Dataset;
+/// ```
+pub mod data {
+    pub use tenflowers_dataset::{
+        CsvDataset, CsvDatasetBuilder, DataLoader, DataLoaderBuilder, Dataset, ImageFolderDataset,
+        ImageFolderDatasetBuilder, RandomSampler,
+    };
+}
+
 /// Common types and utilities
 ///
 /// This module provides type aliases and utility functions that are
@@ -284,6 +340,48 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Returns the version string of TenfloweRS
 pub fn version() -> &'static str {
     VERSION
+}
+
+/// Structured version metadata for the TenfloweRS framework.
+///
+/// Returned by [`version_info()`]; contains the version string, package name,
+/// and a short human-readable description populated at compile time via
+/// `env!()` macros.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionInfo {
+    /// Semver version string (e.g. `"0.1.0"`).
+    pub version: &'static str,
+    /// Crate / package name (always `"tenflowers"`).
+    pub pkg_name: &'static str,
+    /// One-line description from `Cargo.toml`.
+    pub description: &'static str,
+}
+
+impl std::fmt::Display for VersionInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} v{} — {}",
+            self.pkg_name, self.version, self.description
+        )
+    }
+}
+
+/// Returns structured version metadata populated at compile time.
+///
+/// # Example
+///
+/// ```rust
+/// let info = tenflowers::version_info();
+/// assert!(!info.version.is_empty());
+/// assert_eq!(info.pkg_name, "tenflowers");
+/// ```
+pub fn version_info() -> VersionInfo {
+    VersionInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        pkg_name: env!("CARGO_PKG_NAME"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+    }
 }
 
 #[cfg(test)]

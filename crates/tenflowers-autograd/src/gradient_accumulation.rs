@@ -751,8 +751,10 @@ mod tests {
 
         // The gradient should be averaged - for add operation, gradient is [1.0, 1.0] + [1.0, 1.0] = [2.0, 2.0]
         // Since we accumulated twice and average, we should get [2.0, 2.0]
-        let TensorStorage::Cpu(ref array) = grad_x.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &grad_x.storage {
+            TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert!((array[[0]] - 2.0).abs() < 1e-6);
         assert!((array[[1]] - 2.0).abs() < 1e-6);

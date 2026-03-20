@@ -126,7 +126,7 @@ impl PyGradientFlowVisualizer {
         &self,
         analysis: &PyGradientFlowAnalysis,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Create comprehensive plot data with nodes and edges
         let py_dict = PyDict::new(py);
 
@@ -198,7 +198,7 @@ impl PyGradientFlowVisualizer {
         for tensor_item in tensors.iter() {
             if let Ok(py_tensor) = tensor_item.extract::<PyTensor>() {
                 // Create a TrackedTensor from PyTensor
-                // TODO: Implement TrackedTensor::from_tensor or use proper constructor
+                // NOTE(v0.2): Implement TrackedTensor::from_tensor or use proper constructor
                 // For now, skip conversion as this is a visualization-only feature
                 continue; // Skip non-tracked tensors for now
             } else if let Ok(py_tracked) = tensor_item.extract::<PyTrackedTensor>() {
@@ -334,7 +334,7 @@ impl PyGradientFlowAnalysis {
 #[pymethods]
 impl PyGradientFlowAnalysis {
     /// Get gradient statistics
-    pub fn get_statistics(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
         let stats = &self.inner.flow_statistics;
         let py_dict = PyDict::new(py);
 

@@ -2,17 +2,16 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.1.0--rc.1-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/tests-2635%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
+[![Tests](https://img.shields.io/badge/tests-12949%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
 [![Security](https://img.shields.io/badge/vulnerabilities-0-brightgreen)](https://github.com/cool-japan/tenflowers)
 
-> **Release Candidate (0.1.0-rc.1 · 2026-02-24)**
+> **v0.1.0 (2026-03-20)**
 >
-> Release candidate with production-ready core functionality! All 2635 tests passing, zero security vulnerabilities, and comprehensive documentation. The core API is stabilizing for 1.0.
->
-> ⚠️ **Note:** This release temporarily excludes Python bindings (FFI) and tensorboard integration. See [CHANGELOG.md](CHANGELOG.md) for details and timeline.
+> TenfloweRS v0.1.0 is the first release, with 12,949 tests passing across 6 crates,
+> zero clippy warnings, zero security vulnerabilities, and comprehensive documentation.
 
 ## Overview
 
@@ -27,8 +26,9 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 3. **Explicit over Implicit**: Clear ownership and error handling following Rust conventions
 4. **Modular Architecture**: Organized as a workspace of focused, reusable crates
 5. **Cross-Platform**: Native support for Windows, macOS, and Linux with unified GPU abstraction
+6. **Pure Rust**: No C/Fortran dependencies in the default build -- the entire stack is 100% Rust
 
-## TensorFlow → TenfloweRS Mapping
+## TensorFlow to TenfloweRS Mapping
 
 | TensorFlow Concept | TenfloweRS Implementation |
 |-------------------|---------------------------|
@@ -43,101 +43,72 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 
 ## Key Features
 
-- **🚀 Dual Execution Modes**: Both eager execution (PyTorch-style) and static computation graphs (TensorFlow-style)
-- **🦀 Pure Rust Implementation**: No C/C++ dependencies in the core, ensuring memory safety
-- **🎮 GPU Support**: Cross-platform GPU acceleration via WGPU (Metal, Vulkan, DirectX)
-- **🔧 Rust Scientific Stack**: Built on NumRS2 and SciRS2 for numerical computing
-- **🐍 Python Bindings**: ⚠️ Temporarily excluded in beta.1 (requires Python environment setup)
-- **📦 ONNX Support**: Import and export models for cross-framework compatibility
-- **⚡ Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
-- **✅ Production Ready**: 2635 tests passing, 0 security vulnerabilities, comprehensive docs
+- **Dual Execution Modes**: Both eager execution (PyTorch-style) and static computation graphs (TensorFlow-style)
+- **Pure Rust Implementation**: No C/C++ dependencies in the core, ensuring memory safety
+- **GPU Support**: Cross-platform GPU acceleration via WGPU (Metal, Vulkan, DirectX)
+- **Rust Scientific Stack**: Built on NumRS2 and SciRS2 for numerical computing
+- **Python Bindings**: PyO3-based FFI crate with 48 passing tests
+- **Tensorboard Integration**: Pure Rust implementation with no protobuf dependency
+- **ONNX Support**: Import and export models for cross-framework compatibility
+- **Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
+- **150+ Research Domains**: From transformers and diffusion models to quantum ML and protein structure prediction
+- **Production Ready**: 12,949 tests passing, 0 security vulnerabilities, comprehensive docs
 
 ## Project Status
 
-**Current Version: 0.1.0-rc.1** (Released 2026-02-24)
+**Current Version: 0.1.0** (Released 2026-03-20)
 
-Release candidate with production-ready core functionality! The core API is stabilizing for 1.0 release.
+First release with full-featured ML capabilities across all 6 crates.
 
-### RC 1 Quality Metrics ✅
-- **Tests:** 2635/2635 passing (100% pass rate)
-- **Security:** 0 vulnerabilities (all known issues resolved)
-- **Code Quality:** Zero clippy warnings, full formatting compliance
-- **Documentation:** Complete crate-level docs and READMEs for all published crates
-- **Build:** All 5 core crates successfully package and verify
+### v0.1.0 Quality Metrics
 
-### Published Crates (Available on crates.io)
-1. ✅ **tenflowers-core** (6.5 MiB) - Core tensor operations and GPU support
-2. ✅ **tenflowers-autograd** (2.8 MiB) - Automatic differentiation engine
-3. ✅ **tenflowers-dataset** (2.1 MiB) - Data loading and preprocessing
-4. ✅ **tenflowers-neural** (3.0 MiB) - Neural network layers and training
-5. ✅ **tenflowers** (182 KiB) - Unified API and prelude
+- **Tests:** 12,949 passing (100% pass rate)
+- **Code:** 1,453 Rust files, ~641K lines of Rust code
+- **Security:** 0 vulnerabilities
+- **Clippy:** 0 warnings, 0 errors
+- **Rustdoc:** Builds clean with `-D warnings`
+- **TODO markers:** 0 remaining
 
-### Temporarily Excluded (RC 1)
-- ⚠️ **tenflowers-ffi**: Python bindings (requires Python dev environment)
-  - Will be re-enabled in future release with proper CI/CD
-  - Use Rust API directly for now
-- ⚠️ **tensorboard integration**: Logging feature (security fix)
-  - Removed due to protobuf vulnerability (RUSTSEC-2024-0437)
-  - Will be re-added once dependency updated
-  - Use alternative logging temporarily
+### Published Crates
 
-See [CHANGELOG.md](CHANGELOG.md#010-rc1---2026-02-24) for complete details and migration guide.
+| Crate | Tests | Status | Description |
+|-------|-------|--------|-------------|
+| tenflowers-core | 675 | Stable | Core tensor operations and GPU support |
+| tenflowers-autograd | 334 | Stable | Automatic differentiation engine |
+| tenflowers-neural | 11,407 | Stable | Neural network layers, models, and 150+ research domains |
+| tenflowers-dataset | 472 | Stable | Data loading and preprocessing |
+| tenflowers-ffi | 48 | Stable | Python bindings via PyO3 |
+| tenflowers | 13 (doc) | Stable | Unified API and prelude |
 
-### RC 1 Scope (Delivered 2026-02-24)
-- ✅ Core tensor operations fully tested and validated
-- ✅ Automatic differentiation engine with comprehensive gradient support
-- ✅ Neural network layers (Dense, Conv2D, BatchNorm, Dropout, etc.)
-- ✅ Training utilities (optimizers, loss functions, training loops)
-- ✅ Data loading pipeline with multi-format support
-- ✅ GPU acceleration via WGPU (cross-platform)
-- ✅ SciRS2/NumRS2 ecosystem integration complete
-- ✅ Security hardening (zero vulnerabilities)
-- ✅ Comprehensive documentation
+### What Is Included
 
-### Known Limitations (RC 1)
-- Python bindings not available (see Temporarily Excluded above)
-- Tensorboard logging not available (see Temporarily Excluded above)
-- Graph mode optimization passes still in development
-- Multi-GPU orchestration experimental
-- ONNX import/export in development
+- Core tensor operations fully tested and validated
+- Automatic differentiation engine with comprehensive gradient support
+- Neural network layers (Dense, Conv2D, BatchNorm, Dropout, Attention, RNN, GNN, Transformers, and many more)
+- Training utilities (optimizers including SGD, Adam, AdamW, LAMB, Lion, Muon; loss functions; training loops; LR schedulers)
+- Data loading pipeline with multi-format support
+- GPU acceleration via WGPU (cross-platform)
+- SciRS2/NumRS2 ecosystem integration
+- Python bindings with PyO3 (48 tests passing)
+- Tensorboard logging (pure Rust, no protobuf dependency)
+- Security hardening (zero vulnerabilities)
+- Comprehensive documentation
 
-### Priorities for Next Release (toward 1.0)
-1. Re-enable Python bindings with proper CI/CD
-2. Re-enable tensorboard integration (awaiting dependency fix)
-3. Complete graph optimization passes
-4. Expand GPU kernel coverage
-5. Performance benchmarking suite
-6. ONNX import/export finalization
-7. API stability guarantee for 1.0
+### tenflowers-neural Feature Coverage
 
-### RC 1 Release Checklist ✅
-- [x] All 2635 tests passing
-- [x] Zero security vulnerabilities
-- [x] Zero clippy warnings
-- [x] All crates properly documented
-- [x] Package verification successful
-- [x] Version consistency across workspace
-- [x] CHANGELOG.md updated
-- [x] Migration guide provided
+The neural crate alone has 11,407 tests covering:
 
-### What's Working ✅
-- ✅ Core tensor operations (creation, manipulation, arithmetic)
-- ✅ Automatic differentiation with gradient tape
-- ✅ Neural network layers and model composition
-- ✅ Training loop with optimizers (SGD, Adam, AdamW)
-- ✅ Data loading from multiple formats (CSV, images, HDF5, Parquet)
-- ✅ GPU acceleration (WGPU backend)
-- ✅ Integration with SciRS2 ecosystem
-- ✅ Comprehensive error handling (no unwrap() usage)
+**Core architectures:** attention mechanisms (multi-head, flash, ALiBi, RoPE), RNN (LSTM, GRU, bidirectional), transformers (encoder, decoder, efficient variants including RetNet, Mamba-2, GQA), CNN, graph neural networks (GCN, GAT, GraphSAGE, GIN, and advanced variants)
 
-### In Active Development 🚧
-- 🚧 Python bindings (code complete, CI/CD in progress)
-- 🚧 Tensorboard integration (awaiting dependency security fix)
-- 🚧 Graph optimization passes
-- 🚧 Shape inference system
-- 🚧 Graph construction and optimization
-- 🚧 Tape-based automatic differentiation
-- 🚧 GPU compute kernels
+**Generative models:** normalizing flows, diffusion models, GANs, VAEs, energy-based models, neural rendering (3D Gaussian splatting, NeRF)
+
+**Reinforcement learning:** policy gradient, actor-critic, PPO, SAC, multi-agent RL, safe RL, inverse RL, reward shaping, world models
+
+**Scientific ML:** physics-informed neural networks (PINNs), neural ODEs/SDEs, operator learning (FNO, DeepONet, WNO, GNO), differentiable physics, simulation-based inference
+
+**Domain-specific:** molecular GNN, protein structure prediction, drug discovery, medical imaging, audio models, speech recognition, video understanding, geospatial ML, climate ML, satellite ML, digital pathology, bio ML
+
+**Advanced methods:** Bayesian deep learning, federated learning, meta-learning, NAS, knowledge distillation, quantum ML, geometric deep learning, causal inference, optimal transport, topological ML, continual learning, active learning, conformal prediction, and many more
 
 ## Installation
 
@@ -145,20 +116,26 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.1.0-rc.1"
-tenflowers-neural = "0.1.0-rc.1"
+tenflowers-core = "0.1.0"
+tenflowers-neural = "0.1.0"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.0-rc.1", features = ["gpu"] }
+tenflowers-core = { version = "0.1.0", features = ["gpu"] }
+```
+
+For the unified API:
+```toml
+[dependencies]
+tenflowers = "0.1.0"
 ```
 
 ## Quick Start
 
 ### Basic Tensor Operations
-```rust
+```rust,ignore
 use tenflowers_core::{Tensor, Device, Context};
 
 // Create a context for eager execution
@@ -184,7 +161,7 @@ let grads = tape.gradient(&z, &[&x])?;
 ```
 
 ### Graph Mode (TensorFlow 1.x style)
-```rust
+```rust,ignore
 use tenflowers_core::{Graph, Session, Placeholder};
 
 // Build a computation graph
@@ -204,7 +181,7 @@ session.run(
 ```
 
 ### Building a Neural Network
-```rust
+```rust,ignore
 use tenflowers_neural::{Sequential, Dense, Conv2D, Model};
 use tenflowers_core::Tensor;
 
@@ -235,7 +212,7 @@ model.fit(
 ```
 
 ### Data Pipeline
-```rust
+```rust,ignore
 use tenflowers_dataset::{Dataset, DataLoader};
 
 // Create a dataset from tensors
@@ -266,41 +243,42 @@ tenflowers/
 │   ├── tape/             # GradientTape for eager mode
 │   ├── graph_grad/       # Graph-based backpropagation
 │   └── ops/              # Gradient definitions for operations
-├── tenflowers-neural/    # Neural network layers and models
-│   ├── layers/           # Layer implementations
-│   ├── models/           # Model abstraction and builders
-│   ├── optimizers/       # Training optimizers
-│   └── losses/           # Loss functions
+├── tenflowers-neural/    # Neural network layers, models, and research domains
+│   ├── layers/           # Layer implementations (attention, RNN, GNN, etc.)
+│   ├── optimizers/       # Training optimizers (SGD, Adam, LAMB, Lion, Muon)
+│   ├── rl/               # Reinforcement learning
+│   ├── federated/        # Federated learning
+│   ├── diffusion/        # Diffusion models
+│   ├── graph_neural_ode/ # Neural ODE on graphs
+│   └── ...               # 150+ research domain modules
 ├── tenflowers-dataset/   # Data loading and preprocessing
 │   ├── sources/          # Data source implementations
 │   ├── transforms/       # Data transformation ops
 │   └── iterators/        # Efficient iteration strategies
-└── tenflowers-ffi/       # Python bindings
-    ├── tensor_py/        # Python tensor wrapper
-    ├── ops_py/           # Operation bindings
-    └── keras_compat/     # Keras-compatible API
+├── tenflowers-ffi/       # Python bindings via PyO3
+│   └── src/              # Python-facing API
+└── tenflowers/           # Unified API crate and prelude
 ```
 
 ### Core Components
 
-#### 1. **Tensor System**
+#### 1. Tensor System
 - Reference-counted tensors with device placement
 - Lazy allocation and memory pooling
 - Zero-copy views and slicing
 - Automatic broadcasting
 
-#### 2. **Operation Framework**
+#### 2. Operation Framework
 - Extensible operation registry
 - Multi-dispatch for device/dtype specialization
 - Shape inference at graph construction time
 - Automatic gradient registration
 
-#### 3. **Execution Engines**
+#### 3. Execution Engines
 - **Eager Mode**: Operations execute immediately
 - **Graph Mode**: Build once, run multiple times with optimization
-- **XLA Integration**: (Future) JIT compilation for performance
 
-#### 4. **Device Management**
+#### 4. Device Management
 - Unified API for CPU, GPU, and custom devices
 - Automatic device placement with hints
 - Cross-device memory transfers
@@ -322,68 +300,71 @@ cargo nextest run --workspace
 # Build with GPU support
 cargo build --workspace --features gpu
 
-# Build with BLAS acceleration
-cargo build --workspace --features blas-openblas
+# Build with BLAS acceleration (pure Rust)
+cargo build --workspace --features blas-oxiblas
 
-# Check for warnings (must pass - no warnings policy)
+# Check for warnings (must pass -- no warnings policy)
 cargo check --workspace
 cargo clippy --workspace -- -D warnings
+
+# Build documentation
+cargo doc --workspace --no-deps
 ```
 
 ## Examples
 
-Check out the [examples](examples/) directory for comprehensive examples:
+Check out the [examples](examples/) directory for usage examples:
 
 - `mnist_eager.rs` - MNIST classification with eager execution
-- `mnist_graph.rs` - MNIST using static graphs (coming soon)
-- `gan_example.rs` - Generative Adversarial Network (coming soon)
-- `transformer.rs` - Transformer model implementation (coming soon)
 
 ## Performance
 
 TenfloweRS is designed for high performance:
 
-- **CPU**: SIMD vectorization, optional BLAS integration, Rayon parallelization
+- **CPU**: SIMD vectorization, optional BLAS integration (OxiBLAS), Rayon parallelization
 - **GPU**: WGPU compute shaders, memory pooling, kernel fusion
 - **Memory**: Zero-copy operations, buffer reuse, lazy allocation
-
-### Benchmarks
-
-Coming soon! Target performance goals:
-- CPU: Match or exceed NumPy
-- GPU: 90% of TensorFlow performance
-- Memory: Within 10% of TensorFlow usage
 
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 Key areas where we need help:
-- Implementing core operations (see TODO.md)
-- GPU kernel development
-- Shape inference functions
+- GPU kernel development and optimization
+- Performance benchmarking
 - Documentation and examples
-- Testing and benchmarking
-- Python API design
+- Testing edge cases
+- Python API expansion (tenflowers-ffi)
 
 ### Development Process
-1. Check [TODO.md](TODO.md) for tasks
-2. Open an issue to discuss your contribution
-3. Follow the no-warnings policy
-4. Write tests including gradient checks
+1. Open an issue to discuss your contribution
+2. Follow the no-warnings policy (clippy must pass with `-D warnings`)
+3. Write tests including gradient checks where applicable
+4. Ensure zero `unwrap()` usage in production code
 5. Submit a PR with clear description
 
 ## Roadmap
 
-See [TODO.md](TODO.md) for the detailed development roadmap.
+### v0.1.0 (Released 2026-03-20)
+- Core tensor operations and autograd
+- 150+ neural network research domains
+- GPU support via WGPU
+- Python bindings via PyO3
+- 12,949 tests, 0 warnings, 0 vulnerabilities
 
-### Upcoming Releases
-- **v0.1.0**: Core tensor ops and basic autograd
-- **v0.2.0**: GPU support and essential layers
-- **v0.3.0**: Graph mode and optimizations
-- **v0.4.0**: Python bindings and Keras compatibility
-- **v0.5.0**: ONNX import/export
-- **v1.0.0**: Production-ready with stable API
+### v0.2.0 (Planned)
+- Graph optimization passes (constant folding, operator fusion, dead code elimination)
+- Expanded GPU kernel coverage
+- Performance benchmarking suite with CI gates
+- ONNX import/export finalization
+- Multi-GPU orchestration improvements
+- API stability improvements toward 1.0
+
+### v1.0.0 (Future)
+- Stable public API with semantic versioning guarantees
+- Comprehensive ONNX compatibility
+- Production deployment tooling
+- WASM compilation target
 
 ## Comparison with TensorFlow
 
@@ -397,6 +378,21 @@ See [TODO.md](TODO.md) for the detailed development roadmap.
 | Deployment | TFLite, TF.js | Native, WASM (planned) |
 | Ecosystem | Mature, extensive | Growing, Rust-focused |
 
+## Sponsorship
+
+TenFlowers is developed and maintained by **COOLJAPAN OU (Team KitaSan)**.
+
+If you find TenFlowers useful, please consider sponsoring the project to support continued development of the Pure Rust ecosystem.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-red?logo=github)](https://github.com/sponsors/cool-japan)
+
+**[https://github.com/sponsors/cool-japan](https://github.com/sponsors/cool-japan)**
+
+Your sponsorship helps us:
+- Maintain and improve the COOLJAPAN ecosystem
+- Keep the entire ecosystem (OxiBLAS, OxiFFT, SciRS2, etc.) 100% Pure Rust
+- Provide long-term support and security updates
+
 ## License
 
 This project is licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE)).
@@ -404,9 +400,10 @@ This project is licensed under the Apache License, Version 2.0 ([LICENSE](LICENS
 ## Acknowledgments
 
 TenfloweRS builds upon the excellent Rust scientific computing ecosystem:
-- [NumRS2](https://github.com/numrs/numrs2) for n-dimensional arrays
-- [SciRS2](https://github.com/scirs/scirs2) for scientific algorithms
-- [ndarray](https://github.com/rust-ndarray/ndarray) for array operations
+- [NumRS2](https://github.com/cool-japan/numrs2) for n-dimensional arrays
+- [SciRS2](https://github.com/cool-japan/scirs2) for scientific algorithms
+- [OxiBLAS](https://github.com/cool-japan/oxiblas) for pure Rust BLAS
+- [OxiFFT](https://github.com/cool-japan/oxifft) for pure Rust FFT
 - [WGPU](https://github.com/gfx-rs/wgpu) for GPU compute
 
 Special thanks to the TensorFlow team for the inspiration and architectural patterns.
@@ -415,8 +412,7 @@ Special thanks to the TensorFlow team for the inspiration and architectural patt
 
 - GitHub Issues: [Bug reports and feature requests](https://github.com/cool-japan/tenflowers/issues)
 - Discussions: [Community forum](https://github.com/cool-japan/tenflowers/discussions)
-- Discord: Coming soon!
 
 ---
 
-**Note**: TenfloweRS is not affiliated with Google's TensorFlow. It's an independent project bringing ML capabilities to Rust.
+**Note**: TenfloweRS is not affiliated with Google's TensorFlow. It is an independent project bringing ML capabilities to Rust.

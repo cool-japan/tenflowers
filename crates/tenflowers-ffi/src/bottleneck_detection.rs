@@ -1,7 +1,7 @@
 //! Performance Bottleneck Detection for TenfloweRS
 //!
 //! This module provides intelligent bottleneck detection and performance
-//! optimization recommendations, addressing the TODO item for future enhancement.
+//! optimization recommendations, providing intelligent optimization recommendations.
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -596,7 +596,7 @@ impl PyBottleneckDetector {
     }
 
     /// Detect current bottlenecks
-    pub fn detect_bottlenecks(&mut self, py: Python) -> PyResult<PyObject> {
+    pub fn detect_bottlenecks(&mut self, py: Python) -> PyResult<Py<PyAny>> {
         let bottlenecks = self.inner.detect_bottlenecks();
         let py_list = PyList::empty(py);
 
@@ -630,7 +630,7 @@ impl PyBottleneckDetector {
     }
 
     /// Get performance summary
-    pub fn get_performance_summary(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_performance_summary(&self, py: Python) -> PyResult<Py<PyAny>> {
         let py_dict = PyDict::new(py);
 
         if self.inner.performance_history.is_empty() {

@@ -88,11 +88,7 @@ impl<T: std::fmt::Display> FeatureHistogram<T> {
         let max_count = *self.bin_counts.iter().max().unwrap_or(&1);
 
         for (i, &count) in self.bin_counts.iter().enumerate() {
-            let bar_length = if max_count > 0 {
-                (count * max_bar_width) / max_count
-            } else {
-                0
-            };
+            let bar_length = (count * max_bar_width).checked_div(max_count).unwrap_or(0);
 
             let bar = "█".repeat(bar_length);
             output.push_str(&format!("  Bin {i}: {bar:<max_bar_width$} {count}\n"));

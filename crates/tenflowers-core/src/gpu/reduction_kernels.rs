@@ -443,7 +443,7 @@ where
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("reduction_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     // Create compute pipeline
@@ -577,7 +577,10 @@ where
         sender.send(result).ok();
     });
 
-    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+    gpu_ctx
+        .device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .ok();
 
     if let Ok(Ok(())) = pollster::block_on(receiver) {
         let data = buffer_slice.get_mapped_range();

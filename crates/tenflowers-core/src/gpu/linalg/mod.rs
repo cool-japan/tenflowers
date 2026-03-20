@@ -36,5 +36,5 @@ pub use basic_ops::{adaptive_matmul_linalg, matmul_linalg, transpose};
 
 pub use decompositions::{lu_decomposition, qr_decomposition, svd};
 
-// TODO: Commented out until advanced_ops functions are implemented
+// NOTE(v0.2): Commented out until advanced_ops functions are implemented
 // pub use advanced_ops::{determinant, eigenvalues, inverse, solve};

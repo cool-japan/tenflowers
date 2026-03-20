@@ -603,7 +603,7 @@ impl OnnxLoader {
 
     /// Load ONNX model from file
     pub fn load_from_file<P: AsRef<Path>>(&self, _path: P) -> Result<OnnxModel> {
-        // TODO: Implement actual ONNX protobuf parsing
+        // NOTE(v0.2): Implement actual ONNX protobuf parsing
         // This requires the prost or similar protobuf library
         Err(TensorError::serialization_error_simple(
             "ONNX loading not yet implemented - requires protobuf parsing".to_string(),
@@ -612,7 +612,7 @@ impl OnnxLoader {
 
     /// Load ONNX model from bytes
     pub fn load_from_bytes(&self, _bytes: &[u8]) -> Result<OnnxModel> {
-        // TODO: Implement actual ONNX protobuf parsing
+        // NOTE(v0.2): Implement actual ONNX protobuf parsing
         Err(TensorError::serialization_error_simple(
             "ONNX loading not yet implemented - requires protobuf parsing".to_string(),
         ))
@@ -626,7 +626,7 @@ impl OnnxLoader {
         let mut weights = HashMap::new();
 
         for initializer in &model.graph.initializers {
-            // TODO: Implement actual weight conversion
+            // NOTE(v0.2): Implement actual weight conversion
             // This would parse the raw bytes in initializer.data
             // and create Tensor<T> objects
             let _name = &initializer.name;
@@ -664,7 +664,7 @@ pub mod utils {
 
     /// Get ONNX file info without loading the full model
     pub fn get_onnx_info<P: AsRef<Path>>(_path: P) -> Result<OnnxModelMetadata> {
-        // TODO: Implement lightweight metadata extraction
+        // NOTE(v0.2): Implement lightweight metadata extraction
         Ok(OnnxModelMetadata::default())
     }
 

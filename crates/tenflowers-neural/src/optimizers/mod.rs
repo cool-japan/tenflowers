@@ -233,15 +233,19 @@ pub mod enhanced_accumulation;
 pub mod gradient_centralization;
 pub mod gradient_clipping;
 pub mod lamb;
+pub mod lamb_config;
 pub mod lbfgs;
 pub mod lion;
+pub mod lion_config;
 pub mod lookahead;
+pub mod muon;
 pub mod nadam;
 pub mod optimizer_with_accumulation;
 pub mod parameter_groups;
 pub mod radam;
 pub mod rmsprop;
 pub mod sam;
+pub mod schedulers;
 pub mod sgd;
 pub mod soap;
 pub mod sophia;
@@ -268,15 +272,23 @@ pub use gradient_clipping::{
     clip_gradients_by_value,
 };
 pub use lamb::LAMB;
+pub use lamb_config::{LambConfig, LambOptimizer};
 pub use lbfgs::LBFGS;
 pub use lion::Lion;
+pub use lion_config::{LionConfig, LionOptimizer};
 pub use lookahead::Lookahead;
+pub use muon::{MuonConfig, MuonOptimizer};
 pub use nadam::Nadam;
 pub use optimizer_with_accumulation::OptimizerWithAccumulation;
 pub use parameter_groups::{ParameterGroup, ParameterGroupConfig, ParameterGroupOptimizer};
 pub use radam::RAdam;
 pub use rmsprop::RMSprop;
 pub use sam::SAMOptimizer;
+pub use schedulers::{
+    AnnealStrategy, CosineAnnealingScheduler, ExponentialDecayScheduler, LinearScheduler,
+    LrScheduler, MetricMode, OneCycleLrScheduler, PolynomialDecayScheduler,
+    ReduceLrOnPlateau as SchedReduceLrOnPlateau, WarmupScheduler,
+};
 pub use sgd::SGD;
 pub use soap::Soap;
 pub use sophia::Sophia;

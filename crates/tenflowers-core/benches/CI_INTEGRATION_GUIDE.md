@@ -327,7 +327,7 @@ Baseline files are simple text files with benchmark results:
 
 ```
 # Dispatch Registry Benchmark Baseline
-# Generated: 2024-02-06 10:30:45 UTC
+# Generated: 2026-03-20 00:00:00 UTC
 # System: M1 MacBook Pro, Rust 1.75
 
 ## Overhead Analysis Results

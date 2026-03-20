@@ -3,7 +3,7 @@
 //! Eager Execution Performance Profiler
 //!
 //! This profiler targets the goal of achieving sub-millisecond overhead for eager execution
-//! as mentioned in the TODO.md files, aiming for < 1000 microseconds overhead per operation.
+//! targeting < 1000 microseconds overhead per operation (project performance goal).
 
 use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;

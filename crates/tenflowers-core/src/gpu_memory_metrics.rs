@@ -113,11 +113,7 @@ impl GpuMemoryMetrics {
         let peak_memory = self.peak_memory.load(Ordering::Relaxed) as usize;
         let allocation_count = (total_allocs.saturating_sub(total_deallocs)) as usize;
 
-        let avg_allocation_size = if allocation_count > 0 {
-            current_memory / allocation_count
-        } else {
-            0
-        };
+        let avg_allocation_size = current_memory.checked_div(allocation_count).unwrap_or(0);
 
         // Simple fragmentation estimate based on allocation count vs memory usage
         let fragmentation_ratio = if current_memory > 0 && allocation_count > 0 {

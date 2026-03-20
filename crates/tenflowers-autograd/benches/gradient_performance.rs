@@ -2,8 +2,9 @@
 #![allow(clippy::cloned_ref_to_slice_refs)]
 #![allow(clippy::useless_vec)]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2, Array3};
+use std::hint::black_box;
 use std::time::Duration;
 use tenflowers_autograd::{accumulate_gradients_over_batch, GradientAccumulator, GradientTape};
 use tenflowers_core::{DType, Device, Tensor};

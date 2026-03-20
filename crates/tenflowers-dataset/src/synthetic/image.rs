@@ -4,7 +4,7 @@
 //! various patterns for computer vision tasks and dataset creation.
 
 use super::core::{SyntheticConfig, SyntheticDataset};
-use scirs2_core::random::{Rng, RngCore, SeedableRng};
+use scirs2_core::random::{Rng, RngExt, SeedableRng};
 use tenflowers_core::{Result, Tensor};
 
 /// Configuration for synthetic image pattern generation
@@ -125,10 +125,7 @@ pub struct ImagePatternGenerator;
 
 impl ImagePatternGenerator {
     /// Generate a single image with the specified pattern
-    pub fn generate_image(
-        config: &ImagePatternConfig,
-        rng: &mut dyn RngCore,
-    ) -> Result<Tensor<f32>> {
+    pub fn generate_image(config: &ImagePatternConfig, rng: &mut impl Rng) -> Result<Tensor<f32>> {
         let total_pixels = config.width * config.height * config.channels;
         let mut image_data = vec![0.0f32; total_pixels];
 
@@ -224,7 +221,7 @@ impl ImagePatternGenerator {
         config: &ImagePatternConfig,
         radius: f32,
         num_circles: usize,
-        rng: &mut dyn RngCore,
+        rng: &mut impl Rng,
     ) {
         // Initialize with background
         for pixel in data.iter_mut() {
@@ -285,7 +282,7 @@ impl ImagePatternGenerator {
         data: &mut [f32],
         _config: &ImagePatternConfig,
         distribution: NoiseDistribution,
-        rng: &mut dyn RngCore,
+        rng: &mut impl Rng,
     ) {
         for pixel in data.iter_mut() {
             *pixel = match distribution {
@@ -375,10 +372,10 @@ impl ImagePatternGenerator {
         config: &ImagePatternConfig,
         synthetic_config: SyntheticConfig,
     ) -> Result<SyntheticDataset<f32>> {
-        let mut rng: Box<dyn RngCore> = if let Some(seed) = synthetic_config.random_seed {
-            Box::new(scirs2_core::random::rngs::StdRng::seed_from_u64(seed))
+        let mut rng = if let Some(seed) = synthetic_config.random_seed {
+            scirs2_core::random::Random::seed(seed)
         } else {
-            Box::new(scirs2_core::random::rng())
+            scirs2_core::random::Random::seed(0)
         };
 
         let image_size = config.width * config.height * config.channels;
@@ -386,7 +383,7 @@ impl ImagePatternGenerator {
         let mut labels = Vec::with_capacity(synthetic_config.n_samples);
 
         for i in 0..synthetic_config.n_samples {
-            let image = Self::generate_image(config, &mut *rng)?;
+            let image = Self::generate_image(config, &mut rng)?;
             let image_data = image.to_vec().map_err(|_| {
                 tenflowers_core::TensorError::invalid_argument(
                     "Failed to convert image tensor to vector".to_string(),

@@ -232,12 +232,12 @@ impl PyDense {
     }
 
     /// Register a forward hook
-    pub fn register_forward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         self.hook_manager.register_forward_hook(hook)
     }
 
     /// Register a backward hook
-    pub fn register_backward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         self.hook_manager.register_backward_hook(hook)
     }
 
@@ -440,12 +440,12 @@ impl PySequential {
     }
 
     /// Register a forward hook
-    pub fn register_forward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         self.hook_manager.register_forward_hook(hook)
     }
 
     /// Register a backward hook
-    pub fn register_backward_hook(&self, hook: PyObject) -> PyResult<PyHookHandle> {
+    pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
         self.hook_manager.register_backward_hook(hook)
     }
 

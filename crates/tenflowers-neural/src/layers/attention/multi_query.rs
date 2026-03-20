@@ -9,13 +9,6 @@ use tenflowers_core::{Result, Tensor};
 
 use super::KVCache;
 
-// TODO: Move complete MultiQueryAttention implementation from original attention.rs
-// This includes:
-// - MultiQueryAttention struct (lines 1576-1607, ~32 lines)
-// - Clone implementation (lines 1608-1645, ~38 lines)
-// - Constructor and methods (lines 1647-1843, ~197 lines)
-// - Layer trait implementation (lines 1844-1918, ~75 lines)
-
 /// Multi-Query Attention layer for modern LLMs
 ///
 /// Multi-query attention is a variation where multiple query heads share the same key and value heads.
@@ -59,7 +52,6 @@ where
         + bytemuck::Zeroable,
 {
     fn clone(&self) -> Self {
-        // TODO: Implement complete clone method (from original lines 1608-1645)
         Self {
             num_heads: self.num_heads,
             head_dim: self.head_dim,
@@ -99,7 +91,6 @@ where
         dropout_prob: f32,
         layer_id: String,
     ) -> Result<Self> {
-        // TODO: Implement complete constructor (from original lines 1647+)
         let head_dim = embed_dim / num_heads;
 
         // Create placeholder tensors

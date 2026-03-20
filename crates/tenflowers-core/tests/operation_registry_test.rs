@@ -72,8 +72,10 @@ fn test_kernel_execution_f32() {
         .expect("Result should be f32 tensor");
 
     let expected = vec![5.0, 7.0, 9.0];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -98,8 +100,10 @@ fn test_kernel_execution_f64() {
     let result = results[0].downcast_ref::<Tensor<f64>>().unwrap();
 
     let expected = vec![2.0, 4.0, 6.0];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -124,8 +128,10 @@ fn test_kernel_execution_i32() {
     let result = results[0].downcast_ref::<Tensor<i32>>().unwrap();
 
     let expected = vec![11, 22, 33];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -150,8 +156,10 @@ fn test_kernel_execution_i8() {
     let result = results[0].downcast_ref::<Tensor<i8>>().unwrap();
 
     let expected = vec![15i8, 30i8, 45i8];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -176,8 +184,10 @@ fn test_kernel_execution_u8() {
     let result = results[0].downcast_ref::<Tensor<u8>>().unwrap();
 
     let expected = vec![110u8, 170u8, 230u8];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -308,8 +318,10 @@ fn test_registry_broadcasting() {
 
     // Expected: [[11, 21], [12, 22], [13, 23]]
     let expected = vec![11.0, 21.0, 12.0, 22.0, 13.0, 23.0];
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     assert_eq!(
         arr.as_slice().expect("tensor should be contiguous"),
@@ -347,8 +359,10 @@ fn test_registry_performance() {
 
     // Verify correctness
     let result = results[0].downcast_ref::<Tensor<f32>>().unwrap();
-    let tenflowers_core::tensor::TensorStorage::Cpu(arr) = &result.storage else {
-        panic!("Expected CPU storage in test");
+    let arr = match &result.storage {
+        tenflowers_core::tensor::TensorStorage::Cpu(arr) => arr,
+        #[allow(unreachable_patterns)]
+        _ => panic!("Expected CPU storage in test"),
     };
     let slice = arr.as_slice().expect("tensor should be contiguous");
     assert_eq!(slice[0], 1.0); // 0 + 1

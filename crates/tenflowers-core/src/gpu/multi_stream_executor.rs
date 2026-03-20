@@ -256,7 +256,7 @@ impl MultiStreamGpuExecutor {
     /// Synchronize all streams
     pub fn synchronize_all(&self) {
         // Poll device to ensure all operations are complete
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
         // Clear all pending operations
         self.compute_stream

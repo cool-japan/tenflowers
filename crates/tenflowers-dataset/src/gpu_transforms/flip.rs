@@ -127,7 +127,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("flip_pipeline_layout"),
                 bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let pipeline = context
@@ -275,7 +275,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 eprintln!("Warning: Failed to send GPU buffer read result");
             }
         });
-        self.context.device.poll(wgpu::Maintain::Wait);
+        self.context
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .ok();
 
         if let Ok(Ok(())) = receiver.await {
             let data = buffer_slice.get_mapped_range();

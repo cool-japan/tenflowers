@@ -262,7 +262,7 @@ impl<T: Clone + Default> TensorView<T> {
                     .queue;
 
                     queue.submit(std::iter::once(encoder.finish()));
-                    device.poll(wgpu::Maintain::Wait);
+                    device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
                     // Create GPU buffer wrapper
                     let device_id = match self.device {
@@ -505,7 +505,7 @@ impl<T: Clone + Default> TensorView<T> {
                     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("strided_materialize_pipeline_layout"),
                         bind_group_layouts: &[&bind_group_layout],
-                        push_constant_ranges: &[],
+                        immediate_size: 0,
                     });
 
                 let compute_pipeline =
@@ -539,7 +539,7 @@ impl<T: Clone + Default> TensorView<T> {
                 }
 
                 queue.submit(std::iter::once(encoder.finish()));
-                device.poll(wgpu::Maintain::Wait);
+                device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
                 // Create result GPU buffer
                 let gpu_buffer_result = crate::gpu::buffer::GpuBuffer::from_wgpu_buffer(
@@ -738,7 +738,7 @@ impl<T: Clone + Default> TensorView<T> {
                     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("pooled_strided_materialize_pipeline_layout"),
                         bind_group_layouts: &[&bind_group_layout],
-                        push_constant_ranges: &[],
+                        immediate_size: 0,
                     });
 
                 let compute_pipeline =
@@ -772,7 +772,7 @@ impl<T: Clone + Default> TensorView<T> {
                 }
 
                 queue.submit(std::iter::once(encoder.finish()));
-                device.poll(wgpu::Maintain::Wait);
+                device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
                 // Create result GPU buffer
                 let gpu_buffer_result = crate::gpu::buffer::GpuBuffer::from_wgpu_buffer(

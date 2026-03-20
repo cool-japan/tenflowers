@@ -16,7 +16,7 @@ pub struct MetalKernelConfig {
     /// Number of thread groups to dispatch
     pub thread_groups: metal::MTLSize,
     // Memory barriers and synchronization
-    // TODO: MTLBarrierScope is not available in metal crate v0.32.0
+    // NOTE(v0.2): MTLBarrierScope is not available in metal crate v0.32.0
     // pub memory_barriers: Vec<metal::MTLBarrierScope>,
 }
 

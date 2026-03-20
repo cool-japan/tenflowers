@@ -4,7 +4,7 @@
 //! including few-shot learning, meta-learning, self-supervised learning, and contrastive learning.
 
 use crate::{Dataset, DatasetUtilsExt};
-use scirs2_core::random::{rngs::StdRng, Rng, SeedableRng};
+use scirs2_core::random::{rngs::StdRng, Rng, RngExt, SeedableRng};
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -422,7 +422,7 @@ where
         })
         .collect();
 
-    Tensor::from_vec(data, &[dim]).expect("Tensor creation from valid dimensions should succeed")
+    Tensor::from_vec(data, &[dim]).unwrap_or_else(|_| Tensor::zeros(&[dim]))
 }
 
 /// Add noise to a vector

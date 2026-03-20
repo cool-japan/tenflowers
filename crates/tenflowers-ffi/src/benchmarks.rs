@@ -55,7 +55,7 @@ impl PyPerformanceBenchmark {
     pub fn new() -> Self {
         let mut tensorflow_baselines = HashMap::new();
 
-        // Performance targets from TODO.md goals
+        // Performance targets from project goals
         tensorflow_baselines.insert("gpu_utilization".to_string(), 0.90); // 90% of TensorFlow GPU performance
         tensorflow_baselines.insert("eager_execution_overhead".to_string(), 0.001); // Sub-millisecond overhead
         tensorflow_baselines.insert("memory_efficiency".to_string(), 1.10); // Within 10% of TensorFlow memory usage
@@ -77,7 +77,7 @@ impl PyPerformanceBenchmark {
         &mut self,
         py: Python,
         shapes: &Bound<'_, PyList>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut operation_results = HashMap::new();
 
         for shape_item in shapes.iter() {
@@ -126,7 +126,7 @@ impl PyPerformanceBenchmark {
         batch_size: usize,
         hidden_dims: &Bound<'_, PyList>,
         epochs: usize,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut training_results = HashMap::new();
 
         // Extract hidden layer dimensions
@@ -251,7 +251,7 @@ impl PyPerformanceBenchmark {
         &mut self,
         py: Python,
         param_count_millions: f64,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let param_count = (param_count_millions * 1_000_000.0) as usize;
         let mut large_model_results = HashMap::new();
 
@@ -320,7 +320,7 @@ impl PyPerformanceBenchmark {
     }
 
     /// Generate comprehensive performance report
-    pub fn generate_performance_report(&self, py: Python) -> PyResult<PyObject> {
+    pub fn generate_performance_report(&self, py: Python) -> PyResult<Py<PyAny>> {
         let py_dict = PyDict::new(py);
 
         // Performance targets status
@@ -608,7 +608,7 @@ struct ModelInfo {
 
 /// Convenience function for quick performance testing
 #[pyfunction]
-pub fn quick_performance_test(py: Python) -> PyResult<PyObject> {
+pub fn quick_performance_test(py: Python) -> PyResult<Py<PyAny>> {
     let mut benchmark = PyPerformanceBenchmark::new();
 
     // Test common tensor shapes

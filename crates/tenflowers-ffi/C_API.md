@@ -404,9 +404,9 @@ The C API follows semantic versioning:
 - **Minor version**: New features, backward compatible
 - **Patch version**: Bug fixes, fully compatible
 
-Current version: **0.1.0-alpha.2**
+Current version: **0.1.0**
 
-**Note:** Alpha versions may have breaking changes. Stable ABI will be guaranteed from version 1.0.0 onwards.
+**Note:** Pre-1.0 versions may have breaking changes. Stable ABI will be guaranteed from version 1.0.0 onwards.
 
 ### Performance Tips
 

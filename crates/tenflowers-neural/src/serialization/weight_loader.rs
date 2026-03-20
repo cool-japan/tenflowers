@@ -229,7 +229,7 @@ impl<T> LoadResult<T> {
     /// Create a new load result
     pub fn new(weights: HashMap<String, Tensor<T>>) -> Self {
         let num_loaded = weights.len();
-        let total_bytes = 0; // TODO: Calculate from tensors
+        let total_bytes = 0; // NOTE(v0.2): Calculate total_bytes from tensor sizes
 
         Self {
             weights,

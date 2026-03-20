@@ -1,6 +1,6 @@
-# TenfloweRS Dataset TODO & Roadmap (0.1.0-alpha.1)
+# TenfloweRS Dataset TODO & Roadmap (v0.1.0)
 
-Alpha.1 focus: data loading and preprocessing capabilities and forward development plan. Historical logs removed.
+v0.1.0 focus: data loading and preprocessing capabilities and forward development plan.
 
 ## 1. Current Capabilities
 
@@ -58,7 +58,7 @@ Alpha.1 focus: data loading and preprocessing capabilities and forward developme
 - **Throughput Analysis**: Limited benchmarking harness for ingest and transform performance
 - **Memory Optimization**: Room for improvement in memory usage patterns and allocation strategies
 
-## 3. Near-Term Roadmap (Beta Prep)
+## 3. Near-Term Roadmap
 
 ### Priority 1: Distributed & Streaming ✅ COMPLETED
 1. ✅ **Streaming Loaders**: Deterministic partitioning specification for distributed training
@@ -95,7 +95,7 @@ Alpha.1 focus: data loading and preprocessing capabilities and forward developme
 15. **Debug Tools**: Comprehensive debugging and profiling tools for data pipeline analysis
 16. **Data Quality Metrics**: Advanced data quality assessment and drift detection
 
-## 4. Mid-Term Roadmap (Post-Beta)
+## 4. Mid-Term Roadmap
 
 ### Advanced Data Processing
 - **On-the-fly Augmentation**: GPU kernel fusion for real-time data augmentation
@@ -184,4 +184,4 @@ Alpha.1 focus: data loading and preprocessing capabilities and forward developme
 
 ---
 
-**Alpha.1 Status**: TenfloweRS Dataset provides production-ready data loading capabilities with comprehensive format support, GPU acceleration, and SciRS2 integration. Ready for beta development focusing on distributed loading and advanced format integration.
+**v0.1.0 Status**: Production-ready data loading capabilities with comprehensive format support, GPU acceleration, and SciRS2 integration. Forward development focuses on distributed loading and advanced format integration.

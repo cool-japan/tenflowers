@@ -662,7 +662,7 @@ fn convert_u32_to_u8_gpu_buffer(
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("convert_pipeline_layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let convert_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -694,7 +694,7 @@ fn convert_u32_to_u8_gpu_buffer(
     }
 
     queue.submit(std::iter::once(encoder.finish()));
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
     // Create result GpuBuffer
     let device_id = match &input.device_enum() {

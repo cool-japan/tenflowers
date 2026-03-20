@@ -449,11 +449,10 @@ impl GradientMemoryProfiler {
     // Helper methods for enhanced functionality
     fn analyze_allocation_patterns(&self, stats: &MemoryStats) -> AllocationPatterns {
         AllocationPatterns {
-            avg_allocation_size: if stats.total_allocations > 0 {
-                stats.current_memory / stats.total_allocations
-            } else {
-                0
-            },
+            avg_allocation_size: stats
+                .current_memory
+                .checked_div(stats.total_allocations)
+                .unwrap_or(0),
             allocation_frequency: stats.total_allocations as f64 / stats.gradient_operations as f64,
             peak_allocation_periods: self.identify_peak_periods(&stats.memory_timeline),
         }

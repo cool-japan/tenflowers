@@ -395,7 +395,7 @@ impl GpuLinalgContext {
             tx.send(result).expect("channel send should succeed");
         });
 
-        self.device().poll(wgpu::Maintain::Wait);
+        self.device().poll(wgpu::PollType::wait_indefinitely()).ok();
         rx.recv().expect("channel recv should succeed").map_err(|e| TensorError::ComputeError {
             operation: "gpu_read_determinant".to_string(),
             details: format!("Failed to read determinant result: {:?}", e),

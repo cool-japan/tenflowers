@@ -45,11 +45,7 @@ impl FragmentationAnalysis {
         let total_free: usize = free_blocks.iter().sum();
         let largest_free_block = *free_blocks.iter().max().unwrap_or(&0);
         let free_block_count = free_blocks.len();
-        let average_free_block_size = if free_block_count > 0 {
-            total_free / free_block_count
-        } else {
-            0
-        };
+        let average_free_block_size = total_free.checked_div(free_block_count).unwrap_or(0);
 
         // Fragmentation ratio: measure how scattered the free memory is
         // High fragmentation = memory is divided into many small blocks
@@ -177,13 +173,9 @@ pub struct OperationProfile {
 impl OperationProfile {
     /// Create from allocation data
     pub fn new(operation: String, allocations: &[&AllocationInfo]) -> Self {
-        let total_allocated = allocations.iter().map(|a| a.size).sum();
+        let total_allocated: usize = allocations.iter().map(|a| a.size).sum();
         let allocation_count = allocations.len();
-        let average_size = if allocation_count > 0 {
-            total_allocated / allocation_count
-        } else {
-            0
-        };
+        let average_size = total_allocated.checked_div(allocation_count).unwrap_or(0);
 
         // Peak usage (sum of concurrent allocations)
         let peak_usage = total_allocated; // Simplified - could compute actual peak
@@ -417,7 +409,7 @@ impl GpuMemoryDiagnostics {
         // Top consumers
         let usage_by_op = tracker.usage_by_operation();
         let mut top_consumers: Vec<_> = usage_by_op.into_iter().collect();
-        top_consumers.sort_by(|a, b| b.1.cmp(&a.1));
+        top_consumers.sort_by_key(|item| std::cmp::Reverse(item.1));
         top_consumers.truncate(10);
 
         // Generate recommendations
@@ -468,7 +460,7 @@ impl GpuMemoryDiagnostics {
             .map(|(op, allocs)| OperationProfile::new(op, &allocs))
             .collect();
 
-        profiles.sort_by(|a, b| b.total_allocated.cmp(&a.total_allocated));
+        profiles.sort_by_key(|item| std::cmp::Reverse(item.total_allocated));
         profiles
     }
 

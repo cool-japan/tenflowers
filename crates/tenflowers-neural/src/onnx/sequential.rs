@@ -93,7 +93,7 @@ fn layer_to_onnx_node(
         LayerType::Dense => {
             let mut attributes = HashMap::new();
 
-            // TODO: Add weight and bias information as attributes when layer data is available
+            // NOTE(v0.2): Add weight and bias information as attributes when layer data is available
             // For now, this is a stub implementation
 
             let node = OnnxNode {
@@ -107,7 +107,7 @@ fn layer_to_onnx_node(
             // Calculate output shape (simplified stub)
             let output_shape = if input_shape.len() >= 2 {
                 let mut shape = input_shape.to_vec();
-                // TODO: Use actual output features when layer data is available
+                // NOTE(v0.2): Use actual output features when layer data is available
                 let last_idx = shape.len() - 1;
                 shape[last_idx] = 128; // Default stub value
                 shape

@@ -107,13 +107,13 @@ impl PyAdaBelief {
     /// Perform a single optimization step
     pub fn step(&mut self, _model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, _model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -239,13 +239,13 @@ impl PyRAdam {
     /// Perform a single optimization step
     pub fn step(&mut self, _model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, _model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -366,13 +366,13 @@ impl PyNadam {
     /// Perform a single optimization step
     pub fn step(&mut self, _model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, _model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -503,13 +503,13 @@ impl PyAdaGrad {
     /// Perform a single optimization step
     pub fn step(&mut self, _model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, _model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -631,13 +631,13 @@ impl PyAdaDelta {
     /// Perform a single optimization step
     pub fn step(&mut self, _model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, _model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 

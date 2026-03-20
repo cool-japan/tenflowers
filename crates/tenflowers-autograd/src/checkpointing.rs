@@ -419,8 +419,10 @@ mod tests {
         assert!(restored.is_some());
 
         let restored_tensor = restored.expect("test: operation should succeed");
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = restored_tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &restored_tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert_eq!(array[[0]], 1.0);
         assert_eq!(array[[1]], 2.0);
@@ -457,8 +459,10 @@ mod tests {
             .expect("test: checkpoint operation should succeed");
 
         // Verify result
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &result.tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert_eq!(array[[0]], 2.0);
         assert_eq!(array[[1]], 4.0);
@@ -483,8 +487,10 @@ mod tests {
             .expect("test: checkpoint operation should succeed");
 
         // Result should be 1 * 2 * 2 * 2 = 8
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = result.tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &result.tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert_eq!(array[[0]], 8.0);
     }

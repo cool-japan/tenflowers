@@ -293,20 +293,20 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Implement platform-specific optimization configs
+    #[ignore] // NOTE(v0.2): Implement platform-specific optimization configs
     fn test_platform_optimization_configs() {
-        // TODO: Implement tensorrt_optimization_config()
+        // NOTE(v0.2): Implement tensorrt_optimization_config()
         // let tensorrt_config = tensorrt_optimization_config();
         // assert!(tensorrt_config.kernel_fusion);
         // assert!(tensorrt_config.memory_layout_optimization);
         // assert_eq!(tensorrt_config.optimization_level, 2);
 
-        // TODO: Implement edge_deployment_optimization_config()
+        // NOTE(v0.2): Implement edge_deployment_optimization_config()
         // let edge_config = edge_deployment_optimization_config();
         // assert!(edge_config.quantization_aware);
         // assert!(!edge_config.dynamic_batching);
 
-        // TODO: Implement mobile_deployment_optimization_config()
+        // NOTE(v0.2): Implement mobile_deployment_optimization_config()
         // let mobile_config = mobile_deployment_optimization_config();
         // assert_eq!(mobile_config.target_batch_size, Some(1));
     }

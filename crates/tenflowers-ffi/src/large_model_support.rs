@@ -432,7 +432,7 @@ impl PyLargeModelManager {
 
     /// Get comprehensive model statistics
     #[pyo3(signature = (model_id=None))]
-    pub fn get_model_statistics(&self, py: Python, model_id: Option<&str>) -> PyResult<PyObject> {
+    pub fn get_model_statistics(&self, py: Python, model_id: Option<&str>) -> PyResult<Py<PyAny>> {
         let manager = self.inner.read().expect("read lock should not be poisoned");
         let py_dict = PyDict::new(py);
 
@@ -518,7 +518,7 @@ impl PyLargeModelManager {
         &mut self,
         py: Python,
         model_id: &str,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut manager = self
             .inner
             .write()
@@ -596,7 +596,7 @@ impl PyLargeModelManager {
     }
 
     /// Get memory optimization recommendations
-    pub fn get_memory_recommendations(&self, py: Python, model_id: &str) -> PyResult<PyObject> {
+    pub fn get_memory_recommendations(&self, py: Python, model_id: &str) -> PyResult<Py<PyAny>> {
         let manager = self.inner.read().expect("read lock should not be poisoned");
         let mut recommendations = Vec::new();
 
@@ -804,7 +804,7 @@ pub fn create_optimized_large_model(
     py: Python,
     parameter_count_billions: f64,
     memory_budget_gb: Option<f64>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let mut manager = PyLargeModelManager::new(memory_budget_gb);
     let model_id = format!("large_model_{}b", parameter_count_billions);
 

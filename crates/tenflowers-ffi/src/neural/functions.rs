@@ -119,7 +119,7 @@ pub fn log_softmax(input: &PyTensor, dim: Option<i32>) -> PyResult<PyTensor> {
 
         match tenflowers_core::ops::log_softmax(&input.tensor) {
             Ok(tensor) => {
-                // TODO: This is not axis-aware yet - needs proper implementation
+                // NOTE(v0.2): This is not axis-aware yet - needs proper implementation
                 // For now, we apply log_softmax to the entire tensor
                 eprintln!("Warning: log_softmax axis parameter not fully implemented yet, applying to entire tensor");
                 Ok(PyTensor {

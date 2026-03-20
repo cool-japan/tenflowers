@@ -145,16 +145,15 @@ fn test_gpu_linalg_context_with_adaptive_config() {
     let adapter_future = instance.request_adapter(&RequestAdapterOptions::default());
 
     // Use pollster to block on the async operation for testing
-    if let Some(adapter) = pollster::block_on(adapter_future) {
-        let device_future = adapter.request_device(
-            &DeviceDescriptor {
-                label: Some("test_device"),
-                required_features: Features::empty(),
-                required_limits: Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
-        );
+    if let Ok(adapter) = pollster::block_on(adapter_future) {
+        let device_future = adapter.request_device(&DeviceDescriptor {
+            label: Some("test_device"),
+            required_features: Features::empty(),
+            required_limits: Limits::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
+            trace: wgpu::Trace::default(),
+        });
 
         if let Ok((device, queue)) = pollster::block_on(device_future) {
             let device = Arc::new(device);

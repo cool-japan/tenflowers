@@ -51,7 +51,7 @@ pub use activation::{
     softmax, swish, tanh,
 };
 pub use advanced_math::{
-    expit, gelu_tanh, hard_sigmoid, log_sigmoid, logit, selu, softplus, softsign,
+    expit, gelu_tanh, hard_sigmoid, log_sigmoid, logit, logsumexp, selu, softplus, softsign,
 };
 pub use async_binary::{
     add_async, add_async_priority, batch_add_async, batch_mul_async, div_async,

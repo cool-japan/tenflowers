@@ -214,7 +214,7 @@ impl PyMemoryOptimizer {
     }
 
     /// Perform comprehensive memory optimization
-    pub fn optimize_memory(&mut self, py: Python) -> PyResult<PyObject> {
+    pub fn optimize_memory(&mut self, py: Python) -> PyResult<Py<PyAny>> {
         let start_time = Instant::now();
         let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
 
@@ -342,7 +342,7 @@ impl PyMemoryOptimizer {
     }
 
     /// Get comprehensive memory statistics
-    pub fn get_memory_statistics(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_memory_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
         let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let py_dict = PyDict::new(py);
 
@@ -420,7 +420,7 @@ impl PyMemoryOptimizer {
     }
 
     /// Generate memory optimization recommendations
-    pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<Py<PyAny>> {
         let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let mut recommendations = Vec::new();
 
@@ -482,8 +482,8 @@ impl PyMemoryOptimizer {
         &mut self,
         py: Python,
         operation_name: &str,
-        operation: PyObject,
-    ) -> PyResult<PyObject> {
+        operation: Py<PyAny>,
+    ) -> PyResult<Py<PyAny>> {
         let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
 
         // Take snapshot before operation
@@ -556,7 +556,7 @@ impl PyMemoryOptimizer {
     }
 
     /// Get detailed memory fragmentation analysis
-    pub fn analyze_fragmentation(&self, py: Python) -> PyResult<PyObject> {
+    pub fn analyze_fragmentation(&self, py: Python) -> PyResult<Py<PyAny>> {
         let optimizer = self.inner.lock().expect("lock should not be poisoned");
         let fragmentation_ratio = optimizer.allocation_tracker.fragmentation_ratio;
 
@@ -772,7 +772,7 @@ impl MemoryCompactor {
 pub fn quick_memory_optimize(
     py: Python,
     tensorflow_baseline_mb: Option<f64>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let mut optimizer = PyMemoryOptimizer::new(tensorflow_baseline_mb);
     optimizer.optimize_memory(py)
 }

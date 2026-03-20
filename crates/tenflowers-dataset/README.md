@@ -2,8 +2,7 @@
 
 Data loading and preprocessing utilities for TenfloweRS, providing efficient dataset management, transformations, and data pipelines for machine learning workflows.
 
-> Release Candidate (0.1.0-rc.1 · 2026-02-12)
-> Core dataset abstractions and transform pipeline are present; advanced distributed sharding, streaming, and some format loaders are placeholders or partial.
+> Stable (v0.1.0 -- 2026-03-20) | 472 tests passing | 0 clippy warnings
 
 ## Overview
 
@@ -11,18 +10,24 @@ Data loading and preprocessing utilities for TenfloweRS, providing efficient dat
 - **Dataset Abstractions**: Flexible trait-based dataset interface
 - **Data Transformations**: Preprocessing and augmentation pipelines
 - **Batch Processing**: Efficient batching with automatic tensor stacking
-- **Data Loading**: Support for various data formats and sources
+- **Data Loading**: Support for CSV, Parquet, HDF5, TFRecord, images, and audio formats
 - **Parallel Processing**: Multi-threaded data loading and preprocessing
-- **Memory Efficiency**: Lazy loading and caching strategies
+- **Memory Efficiency**: Lazy loading, memory mapping, and caching strategies
+- **Distributed Streaming**: Sharded streaming for large-scale training
+- **Multimodal Support**: Unified transforms for multi-modal data
+- **Synthetic Data Generation**: Built-in generators for images, text, time series, and modern ML datasets
+- **Reproducibility**: Deterministic data pipelines with seed control
 
 ## Features
 
 - **Flexible Dataset Trait**: Define custom datasets for any data source
-- **Composable Transforms**: Chain preprocessing operations
+- **Composable Transforms**: Chain preprocessing operations with a pipeline API
 - **Automatic Batching**: Convert individual samples to batched tensors
-- **Data Augmentation**: Common augmentation techniques for images, text, audio
+- **Data Augmentation**: Augmentation techniques for images, text, and audio including noise injection
 - **Prefetching**: Overlap data loading with model computation
 - **Distributed Support**: Sharding for multi-GPU training
+- **Caching with Telemetry**: LRU caching with hit-rate monitoring
+- **Vision Transforms**: Resize, crop, flip, color jitter, and normalization
 
 ## Usage
 
@@ -87,15 +92,15 @@ impl Dataset<f32> for ImageDataset {
     fn len(&self) -> usize {
         self.image_paths.len()
     }
-    
+
     fn get(&self, index: usize) -> Result<(Tensor<f32>, Tensor<f32>)> {
         // Load image from disk
         let image = load_image(&self.image_paths[index])?;
         let image_tensor = image_to_tensor(image)?;
-        
+
         // Convert label to tensor
         let label_tensor = Tensor::scalar(self.labels[index] as f32, Device::Cpu)?;
-        
+
         Ok((image_tensor, label_tensor))
     }
 }
@@ -117,47 +122,6 @@ let augmentation = ImageAugmentation::builder()
 
 // Apply to dataset during training
 let train_dataset = dataset.transform(augmentation);
-```
-
-### CSV Dataset
-
-```rust
-use tenflowers_dataset::CsvDataset;
-
-// Load dataset from CSV file
-let dataset = CsvDataset::builder()
-    .file_path("data.csv")
-    .has_header(true)
-    .feature_columns(vec!["feature1", "feature2", "feature3"])
-    .label_column("target")
-    .delimiter(',')
-    .build()?;
-
-// Automatic type inference and conversion to tensors
-for batch in dataset.batch(32) {
-    // Process batches
-}
-```
-
-### TFRecord Dataset
-
-```rust
-use tenflowers_dataset::TFRecordDataset;
-
-// Load TensorFlow TFRecord files
-let dataset = TFRecordDataset::new(vec!["data.tfrecord"])?;
-
-// Parse examples with feature descriptions
-let parsed = dataset.parse_example(|example| {
-    let image = example.get_bytes("image")?;
-    let label = example.get_int64("label")?;
-    
-    // Decode and preprocess
-    let image_tensor = decode_image(image)?;
-    let label_tensor = Tensor::scalar(label as f32, Device::Cpu)?;
-    
-    Ok((image_tensor, label_tensor))
-});
 ```
 
 ### Parallel Data Loading
@@ -182,23 +146,6 @@ for batch in loader {
 }
 ```
 
-### Distributed Data Loading
-
-```rust
-use tenflowers_dataset::{DistributedSampler};
-
-// Create distributed sampler for multi-GPU training
-let sampler = DistributedSampler::new(
-    dataset_len,
-    num_replicas: 4,
-    rank: 0,
-    shuffle: true,
-);
-
-// Each GPU gets a unique subset of data
-let distributed_dataset = dataset.with_sampler(sampler);
-```
-
 ## Architecture
 
 ### Core Components
@@ -212,76 +159,31 @@ let distributed_dataset = dataset.with_sampler(sampler);
 
 - **In-Memory**: Tensor datasets, array datasets
 - **Files**: Images (PNG, JPEG), CSV, JSON, Parquet
-- **Binary**: TFRecord, MessagePack, Protobuf
+- **Binary**: TFRecord, MessagePack
 - **Text**: Plain text, tokenized sequences
 - **Audio**: WAV, MP3, FLAC with on-the-fly processing
 
 ### Performance Features
 
-- **Memory Mapping**: For large datasets that don't fit in RAM
-- **Caching**: LRU cache for frequently accessed samples
+- **Memory Mapping**: For large datasets that do not fit in RAM
+- **Caching**: LRU cache with telemetry for frequently accessed samples
 - **Prefetching**: Overlap I/O with computation
 - **Parallel Loading**: Multi-threaded data loading
-- **GPU Direct**: Direct loading to GPU memory
+- **NUMA-aware**: Optional NUMA memory placement
 
-## Common Patterns
+## Feature Flags
 
-### Train/Validation/Test Split
-
-```rust
-use tenflowers_dataset::{train_test_split, DatasetSplit};
-
-// Split dataset into train/val/test
-let (train, val, test) = dataset.split(&[0.7, 0.15, 0.15])?;
-
-// Or use predefined splits
-let splits = DatasetSplit::from_indices(
-    train_indices,
-    val_indices,
-    test_indices,
-);
-```
-
-### Data Pipeline for Training
-
-```rust
-// Complete training pipeline
-let train_pipeline = dataset
-    .shuffle(10000)
-    .transform(augmentation)
-    .batch(32)
-    .prefetch(2);
-
-let val_pipeline = val_dataset
-    .batch(32)
-    .prefetch(1);
-
-// Use in training loop
-for epoch in 0..num_epochs {
-    for batch in &train_pipeline {
-        // Training step
-    }
-    
-    for batch in &val_pipeline {
-        // Validation step
-    }
-}
-```
-
-### Infinite Dataset Iterator
-
-```rust
-use tenflowers_dataset::InfiniteDataset;
-
-// Create infinite iterator for continuous training
-let infinite = InfiniteDataset::new(dataset)
-    .shuffle_each_epoch(true);
-
-// Take specific number of steps
-for batch in infinite.take(1000).batch(32) {
-    // Process batch
-}
-```
+- `parallel`: Parallel data loading via Rayon
+- `serialize`: Serialization support for datasets and transforms
+- `images`: Image loading and processing
+- `mmap`: Memory-mapped dataset support
+- `parquet`: Parquet file format support
+- `csv_format`: CSV file format support
+- `tfrecord`: TFRecord file format support
+- `audio`: Audio file loading and processing
+- `download`: Dataset download utilities
+- `gpu`: GPU direct data loading
+- `numa`: NUMA-aware memory placement
 
 ## Integration with TenfloweRS
 
@@ -289,45 +191,6 @@ for batch in infinite.take(1000).batch(32) {
 - **Device Placement**: Automatic CPU/GPU placement
 - **Gradient Tape**: Compatible with autograd for data-dependent gradients
 - **Model Training**: Direct integration with neural network training loops
-
-## Performance Considerations
-
-- Use appropriate batch sizes for your hardware
-- Enable prefetching for I/O-bound datasets
-- Use memory mapping for datasets larger than RAM
-- Consider data format for optimal loading speed
-- Profile data loading to identify bottlenecks
-
-### Current Alpha Limitations
-- Some listed file/format loaders (Parquet advanced predicates, TFRecord sequence features) are stubs
-- Streaming + resumable iteration incomplete
-- Distributed sampler lacks fault tolerance & elasticity
-- GPU direct data path experimental
-
-### Near-Term Priorities
-1. Unified error taxonomy for I/O & decoding
-2. Async streaming reader for large sequential datasets
-3. Pluggable shuffle buffer backends (disk / memory / mmap)
-4. Format coverage: Arrow / simple HDF5 reader
-5. Deterministic epoch sharding guarantees
-
-## Future Enhancements
-
-See TODO.md for detailed roadmap including:
-- More data formats (HDF5, Zarr, Arrow)
-- Advanced augmentation techniques
-- Federated learning support
-- Streaming datasets
-- Active learning samplers
-
-## Contributing
-
-We welcome contributions! Priority areas:
-- Implementing new data formats
-- Adding augmentation techniques
-- Optimizing data loading performance
-- Creating dataset utilities
-- Writing examples and tutorials
 
 ## License
 

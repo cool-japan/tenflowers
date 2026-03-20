@@ -732,4 +732,4 @@ pub fn embedding_backward(
 ---
 
 **Last Updated**: February 6, 2026
-**Author**: COOLJAPAN OU (Team Kitasan)
+**Author**: COOLJAPAN OU (Team KitaSan)

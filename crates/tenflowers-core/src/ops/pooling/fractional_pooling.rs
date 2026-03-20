@@ -7,6 +7,7 @@ use crate::tensor::TensorStorage;
 use crate::{Result, Tensor, TensorError};
 use scirs2_core::numeric::{Float, FromPrimitive, Zero};
 use scirs2_core::random::{Random, Rng};
+use scirs2_core::RngExt;
 
 /// Fractional max pooling 2D operation
 /// Uses stochastic or deterministic fractional scaling

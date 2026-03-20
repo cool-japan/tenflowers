@@ -244,7 +244,7 @@ impl UltraGpuFusionCoordinator {
             return Ok(Vec::new());
         }
 
-        // TODO: Implement proper GPU buffer sharing/viewing for fusion
+        // NOTE(v0.2): Implement proper GPU buffer sharing/viewing for fusion
         // For now, return an error until proper buffer management is implemented
         // Check the first tensor to determine if all are on GPU
         match &input_tensors[0].storage {
@@ -347,7 +347,7 @@ impl UltraGpuFusionCoordinator {
         queue.push(operation);
 
         // Sort queue by priority for optimal execution order
-        queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        queue.sort_by_key(|item| std::cmp::Reverse(item.priority));
 
         Ok(())
     }

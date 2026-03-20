@@ -27,8 +27,9 @@
 /// - Use `cargo bench --bench dispatch_benchmarks` to run locally
 /// - Results are compared against baseline measurements
 ///
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use scirs2_core::ndarray::{Array, Array1, Array2};
+use std::hint::black_box;
 use std::time::{Duration, Instant};
 use tenflowers_core::{ensure_dispatch_initialized, Tensor, F32_REGISTRY};
 

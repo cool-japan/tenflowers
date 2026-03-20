@@ -1,7 +1,7 @@
 # GPU Kernel Expansion Priorities for TenfloweRS Core
 
-**Version:** 0.1.0-beta.1
-**Last Updated:** 2026-02-02
+**Version:** 0.1.0
+**Last Updated:** 2026-03-20
 **Status:** Active Planning Document
 
 ## Executive Summary
@@ -257,10 +257,10 @@ This document defines the prioritized roadmap for expanding GPU kernel coverage 
 
 ### Coverage Targets
 
-- **Alpha.2 (Current)**: 30% GPU coverage
-- **Beta.1**: 60% GPU coverage (Tier 1 complete)
-- **Beta.2**: 80% GPU coverage (Tier 1-2 complete)
-- **RC.1**: 95% GPU coverage (Tier 1-3 complete)
+- **v0.1.0 (Current)**: 30% GPU coverage
+- **v0.2.0**: 60% GPU coverage (Tier 1 complete)
+- **v0.3.0**: 80% GPU coverage (Tier 1-2 complete)
+- **v0.4.0**: 95% GPU coverage (Tier 1-3 complete)
 - **v1.0**: 99% GPU coverage (All tiers complete)
 
 ### Quality Gates

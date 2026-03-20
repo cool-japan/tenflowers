@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // TODO: Fix async gradient computation - tape context issue
+    #[ignore] // NOTE(v0.2): Fix async gradient computation - tape context issue
     async fn test_async_gradient_computation() {
         let config = ParallelGradientConfig::default();
         let devices = vec![Device::Cpu];

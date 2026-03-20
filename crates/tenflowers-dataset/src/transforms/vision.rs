@@ -4,7 +4,7 @@
 //! image preprocessing and data augmentation.
 
 use crate::transforms::Transform;
-use scirs2_core::random::Rng;
+use scirs2_core::random::{Rng, RngExt};
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -651,20 +651,20 @@ where
     pub fn moderate() -> Self {
         Self::new()
             .with_brightness(
-                T::from(0.8).expect("constant should convert to T"),
-                T::from(1.2).expect("constant should convert to T"),
+                T::from(0.8).unwrap_or_else(|| T::one()),
+                T::from(1.2).unwrap_or_else(|| T::one()),
             )
             .with_contrast(
-                T::from(0.8).expect("constant should convert to T"),
-                T::from(1.2).expect("constant should convert to T"),
+                T::from(0.8).unwrap_or_else(|| T::one()),
+                T::from(1.2).unwrap_or_else(|| T::one()),
             )
             .with_saturation(
-                T::from(0.8).expect("constant should convert to T"),
-                T::from(1.2).expect("constant should convert to T"),
+                T::from(0.8).unwrap_or_else(|| T::one()),
+                T::from(1.2).unwrap_or_else(|| T::one()),
             )
             .with_hue(
-                T::from(-0.1).expect("constant should convert to T"),
-                T::from(0.1).expect("constant should convert to T"),
+                T::from(-0.1).unwrap_or_else(|| T::zero()),
+                T::from(0.1).unwrap_or_else(|| T::zero()),
             )
     }
 
@@ -680,11 +680,10 @@ where
 
     /// Apply contrast adjustment
     fn adjust_contrast(&self, pixel: (T, T, T), factor: T) -> (T, T, T) {
-        let gray = T::from(0.299).expect("luminance constant should convert to T");
         let (r, g, b) = pixel;
-        let luminance = r * T::from(0.299).expect("luminance constant should convert to T")
-            + g * T::from(0.587).expect("luminance constant should convert to T")
-            + b * T::from(0.114).expect("luminance constant should convert to T");
+        let luminance = r * T::from(0.299).unwrap_or_else(|| T::zero())
+            + g * T::from(0.587).unwrap_or_else(|| T::zero())
+            + b * T::from(0.114).unwrap_or_else(|| T::zero());
 
         let new_r = (luminance + (r - luminance) * factor)
             .min(T::one())
@@ -759,19 +758,13 @@ where
 
         // Generate random factors for this sample
         let brightness_factor = if let Some((min, max)) = self.brightness {
-            Some(rng.random_range(
-                min.to_f32().expect("numeric conversion should succeed")
-                    ..=max.to_f32().expect("numeric conversion should succeed"),
-            ))
+            Some(rng.random_range(min.to_f32().unwrap_or(0.8)..=max.to_f32().unwrap_or(1.2)))
         } else {
             None
         };
 
         let contrast_factor = if let Some((min, max)) = self.contrast {
-            Some(rng.random_range(
-                min.to_f32().expect("numeric conversion should succeed")
-                    ..=max.to_f32().expect("numeric conversion should succeed"),
-            ))
+            Some(rng.random_range(min.to_f32().unwrap_or(0.8)..=max.to_f32().unwrap_or(1.2)))
         } else {
             None
         };
@@ -807,18 +800,14 @@ where
 
                     // Apply brightness adjustment
                     if let Some(factor) = brightness_factor {
-                        pixel = self.adjust_brightness(
-                            pixel,
-                            T::from(factor).expect("brightness factor should convert to T"),
-                        );
+                        pixel = self
+                            .adjust_brightness(pixel, T::from(factor).unwrap_or_else(|| T::one()));
                     }
 
                     // Apply contrast adjustment
                     if let Some(factor) = contrast_factor {
-                        pixel = self.adjust_contrast(
-                            pixel,
-                            T::from(factor).expect("contrast factor should convert to T"),
-                        );
+                        pixel = self
+                            .adjust_contrast(pixel, T::from(factor).unwrap_or_else(|| T::one()));
                     }
 
                     adjusted_data[r_idx] = pixel.0;
@@ -913,8 +902,8 @@ where
         let mut distorted_data = vec![T::zero(); image_data.len()];
 
         // Create a random displacement grid
-        let mut dx_grid = vec![vec![0.0; self.grid_size + 1]; self.grid_size + 1];
-        let mut dy_grid = vec![vec![0.0; self.grid_size + 1]; self.grid_size + 1];
+        let mut dx_grid: Vec<Vec<f32>> = vec![vec![0.0f32; self.grid_size + 1]; self.grid_size + 1];
+        let mut dy_grid: Vec<Vec<f32>> = vec![vec![0.0f32; self.grid_size + 1]; self.grid_size + 1];
 
         for i in 0..=self.grid_size {
             for j in 0..=self.grid_size {
@@ -939,15 +928,15 @@ where
                 let gy1 = (gy0 + 1).min(self.grid_size);
 
                 // Bilinear interpolation of displacement
-                let fx = grid_x - gx0 as f32;
-                let fy = grid_y - gy0 as f32;
+                let fx: f32 = grid_x - gx0 as f32;
+                let fy: f32 = grid_y - gy0 as f32;
 
-                let dx = (1.0 - fx) * (1.0 - fy) * dx_grid[gy0][gx0]
+                let dx: f32 = (1.0 - fx) * (1.0 - fy) * dx_grid[gy0][gx0]
                     + fx * (1.0 - fy) * dx_grid[gy0][gx1]
                     + (1.0 - fx) * fy * dx_grid[gy1][gx0]
                     + fx * fy * dx_grid[gy1][gx1];
 
-                let dy = (1.0 - fx) * (1.0 - fy) * dy_grid[gy0][gx0]
+                let dy: f32 = (1.0 - fx) * (1.0 - fy) * dy_grid[gy0][gx0]
                     + fx * (1.0 - fy) * dy_grid[gy0][gx1]
                     + (1.0 - fx) * fy * dy_grid[gy1][gx0]
                     + fx * fy * dy_grid[gy1][gx1];

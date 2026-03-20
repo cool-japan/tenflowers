@@ -194,7 +194,7 @@ where
             let type_name = std::any::type_name::<T>();
             match type_name {
                 "f32" | "f64" | "i32" | "i64" => {
-                    // TODO: Implement GPU concatenation
+                    // NOTE(v0.2): Implement GPU concatenation
                     // For now, fallback to CPU implementation
                     Err(TensorError::unsupported_operation_simple(
                         "GPU concatenation not yet implemented".to_string()

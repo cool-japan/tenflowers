@@ -672,4 +672,4 @@ let tape = Arc::new(Mutex::new(GradientTape::new()));
 ---
 
 **Last Updated**: February 6, 2026
-**Author**: COOLJAPAN OU (Team Kitasan)
+**Author**: COOLJAPAN OU (Team KitaSan)

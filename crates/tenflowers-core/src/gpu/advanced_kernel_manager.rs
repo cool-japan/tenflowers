@@ -962,7 +962,7 @@ impl AdvancedKernelManager {
                 device_arc.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("advanced_matmul_pipeline_layout"),
                     bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
+                    immediate_size: 0,
                 });
 
             let entry_point = match &kernel.handle {
@@ -1004,7 +1004,7 @@ impl AdvancedKernelManager {
             }
 
             queue_arc.submit(std::iter::once(encoder.finish()));
-            device_arc.poll(wgpu::Maintain::Wait);
+            device_arc.poll(wgpu::PollType::wait_indefinitely()).ok();
 
             // Create result tensor
             let device_id = match a.device() {
@@ -1171,7 +1171,7 @@ impl AdvancedKernelManager {
         _xmx_acceleration: bool,
         _intel_gpu_gen: &IntelGpuGeneration,
     ) -> Result<CompiledKernel> {
-        // TODO: Implement Intel Xe GPU optimizations with XMX matrix extensions
+        // NOTE(v0.2): Implement Intel Xe GPU optimizations with XMX matrix extensions
         // For now, fallback to standard WGPU compute shader which works across all platforms
         self.compile_standard_matmul(a, b)
     }

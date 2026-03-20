@@ -479,7 +479,7 @@ pub fn is_gpu_available() -> bool {
 /// Version string
 #[pyfunction]
 pub fn version() -> &'static str {
-    "0.1.0-alpha.2"
+    "0.1.0"
 }
 
 #[cfg(test)]

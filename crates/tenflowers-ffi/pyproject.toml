@@ -4,10 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "tenflowers"
-version = "0.1.0rc1"
+version = "0.1.0"
 description = "A pure Rust machine learning framework with Python bindings - TensorFlow-compatible API"
 authors = [
-    { name = "COOLJAPAN OU (Team KitaSan)", email = "tenflowers@example.com" }
+    { name = "COOLJAPAN OU (Team KitaSan)", email = "contact@cooljapan.tech" }
 ]
 readme = "README.md"
 license = { text = "Apache-2.0" }

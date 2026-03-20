@@ -471,7 +471,7 @@ where
 {
     // Check if tensor is contiguous in memory (C-order)
     // For now, assume all TenfloweRS tensors are C-contiguous
-    // TODO: Check actual memory layout when we support strides
+    // NOTE(v0.2): Check actual memory layout when we support strides
     true
 }
 

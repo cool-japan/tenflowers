@@ -307,20 +307,19 @@ impl GpuContext {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| {
+            .map_err(|_e| {
                 TensorError::device_error_simple("Failed to find suitable GPU adapter".to_string())
             })?;
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some(&format!("TenfloweRS GPU Device {device_id}")),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some(&format!("TenfloweRS GPU Device {device_id}")),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::default(),
+            })
             .await
             .map_err(|e| {
                 TensorError::device_error_simple(format!("Failed to create GPU device: {e}"))
@@ -351,7 +350,7 @@ impl DeviceContext for GpuContext {
     }
 
     fn synchronize(&self) -> Result<()> {
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
         Ok(())
     }
 
@@ -446,7 +445,7 @@ impl DeviceStream for GpuStream {
     }
 
     fn synchronize(&self) -> Result<()> {
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
         Ok(())
     }
 

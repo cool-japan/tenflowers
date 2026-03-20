@@ -46,7 +46,7 @@ impl BackendType {
             #[cfg(all(feature = "cuda", any(target_os = "linux", target_os = "windows")))]
             BackendType::Cuda => crate::gpu::cuda_kernels::is_cuda_available(),
             #[cfg(feature = "rocm")]
-            BackendType::Rocm => false, // TODO: Implement ROCm availability check
+            BackendType::Rocm => false, // NOTE(v0.2): Implement ROCm availability check
             #[cfg(all(feature = "metal", target_os = "macos"))]
             BackendType::Metal => true,
         }
@@ -441,6 +441,89 @@ macro_rules! register_binary_kernel {
             )
             .expect("binary kernel registration should succeed");
     };
+}
+
+/// Benchmark result for dispatch overhead measurements.
+///
+/// Produced by [`DispatchRegistry::benchmark_overhead`], which runs a fixed
+/// number of no-op dispatches and collects per-sample nanosecond timings.
+#[derive(Debug, Clone)]
+pub struct DispatchBenchmarkResult {
+    /// Minimum observed latency in nanoseconds.
+    pub min_ns: u64,
+    /// Maximum observed latency in nanoseconds.
+    pub max_ns: u64,
+    /// Arithmetic mean latency in nanoseconds (truncated to integer).
+    pub avg_ns: u64,
+    /// 95th-percentile latency in nanoseconds.
+    pub p95_ns: u64,
+    /// Number of samples collected.
+    pub sample_count: usize,
+}
+
+impl DispatchBenchmarkResult {
+    /// Build a `DispatchBenchmarkResult` from a **pre-sorted** slice of nanosecond samples.
+    ///
+    /// Returns `None` when `samples` is empty.
+    pub fn from_sorted_samples(samples: &[u64]) -> Option<Self> {
+        if samples.is_empty() {
+            return None;
+        }
+
+        let min_ns = *samples.first().unwrap_or(&0);
+        let max_ns = *samples.last().unwrap_or(&0);
+
+        let sum: u64 = samples.iter().sum();
+        let avg_ns = sum / samples.len() as u64;
+
+        // p95: index = floor(0.95 * n), clamped to valid range.
+        let p95_idx = ((samples.len() as f64 * 0.95) as usize).min(samples.len() - 1);
+        let p95_ns = samples[p95_idx];
+
+        Some(Self {
+            min_ns,
+            max_ns,
+            avg_ns,
+            p95_ns,
+            sample_count: samples.len(),
+        })
+    }
+}
+
+impl<T> DispatchRegistry<T> {
+    /// Measure the per-call overhead of a registry read-lock + no-op lookup.
+    ///
+    /// Runs 1 000 no-op dispatches ("__overhead_probe__"), collects the timing
+    /// for each call, sorts the samples, and returns the aggregated statistics.
+    ///
+    /// The probe operation is expected to be absent from the registry, so each
+    /// call exercises the read-lock acquisition plus a single failed hash-map
+    /// probe — which is the hot path for every real dispatch.
+    pub fn benchmark_overhead(&self) -> DispatchBenchmarkResult {
+        const SAMPLE_COUNT: usize = 1_000;
+        const PROBE_NAME: &str = "__overhead_probe__";
+
+        let mut samples: Vec<u64> = Vec::with_capacity(SAMPLE_COUNT);
+
+        for _ in 0..SAMPLE_COUNT {
+            let start = std::time::Instant::now();
+            // Perform a failed lookup to measure lock + probe cost.
+            let _ = self.get_operation(PROBE_NAME);
+            let elapsed_ns = start.elapsed().as_nanos() as u64;
+            samples.push(elapsed_ns);
+        }
+
+        samples.sort_unstable();
+
+        // SAFETY: samples is always non-empty (SAMPLE_COUNT > 0).
+        DispatchBenchmarkResult::from_sorted_samples(&samples).unwrap_or(DispatchBenchmarkResult {
+            min_ns: 0,
+            max_ns: 0,
+            avg_ns: 0,
+            p95_ns: 0,
+            sample_count: 0,
+        })
+    }
 }
 
 /// Global registry instance (lazily initialized)

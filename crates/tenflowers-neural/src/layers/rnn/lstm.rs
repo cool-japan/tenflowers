@@ -392,12 +392,9 @@ where
         }
 
         // Stack outputs along time dimension
-        // TODO: Implement Tensor::stack
-        Err(
-            tenflowers_core::error::TensorError::unsupported_operation_simple(
-                "Tensor::stack not yet implemented".to_string(),
-            ),
-        )
+        let output_refs: Vec<&Tensor<T>> = outputs.iter().collect();
+        let time_axis = if self.batch_first { 1 } else { 0 };
+        tenflowers_core::ops::stack(&output_refs, time_axis)
     }
 }
 
@@ -426,13 +423,9 @@ where
                 // Backward pass
                 let backward_out = self.forward_direction(&output, layer, true)?;
 
-                // Concatenate forward and backward outputs
-                // TODO: Implement Tensor::concatenate
-                return Err(
-                    tenflowers_core::error::TensorError::unsupported_operation_simple(
-                        "Tensor::concatenate not yet implemented".to_string(),
-                    ),
-                );
+                // Concatenate forward and backward outputs along feature dimension
+                let concat_axis = if self.batch_first { 2 } else { 2 };
+                output = tenflowers_core::ops::concat(&[&forward_out, &backward_out], concat_axis)?;
             } else {
                 // Unidirectional forward pass
                 output = self.forward_direction(&output, layer, false)?;

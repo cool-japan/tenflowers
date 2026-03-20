@@ -12,12 +12,6 @@ use super::helpers::{compare_gradients, compute_numerical_gradient};
 use super::structures::{GradientTape, GradientTapeInner};
 use super::{Operation, TensorId, TrackedTensor};
 
-// TODO: Move complete GradientTape implementation from original tape.rs
-// This includes:
-// - GradientTape constructor and basic methods (lines 435-500, ~65 lines)
-// - Record operation functionality (lines 501-700, ~200 lines)
-// - Gradient computation core (lines 701-1500, ~800 lines)
-// - Operation-specific gradient implementations (lines 1501-2583, ~1083 lines)
 // - Helper and utility methods (lines 2584-2767, ~184 lines)
 // Total: ~2332 lines of core gradient tape functionality
 

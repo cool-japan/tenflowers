@@ -49,7 +49,6 @@ where
         + std::fmt::Debug,
 {
     fn clone(&self) -> Self {
-        // TODO: Implement complete clone method (from original lines 2336-2364)
         Self {
             linear1: self.linear1.clone(),
             bias1: self.bias1.clone(),
@@ -77,7 +76,6 @@ where
 {
     /// Create a new feed-forward network
     pub fn new(embed_dim: usize, ff_dim: usize, dropout_prob: f32) -> Result<Self> {
-        // TODO: Implement complete constructor (from original lines 2365-2392)
         let linear1 = Tensor::zeros(&[embed_dim, ff_dim]);
         let linear2 = Tensor::zeros(&[ff_dim, embed_dim]);
         let dropout = Dropout::new(T::from(dropout_prob).unwrap_or_else(|| T::zero()));
@@ -209,7 +207,6 @@ where
         + std::fmt::Debug,
 {
     fn clone(&self) -> Self {
-        // TODO: Implement complete clone method (from original lines 2473-2489)
         Self {
             gate_linear: self.gate_linear.clone(),
             gate_bias: self.gate_bias.clone(),
@@ -239,7 +236,6 @@ where
 {
     /// Create a new SwiGLU feed-forward network
     pub fn new(embed_dim: usize, ff_dim: usize, dropout_prob: f32) -> Result<Self> {
-        // TODO: Implement complete constructor (from original lines 2490-2516)
         let gate_linear = Tensor::zeros(&[embed_dim, ff_dim]);
         let up_linear = Tensor::zeros(&[embed_dim, ff_dim]);
         let down_linear = Tensor::zeros(&[ff_dim, embed_dim]);
@@ -393,7 +389,6 @@ where
         + std::fmt::Debug,
 {
     fn clone(&self) -> Self {
-        // TODO: Implement complete clone method (from original lines 2588-2604)
         Self {
             gate_linear: self.gate_linear.clone(),
             gate_bias: self.gate_bias.clone(),
@@ -423,7 +418,6 @@ where
 {
     /// Create a new GeGLU feed-forward network
     pub fn new(embed_dim: usize, ff_dim: usize, dropout_prob: f32) -> Result<Self> {
-        // TODO: Implement complete constructor (from original lines 2605-2631)
         let gate_linear = Tensor::zeros(&[embed_dim, ff_dim]);
         let up_linear = Tensor::zeros(&[embed_dim, ff_dim]);
         let down_linear = Tensor::zeros(&[ff_dim, embed_dim]);

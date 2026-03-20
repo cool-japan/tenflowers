@@ -404,7 +404,7 @@ where
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("batch_norm_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -436,7 +436,7 @@ where
         }
 
         queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
         // Create result tensor
         let device_id = match input.device() {
@@ -620,7 +620,7 @@ where
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("batch_norm_mean_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -648,7 +648,7 @@ where
         }
 
         queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
     }
 
     // Phase 2: Compute variances
@@ -725,7 +725,7 @@ where
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("batch_norm_var_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -753,7 +753,7 @@ where
         }
 
         queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
     }
 
     // Phase 3: Apply normalization
@@ -872,7 +872,7 @@ where
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("batch_norm_apply_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -903,7 +903,7 @@ where
         }
 
         queue.submit(std::iter::once(encoder.finish()));
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
     }
 
     // Phase 4: Update running statistics (exponential moving average)
@@ -1029,7 +1029,7 @@ where
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("batch_norm_update_stats_pipeline_layout"),
                 bind_group_layouts: &[&update_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let update_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -1058,7 +1058,7 @@ where
         }
 
         queue.submit(std::iter::once(update_encoder.finish()));
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
     }
 
     // Create result tensor

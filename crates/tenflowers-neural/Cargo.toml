@@ -17,9 +17,9 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-rc.1" }
-tenflowers-autograd = { path = "../tenflowers-autograd", version = "0.1.0-rc.1" }
-tenflowers-dataset = { path = "../tenflowers-dataset", version = "0.1.0-rc.1" }
+tenflowers-core = { workspace = true }
+tenflowers-autograd = { workspace = true }
+tenflowers-dataset = { workspace = true }
 scirs2-core = { workspace = true, features = ["random", "memory_management", "memory_efficient", "parallel", "simd", "profiling", "gpu"] }
 scirs2-autograd = { workspace = true }
 serde = { workspace = true, optional = true }
@@ -27,7 +27,7 @@ serde_json = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
-# tensorboard-rs = { workspace = true, optional = true }  # REMOVED for v0.1.0-rc.1 (RUSTSEC-2024-0437)
+# tensorboard-rs = { workspace = true, optional = true }  # REMOVED (RUSTSEC-2024-0437)
 prost = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
 num_cpus = { workspace = true, optional = true }
@@ -42,6 +42,6 @@ tempfile = { workspace = true }
 default = []
 gpu = ["tenflowers-core/gpu", "tenflowers-autograd/gpu"]
 serialize = ["serde", "serde_json", "chrono", "tenflowers-core/serialize"]
-# tensorboard = ["tensorboard-rs"]  # REMOVED for v0.1.0-rc.1 (RUSTSEC-2024-0437)
+# tensorboard = ["tensorboard-rs"]  # REMOVED (RUSTSEC-2024-0437)
 onnx = ["prost", "prost-types", "serialize"]
 gloo = ["num_cpus"]

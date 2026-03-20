@@ -7,7 +7,7 @@ with comprehensive Python bindings for ease of use.
 
 from .tenflowers import *  # Import all Rust-defined functions and classes
 
-__version__ = "0.1.0rc1"
+__version__ = "0.1.0"
 __all__ = [
     # Version
     "__version__",

@@ -1,6 +1,6 @@
-# TenfloweRS Autograd TODO & Roadmap (0.1.0-alpha.1)
+# TenfloweRS Autograd TODO & Roadmap (v0.1.0)
 
-Alpha.1 focus: automatic differentiation capabilities and forward development plan. Historical logs removed.
+v0.1.0 focus: automatic differentiation capabilities and forward development plan.
 
 ## 1. Current Capabilities
 
@@ -45,7 +45,7 @@ Alpha.1 focus: automatic differentiation capabilities and forward development pl
 - **Graph Mode**: Graph-mode gradient integration pending graph optimizer readiness
 - **Distributed**: No distributed gradient aggregation for multi-GPU scenarios
 
-## 3. Near-Term Roadmap (Beta Prep)
+## 3. Near-Term Roadmap
 
 ### Priority 1: Coverage & Validation
 1. **Gradient Coverage Audit**: Auto-generated test matrix for comprehensive operation coverage
@@ -65,7 +65,7 @@ Alpha.1 focus: automatic differentiation capabilities and forward development pl
 11. **Hybrid Strategy**: Forward+reverse strategy heuristics and prototype implementation
 12. **Advanced Memory Management**: Enhanced memory efficiency for large-scale gradient computation
 
-## 4. Mid-Term Roadmap (Post-Beta)
+## 4. Mid-Term Roadmap
 
 ### Distributed Computing
 - **Multi-GPU Gradients**: Distributed gradient aggregation for multi-GPU training
@@ -130,4 +130,4 @@ Alpha.1 focus: automatic differentiation capabilities and forward development pl
 
 ---
 
-**Alpha.1 Status**: TenfloweRS Autograd provides a production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization. Ready for beta development focusing on gradient coverage audit and advanced features.
+**v0.1.0 Status**: Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization. Forward development focuses on gradient coverage audit and advanced features.

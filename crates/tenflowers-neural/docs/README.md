@@ -15,7 +15,7 @@ This is the comprehensive documentation suite for **TenfloweRS Neural**, a produ
 ### 1. Layer Documentation Guide
 **File:** `layer.md`
 **Size:** 23 KB | 952 lines
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-03-20
 
 **Contents:**
 - Dense (Fully Connected) Layers
@@ -41,7 +41,7 @@ This is the comprehensive documentation suite for **TenfloweRS Neural**, a produ
 ### 2. Optimizer Usage Guide
 **File:** `optimizer.md`
 **Size:** 30 KB | 1,237 lines
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-03-20
 
 **Contents:**
 - Optimizer Fundamentals
@@ -67,7 +67,7 @@ This is the comprehensive documentation suite for **TenfloweRS Neural**, a produ
 ### 3. Training Pipeline Guide
 **File:** `training.md`
 **Size:** 37 KB | 1,377 lines
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-03-20
 
 **Contents:**
 - Training Fundamentals
@@ -95,7 +95,7 @@ This is the comprehensive documentation suite for **TenfloweRS Neural**, a produ
 ### 4. Advanced Features Guide
 **File:** `advanced.md`
 **Size:** 33 KB | 1,288 lines
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-03-20
 
 **Contents:**
 - Attention Mechanisms (MHA, MQA, GQA, Flash Attention, RoPE, Sparse Attention)
@@ -121,7 +121,7 @@ This is the comprehensive documentation suite for **TenfloweRS Neural**, a produ
 ### 5. Model Deployment Guide
 **File:** `deployment.md`
 **Size:** 32 KB | 1,321 lines
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-03-20
 
 **Contents:**
 - Model Export and Serialization (save/load, metadata, versioning, compression)
@@ -314,7 +314,7 @@ All components follow COOLJAPAN policies:
 
 ## Roadmap and Future Work
 
-### Completed (Alpha 0.1.0-rc.1)
+### Completed (v0.1.0)
 - ✅ All core neural network layers
 - ✅ Comprehensive optimizer suite
 - ✅ Training infrastructure with callbacks
@@ -327,13 +327,6 @@ All components follow COOLJAPAN policies:
 - ✅ ONNX integration
 - ✅ Deployment optimizations
 - ✅ **Comprehensive API documentation** (this documentation set)
-
-### Beta Roadmap
-- Dependency fixes (autograd SciRS2 policy compliance)
-- ONNX protobuf parsing implementation
-- Enhanced distributed training backends
-- Additional pretrained model architectures
-- Extended PEFT method support
 
 ### Future Enhancements
 - Neural Architecture Search (NAS)
@@ -374,12 +367,12 @@ Refer to `crates/tenflowers-neural/tests/` for:
 
 ## Document Generation Info
 
-**Generated:** 2026-02-06
-**TenfloweRS Version:** 0.1.0-rc.1
+**Generated:** 2026-03-20
+**TenfloweRS Version:** 0.1.0
 **Documentation Version:** 1.0.0
 **Total Documentation Size:** ~155 KB
 **Total Lines:** 6,175 lines
-**Author:** COOLJAPAN OU (Team Kitasan)
+**Author:** COOLJAPAN OU (Team KitaSan)
 
 **Files:**
 1. `/tmp/tenflowers_neural_layer_guide.md` - 952 lines
@@ -422,7 +415,7 @@ du -sh /tmp/tenflowers_neural_*.md
 
 ## License and Attribution
 
-**Copyright:** COOLJAPAN OU (Team Kitasan)
+**Copyright:** 2025-2026 COOLJAPAN OU (Team KitaSan)
 **License:** See project LICENSE file
 **Project:** https://github.com/cool-japan/tenflowers
 

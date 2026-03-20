@@ -1,8 +1,8 @@
 //! Dtype Promotion Rules for TenfloweRS
 //!
 //! This module implements NumPy and PyTorch compatible dtype promotion rules
-//! for mixed-precision tensor operations, addressing the TODO item for dtype
-//! promotion when multi-dtype support is added.
+//! for mixed-precision tensor operations, addressing the dtype promotion requirement
+//! for mixed-precision tensor operations.
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -400,7 +400,7 @@ impl PyDtypePromoter {
     }
 
     /// Get all available dtype promotion rules as a dictionary
-    pub fn get_promotion_table(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_promotion_table(&self, py: Python) -> PyResult<Py<PyAny>> {
         let py_dict = PyDict::new(py);
 
         for (&(dt1, dt2), &result) in &self.inner.promotion_table {

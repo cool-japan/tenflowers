@@ -127,8 +127,7 @@ mod tests {
     #[test]
     #[cfg(feature = "autograd")]
     fn test_memory_profiling_integration() {
-        // Clear profiler state for this test
-        // TODO: Implement profiler integration
+        // NOTE(v0.2): Implement profiler integration
         // if let Ok(mut p) = get_profiler().lock() {
         //     p.operations.clear();
         //     p.allocations = 0;

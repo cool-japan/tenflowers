@@ -296,7 +296,7 @@ where
     Tr: MultimodalTransform<T>,
 {
     fn apply_multimodal(&self, sample: MultimodalSample<T>) -> Result<MultimodalSample<T>> {
-        use scirs2_core::random::{rng, Random, Rng};
+        use scirs2_core::random::{rng, RngExt};
 
         let mut rng = rng();
         let random_value: f64 = rng.random();

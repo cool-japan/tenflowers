@@ -5,6 +5,7 @@
 
 use crate::{Dataset, Transform};
 use scirs2_core::random::Rng;
+use scirs2_core::RngExt;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};

@@ -51,7 +51,7 @@ class CHeaderGenerator:
         header.append("#define TENFLOWERS_VERSION_MAJOR 0")
         header.append("#define TENFLOWERS_VERSION_MINOR 1")
         header.append("#define TENFLOWERS_VERSION_PATCH 0")
-        header.append("#define TENFLOWERS_VERSION_STRING \"0.1.0-rc.1\"")
+        header.append("#define TENFLOWERS_VERSION_STRING \"0.1.0\"")
         header.append("")
 
         # Opaque types

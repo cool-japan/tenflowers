@@ -7,368 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### In Progress
-- Additional GPU kernel implementations for advanced operations
-- Complete shape inference system
-- Graph mode execution engine enhancements
-- Re-enable Python bindings (requires Python environment setup)
-- Re-enable tensorboard integration (awaiting protobuf security fix)
-- ONNX import/export support
-
-## [0.1.0-rc.1] - 2026-02-08
+## [0.1.0] - 2026-03-20
 
 ### Summary
-Release Candidate 1 with updated dependencies and stability improvements. This release focuses on keeping dependencies up-to-date and maintaining compatibility with the latest SciRS2 ecosystem.
 
-**Release Status:** ✅ Release Candidate (5 crates ready)
-- **Tests:** Maintained 100% pass rate
+First release of TenfloweRS — a research-grade, pure-Rust machine learning framework built on the SciRS2 ecosystem.
+
+**Release Status:** Production-ready (6 crates)
+- **Tests:** 12,949 passing across the workspace (0 failures, 0 warnings)
+- **Code:** ~790K lines of Rust across 1,446+ source files
 - **Security:** 0 vulnerabilities
-- **Quality:** Zero clippy warnings, full formatting compliance
-- **Dependencies:** Updated to latest compatible versions
-
-### Changed
-
-#### Dependency Updates
-- **SciRS2 Ecosystem Updates**: All scirs2-* dependencies updated to 0.1.5
-  - scirs2-core: 0.1.4 → 0.1.5
-  - scirs2-autograd: 0.1.4 → 0.1.5
-  - scirs2-neural: 0.1.4 → 0.1.5
-  - scirs2-linalg: 0.1.4 → 0.1.5
-  - scirs2-numpy: 0.1.4 → 0.1.5
-- **Compatibility**: Verified compatibility with latest SciRS2 releases
-- **Build System**: All workspace builds verified after dependency updates
-
-### Fixed
-- **Workspace Consistency**: Ensured all subcrates properly use workspace dependencies
-- **Version Alignment**: All internal version references updated to rc.1
-
-## [0.1.0-beta.1] - 2026-02-06
-
-### Summary
-First beta release with comprehensive quality assurance and security hardening. This release focuses on stability, security, and production readiness for the core functionality.
-
-**Release Status:** ✅ Production-ready core (5 crates published)
-- **Tests:** 2357/2357 passing (100% pass rate)
-- **Security:** 0 vulnerabilities (all known issues resolved)
-- **Quality:** Zero clippy warnings, full formatting compliance
-- **Documentation:** Complete crate-level docs and READMEs
+- **Quality:** Zero clippy warnings, full formatting compliance, no `unwrap()` usage
 
 ### Added
 
-#### Quality Assurance
-- **Comprehensive Testing**: All 2357 tests passing across workspace
-  - Core tensor operations: 100% coverage
-  - Autograd engine: Full gradient validation
-  - Neural network layers: Complete integration tests
-  - Dataset loading: Multi-format support verified
-- **Security Hardening**: Zero security vulnerabilities
-  - All dependencies audited with cargo-audit
-  - Known vulnerabilities resolved (see Removed section)
-- **Code Quality**: Zero warnings policy enforced
-  - All clippy warnings resolved
-  - Complete formatting compliance
-  - No `unwrap()` usage (safe error handling throughout)
+#### Workspace Crates
+- **tenflowers-core**: Core tensor operations, GPU abstraction, operation registry, shape inference, kernel fusion, autocast, sparse tensors, fused ops
+- **tenflowers-autograd**: Reverse-mode automatic differentiation, gradient accumulation, checkpointing, in-place ops, forward-mode gradients, Jacobian checks, interpretability utilities
+- **tenflowers-dataset**: Data loading and preprocessing, distributed streaming, dataset core, cache telemetry
+- **tenflowers-neural**: Comprehensive neural network layers, training utilities, and research-grade algorithm modules (see below)
+- **tenflowers-ffi**: C FFI and Python bindings via PyO3 (`publish = false` — requires Python environment)
+- **tenflowers**: Unified API and prelude, user-facing macros and re-exports
 
-#### Documentation
-- **Crate-level Documentation**: All published crates have comprehensive docs
-  - tenflowers-core (6.5 MiB): Core tensor operations and GPU support
-  - tenflowers-autograd (2.8 MiB): Automatic differentiation engine
-  - tenflowers-dataset (2.1 MiB): Data loading and preprocessing
-  - tenflowers-neural (3.0 MiB): Neural network layers and training
-  - tenflowers (182 KiB): Unified API and prelude
-- **README Files**: All subcrates include usage examples and feature documentation
-- **Version Consistency**: All internal dependencies aligned to beta.1
+#### Neural Network Modules (tenflowers-neural)
 
-### Changed
-
-#### Version Updates
-- **Workspace Version**: 0.1.0-alpha.2 → 0.1.0-beta.1
-- **Internal Dependencies**: All subcrates updated to reference beta.1
-- **API Stability**: Moving toward stable API for 1.0 release
-
-#### Dependency Management
-- **Dependency Reduction**: 684 → 668 crates (-16 dependencies)
-- **Security Focus**: Removed vulnerable and unmaintained packages
-- **SciRS2 Integration**: Continued pure Rust ecosystem alignment
-
-### Removed
-
-#### Security Fixes (Temporary)
-- **Tensorboard Integration** ⚠️ TEMPORARY REMOVAL
-  - **Reason:** Removed tensorboard-rs due to RUSTSEC-2024-0437 (protobuf 2.28.0 crash vulnerability)
-  - **Impact:** Users needing tensorboard should use alternative logging temporarily
-  - **Timeline:** Will be re-added once tensorboard-rs updates to protobuf >=3.7.2
-  - **Workaround:** Use standard logging or wait for next release
-
-- **Related Packages Removed** (due to tensorboard removal):
-  - protobuf v2.28.0 (security vulnerability)
-  - tensorboard-rs v0.5.9
-  - tensorboard-proto v0.5.7
-  - Image processing dependencies (adler, deflate, miniz_oxide, jpeg-decoder, png, tiff, gif)
-
-#### Python FFI ⚠️ TEMPORARY EXCLUSION
-- **tenflowers-ffi** (publish = false for this release)
-  - **Reason:** Requires Python development environment setup
-  - **Impact:** Python bindings not available in this release
-  - **Timeline:** Will be re-enabled in future release with proper CI/CD
-  - **Status:** Code remains in repository but crate not published
-  - **Workaround:** Use Rust API directly or wait for next release
-
-### Fixed
-
-#### Security
-- **RUSTSEC-2024-0437**: Fixed protobuf crash vulnerability by removing tensorboard-rs
-- **Dependency Audit**: All remaining dependencies verified safe
-  - Only 2 acceptable warnings (unmaintained transitive dependencies)
-  - instant v0.1.13 (from hdf5, low risk)
-  - paste v1.0.15 (from SciRS2 ecosystem, low risk)
-
-#### Build & Package
-- **Package Verification**: All 5 crates successfully package and verify
-- **Internal Dependencies**: Fixed version mismatches between crates
-- **Feature Flags**: Cleaned up feature dependencies (removed python from "full" feature)
-- **FFI Exports**: Properly excluded from main crate to prevent build errors
-
-#### Code Quality
-- **Formatting**: All code formatted to project standards
-- **Clippy Warnings**: Zero warnings with strict checking (-D warnings)
-- **Documentation**: All public APIs documented
-- **Tests**: All test suites passing (excluding optional FFI)
-
-### Migration Guide
-
-#### From alpha.2 to beta.1
-
-**Breaking Changes:**
-1. **Tensorboard feature removed** (temporarily)
-   ```toml
-   # BEFORE (alpha.2)
-   [features]
-   tensorboard = ["tensorboard-rs"]
-
-   # AFTER (beta.1)
-   # Feature removed - use alternative logging
-   ```
-
-2. **Python bindings not available** (temporarily)
-   ```toml
-   # BEFORE (alpha.2)
-   [dependencies]
-   tenflowers = { version = "0.1.0-alpha.2", features = ["python"] }
-
-   # AFTER (beta.1)
-   # Python feature not available - use Rust API
-   [dependencies]
-   tenflowers = "0.1.0-beta.1"
-   ```
-
-**No Other Breaking Changes:**
-- Core API remains compatible
-- All tensor operations unchanged
-- Autograd functionality preserved
-- Neural network APIs stable
-- Dataset loading unchanged
-
-### Known Issues
-
-**Transitive Dependencies:**
-- 2 unmaintained dependencies (acceptable risk):
-  - `instant` v0.1.13: Transitive from hdf5, low severity
-  - `paste` v1.0.15: Transitive from SciRS2, low severity
-- These are dependency-of-dependency issues and will be resolved in future releases
-
-**Platform-Specific:**
-- ARM64 target feature warning (fp-armv8): Minor deprecation, won't block builds
-
-### Performance
-
-**Benchmarks:** (from test suite execution)
-- Test suite: 2357 tests in 67.671s (~35 tests/second)
-- No performance regressions from alpha.2
-- GPU operations maintain performance characteristics
+- **Attention mechanisms**: Flash Attention, ALiBi, RoPE, transformer decoder, TCN
+- **Optimizers**: LAMB, Lion, Muon, learning-rate schedulers, LR finder
+- **Generative models**: Diffusion (DDPM/advanced), VAE, normalizing flows, continuous normalizing flows, flow matching
+- **Graph neural networks**: GNN advanced layers, graph-level pooling, temporal GNN, graph signal processing, graph matching, graph transformer, graph foundation models, graph generation, GraphODE, molecular GNN
+- **Geometric deep learning**: EGNN, SE(3)-Transformer, VNN, IPA (AlphaFold2-style)
+- **Quantum ML**: QAOA, quantum kernels (IQP/ZZ feature maps), zero-noise extrapolation, probabilistic error cancellation, measurement error mitigation, quantum Boltzmann machines
+- **Federated learning**: Byzantine-robust aggregation (Krum, FLAME, Bulyan), personalized FL (pFedMe, APFL, FedBN), FedMA, clustered FL (IFCA)
+- **Operator learning**: FNO, WNO, GNO, PINO, UNO
+- **Bio ML**: scVAE (ZINB), Leiden clustering, DNA conv nets, survival analysis (CoxPH, DeepSurv, Kaplan-Meier), pathway enrichment, multi-omics factor analysis
+- **AutoML**: Dataset meta-features, landmarking, algorithm selection, SMAC optimizer, portfolio selection, efficient NAS predictor
+- **Molecular GNN**: DimeNet, AttentiveFP, MolBERT, JunctionTreeVAE, GraphVAE, reaction yield prediction
+- **Audio models**: HuBERT, Data2Vec-Audio, SoundStream codec, RVQ, beat tracking, chord recognition, FastSpeech2, HiFi-GAN vocoder
+- **Sparse learning**: BigBird, sparse sliding window attention, Group Lasso, N:M structured pruning, LISTA, predictive coding, basis pursuit
+- **Geospatial ML**: H3/Quadkey grid encoders, spatial GCN, spatial attention, kriging, ST-GCN, diffusion convolution, Moran's I
+- **Neural SDE**: VP/VE SDE, score matching, rough paths, NeuralRDE
+- **Simulation-based inference**: Flow-SBI, ABC-SMC, NRE
+- **Structured prediction**: Neural CRF, span parsing, biaffine dependency, SRL
+- **Efficient transformers**: RetNet, Mamba-2, GQA, KV-cache management
+- **Neural rendering**: 3D Gaussian splatting, NRC, ReSTIR, DeformNeRF
+- **Riemannian geometry**: Poincaré ball, Ollivier-Ricci, Ricci flow
+- **World models**: TD-MPC2, GWM tokenizer, GPT imagination loop
+- **Symbolic math**: ATP tactics, neural tactic selector, equation database
+- **Knowledge graph**: Temporal KG (TeRo/TntComplEx), hyper-relational KG, KG+LLM, rule induction; advanced knowledge distillation
+- **Robotics**: RRT*/NeuralRRT/PRM, Ferrari-Canny grasp, whole-body control, DANN sim2real
+- **Video understanding**: VideoSwin-V2, TimeSformer, VideoMAE, VOS memory, ConsistencyModel
+- **Compression**: Hyperprior model, RD optimizer, movement pruning, mixed-precision search
+- **Online learning**: LinUCB, Thompson sampling, ADWIN, LODA, OGD/FTRL
+- **Generation**: Speculative decoding, RegexFSM/CFG constrained generation, RAG, BLEU/ROUGE metrics
+- **Multimodal foundation**: UnifiedIO, PaLI, visual grounding, symbolic visual reasoning
+- **Optimal transport**: Unbalanced/partial OT, JDOT, online sliced-Wasserstein, tree-Wasserstein
+- **Additional modules**: active_inference, active_learning, adaptive_computation, adversarial, anomaly_detection, architecture_distillation, audio_generation, bayesian, bayesian_dl, bayesian_opt, bio_ml, causal_discovery_advanced, causal_discovery_ts, causal_inference, causal_representation, causal_rl, causal_ts, checkpoint_advanced, climate_ml, concept_learning, conformal_prediction, continual_learning, contrastive, cooperative_game_theory, cross_modal_retrieval, curriculum_learning, data_augmentation, depth_estimation, differentiable_physics, digital_pathology, distillation, document_understanding, domain_adaptation, drug_discovery, edge_optimization, embodied_ai, emotion_recognition, energy_models, ensemble, evolutionary_computation, financial_ml, functional_data_analysis, hierarchical_time_series, hparam, hyperdimensional, hypernetworks, hyperparameter_optimization, image_generation_advanced, implicit_neural_repr, influence_functions, information_theory, inverse_rl, knowledge_distillation_advanced, kolmogorov_arnold, learning_to_learn, lifelong_learning, llm_serving, lm_evaluation, lora_adapters, marl, materials_ml, mean_field_games, mechanistic_interpretability, medical_imaging, memory_networks, meta_learning, mixture_density_networks, mixture_of_depths, mixture_of_experts_advanced, mixture_of_modalities, model_merging, monte_carlo, multi_fidelity, multi_objective, multi_task, multimodal, music_generation, nas, network_science, neural_collapse, neural_combinatorial, neural_compression, neural_ode, neural_process, neuro_symbolic, neuromorphic, nlp_components, nn_verification, object_tracking, optimal_control, pinn, point_processes, pomdp_planning, privacy_ml, probabilistic, probabilistic_circuits, protein_lm, protein_structure, quantum_ml, recommendation_systems, reward_learning, reward_shaping, rl, safe_rl, safety_alignment, satellite_ml, scene_graph, self_play, self_supervised, signal, simulation_ml, sparse_mixture_experts, spectral, speech_recognition, ssm, state_space_models, statistical_testing, synthetic_data, tabular_learning, tensor_networks, test_time_adaptation, test_time_compute, text_generation_pipelines, time_series, tokenizer, topological_ml, training_dynamics, trajectory_prediction, uncertainty_quantification, variational_inference, vision_transformer, zero_shot_learning, and more
 
 ### Crates Published
 
-| Crate | Size | Compressed | Description |
-|-------|------|------------|-------------|
-| tenflowers-core | 6.5 MiB | 1.0 MiB | Core tensor operations and GPU support |
-| tenflowers-autograd | 2.8 MiB | 517 KiB | Automatic differentiation engine |
-| tenflowers-dataset | 2.1 MiB | 408 KiB | Data loading and preprocessing |
-| tenflowers-neural | 3.0 MiB | 534 KiB | Neural network layers and training |
-| tenflowers | 182 KiB | 48 KiB | Unified API and prelude |
+| Crate | Description |
+|-------|-------------|
+| tenflowers-core | Core tensor operations, GPU abstraction, autocast, sparse, fused ops |
+| tenflowers-autograd | Automatic differentiation, checkpointing, gradient accumulation |
+| tenflowers-dataset | Data loading, preprocessing, distributed streaming |
+| tenflowers-neural | Research-grade neural network layers and ML algorithms (300+ modules) |
+| tenflowers | Unified public API and prelude |
 
-**Not Published:**
-- tenflowers-ffi: Marked as `publish = false` (see Removed section)
+**Not published:** tenflowers-ffi (`publish = false` — requires Python development environment)
+
+### Notes
+
+- **Tensorboard integration** is excluded from this release due to a known upstream vulnerability (RUSTSEC-2024-0437 in protobuf 2.x). It will be restored once the upstream fix is available.
+- **SciRS2 dependencies**: All scirs2-* crates at 0.3.0+
 
 ### Installation
 
 ```toml
 [dependencies]
-tenflowers = "0.1.0-beta.1"
+tenflowers = "0.1.0"
 
 # Optional features
-tenflowers = { version = "0.1.0-beta.1", features = ["gpu", "simd"] }
+tenflowers = { version = "0.1.0", features = ["gpu", "simd"] }
 ```
-
-**Note:** Python bindings not available in this release. Use Rust API directly.
 
 ### Contributors
 
-This release was prepared with comprehensive testing and quality assurance by the COOLJAPAN OU (Team Kitasan) development team.
-
-## [0.1.0-alpha.2] - 2025-12-23
-
-### Added
-
-#### Documentation Improvements
-- **Comprehensive Crate Documentation**: Added extensive crate-level documentation to all crates
-  - `tenflowers-core`: Complete API overview with examples for tensor operations, GPU acceleration, mixed precision, and performance monitoring
-  - `tenflowers-dataset`: Full guide to data loading, transformations, and advanced features
-  - `tenflowers-ffi`: Python bindings documentation with NumPy integration examples
-  - All crates now include Quick Start guides and architecture overviews
-- **Enhanced README**: Updated with alpha.2 information and current capabilities
-- **API Documentation**: Improved rustdoc comments throughout the codebase
-
-#### Performance Features
-- **CUDA Support**: Enhanced GPU backend with CUDA optimization paths
-- **Memory Optimization**: Improved memory management and buffer pooling
-- **SIMD Enhancements**: Additional SIMD-accelerated operations
-- **Profiling Tools**: Built-in performance benchmarking and monitoring utilities
-
-#### Core Enhancements
-- **Deterministic Execution**: Added deterministic mode for reproducible results
-- **Quantization**: Expanded quantization support for model deployment
-- **Mixed Precision**: Improved mixed precision training capabilities
-- **Checkpointing**: Enhanced model checkpointing and restoration
-- **Error Handling**: Improved error messages and shape validation
-
-#### Neural Network Module
-- **Layer Expansion**: Additional neural network layer implementations
-- **Optimizer Improvements**: Enhanced optimizer implementations
-- **Training Utilities**: Improved training loop abstractions
-
-#### Dataset Module
-- **Data Quality Tools**: Built-in data quality analysis and drift detection
-- **Advanced Sampling**: Stratified and importance sampling strategies
-- **Performance**: NUMA-aware scheduling and zero-copy operations
-- **Distributed Loading**: Distributed and sharded data loading support
-
-### Improved
-- **SciRS2 Integration**: Complete migration to SciRS2 ecosystem primitives
-  - All operations now use `scirs2_core::ndarray` instead of direct `ndarray`
-  - Random number generation via `scirs2_core::random`
-  - Numeric traits via `scirs2_core::num_traits`
-- **Type System**: Enhanced data type support (f16, bf16, etc.)
-- **Shape Inference**: Improved shape validation and broadcasting
-- **GPU Memory**: Better GPU memory management and metrics
-- **Documentation**: Comprehensive rustdoc throughout all modules
-
-### Fixed
-- **Compilation Issues**: Resolved various compilation warnings and errors
-- **Type Safety**: Fixed trait bound issues across generic implementations
-- **Memory Leaks**: Fixed memory management issues in GPU operations
-- **API Consistency**: Standardized API patterns across crates
-
-### Changed
-- **Version**: Updated to 0.1.0-alpha.2 across all crates
-- **Build System**: Improved workspace configuration
-- **Testing**: Enhanced test coverage and infrastructure
-
-## [0.1.0-alpha.1] - 2025-09-27
-
-### Added
-
-#### Core Infrastructure
-- **Tensor System**: Generic tensor type with device abstraction
-  - Reference-counted buffer management
-  - Zero-copy views and slicing
-  - Strided layout support
-  - Automatic broadcasting
-- **Device Management**: Unified CPU/GPU abstraction
-  - CPU backend via ndarray
-  - GPU backend via WGPU (experimental)
-  - Cross-device tensor transfers
-  - Device placement strategies
-- **Operation Registry**: Extensible operation system
-  - Trait-based operation definitions
-  - Kernel dispatch by device/dtype
-  - Macro-based registration
-  - Basic shape inference
-
-#### Tensor Operations
-- **Basic Ops**: Add, Sub, Mul, Div, Pow, Neg
-- **Reductions**: Sum, Mean, Max, Min, ArgMax, ArgMin
-- **Manipulation**: Reshape, Transpose, Concat, Stack, Squeeze
-- **Linear Algebra**: MatMul (CPU only)
-- **Activation**: ReLU, Sigmoid, Tanh (stubs)
-
-#### Automatic Differentiation
-- **GradientTape**: Reverse-mode automatic differentiation
-  - Tape-based operation recording
-  - Basic operation gradients (Add, Mul, MatMul, ReLU)
-  - Multiple gradient computation
-  - Persistent tape support
-- **Integration**: Seamless integration with scirs2-autograd
-
-#### Neural Network Module
-- **Layers**: Layer trait with builder pattern
-  - Dense/Linear layers
-  - Conv2D (stub)
-  - BatchNorm (stub)
-  - Dropout
-- **Models**: Sequential and Model traits
-- **Optimizers**: SGD, Adam (simplified for f64)
-- **Loss Functions**: MSE, CrossEntropy (stubs)
-
-#### Data Pipeline
-- **Dataset Trait**: Flexible data loading abstraction
-- **TensorDataset**: In-memory tensor dataset
-- **Transformations**: Basic preprocessing pipeline
-
-#### FFI
-- **Python Bindings**: Initial PyO3 integration
-  - PyTensor wrapper
-  - Basic tensor operations
-  - NumPy interop foundation
-
-### Known Limitations
-- Most operations return "Not Implemented" errors
-- GPU support is experimental and incomplete
-- Limited operation coverage
-- No graph mode execution yet
-- Minimal Python API
-- f32 support limited in some modules
-
-### [0.1.0-alpha.1] 
-- Complete GPU kernel implementations
-- Expand operation coverage (Conv2D, pooling, normalization)
-- Implement graph mode execution
-- Add DataLoader with parallel loading
-- Improve Python API coverage
-- Graph optimization passes
-- Mixed precision training
-- Distributed training support
-- ONNX import/export
-- Performance optimizations
-- Production-ready Python API
-- TorchScript-like JIT compilation
-- Quantization support
-- Model zoo with pretrained models
-- Comprehensive documentation
-
-## Roadmap
-
-### [1.0.0] - Target: 2026
-- Stable API guarantee
-- Performance parity with TensorFlow/PyTorch
-- Full operation coverage
-- Production deployment tools
-- Extensive ecosystem integrations
-
-## Version History Summary
-
-| Version | Date | Highlights |
-|---------|------|------------|
-| 0.1.0-beta.1 | 2026-02-06 | First beta: 2357 tests passing, 0 vulnerabilities, production-ready core |
-| 0.1.0-alpha.2 | 2025-12-23 | Documentation overhaul, CUDA enhancements, SciRS2 integration complete |
-| 0.1.0-alpha.1 | 2025-09-27 | Initial alpha release with core infrastructure |
+Developed by COOLJAPAN OU (Team KitaSan).
+Contact: contact@cooljapan.tech

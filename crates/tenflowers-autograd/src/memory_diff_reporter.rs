@@ -327,7 +327,7 @@ impl MemoryDiff {
         }
 
         // Sort by absolute value of change
-        changes.sort_by(|a, b| b.1.abs().cmp(&a.1.abs()));
+        changes.sort_by_key(|a| std::cmp::Reverse(a.1.abs()));
 
         changes.into_iter().take(n).collect()
     }
@@ -349,7 +349,7 @@ impl MemoryDiff {
         }
 
         // Sort by absolute value of change
-        changes.sort_by(|a, b| b.1.abs().cmp(&a.1.abs()));
+        changes.sort_by_key(|a| std::cmp::Reverse(a.1.abs()));
 
         changes.into_iter().take(n).collect()
     }

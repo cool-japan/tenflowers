@@ -70,20 +70,18 @@ impl OptimizationPass for ConstantFoldingPass {
             if let Some(node) = graph.get_node(node_id) {
                 if let crate::graph::NodeType::Operation(op_name) = &node.op_type {
                     match op_name.as_str() {
-                        "Add" | "Mul" | "Sub" | "Div" => {
-                            if self.can_fold_binary_op(graph, node_id) {
-                                // Replace the operation with its constant result
-                                // In a real implementation, we'd evaluate the operation
-                                // For now, just mark it as foldable
-                                nodes_to_remove.push(node_id);
-                                changed = true;
-                            }
+                        "Add" | "Mul" | "Sub" | "Div"
+                            if self.can_fold_binary_op(graph, node_id) =>
+                        {
+                            // Replace the operation with its constant result
+                            // In a real implementation, we'd evaluate the operation
+                            // For now, just mark it as foldable
+                            nodes_to_remove.push(node_id);
+                            changed = true;
                         }
-                        "MatMul" => {
-                            if self.can_fold_matmul(graph, node_id) {
-                                nodes_to_remove.push(node_id);
-                                changed = true;
-                            }
+                        "MatMul" if self.can_fold_matmul(graph, node_id) => {
+                            nodes_to_remove.push(node_id);
+                            changed = true;
                         }
                         _ => {}
                     }
@@ -764,23 +762,17 @@ impl StrengthReductionPass {
                         return Some(ReductionType::SquareRoot);
                     }
                 }
-                "Div" if inputs.len() == 2 => {
-                    // x / constant -> x * (1/constant)
-                    if self.is_constant_node(graph, inputs[1]) {
-                        return Some(ReductionType::DivToMul);
-                    }
+                // x / constant -> x * (1/constant)
+                "Div" if inputs.len() == 2 && self.is_constant_node(graph, inputs[1]) => {
+                    return Some(ReductionType::DivToMul);
                 }
-                "Exp" if inputs.len() == 1 => {
-                    // exp(log(x)) -> x
-                    if self.is_log_operation(graph, inputs[0]) {
-                        return Some(ReductionType::ExpLogCancel);
-                    }
+                // exp(log(x)) -> x
+                "Exp" if inputs.len() == 1 && self.is_log_operation(graph, inputs[0]) => {
+                    return Some(ReductionType::ExpLogCancel);
                 }
-                "Log" if inputs.len() == 1 => {
-                    // log(exp(x)) -> x
-                    if self.is_exp_operation(graph, inputs[0]) {
-                        return Some(ReductionType::LogExpCancel);
-                    }
+                // log(exp(x)) -> x
+                "Log" if inputs.len() == 1 && self.is_exp_operation(graph, inputs[0]) => {
+                    return Some(ReductionType::LogExpCancel);
                 }
                 _ => {}
             }

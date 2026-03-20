@@ -464,7 +464,7 @@ impl GradientCoverageAuditor {
                 GradientStatus::NotApplicable => report.not_applicable_operations += 1,
             }
 
-            report.operations.insert(op_name.clone(), info);
+            report.operations.insert(op_name.to_string(), info);
             report.total_operations += 1;
         }
 

@@ -12,9 +12,9 @@ mod tests {
     /// Test basic tensor creation through Python bindings
     #[test]
     fn test_py_tensor_creation() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Test basic tensor creation with new constructor
             let tensor = PyTensor::new(vec![2, 3]).expect("test: construction should succeed");
 
@@ -29,9 +29,9 @@ mod tests {
     /// Test tensor basic properties
     #[test]
     fn test_py_tensor_properties() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Create test tensor
             let tensor = PyTensor::new(vec![4, 4]).expect("test: construction should succeed");
 
@@ -48,9 +48,9 @@ mod tests {
     /// Test gradient tape functionality
     #[test]
     fn test_py_gradient_tape() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Create gradient tape
             let tape = PyGradientTape::new();
 
@@ -69,9 +69,9 @@ mod tests {
     /// Test dense layer creation
     #[test]
     fn test_py_dense_layer() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| -> PyResult<()> {
+        Python::attach(|py| -> PyResult<()> {
             // Create a dense layer with parameters
             let dense = PyDense::new(
                 10,                       // input_dim
@@ -105,9 +105,9 @@ mod tests {
     /// Test sequential model creation
     #[test]
     fn test_py_sequential_model() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| -> PyResult<()> {
+        Python::attach(|py| -> PyResult<()> {
             // Create sequential model
             let mut model = PySequential::new();
 
@@ -126,9 +126,9 @@ mod tests {
     /// Test parameter creation
     #[test]
     fn test_py_parameter() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Create a parameter tensor
             let tensor = PyTensor::new(vec![3, 3]).expect("test: construction should succeed");
             let param = PyParameter::new(tensor, Some(true));
@@ -149,9 +149,9 @@ mod tests {
     /// Test Adam optimizer creation
     // #[test]
     // fn test_py_adam_optimizer() {
-    //     pyo3::prepare_freethreaded_python();
+    //     Python::initialize();
 
-    //     Python::with_gil(|py| -> PyResult<()> {
+    //     Python::attach(|py| -> PyResult<()> {
     //         // Create Adam optimizer with learning rate parameter
     //         let _adam = PyAdam::new(Some(0.001)); // Only learning rate supported currently
 
@@ -166,9 +166,9 @@ mod tests {
     /// Test tensor size and ndim methods
     #[test]
     fn test_py_tensor_dimensions() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Test different tensor shapes
             let tensor_1d = PyTensor::new(vec![5]).expect("test: construction should succeed");
             let tensor_2d = PyTensor::new(vec![3, 4]).expect("test: construction should succeed");
@@ -190,9 +190,9 @@ mod tests {
     /// Test tensor cloning
     #[test]
     fn test_py_tensor_clone() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Create and clone tensor
             let original = PyTensor::new(vec![2, 3]).expect("test: construction should succeed");
             let cloned = original.clone();

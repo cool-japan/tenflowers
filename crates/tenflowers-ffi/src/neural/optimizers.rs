@@ -145,7 +145,7 @@ impl PyAdam {
 
         // For now, we'll implement a simplified version that works with PyDense layers
         // In a full implementation, this would integrate with the Model trait
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
 
         // This is a placeholder implementation - in practice, you'd extract parameters
         // from the model and apply the Adam update rule
@@ -159,7 +159,7 @@ impl PyAdam {
     ///
     /// This should be called before backward pass to clear accumulated gradients.
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing for model parameters
+        // NOTE(v0.2): Implement gradient zeroing for model parameters
         // This would typically iterate through model parameters and set gradients to zero
         Ok(())
     }
@@ -305,13 +305,13 @@ impl PySGD {
 
     /// Perform a single optimization step
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -426,13 +426,13 @@ impl PyRMSprop {
 
     /// Perform a single optimization step
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 
@@ -584,13 +584,13 @@ impl PyAdamW {
     /// Perform a single optimization step
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // TODO: Implement proper model interface integration
+        // NOTE(v0.2): Implement proper model interface integration
         Ok(())
     }
 
     /// Zero out gradients for all parameters
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // TODO: Implement gradient zeroing
+        // NOTE(v0.2): Implement gradient zeroing
         Ok(())
     }
 

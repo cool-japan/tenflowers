@@ -1,7 +1,7 @@
 //! Noise transformation utilities for data augmentation
 
 use crate::transforms::Transform;
-use scirs2_core::random::Rng;
+use scirs2_core::random::{Rng, RngExt};
 use std::marker::PhantomData;
 use tenflowers_core::{Result, Tensor, TensorError};
 

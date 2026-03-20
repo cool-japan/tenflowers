@@ -412,7 +412,10 @@ where
         sender.send(result).expect("channel send should succeed");
     });
 
-    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+    gpu_ctx
+        .device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .ok();
     receiver
         .recv()
         .map_err(|e| TensorError::ComputeError {
@@ -554,7 +557,10 @@ fn gpu_dequantize(gpu_buffer: &GpuBuffer<i8>, params: &QuantizationParams) -> Re
         sender.send(result).expect("channel send should succeed");
     });
 
-    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+    gpu_ctx
+        .device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .ok();
     receiver
         .recv()
         .map_err(|e| TensorError::ComputeError {
@@ -730,7 +736,10 @@ where
         sender.send(result).expect("channel send should succeed");
     });
 
-    gpu_ctx.device.poll(wgpu::Maintain::Wait);
+    gpu_ctx
+        .device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .ok();
     receiver
         .recv()
         .map_err(|e| TensorError::ComputeError {

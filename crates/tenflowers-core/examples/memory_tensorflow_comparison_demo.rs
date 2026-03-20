@@ -259,7 +259,7 @@ fn main() {
     }
 
     println!("  💡 The implementation provides infrastructure to achieve");
-    println!("     memory usage within 10% of TensorFlow as specified in TODO.md");
+    println!("     memory usage within 10% of TensorFlow (project performance target)");
 
     println!();
     println!("======================================================");

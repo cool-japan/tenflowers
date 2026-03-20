@@ -4,7 +4,7 @@
 //! pipelines, including lazy evaluation, parallel execution, and conditional transforms.
 
 use crate::transforms::Transform;
-use scirs2_core::random::Rng;
+use scirs2_core::random::{Rng, RngExt};
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -487,11 +487,14 @@ impl<T> RandomChoice<T> {
             }
         }
 
-        // Fallback to last transform
-        Ok(self
-            .transforms
-            .last()
-            .expect("collection should not be empty"))
+        // Fallback to last transform - we already checked is_empty above
+        if let Some(last) = self.transforms.last() {
+            Ok(last)
+        } else {
+            Err(TensorError::invalid_argument(
+                "RandomChoice has no transforms".to_string(),
+            ))
+        }
     }
 
     /// Get the number of transforms

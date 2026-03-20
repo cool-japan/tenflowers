@@ -21,7 +21,7 @@ where
             let context = GpuContext::global()?;
 
             // For now, use a basic implementation
-            // TODO: Implement optimized GPU matrix multiplication kernel
+            // NOTE(v0.2): Implement optimized GPU matrix multiplication kernel
             Err(TensorError::unsupported_operation_simple(
                 "GPU matrix multiplication not yet fully implemented".to_string(),
             ))
@@ -44,7 +44,7 @@ where
 {
     match (a, b) {
         (TensorStorage::Gpu(_a_buffer), TensorStorage::Gpu(_b_buffer)) => {
-            // TODO: Implement GPU batch matrix multiplication
+            // NOTE(v0.2): Implement GPU batch matrix multiplication
             Err(TensorError::unsupported_operation_simple(
                 "GPU batch matrix multiplication not yet implemented".to_string(),
             ))
@@ -65,7 +65,7 @@ pub fn matmul_mixed_precision_gpu<T>(
 where
     T: Clone + Default + Send + Sync + 'static,
 {
-    // TODO: Implement mixed precision GPU matrix multiplication
+    // NOTE(v0.2): Implement mixed precision GPU matrix multiplication
     // This would use Tensor Cores when available for accelerated computation
     Err(TensorError::unsupported_operation_simple(
         "GPU mixed precision matmul not yet implemented".to_string(),

@@ -17,7 +17,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-rc.1" }
+tenflowers-core = { workspace = true }
 scirs2-core = { workspace = true, features = ["random"] }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }

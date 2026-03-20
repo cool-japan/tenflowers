@@ -190,6 +190,6 @@ If overhead stays high for large tensors → implementation issue
 
 ---
 
-**Last Updated**: 2024-02-06
-**Version**: 0.1.0-beta.1
+**Last Updated**: 2026-03-20
+**Version**: 0.1.0
 **Status**: Ready for production use

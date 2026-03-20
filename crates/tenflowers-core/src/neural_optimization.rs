@@ -136,40 +136,27 @@ impl UltraOptimizedDenseLayer {
         Ok(())
     }
 
-    /// Blocked matrix multiplication using cache optimization
+    /// Cache-oblivious blocked matrix multiplication.
+    ///
+    /// Recursively subdivides the problem along the largest dimension until the
+    /// sub-problem fits comfortably in L1/L2 cache, at which point a compact
+    /// micro-kernel handles the base case. This avoids any explicit cache-size
+    /// parameter — the recursion naturally adapts to the memory hierarchy.
+    ///
+    /// Computes: output[i, j] += sum_k input[i, k] * weights[j, k]
+    /// (note: weights is stored in [output_size, input_size] layout)
     fn blocked_matmul(
         &self,
         input: &ArrayView2<f32>,
         output: &mut scirs2_core::ndarray::ArrayViewMut2<f32>,
         _block_strategy: &str,
     ) -> Result<()> {
-        // For now, use a simple blocked approach
-        // TODO: Implement sophisticated cache-oblivious blocking
-
-        let block_size = 64; // Optimal for L1 cache
-        let (m, k) = (input.nrows(), input.ncols());
+        let m = input.nrows();
+        let k = input.ncols();
         let n = self.weights.nrows();
 
-        for i in (0..m).step_by(block_size) {
-            for j in (0..n).step_by(block_size) {
-                for kk in (0..k).step_by(block_size) {
-                    let i_end = (i + block_size).min(m);
-                    let j_end = (j + block_size).min(n);
-                    let k_end = (kk + block_size).min(k);
-
-                    // Micro-kernel for this block
-                    for ii in i..i_end {
-                        for jj in j..j_end {
-                            let mut sum = 0.0;
-                            for kkk in kk..k_end {
-                                sum += input[[ii, kkk]] * self.weights[[jj, kkk]];
-                            }
-                            output[[ii, jj]] += sum;
-                        }
-                    }
-                }
-            }
-        }
+        // Dispatch to the recursive cache-oblivious algorithm
+        cache_oblivious_matmul_rec(input, &self.weights.view(), output, 0, m, 0, n, 0, k);
 
         Ok(())
     }
@@ -357,6 +344,107 @@ pub struct NetworkPerformanceReport {
     pub recommended_optimizations: Vec<String>,
 }
 
+// ============================================================================
+// Cache-Oblivious Recursive Matrix Multiplication
+// ============================================================================
+
+/// Base-case threshold: when all three dimensions are below this size,
+/// use a direct triple-loop micro-kernel. 32 is chosen so that the working
+/// set (32x32 floats ~ 4 KB per matrix slice) fits comfortably in L1 cache.
+const CO_BASE_THRESHOLD: usize = 32;
+
+/// Recursive cache-oblivious matrix multiplication.
+///
+/// Computes C[i0..i1, j0..j1] += A[i0..i1, k0..k1] * B^T[j0..j1, k0..k1]
+/// where B is stored in [n, k] layout (row = output neuron, col = input feature).
+///
+/// The algorithm picks the largest of the three dimensions (m, n, k) and splits
+/// it in half, recursing on both halves. When all dimensions are small enough
+/// the base-case micro-kernel executes directly.
+fn cache_oblivious_matmul_rec(
+    a: &scirs2_core::ndarray::ArrayView2<f32>,
+    b: &scirs2_core::ndarray::ArrayView2<f32>,
+    c: &mut scirs2_core::ndarray::ArrayViewMut2<f32>,
+    i0: usize,
+    i1: usize, // row range in A/C
+    j0: usize,
+    j1: usize, // col range in C (row range in B)
+    k0: usize,
+    k1: usize, // reduction dimension range
+) {
+    let m = i1 - i0;
+    let n = j1 - j0;
+    let k = k1 - k0;
+
+    // Base case: all dimensions small enough for a direct micro-kernel
+    if m <= CO_BASE_THRESHOLD && n <= CO_BASE_THRESHOLD && k <= CO_BASE_THRESHOLD {
+        matmul_micro_kernel(a, b, c, i0, i1, j0, j1, k0, k1);
+        return;
+    }
+
+    // Recursive case: split along the largest dimension
+    if m >= n && m >= k {
+        // Split M (rows of A/C)
+        let mid = i0 + m / 2;
+        cache_oblivious_matmul_rec(a, b, c, i0, mid, j0, j1, k0, k1);
+        cache_oblivious_matmul_rec(a, b, c, mid, i1, j0, j1, k0, k1);
+    } else if n >= k {
+        // Split N (cols of C / rows of B)
+        let mid = j0 + n / 2;
+        cache_oblivious_matmul_rec(a, b, c, i0, i1, j0, mid, k0, k1);
+        cache_oblivious_matmul_rec(a, b, c, i0, i1, mid, j1, k0, k1);
+    } else {
+        // Split K (reduction dimension) — both halves accumulate into the same C
+        let mid = k0 + k / 2;
+        cache_oblivious_matmul_rec(a, b, c, i0, i1, j0, j1, k0, mid);
+        cache_oblivious_matmul_rec(a, b, c, i0, i1, j0, j1, mid, k1);
+    }
+}
+
+/// Micro-kernel for small matrix blocks.
+///
+/// Computes C[i0..i1, j0..j1] += A[i0..i1, k0..k1] * B[j0..j1, k0..k1]^T
+/// using a cache-friendly access pattern with a local accumulator to reduce
+/// store traffic to C.
+#[inline(always)]
+fn matmul_micro_kernel(
+    a: &scirs2_core::ndarray::ArrayView2<f32>,
+    b: &scirs2_core::ndarray::ArrayView2<f32>,
+    c: &mut scirs2_core::ndarray::ArrayViewMut2<f32>,
+    i0: usize,
+    i1: usize,
+    j0: usize,
+    j1: usize,
+    k0: usize,
+    k1: usize,
+) {
+    // For each (i, j), accumulate the dot product over k in a register variable.
+    // This minimizes writes to C and keeps the inner loop tight.
+    for ii in i0..i1 {
+        for jj in j0..j1 {
+            let mut acc = 0.0_f32;
+            // Unroll the k-loop manually by 4 for better ILP
+            let k_len = k1 - k0;
+            let k_unroll_end = k0 + (k_len / 4) * 4;
+
+            let mut kk = k0;
+            while kk < k_unroll_end {
+                acc += a[[ii, kk]] * b[[jj, kk]];
+                acc += a[[ii, kk + 1]] * b[[jj, kk + 1]];
+                acc += a[[ii, kk + 2]] * b[[jj, kk + 2]];
+                acc += a[[ii, kk + 3]] * b[[jj, kk + 3]];
+                kk += 4;
+            }
+            // Handle remaining elements
+            while kk < k1 {
+                acc += a[[ii, kk]] * b[[jj, kk]];
+                kk += 1;
+            }
+            c[[ii, jj]] += acc;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,6 +499,82 @@ mod tests {
         let breakdown = layer.get_optimization_breakdown()?;
         assert!(breakdown.total_speedup >= 1.0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_cache_oblivious_matmul_small() -> Result<()> {
+        // A [2x3] * B^T [4x3] => C [2x4]
+        let a = Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])?;
+        let b = Array2::from_shape_vec(
+            (4, 3),
+            vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        )?;
+        let mut c = Array2::zeros((2, 4));
+
+        cache_oblivious_matmul_rec(&a.view(), &b.view(), &mut c.view_mut(), 0, 2, 0, 4, 0, 3);
+
+        // C[0,0] = 1*1 + 2*0 + 3*0 = 1
+        assert!((c[[0, 0]] - 1.0).abs() < 1e-6);
+        // C[0,1] = 1*0 + 2*1 + 3*0 = 2
+        assert!((c[[0, 1]] - 2.0).abs() < 1e-6);
+        // C[0,2] = 1*0 + 2*0 + 3*1 = 3
+        assert!((c[[0, 2]] - 3.0).abs() < 1e-6);
+        // C[0,3] = 1+2+3 = 6
+        assert!((c[[0, 3]] - 6.0).abs() < 1e-6);
+        // C[1,3] = 4+5+6 = 15
+        assert!((c[[1, 3]] - 15.0).abs() < 1e-6);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cache_oblivious_matmul_large_matches_naive() -> Result<()> {
+        // Test with a size that exceeds CO_BASE_THRESHOLD to exercise recursion
+        let m = 50;
+        let k = 40;
+        let n = 35;
+
+        // Create deterministic test matrices
+        let a_data: Vec<f32> = (0..m * k).map(|i| (i as f32) * 0.01).collect();
+        let b_data: Vec<f32> = (0..n * k).map(|i| ((i * 3 + 7) as f32) * 0.01).collect();
+
+        let a = Array2::from_shape_vec((m, k), a_data)?;
+        let b = Array2::from_shape_vec((n, k), b_data)?;
+
+        // Compute with cache-oblivious
+        let mut c_co = Array2::zeros((m, n));
+        cache_oblivious_matmul_rec(&a.view(), &b.view(), &mut c_co.view_mut(), 0, m, 0, n, 0, k);
+
+        // Compute reference: C = A * B^T using ndarray
+        let c_ref = a.dot(&b.t());
+
+        // Compare
+        for i in 0..m {
+            for j in 0..n {
+                let diff = (c_co[[i, j]] - c_ref[[i, j]]).abs();
+                assert!(
+                    diff < 1e-2,
+                    "Mismatch at [{}, {}]: cache_oblivious={} reference={} diff={}",
+                    i,
+                    j,
+                    c_co[[i, j]],
+                    c_ref[[i, j]],
+                    diff
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cache_oblivious_forward_uses_recursive() -> Result<()> {
+        // Use a large enough layer to trigger cache_oblivious_forward path
+        let layer = UltraOptimizedDenseLayer::new(100, 50, "co_test".to_string())?;
+        let input = Array2::zeros((20, 100)); // 20 * 100 * 50 = 100K > threshold
+        let output = layer.forward(&input.view())?;
+        assert_eq!(output.shape(), &[20, 50]);
         Ok(())
     }
 }

@@ -18,7 +18,7 @@ use scirs2_core::numeric::{Float, One, Zero};
 // Deprecated: Legacy BLAS feature support
 #[cfg(feature = "blas")]
 #[deprecated(
-    since = "0.1.0-beta.1",
+    since = "0.1.0",
     note = "blas-* features are deprecated. Default build now uses scirs2-linalg (Pure Rust via OxiBLAS). Remove blas-* features from your build."
 )]
 use ndarray_linalg as _legacy_linalg;
@@ -96,7 +96,7 @@ where
 {
     #[cfg(feature = "blas")]
     {
-        // TODO: Fix LAPACK operations to use proper ndarray_linalg API
+        // NOTE(v0.2): Fix LAPACK operations to use proper ndarray_linalg API
         // use ndarray_linalg::*;
 
         let data = input.as_slice().ok_or_else(|| {
@@ -118,7 +118,7 @@ where
             )
         })?;
 
-        // TODO: Fix LAPACK LU decomposition API usage
+        // NOTE(v0.2): Fix LAPACK LU decomposition API usage
         // The ndarray_linalg API has changed and needs proper trait imports
         Err(TensorError::BlasError {
             operation: "lu".to_string(),
@@ -200,7 +200,7 @@ where
             )
         })?;
 
-        // TODO: Fix LAPACK trait bounds - det requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - det requires Scalar + Lapack traits
         // let result = matrix.det().map_err(|e| TensorError::BlasError {
         //     operation: "det".to_string(),
         //     details: format!("Determinant computation failed: {}", e),
@@ -255,7 +255,7 @@ where
         })?;
 
         // Perform LAPACK-accelerated eigenvalue decomposition
-        // TODO: Fix LAPACK trait bounds - eig requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - eig requires Scalar + Lapack traits
         // let (eigenvals, eigenvecs) = matrix.eig().map_err(|e| TensorError::BlasError {
         //     operation: "eig".to_string(),
         //     details: format!("Eigenvalue decomposition failed: {}", e),
@@ -300,7 +300,7 @@ where
         })?;
 
         // Perform LAPACK-accelerated SVD
-        // TODO: Fix LAPACK trait bounds - svd requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - svd requires Scalar + Lapack traits
         // let (u, s, vt) = matrix.svd(true, true).map_err(|e| TensorError::BlasError {
         //     operation: "svd".to_string(),
         //     details: format!("SVD failed: {}", e),
@@ -347,7 +347,7 @@ where
         })?;
 
         // Perform LAPACK-accelerated Cholesky decomposition
-        // TODO: Fix LAPACK trait bounds - cholesky requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - cholesky requires Scalar + Lapack traits
         // let result = matrix.cholesky(UPLO::Lower).map_err(|e| TensorError::BlasError {
         //     operation: "cholesky".to_string(),
         //     details: format!("Cholesky decomposition failed: {}", e),
@@ -397,7 +397,7 @@ where
 
         // Perform LAPACK-accelerated QR decomposition
         let mut matrix_copy = matrix.clone();
-        // TODO: Fix LAPACK trait bounds - qr requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - qr requires Scalar + Lapack traits
         // let (q, r) = matrix_copy.qr().map_err(|e| TensorError::BlasError {
         //     operation: "qr".to_string(),
         //     details: format!("QR decomposition failed: {}", e),
@@ -473,7 +473,7 @@ where
         // Perform LAPACK-accelerated linear system solve
         let mut a_matrix_copy = a_matrix.clone();
         let mut b_matrix_copy = b_matrix.clone();
-        // TODO: Fix LAPACK trait bounds - solve requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - solve requires Scalar + Lapack traits
         // let result = a_matrix_copy.solve(&b_matrix_copy).map_err(|e| TensorError::BlasError {
         //     operation: "solve".to_string(),
         //     details: format!("Linear system solve failed: {}", e),
@@ -550,7 +550,7 @@ where
         // Perform LAPACK-accelerated least squares solve
         let mut a_matrix_copy = a_matrix.clone();
         let mut b_matrix_copy = b_matrix.clone();
-        // TODO: Fix LAPACK trait bounds - least_squares requires Scalar + Lapack traits
+        // NOTE(v0.2): Fix LAPACK trait bounds - least_squares requires Scalar + Lapack traits
         // let result = a_matrix_copy.least_squares(&b_matrix_copy).map_err(|e| TensorError::BlasError {
         //     operation: "least_squares".to_string(),
         //     details: format!("Least squares solve failed: {}", e),

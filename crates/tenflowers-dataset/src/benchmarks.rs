@@ -1,4 +1,5 @@
 use crate::Dataset;
+use scirs2_core::RngExt;
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Common benchmark datasets for machine learning

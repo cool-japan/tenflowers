@@ -261,7 +261,7 @@ where
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_reduction_pipeline_layout", op.name())),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let pipeline = ctx

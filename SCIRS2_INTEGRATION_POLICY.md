@@ -7,8 +7,8 @@
 ## Policy Version
 - **Version**: 2.0.0 (Enhanced - Full SciRS2 Ecosystem Alignment)
 - **Based on**: SciRS2 Ecosystem Policy v3.0.0
-- **Effective Date**: TenfloweRS v0.1.0-beta.1
-- **Last Updated**: 2026-02-02
+- **Effective Date**: TenfloweRS v0.1.0
+- **Last Updated**: 2026-03-20
 - **Status**: Active - Full Compliance Required
 
 ## Core Integration Principles
@@ -391,8 +391,8 @@ use scirs2_core::linalg::*;           // Linear algebra (nalgebra when needed)
 ## Future Considerations
 
 ### **SciRS2 Version Management**
-- Track SciRS2 release cycle (currently at beta.2)
-- Test TenfloweRS against SciRS2 beta releases
+- Track SciRS2 release cycle (currently at 0.3.0)
+- Test TenfloweRS against SciRS2 releases
 - Coordinate breaking change migrations
 - Follow workspace version management
 
@@ -438,17 +438,17 @@ This policy ensures TenfloweRS properly leverages SciRS2's scientific computing 
 
 ### Current Recommended Integration (Minimal Start)
 ```toml
-# Essential SciRS2 dependencies for TenfloweRS (using RC.1)
-scirs2-core = "0.1.0-rc.1"      # Always required - foundation
-scirs2-autograd = "0.1.0-rc.1"  # Primary source for ndarray types with array! macro
-scirs2-neural = "0.1.0-rc.1"    # Neural network abstractions
-optirs = "0.1.0-beta.1"         # Training optimizers from OptiRS project
+# Essential SciRS2 dependencies for TenfloweRS (using 0.1.0)
+scirs2-core = "0.3.0"      # Always required - foundation
+scirs2-autograd = "0.3.0"  # Primary source for ndarray types with array! macro
+scirs2-neural = "0.3.0"    # Neural network abstractions
+optirs = "0.3.0"         # Training optimizers from OptiRS project
 
 # Add these only when needed:
-# scirs2-linalg = "0.1.0-rc.1"    # If advanced linalg beyond ndarray
-# scirs2-datasets = "0.1.0-rc.1"  # If using SciRS2 data utilities
-# scirs2-metrics = "0.1.0-rc.1"   # If using SciRS2 metrics
-# scirs2-transform = "0.1.0-rc.1" # If data transformations needed
+# scirs2-linalg = "0.3.0"    # If advanced linalg beyond ndarray
+# scirs2-datasets = "0.3.0"  # If using SciRS2 data utilities
+# scirs2-metrics = "0.3.0"   # If using SciRS2 metrics
+# scirs2-transform = "0.3.0" # If data transformations needed
 ```
 
 ### Correct Import Patterns for Arrays
@@ -478,7 +478,7 @@ use scirs2_core::ndarray_ext::{stats, matrix, manipulation};
 
 ### **Migration Patterns from TenfloweRS Experience**
 
-Based on the successful migration of TenfloweRS to SciRS2 beta.2, here are practical patterns for implementing the integration policy:
+Based on the successful migration of TenfloweRS to SciRS2 0.3.0, here are practical patterns for implementing the integration policy:
 
 #### **Examples and Demo Code**
 ```rust

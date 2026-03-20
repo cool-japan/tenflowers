@@ -43,7 +43,7 @@ impl PyTrainingVisualizer {
     }
 
     /// Generate training curves data
-    pub fn get_training_curves(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_training_curves(&self, py: Python) -> PyResult<Py<PyAny>> {
         let curves = self.history.get_training_curves();
 
         let py_dict = PyDict::new(py);
@@ -59,7 +59,7 @@ impl PyTrainingVisualizer {
     }
 
     /// Get training statistics
-    pub fn get_statistics(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
         let stats = self.history.get_statistics();
 
         let py_dict = PyDict::new(py);
@@ -81,7 +81,7 @@ impl PyTrainingVisualizer {
     }
 
     /// Generate training report
-    pub fn generate_report(&self, py: Python) -> PyResult<PyObject> {
+    pub fn generate_report(&self, py: Python) -> PyResult<Py<PyAny>> {
         let report = self.history.generate_comprehensive_report();
 
         let py_dict = PyDict::new(py);
@@ -109,7 +109,7 @@ impl PyTrainingVisualizer {
     }
 
     /// Export training data to dictionary
-    pub fn export_data(&self, py: Python) -> PyResult<PyObject> {
+    pub fn export_data(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = self.history.export_data();
 
         let py_dict = PyDict::new(py);
@@ -148,7 +148,7 @@ impl PyTrainingVisualizer {
     }
 
     /// Analyze training stability
-    pub fn analyze_stability(&self, py: Python) -> PyResult<PyObject> {
+    pub fn analyze_stability(&self, py: Python) -> PyResult<Py<PyAny>> {
         let analysis = self.history.analyze_training_stability();
 
         let py_dict = PyDict::new(py);

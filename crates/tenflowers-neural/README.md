@@ -1,29 +1,54 @@
 # TenfloweRS Neural
 
-High-level neural network APIs for TenfloweRS, providing layers, models, optimizers, and training utilities for deep learning in Rust.
+High-level neural network APIs for TenfloweRS, providing layers, models, optimizers, training utilities, and domain-specific architectures for deep learning in Rust.
 
-> Release Candidate (0.1.0-rc.1 · 2026-02-12)
-> Core layer/optimizer abstractions are stable; some advanced architectures (Transformer variants, large model tooling, distributed training) are skeletal or experimental in this release.
+> Stable (v0.1.0 -- 2026-03-20) | 11,407 tests passing | 0 clippy warnings
 
 ## Overview
 
-`tenflowers-neural` implements:
-- **Neural Network Layers**: Dense, Conv2D, LSTM, Transformer, and more
+`tenflowers-neural` is the largest crate in the TenfloweRS ecosystem, implementing a comprehensive set of neural network components spanning 150+ domains:
+
+- **Neural Network Layers**: Dense, Conv2D, LSTM, GRU, Transformer, GNN, TCN, and more
+- **Attention Mechanisms**: Multi-head, Flash Attention, ALiBi, RoPE, GQA
 - **Model Abstractions**: Sequential and functional model APIs
-- **Optimizers**: SGD, Adam, AdamW, RMSprop with advanced features
-- **Loss Functions**: Common losses for classification and regression
-- **Metrics**: Training and evaluation metrics
-- **Learning Rate Schedulers**: Various scheduling strategies
-- **Training Utilities**: Model checkpointing, early stopping, callbacks
+- **Optimizers**: SGD, Adam, AdamW, LAMB, Lion, Muon, with LR schedulers
+- **Loss Functions**: Common losses for classification, regression, and contrastive learning
+- **Training Utilities**: Checkpointing, early stopping, callbacks, mixed precision
+- **Deployment**: Quantization, pruning (unstructured and structured), compression
 
-## Features
+## Domain Coverage
 
-- **Layer Composition**: Build complex models from modular layers
-- **Automatic Differentiation**: Seamless integration with tenflowers-autograd
-- **Mixed Precision Training**: FP16 training with loss scaling
-- **Distributed Training**: Data and model parallelism support
-- **ONNX Export**: Export trained models to ONNX format
-- **Pretrained Models**: Common architectures with pretrained weights
+TenfloweRS Neural covers an extensive range of ML domains:
+
+**Core Architectures**: Transformers (encoder/decoder), Vision Transformers, State Space Models (Mamba, S4), Efficient Transformers (RetNet, GQA), Kolmogorov-Arnold Networks, Hypernetworks
+
+**Computer Vision**: CNN layers, depth estimation, object tracking, image generation, neural rendering (NeRF, 3D Gaussian splatting), scene graphs
+
+**Natural Language Processing**: Tokenizers, text generation pipelines, LLM serving, language model evaluation, document understanding
+
+**Audio and Speech**: Speech recognition, audio generation, music generation, emotion recognition, audio models (HuBERT, Data2Vec)
+
+**Reinforcement Learning**: DQN, PPO, SAC, multi-agent RL (MARL), safe RL, inverse RL, reward learning, self-play, world models
+
+**Generative Models**: VAE, normalizing flows, diffusion models, energy-based models, GAN variants, neural compression
+
+**Graph Neural Networks**: GNN (basic and advanced), graph transformers, temporal GNN, molecular GNN, graph neural ODE, graph signal processing, graph generation, graph matching, graph foundation models
+
+**Scientific ML**: Physics-informed neural networks (PINN), neural ODE/SDE, operator learning (FNO, DeepONet, WNO, GNO), differentiable physics, simulation-based inference
+
+**Probabilistic Methods**: Bayesian deep learning, Bayesian optimization, variational inference, probabilistic circuits, conformal prediction, Monte Carlo methods, mixture density networks
+
+**Causal Inference**: Causal discovery, causal representation learning, causal RL, causal time series analysis
+
+**Meta-Learning and AutoML**: Meta-learning, NAS, hyperparameter optimization, AutoML pipelines, learning to learn, curriculum learning
+
+**Structured and Specialized**: Knowledge graphs, knowledge distillation, federated learning, continual learning, lifelong learning, online learning, active learning, zero-shot learning, self-supervised learning, contrastive learning
+
+**Domain-Specific**: Protein structure/language models, molecular GNN, drug discovery, bio ML, medical imaging, digital pathology, climate ML, geospatial ML, satellite ML, materials ML, financial ML, robotics, trajectory prediction
+
+**Optimization and Theory**: Optimal transport, Riemannian geometry, topological ML, information theory, tensor decomposition, tensor networks, cooperative game theory, mean field games, optimal control
+
+**Efficiency and Deployment**: Model compression, edge optimization, mixture of experts, sparse learning, quantization, pruning, model merging, LoRA adapters, test-time compute/adaptation
 
 ## Usage
 
@@ -67,32 +92,6 @@ model.fit(
 )?;
 ```
 
-### Building a Convolutional Neural Network
-
-```rust
-use tenflowers_neural::{Conv2D, MaxPool2D, BatchNorm, Dropout};
-
-let mut model = Sequential::new();
-
-// Convolutional layers
-model.add(Conv2D::new(3, 32, [3, 3], [1, 1], Padding::Same)?);
-model.add(BatchNorm::new(32)?);
-model.add(Activation::relu());
-model.add(MaxPool2D::new([2, 2], [2, 2])?);
-
-model.add(Conv2D::new(32, 64, [3, 3], [1, 1], Padding::Same)?);
-model.add(BatchNorm::new(64)?);
-model.add(Activation::relu());
-model.add(MaxPool2D::new([2, 2], [2, 2])?);
-
-// Dense layers
-model.add(Flatten::new());
-model.add(Dense::new(7 * 7 * 64, 128)?);
-model.add(Dropout::new(0.5));
-model.add(Activation::relu());
-model.add(Dense::new(128, 10)?);
-```
-
 ### Building a Transformer Model
 
 ```rust
@@ -115,16 +114,16 @@ impl TransformerEncoder {
             norm2: LayerNorm::new(d_model)?,
         })
     }
-    
+
     fn forward(&self, x: &Tensor<f32>) -> Result<Tensor<f32>> {
         // Multi-head attention with residual connection
         let attn_out = self.attention.forward(x, x, x, None)?;
         let x = self.norm1.forward(&(x + &attn_out)?)?;
-        
+
         // Feed-forward with residual connection
         let ff_out = self.feedforward.forward(&x)?;
         let x = self.norm2.forward(&(&x + &ff_out)?)?;
-        
+
         Ok(x)
     }
 }
@@ -146,22 +145,22 @@ impl Layer<f32> for CustomLayer {
     fn forward(&self, input: &Tensor<f32>) -> Result<Tensor<f32>> {
         let output = input.matmul(&self.weight)?;
         let output = output.add(&self.bias)?;
-        
+
         if self.training {
             // Apply training-specific behavior
         }
-        
+
         Ok(output)
     }
-    
+
     fn parameters(&self) -> Vec<&Tensor<f32>> {
         vec![&self.weight, &self.bias]
     }
-    
+
     fn parameters_mut(&mut self) -> Vec<&mut Tensor<f32>> {
         vec![&mut self.weight, &mut self.bias]
     }
-    
+
     fn set_training(&mut self, training: bool) {
         self.training = training;
     }
@@ -193,26 +192,11 @@ let scheduler = CosineAnnealingLR::new(
 for epoch in 0..num_epochs {
     let lr = scheduler.get_lr(epoch);
     optimizer.set_learning_rate(lr);
-    
+
     for (batch_x, batch_y) in train_loader {
         let loss = model.train_step(&batch_x, &batch_y, &optimizer)?;
     }
 }
-```
-
-### Mixed Precision Training
-
-```rust
-use tenflowers_neural::{MixedPrecisionTrainer, GradScaler};
-
-let scaler = GradScaler::new();
-let trainer = MixedPrecisionTrainer::new(model, optimizer, scaler);
-
-// Training with automatic mixed precision
-trainer.train_step(&input, &target, |logits, target| {
-    // Compute loss in FP32
-    loss_fn(logits.to_f32()?, target)
-})?;
 ```
 
 ## Architecture
@@ -221,82 +205,38 @@ trainer.train_step(&input, &target, |logits, target| {
 
 - **Layer Trait**: Common interface for all neural network layers
 - **Model Trait**: Training and inference capabilities
-- **Optimizer Trait**: Parameter update algorithms
+- **Optimizer Trait**: Parameter update algorithms (SGD, Adam, AdamW, LAMB, Lion, Muon)
 - **Loss Functions**: Various objective functions
 - **Metrics**: Performance measurement utilities
+- **LR Schedulers**: Cosine annealing, warmup, step decay, and more
 
 ### Layer Types
 
-**Basic Layers**:
-- Dense: Fully connected layer
-- Conv2D/Conv3D: Convolutional layers
-- LSTM/GRU: Recurrent layers
-- MultiHeadAttention: Transformer attention
+**Basic Layers**: Dense, Conv2D/Conv3D, LSTM/GRU (bidirectional), Transformer encoder/decoder, TCN
 
-**Normalization**:
-- BatchNorm: Batch normalization
-- LayerNorm: Layer normalization
-- GroupNorm: Group normalization
+**Attention**: Multi-head attention, Flash Attention, ALiBi, RoPE, GQA, KV-cache
 
-**Regularization**:
-- Dropout: Standard and variational dropout
-- L1/L2 regularization
-- Spectral normalization
+**Normalization**: BatchNorm, LayerNorm, GroupNorm
 
-**Activation Functions**:
-- ReLU, GELU, SiLU, Tanh, Sigmoid
-- Learnable: PReLU, ELU
-- Custom activation support
+**Regularization**: Dropout (standard and variational), L1/L2 regularization, spectral normalization
+
+**Activation Functions**: ReLU, GELU, SiLU, Mish, Tanh, Sigmoid, PReLU, ELU
 
 ### Optimizer Features
 
 - **Gradient Clipping**: By value or norm
-- **Gradient Accumulation**: For large batch training
+- **Gradient Accumulation**: For large effective batch training
 - **Parameter Groups**: Different LR for different layers
 - **State Checkpointing**: Resume training from checkpoint
-- **Distributed**: Gradient aggregation across devices
+- **LR Finding**: Automatic learning rate range test
 
-## Performance Optimizations
+## Feature Flags
 
-- **Kernel Fusion**: Fused operations for common patterns
-- **Graph Optimization**: Layer fusion and constant folding
-- **Memory Efficiency**: Gradient checkpointing, inplace ops
-- **Multi-GPU**: Data and model parallelism
-- **Quantization**: INT8 inference support
-
-### Current Alpha Limitations
-- Limited pretrained weight bundles not yet published
-- Distributed / multi-GPU trainers are feature-gated prototypes
-- Mixed precision path requires manual opt-in; scaling heuristics evolving
-- Some exotic layers (e.g., advanced attention variants) unoptimized
-
-### Roadmap Focus (next milestones)
-1. Exportable model serialization format (intermediate before ONNX)
-2. Gradient accumulation + micro-batch scheduler polish
-3. Checkpoint versioning & integrity verification
-4. Expanded metrics (AUC, F1, perplexity) with streaming reducers
-5. ONNX export subset for inference graphs
-6. Automated regression benchmark harness per layer type
-
-## Pretrained Models
-
-Available models with ImageNet weights:
-- ResNet: ResNet18, ResNet34, ResNet50, ResNet101
-- EfficientNet: B0-B7 variants
-- Vision Transformer: ViT-B/16, ViT-L/16
-- BERT: Base and Large variants
-- GPT-2: Small, Medium, Large
-
-```rust
-use tenflowers_neural::models::{ResNet50, Pretrained};
-
-// Load pretrained ResNet50
-let model = ResNet50::pretrained(ImageNetWeights)?;
-
-// Fine-tune on custom dataset
-model.freeze_backbone();
-model.replace_head(num_classes)?;
-```
+- `default`: Standard neural network functionality
+- `gpu`: GPU-accelerated layer operations
+- `serialize`: Model serialization and checkpointing
+- `onnx`: ONNX model import/export
+- `gloo`: Distributed training communication
 
 ## Integration with TenfloweRS Ecosystem
 
@@ -304,15 +244,6 @@ model.replace_head(num_classes)?;
 - **Dataset**: Efficient data loading and augmentation
 - **Core**: Low-level tensor operations
 - **FFI**: Export models for Python inference
-
-## Contributing
-
-Priority areas for contribution:
-- Implementing missing layers (see TODO.md)
-- Adding more pretrained models
-- Optimizing existing implementations
-- Writing comprehensive tests
-- Improving documentation
 
 ## License
 

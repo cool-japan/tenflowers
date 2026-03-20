@@ -475,7 +475,7 @@ impl ProfileReport {
             report.push('\n');
 
             let mut stages: Vec<_> = self.stage_stats.iter().collect();
-            stages.sort_by(|a, b| b.1.total_duration.cmp(&a.1.total_duration));
+            stages.sort_by_key(|a| std::cmp::Reverse(a.1.total_duration));
 
             for (stage, stats) in stages {
                 report.push_str(&format!(

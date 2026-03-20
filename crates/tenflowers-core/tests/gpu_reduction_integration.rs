@@ -19,7 +19,7 @@ mod gpu_tests {
                 })
                 .await
         })
-        .is_some()
+        .is_ok()
     }
 
     #[test]
@@ -305,5 +305,4 @@ mod gpu_tests {
 fn test_gpu_feature_disabled() {
     // When GPU feature is disabled, this test passes
     // to indicate that the build works without GPU support
-    assert!(true);
 }

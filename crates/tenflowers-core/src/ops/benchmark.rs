@@ -359,7 +359,7 @@ impl BenchmarkSuite {
 
             // Sort by performance (fastest first)
             let mut sorted_results = op_results;
-            sorted_results.sort_by(|a, b| a.duration.cmp(&b.duration));
+            sorted_results.sort_by_key(|a| a.duration);
 
             report.push_str(
                 "| Device | DType | Duration (μs) | Throughput (elem/s) | Memory (KB) | FLOPS |\n",

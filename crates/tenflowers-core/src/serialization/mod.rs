@@ -10,10 +10,12 @@ pub mod legacy;
 pub use binary::{BinarySerializer, SerializedDType, SerializedDevice};
 
 // Re-export legacy types for backward compatibility
+#[cfg(feature = "compression")]
+pub use legacy::{compress_bytes, decompress_bytes};
 pub use legacy::{
-    compress_bytes, decompress_bytes, deserialize_tensor_binary, deserialize_tensor_json,
-    deserialize_tensor_msgpack, load_checkpoint, load_tensor, save_checkpoint, save_tensor,
-    serialize_tensor_binary, serialize_tensor_json, serialize_tensor_msgpack, SerializationFormat,
+    deserialize_tensor_binary, deserialize_tensor_json, deserialize_tensor_msgpack,
+    load_checkpoint, load_tensor, save_checkpoint, save_tensor, serialize_tensor_binary,
+    serialize_tensor_json, serialize_tensor_msgpack, SerializationFormat,
     TensorMetadata as LegacyTensorMetadata, MAGIC_NUMBER, SERIALIZATION_VERSION,
 };
 

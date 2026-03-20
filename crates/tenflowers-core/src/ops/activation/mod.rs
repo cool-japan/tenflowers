@@ -157,7 +157,7 @@ pub use implementations::{
 
 /// Module-level documentation and feature summary
 pub fn activation_module_info() -> &'static str {
-    "TenfloweRS Activation Module v0.1.0-alpha.1
+    "TenfloweRS Activation Module v0.1.0
 
 Features:
 - 15+ activation functions with ultra-performance optimizations
@@ -186,7 +186,7 @@ Supported Architectures:
 
 /// Get current module version
 pub fn version() -> &'static str {
-    "0.1.0-alpha.1"
+    "0.1.0"
 }
 
 /// Get supported activation function count

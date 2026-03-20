@@ -166,9 +166,11 @@ pub use activation::{
 };
 pub use attention::{
     analyze_attention_patterns, apply_attention_mask, apply_rotary_position_embedding,
-    create_causal_mask, create_padding_mask, scaled_dot_product_attention,
-    sinusoidal_positional_encoding, AttentionStats, FeedForwardNetwork, GeGLU, KVCache,
-    MultiHeadAttention, MultiQueryAttention, SwiGLU, TransformerDecoder, TransformerEncoder,
+    compute_slopes, create_causal_mask, create_padding_mask, naive_attention,
+    scaled_dot_product_attention, sinusoidal_positional_encoding, AlibiAttention, AlibiMask,
+    AlibiSlopes, AttentionStats, FeedForwardNetwork, FlashAttention, FlashConfig, GeGLU, KVCache,
+    MultiHeadAttention, MultiQueryAttention, OnlineSoftmax, RopeConfig, RopeEmbedding,
+    RotaryInterpolation, SwiGLU, TransformerDecoder, TransformerEncoder,
 };
 pub use augmentation::{CutMix, LabelSmoothing, Mixup};
 pub use conv::{Conv1D, Conv2D, Conv3D, ConvTranspose2D, DepthwiseConv2D, SeparableConv2D};

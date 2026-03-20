@@ -117,7 +117,7 @@ The integration tests cover:
 ```
 ==============================================================
 TenfloweRS FFI Integration Test Suite
-Version: 0.1.0-alpha.2
+Version: 0.1.0
 ==============================================================
 
 Running: Basic Tensor Operations
@@ -175,7 +175,7 @@ cd crates/tenflowers-ffi/tests
 ```
 ==============================================================
 TenfloweRS FFI Performance Benchmark Suite
-Version: 0.1.0-alpha.2
+Version: 0.1.0
 ==============================================================
 
 Benchmarking: zeros(1000x1000) x100

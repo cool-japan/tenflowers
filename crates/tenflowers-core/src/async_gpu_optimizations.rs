@@ -99,6 +99,108 @@ pub struct PerformanceMetrics {
     pub memory_bandwidth_utilization: f64,
     pub compute_unit_utilization: f64,
     pub kernel_fusion_success_rate: f64,
+    /// Per-operation-type timing history for analysis
+    pub operation_timings: HashMap<String, OperationTimingStats>,
+}
+
+/// Timing statistics for a specific operation type
+#[derive(Debug, Clone)]
+pub struct OperationTimingStats {
+    /// Number of times this operation was recorded
+    pub count: u64,
+    /// Cumulative execution time
+    pub total_time: Duration,
+    /// Minimum observed execution time
+    pub min_time: Duration,
+    /// Maximum observed execution time
+    pub max_time: Duration,
+    /// Exponential moving average of execution time (alpha = 0.1)
+    pub ema_time: Duration,
+}
+
+impl Default for OperationTimingStats {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            total_time: Duration::ZERO,
+            min_time: Duration::from_secs(u64::MAX),
+            max_time: Duration::ZERO,
+            ema_time: Duration::ZERO,
+        }
+    }
+}
+
+impl OperationTimingStats {
+    /// Get the average execution time
+    pub fn average_time(&self) -> Duration {
+        if self.count == 0 {
+            Duration::ZERO
+        } else {
+            self.total_time / self.count as u32
+        }
+    }
+}
+
+impl PerformanceMetrics {
+    /// Record the execution time for a given operation type.
+    ///
+    /// Updates per-operation-type statistics (count, total, min, max, EMA)
+    /// and the global average execution time across all operations.
+    pub fn record_operation_time(
+        &mut self,
+        operation_type: OperationType,
+        execution_time: Duration,
+    ) {
+        // Update per-type stats
+        let op_key = format!("{:?}", operation_type);
+        let stats = self.operation_timings.entry(op_key).or_default();
+
+        stats.count += 1;
+        stats.total_time += execution_time;
+
+        if execution_time < stats.min_time {
+            stats.min_time = execution_time;
+        }
+        if execution_time > stats.max_time {
+            stats.max_time = execution_time;
+        }
+
+        // EMA with alpha = 0.1
+        let alpha = 0.1_f64;
+        if stats.count == 1 {
+            stats.ema_time = execution_time;
+        } else {
+            let current_ema = stats.ema_time.as_secs_f64();
+            let new_sample = execution_time.as_secs_f64();
+            let updated = (1.0 - alpha) * current_ema + alpha * new_sample;
+            stats.ema_time = Duration::from_secs_f64(updated);
+        }
+
+        // Update global average (EMA across all ops)
+        let global_alpha = 0.1_f64;
+        if self.average_execution_time == Duration::ZERO {
+            self.average_execution_time = execution_time;
+        } else {
+            let current = self.average_execution_time.as_secs_f64();
+            let new_val = execution_time.as_secs_f64();
+            let updated = (1.0 - global_alpha) * current + global_alpha * new_val;
+            self.average_execution_time = Duration::from_secs_f64(updated);
+        }
+    }
+
+    /// Get timing stats for a specific operation type
+    pub fn get_operation_stats(
+        &self,
+        operation_type: OperationType,
+    ) -> Option<&OperationTimingStats> {
+        let op_key = format!("{:?}", operation_type);
+        self.operation_timings.get(&op_key)
+    }
+
+    /// Get the total number of recorded operation timings across all types
+    pub fn total_timed_operations(&self) -> u64 {
+        self.operation_timings.values().map(|s| s.count).sum()
+    }
 }
 
 /// Memory prefetcher for GPU operations
@@ -320,9 +422,10 @@ impl AsyncGpuScheduler {
 
         // Update metrics
         let execution_time = start_time.elapsed();
-        // TODO: Implement record_operation_time method for PerformanceMetrics
-        // self.metrics
-        //     .record_operation_time(operation.operation.clone(), execution_time);
+        {
+            let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+            metrics.record_operation_time(operation.operation.get_operation_type(), execution_time);
+        }
 
         // Send result
         let _ = operation.result_sender.send(result);

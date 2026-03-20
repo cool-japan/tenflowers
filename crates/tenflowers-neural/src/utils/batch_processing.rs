@@ -3,6 +3,8 @@
 //! This module provides efficient batch processing utilities for neural network training,
 //! including batching strategies, collation functions, and data sampling methods.
 
+use scirs2_core::random::{rngs::StdRng, Rng, SeedableRng};
+use scirs2_core::RngExt;
 use std::collections::HashMap;
 use tenflowers_core::{Device, Result, Tensor, TensorError};
 
@@ -142,31 +144,44 @@ impl BatchConfig {
     }
 }
 
+/// Perform an in-place Fisher-Yates shuffle on `indices` using the provided RNG.
+fn fisher_yates_shuffle(indices: &mut [usize], rng: &mut StdRng) {
+    let n = indices.len();
+    if n <= 1 {
+        return;
+    }
+    for i in (1..n).rev() {
+        let j = rng.random_range(0..=i);
+        indices.swap(i, j);
+    }
+}
+
 /// Batch sampler for generating batch indices
 pub struct BatchSampler {
     dataset_size: usize,
     config: BatchConfig,
     current_index: usize,
     indices: Vec<usize>,
+    rng: StdRng,
 }
 
 impl BatchSampler {
     /// Create new batch sampler
     pub fn new(dataset_size: usize, config: BatchConfig) -> Self {
-        let indices = match config.sampling_strategy {
-            SamplingStrategy::Sequential => (0..dataset_size).collect(),
-            SamplingStrategy::Shuffle => {
-                // TODO: Implement proper shuffling with seed
-                (0..dataset_size).collect()
-            }
-            _ => (0..dataset_size).collect(),
-        };
+        let seed = config.seed.unwrap_or(0);
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let mut indices: Vec<usize> = (0..dataset_size).collect();
+        if config.sampling_strategy == SamplingStrategy::Shuffle {
+            fisher_yates_shuffle(&mut indices, &mut rng);
+        }
 
         Self {
             dataset_size,
             config,
             current_index: 0,
             indices,
+            rng,
         }
     }
 
@@ -193,9 +208,12 @@ impl BatchSampler {
     pub fn reset(&mut self) {
         self.current_index = 0;
 
-        // Reshuffle if needed
+        // Reshuffle if needed — uses the continued RNG state so each epoch
+        // gets a different permutation while remaining deterministic from
+        // the original seed.
         if self.config.sampling_strategy == SamplingStrategy::Shuffle {
-            // TODO: Implement proper shuffling with seed
+            self.indices = (0..self.dataset_size).collect();
+            fisher_yates_shuffle(&mut self.indices, &mut self.rng);
         }
     }
 

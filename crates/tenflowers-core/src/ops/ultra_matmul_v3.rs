@@ -205,7 +205,7 @@ where
     // For now, delegate to standard matmul with additional cache hints
     // The standard implementation already has excellent cache optimization
 
-    // TODO: Add specific cache prefetching if proven beneficial through benchmarking
+    // NOTE(v0.2): Add specific cache prefetching if proven beneficial through benchmarking
     // This would require careful measurement to ensure it actually improves performance
 
     crate::ops::matmul(a, b)

@@ -380,14 +380,14 @@ impl EnhancedRegistry {
 
         let mut slowest_kernels: Vec<_> =
             stats.iter().map(|(k, s)| (k.clone(), s.avg_time)).collect();
-        slowest_kernels.sort_by(|a, b| b.1.cmp(&a.1));
+        slowest_kernels.sort_by_key(|a| std::cmp::Reverse(a.1));
         slowest_kernels.truncate(10);
 
         let mut most_used: Vec<_> = stats
             .iter()
             .map(|(k, s)| (k.clone(), s.execution_count))
             .collect();
-        most_used.sort_by(|a, b| b.1.cmp(&a.1));
+        most_used.sort_by_key(|a| std::cmp::Reverse(a.1));
         most_used.truncate(10);
 
         PerformanceReport {

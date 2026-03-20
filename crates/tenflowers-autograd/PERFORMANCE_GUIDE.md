@@ -1,6 +1,6 @@
 # TenfloweRS Autograd Performance Optimization Guide
 
-**Version**: 0.1.0-beta.1
+**Version**: 0.1.0
 **Last Updated**: February 2026
 
 ---

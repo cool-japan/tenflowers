@@ -1,6 +1,6 @@
 # TenfloweRS Autograd Documentation Index
 
-**Version**: 0.1.0-beta.1
+**Version**: 0.1.0
 **Last Updated**: February 6, 2026
 
 This is the main documentation index for the TenfloweRS Autograd crate. All documentation has been organized into a comprehensive structure in the [`docs/`](./docs/) directory.
@@ -388,7 +388,7 @@ For bugs in the code:
 
 ## 📅 Version History
 
-### 0.1.0-beta.1 (Current)
+### 0.1.0 (Current)
 
 - ✅ Comprehensive documentation structure created
 - ✅ 15+ markdown documentation files
@@ -400,15 +400,15 @@ For bugs in the code:
 
 ### Future Versions
 
-- **0.1.0**: Complete all API documentation
+- **0.2.0**: Complete all API documentation
 - **0.2.0**: Add video tutorials and notebooks
 - **0.3.0**: Interactive documentation website
 
 ---
 
 **Last Updated**: February 6, 2026
-**Maintainer**: COOLJAPAN OU (Team Kitasan)
-**Version**: 0.1.0-beta.1
+**Maintainer**: COOLJAPAN OU (Team KitaSan)
+**Version**: 0.1.0
 
 ---
 

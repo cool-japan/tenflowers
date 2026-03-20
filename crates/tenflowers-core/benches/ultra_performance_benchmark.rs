@@ -7,7 +7,8 @@
 //! This benchmark suite provides detailed performance analysis and validation
 //! of the ultra-performance optimizations integrated into TenflowRS.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 use std::time::Duration;
 use tenflowers_core::{
     ops::{matmul, ultra_matmul},

@@ -418,8 +418,10 @@ mod tests {
             .expect("test: inplace operation should succeed");
 
         // Check the result
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &x.tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert!((array[[0]] - 4.0).abs() < 1e-6);
         assert!((array[[1]] - 6.0).abs() < 1e-6);
@@ -440,8 +442,10 @@ mod tests {
             .expect("test: inplace operation should succeed");
 
         // Check the result
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &x.tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert!((array[[0]] - 8.0).abs() < 1e-6);
         assert!((array[[1]] - 15.0).abs() < 1e-6);
@@ -477,8 +481,10 @@ mod tests {
         x.add_scalar_inplace(5.0)
             .expect("test: inplace operation should succeed");
 
-        let tenflowers_core::tensor::TensorStorage::Cpu(ref array) = x.tensor.storage else {
-            panic!("Expected CPU storage in test");
+        #[allow(unreachable_patterns)]
+        let array = match &x.tensor.storage {
+            tenflowers_core::tensor::TensorStorage::Cpu(ref a) => a,
+            _ => panic!("Expected CPU storage in test"),
         };
         assert!((array[[0]] - 6.0).abs() < 1e-6);
         assert!((array[[1]] - 7.0).abs() < 1e-6);

@@ -706,21 +706,20 @@ pub mod utils {
                     });
                 }
             }
-            ValidationRuleType::Pattern => {
+            ValidationRuleType::Pattern if rule.value == "non_empty" && value.is_empty() => {
                 // Simple pattern matching (full regex support would require regex crate)
-                if rule.value == "non_empty" && value.is_empty() {
-                    return Err(ValidationError {
-                        error_type: ValidationErrorType::InvalidValue,
-                        message: rule
-                            .error_message
-                            .clone()
-                            .unwrap_or_else(|| format!("Field '{}' cannot be empty", field_name)),
-                        field_path: Some(field_name.to_string()),
-                        expected: Some("Non-empty value".to_string()),
-                        actual: Some("Empty value".to_string()),
-                    });
-                }
+                return Err(ValidationError {
+                    error_type: ValidationErrorType::InvalidValue,
+                    message: rule
+                        .error_message
+                        .clone()
+                        .unwrap_or_else(|| format!("Field '{}' cannot be empty", field_name)),
+                    field_path: Some(field_name.to_string()),
+                    expected: Some("Non-empty value".to_string()),
+                    actual: Some("Empty value".to_string()),
+                });
             }
+            ValidationRuleType::Pattern => {}
             ValidationRuleType::Enum => {
                 let allowed_values: Vec<&str> = rule.value.split(',').collect();
                 if !allowed_values.contains(&value) {

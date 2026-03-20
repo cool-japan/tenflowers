@@ -15,13 +15,13 @@ readme = "README.md"
 
 [dependencies]
 # Re-export all TenfloweRS subcrates
-tenflowers-core = { version = "0.1.0-rc.1", path = "../crates/tenflowers-core" }
-tenflowers-autograd = { version = "0.1.0-rc.1", path = "../crates/tenflowers-autograd" }
-tenflowers-neural = { version = "0.1.0-rc.1", path = "../crates/tenflowers-neural" }
-tenflowers-dataset = { version = "0.1.0-rc.1", path = "../crates/tenflowers-dataset" }
+tenflowers-core = { workspace = true }
+tenflowers-autograd = { workspace = true }
+tenflowers-neural = { workspace = true }
+tenflowers-dataset = { workspace = true }
 
-# Optional Python bindings - EXCLUDED from v0.1.0-rc.1 (requires Python environment)
-# tenflowers-ffi = { version = "0.1.0-rc.1", path = "../crates/tenflowers-ffi", optional = true }
+# Optional Python bindings (requires Python environment, not published)
+# tenflowers-ffi = { version = "0.1.0", path = "../crates/tenflowers-ffi", optional = true }
 
 [features]
 default = ["std", "parallel"]
@@ -60,13 +60,13 @@ onnx = ["tenflowers-core/onnx"]
 # Autograd
 autograd = ["tenflowers-core/autograd"]
 
-# Python bindings - EXCLUDED from v0.1.0-rc.1
+# Python bindings (requires Python environment, not published)
 # python = ["tenflowers-ffi"]
 
 # Benchmarking
 benchmark = ["tenflowers-core/benchmark"]
 
-# All features (python excluded in v0.1.0-rc.1)
+# All features (python excluded - requires Python environment)
 # Note: Using blas-oxiblas instead of blas-openblas for COOLJAPAN Pure Rust Policy
 full = ["gpu", "blas-oxiblas", "simd", "serialize", "compression", "onnx", "autograd"]
 

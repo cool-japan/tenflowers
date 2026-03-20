@@ -4,7 +4,7 @@
 //! time series data with different patterns and characteristics.
 
 use super::core::{DatasetGenerator, SyntheticConfig, SyntheticDataset};
-use scirs2_core::random::{Rng, RngCore, SeedableRng};
+use scirs2_core::random::{Rng, RngExt, SeedableRng};
 use std::f64::consts::PI;
 use tenflowers_core::{Result, Tensor};
 
@@ -15,10 +15,10 @@ impl DatasetGenerator {
         pattern: TimeSeriesPattern,
         sequence_length: usize,
     ) -> Result<SyntheticDataset<f64>> {
-        let mut rng: Box<dyn RngCore> = if let Some(seed) = config.random_seed {
-            Box::new(scirs2_core::random::rngs::StdRng::seed_from_u64(seed))
+        let mut rng = if let Some(seed) = config.random_seed {
+            scirs2_core::random::Random::seed(seed)
         } else {
-            Box::new(scirs2_core::random::rng())
+            scirs2_core::random::Random::seed(0)
         };
 
         let mut all_sequences = Vec::new();
@@ -26,7 +26,7 @@ impl DatasetGenerator {
 
         for _ in 0..config.n_samples {
             let (sequence, target) =
-                pattern.generate_sequence(sequence_length, &mut *rng, config.noise_level);
+                pattern.generate_sequence(sequence_length, &mut rng, config.noise_level);
             all_sequences.extend(sequence);
             all_targets.push(target);
         }
@@ -44,10 +44,10 @@ impl DatasetGenerator {
         sequence_length: usize,
         correlation_matrix: Option<Vec<Vec<f64>>>,
     ) -> Result<SyntheticDataset<f64>> {
-        let mut rng: Box<dyn RngCore> = if let Some(seed) = config.random_seed {
-            Box::new(scirs2_core::random::rngs::StdRng::seed_from_u64(seed))
+        let mut rng = if let Some(seed) = config.random_seed {
+            scirs2_core::random::Random::seed(seed)
         } else {
-            Box::new(scirs2_core::random::rng())
+            scirs2_core::random::Random::seed(0)
         };
 
         let mut all_sequences = Vec::new();
@@ -117,10 +117,10 @@ impl DatasetGenerator {
         anomaly_probability: f64,
         anomaly_magnitude: f64,
     ) -> Result<SyntheticDataset<f64>> {
-        let mut rng: Box<dyn RngCore> = if let Some(seed) = config.random_seed {
-            Box::new(scirs2_core::random::rngs::StdRng::seed_from_u64(seed))
+        let mut rng = if let Some(seed) = config.random_seed {
+            scirs2_core::random::Random::seed(seed)
         } else {
-            Box::new(scirs2_core::random::rng())
+            scirs2_core::random::Random::seed(0)
         };
 
         let mut all_sequences = Vec::new();
@@ -190,7 +190,7 @@ impl TimeSeriesPattern {
     pub fn generate_sequence(
         &self,
         length: usize,
-        rng: &mut dyn RngCore,
+        rng: &mut impl Rng,
         noise_level: f64,
     ) -> (Vec<f64>, f64) {
         let mut sequence = Vec::with_capacity(length);

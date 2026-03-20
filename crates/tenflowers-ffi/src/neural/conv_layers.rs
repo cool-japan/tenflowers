@@ -190,7 +190,7 @@ impl PyConv2D {
     }
 
     /// Get layer state dict
-    pub fn state_dict(&self, py: Python) -> PyResult<PyObject> {
+    pub fn state_dict(&self, py: Python) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
 
         if let Some(ref weight) = self.weight {

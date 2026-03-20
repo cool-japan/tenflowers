@@ -4,7 +4,7 @@
 //! capabilities for TenflowRS, integrating with the SciRS2 metrics system
 //! and providing real-time performance analytics.
 
-// TODO: Add back when SciRS2 metrics integration is implemented
+// NOTE(v0.2): Add back when SciRS2 metrics integration is implemented
 // use scirs2_core::metrics::{Counter, Timer};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

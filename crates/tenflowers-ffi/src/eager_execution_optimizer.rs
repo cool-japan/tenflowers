@@ -1,7 +1,7 @@
 //! Eager Execution Optimizer for TenfloweRS
 //!
 //! This module provides optimizations to achieve sub-millisecond overhead for eager execution,
-//! targeting the performance goal mentioned in the TODO.md files.
+//! targeting the sub-millisecond overhead performance goal.
 
 use crate::tensor_ops::PyTensor;
 use pyo3::prelude::*;
@@ -314,7 +314,7 @@ impl PyEagerExecutionOptimizer {
         py: Python,
         operation_type: &str,
         inputs: &Bound<'_, PyList>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let start_time = Instant::now();
         let mut optimizer = self
             .inner
@@ -446,7 +446,7 @@ impl PyEagerExecutionOptimizer {
     }
 
     /// Get comprehensive performance statistics
-    pub fn get_performance_statistics(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_performance_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
         let optimizer = self.inner.read().expect("read lock should not be poisoned");
         let tracker = self
             .performance_tracker
@@ -524,7 +524,7 @@ impl PyEagerExecutionOptimizer {
         py: Python,
         operations: &Bound<'_, PyList>,
         iterations: usize,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut results = HashMap::new();
         let mut total_overhead_microseconds = 0.0;
         let mut total_execution_time_microseconds = 0.0;
@@ -625,7 +625,7 @@ impl PyEagerExecutionOptimizer {
     }
 
     /// Get optimization recommendations for improving eager execution performance
-    pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<PyObject> {
+    pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<Py<PyAny>> {
         let optimizer = self.inner.read().expect("read lock should not be poisoned");
         let tracker = self
             .performance_tracker
@@ -731,10 +731,10 @@ impl PyEagerExecutionOptimizer {
         &self,
         cached_op: &CachedOperation,
         _inputs: &Bound<'_, PyList>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Simplified cached operation execution
         // In a real implementation, this would execute the cached/compiled operation
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result_dict = PyDict::new(py);
             result_dict.set_item("cached", true)?;
             result_dict.set_item("operation_id", &cached_op.operation_id)?;
@@ -751,9 +751,9 @@ impl PyEagerExecutionOptimizer {
         operation_type: &str,
         _inputs: &Bound<'_, PyList>,
         optimizations: &[String],
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Simplified optimized operation execution
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result_dict = PyDict::new(py);
             result_dict.set_item("operation_type", operation_type)?;
             result_dict.set_item("optimizations_applied", PyList::new(py, optimizations)?)?;
@@ -916,7 +916,7 @@ impl ExecutionQueue {
 pub fn quick_eager_optimization(
     py: Python,
     target_overhead_microseconds: Option<f64>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let optimizer = PyEagerExecutionOptimizer::new(target_overhead_microseconds);
     optimizer.get_performance_statistics(py)
 }

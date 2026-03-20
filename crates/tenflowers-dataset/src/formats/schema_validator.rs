@@ -354,17 +354,15 @@ impl SchemaValidator {
         field_name: &str,
     ) -> std::result::Result<(), ValidationError> {
         match (expected, actual) {
-            (Some(exp), Some(act)) => {
-                if exp != act {
-                    return Err(ValidationError {
-                        category: ValidationErrorCategory::ShapeMismatch,
-                        field_name: Some(field_name.to_string()),
-                        message: format!(
-                            "Shape mismatch for field '{}': expected {:?}, got {:?}",
-                            field_name, exp, act
-                        ),
-                    });
-                }
+            (Some(exp), Some(act)) if exp != act => {
+                return Err(ValidationError {
+                    category: ValidationErrorCategory::ShapeMismatch,
+                    field_name: Some(field_name.to_string()),
+                    message: format!(
+                        "Shape mismatch for field '{}': expected {:?}, got {:?}",
+                        field_name, exp, act
+                    ),
+                });
             }
             (Some(_), None) => {
                 return Err(ValidationError {
@@ -413,14 +411,12 @@ impl SchemaValidator {
         field_name: &str,
     ) -> std::result::Result<(), ValidationError> {
         match dtype {
-            DataType::Struct(fields) => {
-                if fields.is_empty() {
-                    return Err(ValidationError {
-                        category: ValidationErrorCategory::UnsupportedType,
-                        field_name: Some(field_name.to_string()),
-                        message: format!("Struct type for field '{}' has no fields", field_name),
-                    });
-                }
+            DataType::Struct(fields) if fields.is_empty() => {
+                return Err(ValidationError {
+                    category: ValidationErrorCategory::UnsupportedType,
+                    field_name: Some(field_name.to_string()),
+                    message: format!("Struct type for field '{}' has no fields", field_name),
+                });
             }
             DataType::List(inner) => {
                 self.validate_type_structure(inner, field_name)?;

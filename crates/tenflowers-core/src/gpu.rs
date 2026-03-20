@@ -133,7 +133,7 @@ impl GpuContext {
                     force_fallback_adapter: false,
                 })
                 .await
-                .ok_or_else(|| {
+                .map_err(|_e| {
                     TensorError::gpu_error(
                         "GpuContext::new",
                         "Failed to find suitable GPU adapter",
@@ -143,19 +143,18 @@ impl GpuContext {
                 })?;
 
             let (device, queue) = adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        required_features: wgpu::Features::empty(),
-                        required_limits: if cfg!(target_arch = "wasm32") {
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                        } else {
-                            wgpu::Limits::default()
-                        },
-                        label: Some("TenfloweRS GPU Device"),
-                        memory_hints: Default::default(),
+                .request_device(&wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
                     },
-                    None,
-                )
+                    label: Some("TenfloweRS GPU Device"),
+                    memory_hints: Default::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::default(),
+                    trace: wgpu::Trace::default(),
+                })
                 .await
                 .map_err(|e| {
                     TensorError::gpu_error(
@@ -559,7 +558,7 @@ where
     T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static + Default,
 {
     // For now, create a stub output buffer with the correct size
-    // TODO: Implement proper GPU embedding lookup using WGSL shaders
+    // NOTE(v0.2): Implement proper GPU embedding lookup using WGSL shaders
     let output_size = total_indices * embedding_dim;
 
     // Get device from indices buffer

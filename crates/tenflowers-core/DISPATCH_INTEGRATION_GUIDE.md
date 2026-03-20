@@ -1,6 +1,6 @@
 # Dispatch Registry Integration Guide
 
-**Version:** 0.1.0-beta.1
+**Version:** 0.1.0
 **Audience:** TenfloweRS Core Contributors
 **Status:** Active Reference Document
 
@@ -619,4 +619,4 @@ When migrating an existing operation to use the dispatch registry:
 
 **Questions?** Ask in #tenflowers-dev or file an issue
 **Contributions:** Please follow this guide when adding new operations
-**Last Updated:** 2025-11-10
+**Last Updated:** 2026-03-20

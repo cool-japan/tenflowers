@@ -250,7 +250,7 @@ impl ModelSummary {
     /// Get largest layers by parameter count
     pub fn largest_layers(&self, n: usize) -> Vec<&LayerInfo> {
         let mut sorted: Vec<_> = self.layers.iter().collect();
-        sorted.sort_by(|a, b| b.num_parameters.cmp(&a.num_parameters));
+        sorted.sort_by_key(|a| std::cmp::Reverse(a.num_parameters));
         sorted.into_iter().take(n).collect()
     }
 }

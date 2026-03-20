@@ -41,21 +41,20 @@ impl GpuContext {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| {
+            .map_err(|_e| {
                 TensorError::device_error_simple("No suitable GPU adapter found".to_string())
             })?;
 
         // Request a device and queue
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("GPU Transforms Device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("GPU Transforms Device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::default(),
+            })
             .await
             .map_err(|e| {
                 TensorError::device_error_simple(format!("Failed to create GPU device: {}", e))
@@ -94,7 +93,7 @@ impl GpuContext {
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("Transform Pipeline Layout"),
                 bind_group_layouts: &[bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         self.device
@@ -151,6 +150,6 @@ mod tests {
     fn test_gpu_context_fallback() {
         // Test that GPU context creation fails when GPU feature is disabled
         // Since this is a unit test and the GPU feature is disabled, we expect an error
-        assert!(true); // Placeholder test - GPU context would fail without GPU feature
+        // Placeholder test - GPU context would fail without GPU feature
     }
 }

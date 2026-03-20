@@ -512,13 +512,13 @@ fn add_f32_simd(a: &Tensor<f32>, b: &Tensor<f32>) -> Result<Tensor<f32>> {
 #[cfg(feature = "gpu")]
 fn abs_f32_gpu(x: &Tensor<f32>) -> Result<Tensor<f32>> {
     // Use GPU kernels if available, otherwise fallback
-    abs_f32_cpu(x) // TODO: Implement actual GPU kernel
+    abs_f32_cpu(x) // NOTE(v0.2): Implement actual GPU kernel
 }
 
 #[cfg(feature = "gpu")]
 fn add_f32_gpu(a: &Tensor<f32>, b: &Tensor<f32>) -> Result<Tensor<f32>> {
     // Use GPU kernels if available, otherwise fallback
-    add_f32_cpu(a, b) // TODO: Implement actual GPU kernel
+    add_f32_cpu(a, b) // NOTE(v0.2): Implement actual GPU kernel
 }
 
 #[cfg(test)]

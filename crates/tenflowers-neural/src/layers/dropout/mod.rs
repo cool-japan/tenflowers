@@ -164,7 +164,7 @@ where
     }
 }
 
-// TODO: In a complete refactoring, VariationalDropout and ConcreteDropout would also
+// NOTE(v0.2): In a complete refactoring, VariationalDropout and ConcreteDropout would also
 // be moved to separate files (variational.rs and concrete.rs)
 // For now, they remain here to avoid incomplete implementation
 

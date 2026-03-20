@@ -443,7 +443,7 @@ impl GpuMemoryTracker {
     /// Generate a memory report
     pub fn generate_report(&self) -> MemoryReport {
         let mut allocations_by_size: Vec<_> = self.active_allocations.values().collect();
-        allocations_by_size.sort_by(|a, b| b.size.cmp(&a.size));
+        allocations_by_size.sort_by_key(|item| std::cmp::Reverse(item.size));
 
         let top_allocations: Vec<_> = allocations_by_size.into_iter().take(10).cloned().collect();
 

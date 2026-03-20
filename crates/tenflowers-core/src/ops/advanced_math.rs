@@ -17,8 +17,58 @@ macro_rules! float_const {
     };
 }
 
-// Note: logsumexp requires axis handling that doesn't match current API
-// TODO: Implement logsumexp when axis handling is unified
+/// Log-sum-exp: logsumexp(x) = max(x) + log(sum(exp(x - max(x))))
+///
+/// Numerically stable implementation that prevents overflow by subtracting the max
+/// before exponentiation.
+///
+/// # Arguments
+/// * `input` - Input tensor
+/// * `axes` - Optional axes along which to reduce. `None` reduces all axes.
+/// * `keepdims` - Whether to keep reduced dimensions as size 1
+///
+/// # Returns
+/// Result containing logsumexp(input) along the specified axes
+pub fn logsumexp<T>(input: &Tensor<T>, axes: Option<&[i32]>, keepdims: bool) -> Result<Tensor<T>>
+where
+    T: Float
+        + Clone
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Mul<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + Pod
+        + Zeroable
+        + scirs2_core::num_traits::Zero,
+{
+    // Step 1: Compute max(x) along the specified axes, keeping dims for broadcasting
+    let max_val = crate::ops::reduction::statistical::max(input, axes, true)?;
+
+    // Step 2: Compute x - max(x) (broadcasting handles shape mismatch)
+    let shifted = crate::ops::binary::sub(input, &max_val)?;
+
+    // Step 3: Compute exp(x - max(x))
+    let exp_shifted = crate::ops::exp(&shifted)?;
+
+    // Step 4: Compute sum(exp(x - max(x))) along the same axes
+    let sum_exp = crate::ops::reduction::statistical::sum(&exp_shifted, axes, keepdims)?;
+
+    // Step 5: Compute log(sum(exp(x - max(x))))
+    let log_sum = crate::ops::log(&sum_exp)?;
+
+    // Step 6: Get max_val with the correct keepdims setting
+    let max_final = if keepdims {
+        max_val
+    } else {
+        crate::ops::reduction::statistical::max(input, axes, false)?
+    };
+
+    // Step 7: max(x) + log(sum(exp(x - max(x))))
+    crate::ops::binary::add(&max_final, &log_sum)
+}
 
 /// Softplus activation: log(1 + exp(x))
 ///
@@ -371,16 +421,22 @@ mod tests {
     use super::*;
     use crate::Tensor;
 
-    // TODO: Uncomment when logsumexp is implemented
-    // #[test]
-    // fn test_logsumexp() {
-    //     let input = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4]).expect("test: from_vec should succeed");
-    //     let result = logsumexp(&input, None, false).expect("test: logsumexp should succeed");
-    //     let result_val = result.to_vec().expect("test: tensor data should be convertible to vec")[0];
-    //
-    //     // Should be approximately log(e^1 + e^2 + e^3 + e^4) ≈ 4.44019
-    //     assert!((result_val - 4.44019).abs() < 0.001, "logsumexp mismatch: {}", result_val);
-    // }
+    #[test]
+    fn test_logsumexp() {
+        let input = Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+        let result = logsumexp(&input, None, false).expect("test: logsumexp should succeed");
+        let result_val = result
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec")[0];
+
+        // Should be approximately log(e^1 + e^2 + e^3 + e^4) ≈ 4.44019
+        assert!(
+            (result_val - 4.44019).abs() < 0.001,
+            "logsumexp mismatch: {}",
+            result_val
+        );
+    }
 
     #[test]
     fn test_softplus() {
@@ -516,17 +572,20 @@ mod tests {
         assert!((result_data[1] - 1.0507).abs() < 0.01);
     }
 
-    // TODO: Uncomment when logsumexp is implemented
-    // #[test]
-    // fn test_numerical_stability_logsumexp() {
-    //     // Test with large values that would cause overflow without stability
-    //     let input = Tensor::from_vec(vec![100.0_f32, 101.0, 102.0], &[3]).expect("test: from_vec should succeed");
-    //     let result = logsumexp(&input, None, false);
-    //     assert!(result.is_ok());
-    //
-    //     let result_val = result.expect("test: operation should succeed").to_vec().expect("test: tensor data should be convertible to vec")[0];
-    //     // Should be close to 102 + log(e^(-2) + e^(-1) + 1)
-    //     assert!(result_val.is_finite());
-    //     assert!(result_val > 102.0 && result_val < 103.0);
-    // }
+    #[test]
+    fn test_numerical_stability_logsumexp() {
+        // Test with large values that would cause overflow without stability
+        let input = Tensor::from_vec(vec![100.0_f32, 101.0, 102.0], &[3])
+            .expect("test: from_vec should succeed");
+        let result = logsumexp(&input, None, false);
+        assert!(result.is_ok());
+
+        let result_val = result
+            .expect("test: operation should succeed")
+            .to_vec()
+            .expect("test: tensor data should be convertible to vec")[0];
+        // Should be close to 102 + log(e^(-2) + e^(-1) + 1)
+        assert!(result_val.is_finite());
+        assert!(result_val > 102.0 && result_val < 103.0);
+    }
 }

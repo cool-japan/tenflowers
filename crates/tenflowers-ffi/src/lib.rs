@@ -372,7 +372,7 @@ fn tensor_from_numpy(py: Python, array: Bound<'_, PyAny>) -> PyResult<tensor_ops
 }
 
 #[pyfunction]
-fn tensor_to_numpy(py: Python, tensor: &tensor_ops::PyTensor) -> PyResult<PyObject> {
+fn tensor_to_numpy(py: Python, tensor: &tensor_ops::PyTensor) -> PyResult<Py<PyAny>> {
     // use numpy::PyArrayDyn; // Unused for now
 
     // Get tensor data and shape
@@ -541,7 +541,7 @@ fn setup_default_pytorch_compatibility(
 #[pymodule]
 fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add version info
-    m.setattr("__version__", "0.1.0-rc.1")?;
+    m.setattr("__version__", "0.1.0")?;
     m.setattr("__author__", "TenfloweRS Team")?;
 
     // Register custom exceptions

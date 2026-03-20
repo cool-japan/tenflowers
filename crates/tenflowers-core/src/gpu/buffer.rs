@@ -449,7 +449,7 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
             let _ = sender.send(result);
         });
 
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
         match futures::executor::block_on(receiver) {
             Ok(Ok(())) => {

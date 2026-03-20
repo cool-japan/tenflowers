@@ -377,7 +377,7 @@ where
                         &crate::gpu::buffer::GpuBuffer<f32>,
                     >(gpu_buffer)
                 };
-                // TODO: Implement GPU topk operation
+                // NOTE(v0.2): Implement GPU topk operation
                 return Err(TensorError::unsupported_operation_simple(
                     "GPU topk operation not yet implemented".to_string(),
                 ));

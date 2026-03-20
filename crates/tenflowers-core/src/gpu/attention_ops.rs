@@ -104,7 +104,7 @@ impl GpuAttentionOps {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Attention Pipeline Layout"),
             bind_group_layouts: &[&attention_bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // Create compute pipelines
@@ -307,7 +307,7 @@ impl GpuAttentionOps {
                 eprintln!("Buffer mapping failed: {:?}", e);
             }
         });
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
         let data = buffer_slice.get_mapped_range();
         let result: Vec<T> = bytemuck::cast_slice(&data).to_vec();

@@ -1,7 +1,7 @@
 # TenfloweRS Autograd Documentation
 
-**Version**: 0.1.0-beta.1
-**Last Updated**: February 2026
+**Version**: 0.1.0
+**Last Updated**: March 2026
 
 ---
 
@@ -237,6 +237,6 @@ Licensed under Apache-2.0. See [LICENSE](../../LICENSE) for details.
 
 ---
 
-**Last Updated**: February 6, 2026
-**Maintainer**: COOLJAPAN OU (Team Kitasan)
-**Version**: 0.1.0-beta.1
+**Last Updated**: March 20, 2026
+**Maintainer**: COOLJAPAN OU (Team KitaSan)
+**Version**: 0.1.0

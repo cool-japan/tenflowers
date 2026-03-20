@@ -700,7 +700,7 @@ where
     let benchmark = ModelBenchmark::new(config);
     let mut results = Vec::new();
 
-    for ((name, model), optimizer) in models.into_iter().zip(optimizers.into_iter()) {
+    for ((name, model), optimizer) in models.into_iter().zip(optimizers) {
         println!("\n--- Benchmarking {name} ---");
         let result = benchmark.benchmark_model(model, optimizer, loss_fn, name.to_string())?;
         results.push(result);

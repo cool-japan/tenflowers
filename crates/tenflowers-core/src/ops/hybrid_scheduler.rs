@@ -185,7 +185,7 @@ impl HybridWorkScheduler {
 
         // Sort by priority (higher priority first)
         let mut work_items: Vec<_> = queue.drain(..).collect();
-        work_items.sort_by(|a, b| b.priority.cmp(&a.priority));
+        work_items.sort_by_key(|item| std::cmp::Reverse(item.priority));
 
         for work in work_items {
             let strategy = self.determine_execution_strategy(&work, &metrics);

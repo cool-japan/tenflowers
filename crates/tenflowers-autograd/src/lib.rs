@@ -111,7 +111,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod advanced_grad_ops;
-// pub mod advanced_linalg; // TODO: Fix compilation issues
+// NOTE(v0.2): advanced_linalg module planned but not yet implemented
 pub mod amp_policy;
 pub mod boolean_indexing;
 pub mod checkpointing;
@@ -135,8 +135,8 @@ pub mod gradient_buffer_manager_simple;
 pub mod gradient_compression;
 pub mod gradient_compression_advanced;
 pub mod gradient_ops;
-// pub mod gradient_utils; // TODO: Fix API compatibility with tenflowers-core
-// pub mod gradient_validation; // TODO: Fix compilation issues
+pub mod gradient_utils;
+// NOTE(v0.2): gradient_validation module planned but not yet implemented
 pub mod gradient_visualization;
 pub mod graph_optimization;
 pub mod higher_order;

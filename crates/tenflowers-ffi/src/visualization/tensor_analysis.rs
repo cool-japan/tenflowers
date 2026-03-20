@@ -34,7 +34,7 @@ impl PyTensorAnalyzer {
         &self,
         py: Python,
         tensor_data: &Bound<'_, PyList>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Convert Python list to tensor data
         let tensor_values: Vec<f32> = tensor_data
             .iter()
@@ -97,7 +97,7 @@ impl PyTensorAnalyzer {
         py: Python,
         tensor_data: &Bound<'_, PyList>,
         bins: Option<usize>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let tensor_values: Vec<f32> = tensor_data
             .iter()
             .map(|item| item.extract::<f32>())
@@ -122,7 +122,7 @@ impl PyTensorAnalyzer {
         &self,
         py: Python,
         tensor_dict: &Bound<'_, PyDict>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut tensor_data: HashMap<String, Vec<f32>> = HashMap::new();
 
         // Extract tensor data from Python dictionary

@@ -5,6 +5,7 @@
 
 use super::core::DatasetGenerator;
 use crate::Dataset;
+use scirs2_core::RngExt;
 use tenflowers_core::{Result, Tensor};
 
 /// Configuration for synthetic text corpus generation

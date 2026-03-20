@@ -3,9 +3,10 @@
 #![allow(clippy::useless_vec)]
 #![allow(clippy::doc_lazy_continuation)]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use scirs2_core::ndarray::{Array1, Array2, Array3, Array4};
 use serde_json::{json, Value};
+use std::hint::black_box;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tenflowers_autograd::{GradientAccumulator, GradientTape};

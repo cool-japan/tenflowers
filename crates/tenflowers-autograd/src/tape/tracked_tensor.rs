@@ -9,12 +9,6 @@ use tenflowers_core::{Result, Tensor, TensorError};
 
 use super::{Operation, TensorId, TrackedTensor};
 
-// TODO: Move complete TrackedTensor implementation from original tape.rs
-// This includes:
-// - Basic arithmetic operations (add, sub, mul, div, pow, matmul)
-// - Activation functions (relu, sigmoid, tanh, gelu, etc.)
-// - Reduction operations (sum, mean, max, min, var, std)
-// - Tensor manipulation (reshape, transpose, squeeze, etc.)
 // - Advanced operations (conv, pooling, normalization, etc.)
 // - All operation methods from lines 2803-3335 (~567 lines)
 

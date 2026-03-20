@@ -55,7 +55,7 @@ fn main() {
         println!();
     }
     println!("This implementation provides the infrastructure to achieve");
-    println!("the 90% TensorFlow GPU performance goal specified in TODO.md!");
+    println!("the 90% TensorFlow GPU performance target!");
 
     // Note: The actual benchmark function call is commented out because
     // it requires proper GPU context initialization

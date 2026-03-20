@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.1.0-rc.1"
+tenflowers = "0.1.0"
 ```
 
 ### Basic Example
@@ -116,14 +116,13 @@ TenfloweRS provides several optional features:
 
 ### BLAS Acceleration
 - `blas`: Generic BLAS support
-- `blas-openblas`: OpenBLAS acceleration
-- `blas-mkl`: Intel MKL acceleration
+- `blas-oxiblas`: OxiBLAS acceleration (pure Rust)
 - `blas-accelerate`: Apple Accelerate framework (macOS only)
 
-### Performance & Optimization
+### Performance and Optimization
 - `simd`: SIMD vectorization optimizations
 
-### Serialization & I/O
+### Serialization and I/O
 - `serialize`: Serialization support (JSON, MessagePack)
 - `compression`: Compression support for checkpoints
 - `onnx`: ONNX model import/export
@@ -136,36 +135,36 @@ TenfloweRS provides several optional features:
 - `benchmark`: Benchmarking utilities
 
 ### Language Bindings
-- `python`: Python bindings via PyO3 ⚠️ Temporarily excluded in beta.1 (requires Python environment)
+- `python`: Python bindings via PyO3 (requires Python environment)
 
 ### Convenience
-- `full`: Enable most features (gpu, blas-openblas, simd, serialize, compression, onnx, autograd)
+- `full`: Enable most features (gpu, blas-oxiblas, simd, serialize, compression, onnx, autograd)
 
 ### Enable GPU Support
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-rc.1", features = ["gpu"] }
+tenflowers = { version = "0.1.0", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0-rc.1", features = ["full"] }
+tenflowers = { version = "0.1.0", features = ["full"] }
 ```
 
 ## Architecture
 
 TenfloweRS is organized into focused subcrates:
 
-- **[tenflowers-core](../crates/tenflowers-core)**: Core tensor operations and device management
-- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine
-- **[tenflowers-neural](../crates/tenflowers-neural)**: Neural network layers and models
-- **[tenflowers-dataset](../crates/tenflowers-dataset)**: Data loading and preprocessing
-- **[tenflowers-ffi](../crates/tenflowers-ffi)**: Python bindings (optional)
+- **[tenflowers-core](../crates/tenflowers-core)**: Core tensor operations and device management (675 tests)
+- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine (334 tests)
+- **[tenflowers-neural](../crates/tenflowers-neural)**: Neural network layers, models, and 150+ ML domains (11,407 tests)
+- **[tenflowers-dataset](../crates/tenflowers-dataset)**: Data loading and preprocessing (472 tests)
+- **[tenflowers-ffi](../crates/tenflowers-ffi)**: Python and C bindings (48 tests)
 
-This meta crate re-exports all public APIs for convenience.
+This meta crate re-exports all public APIs for convenience, including the `tensor!` macro and `prelude` module.
 
 ## SciRS2 Integration
 
@@ -173,11 +172,11 @@ TenfloweRS is built on the SciRS2 scientific computing ecosystem:
 
 ```
 TenfloweRS (Deep Learning Framework - TensorFlow-compatible API)
-    ↓ builds upon
+    builds upon
 OptiRS (ML Optimization Specialization)
-    ↓ builds upon
+    builds upon
 SciRS2 (Scientific Computing Foundation)
-    ↓ builds upon
+    builds upon
 ndarray, num-traits, etc. (Core Rust Scientific Stack)
 ```
 
@@ -187,15 +186,6 @@ This architecture provides:
 - Neural network abstractions via `scirs2-neural`
 - Optimized algorithms via `optirs`
 
-## Examples
-
-See the [examples](../examples) directory for more comprehensive examples:
-
-- [MNIST Classification](../examples/mnist.rs)
-- [Custom Layers](../examples/custom_layer.rs)
-- [GPU Acceleration](../examples/gpu_demo.rs)
-- [Advanced Training](../examples/advanced_training.rs)
-
 ## Documentation
 
 - [API Documentation](https://docs.rs/tenflowers)
@@ -203,17 +193,13 @@ See the [examples](../examples) directory for more comprehensive examples:
 - [Performance Tuning](../PERFORMANCE_TUNING.md)
 - [Capabilities Overview](../CAPABILITIES.md)
 
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
-
 ## License
 
 Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Status
 
-TenfloweRS is currently in beta (v0.1.0-rc.1). The core API is stabilizing for 1.0 release. All 2629 tests passing, zero security vulnerabilities.
+TenfloweRS v0.1.0 is the first release (2026-03-20). All 11,477 tests passing across the workspace, 0 clippy warnings, 0 TODO markers. The project comprises ~765K SLoC of Rust across 1,446 files in 6 published crates.
 
 ## Links
 

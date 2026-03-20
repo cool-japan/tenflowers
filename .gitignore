@@ -4,6 +4,7 @@ target/
 Cargo.lock
 **/*.rs.bk
 *.pdb
+**/*.rlib
 
 # Backup
 *.bak
@@ -74,3 +75,5 @@ criterion/
 
 # Claude
 .claude/*
+# Rustc ICE dumps
+rustc-ice-*.txt

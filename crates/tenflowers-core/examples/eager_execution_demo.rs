@@ -136,7 +136,7 @@ fn main() {
     }
 
     println!("  💡 The implementation provides infrastructure to achieve");
-    println!("     sub-millisecond eager execution overhead as specified in TODO.md");
+    println!("     sub-millisecond eager execution overhead (project performance target)");
 
     println!();
     println!("==============================================");

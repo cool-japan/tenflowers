@@ -8,7 +8,7 @@
 //! All implementations are organized into separate modules for maintainability
 //! and are re-exported through this module for convenience.
 
-// TODO: Fix compilation errors in advanced submodules before enabling
+// NOTE(v0.2): Fix compilation errors in advanced submodules before enabling
 // mod advanced;
 
 // Re-export all advanced linear algebra functions

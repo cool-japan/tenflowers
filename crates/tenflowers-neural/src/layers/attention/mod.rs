@@ -19,18 +19,24 @@ use std::any::TypeId;
 use tenflowers_core::gpu::attention_ops::GpuAttentionOps;
 
 // Re-export specialized modules
+pub mod alibi;
 pub mod feed_forward;
+pub mod flash_attention;
 pub mod mixture_of_experts;
 pub mod multi_head;
 pub mod multi_query;
+pub mod rope;
 pub mod transformer;
 pub mod utils;
 
 // Re-export commonly used types
+pub use alibi::{compute_slopes, AlibiAttention, AlibiMask, AlibiSlopes};
 pub use feed_forward::{FeedForwardNetwork, GeGLU, SwiGLU};
+pub use flash_attention::{naive_attention, FlashAttention, FlashConfig, OnlineSoftmax};
 pub use mixture_of_experts::MixtureOfExperts;
 pub use multi_head::{FlashAttentionConfig, MultiHeadAttention};
 pub use multi_query::MultiQueryAttention;
+pub use rope::{RopeConfig, RopeEmbedding, RotaryInterpolation};
 pub use transformer::{TransformerDecoder, TransformerEncoder};
 pub use utils::{
     analyze_attention_patterns, apply_attention_mask, apply_rotary_position_embedding,

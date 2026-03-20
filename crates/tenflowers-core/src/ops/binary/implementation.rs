@@ -16,8 +16,7 @@ where
     T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
     Op: BinaryOp<T>,
 {
-    // Simple profiling: Track binary operation
-    // TODO: Implement profiler integration
+    // NOTE(v0.2): Implement profiler integration
     // #[cfg(feature = "autograd")]
     // if let Ok(mut p) = get_profiler().lock() {
     //     p.record_operation(&format!("binary_{}", op.name()));

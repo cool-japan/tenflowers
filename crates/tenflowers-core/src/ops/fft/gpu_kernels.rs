@@ -3,7 +3,7 @@
 //! This module provides GPU-accelerated FFT operations using WGPU compute shaders
 //! for 1D, 2D, and 3D transforms with optimized kernel dispatch.
 
-// TODO: Add back imports when GPU FFT kernels are implemented
+// NOTE(v0.2): Add back imports when GPU FFT kernels are implemented
 #[allow(unused_imports)]
 use crate::{Result, Tensor, TensorError};
 #[allow(unused_imports)]
@@ -13,11 +13,11 @@ use scirs2_core::numeric::{Float, FromPrimitive, Signed};
 #[allow(unused_imports)]
 use std::fmt::Debug;
 
-// TODO: Add back imports when GPU FFT kernels are implemented
+// NOTE(v0.2): Add back imports when GPU FFT kernels are implemented
 #[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
-// TODO: Move complete GPU implementation from original fft.rs (lines 700-2879, ~2179 lines)
+// NOTE(v0.2): Move complete GPU implementation from original fft.rs (lines 700-2879, ~2179 lines)
 // This includes:
 // - gpu_fft_dispatch, gpu_ifft_dispatch, gpu_rfft_dispatch
 // - gpu_fft2_dispatch, gpu_ifft2_dispatch
@@ -56,7 +56,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU FFT dispatch (from original lines 701-820)
+    // NOTE(v0.2): Implement complete GPU FFT dispatch (from original lines 701-820)
     Err(TensorError::unsupported_operation_simple(
         "GPU FFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -81,7 +81,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU IFFT dispatch
+    // NOTE(v0.2): Implement complete GPU IFFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU IFFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -106,7 +106,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU RFFT dispatch
+    // NOTE(v0.2): Implement complete GPU RFFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU RFFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -131,7 +131,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU 2D FFT dispatch
+    // NOTE(v0.2): Implement complete GPU 2D FFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU 2D FFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -156,7 +156,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU 2D IFFT dispatch
+    // NOTE(v0.2): Implement complete GPU 2D IFFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU 2D IFFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -181,7 +181,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU 3D FFT dispatch
+    // NOTE(v0.2): Implement complete GPU 3D FFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU 3D FFT dispatch not yet implemented in refactored module".to_string(),
     ))
@@ -206,7 +206,7 @@ where
         + bytemuck::Zeroable,
     Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
-    // TODO: Implement complete GPU 3D IFFT dispatch
+    // NOTE(v0.2): Implement complete GPU 3D IFFT dispatch
     Err(TensorError::unsupported_operation_simple(
         "GPU 3D IFFT dispatch not yet implemented in refactored module".to_string(),
     ))

@@ -110,7 +110,7 @@ where
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("unary_op_pipeline_layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let entry_point = get_unary_entry_point(operation, type_name);
@@ -144,7 +144,7 @@ where
     }
 
     queue.submit(std::iter::once(encoder.finish()));
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
     // Record profiling data
     let execution_time = start_time.elapsed();

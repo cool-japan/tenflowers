@@ -194,7 +194,7 @@ fn main() {
     println!("  ✅ Model parallelism enables scaling across multiple devices");
     println!("  ✅ Automatic optimization recommendations for large models");
     println!("  💡 The implementation provides comprehensive infrastructure for");
-    println!("     1B+ parameter model support as specified in TODO.md");
+    println!("     1B+ parameter model support (project performance target)");
 
     println!();
     println!("============================================================");

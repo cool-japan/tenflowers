@@ -10,6 +10,7 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Python bindings for TenfloweRS"
+readme = "README.md"
 publish = false  # Excluded from release - requires Python development environment
 
 [lints]
@@ -20,10 +21,10 @@ name = "tenflowers"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-tenflowers-core = { path = "../tenflowers-core", version = "0.1.0-rc.1" }
-tenflowers-autograd = { path = "../tenflowers-autograd", version = "0.1.0-rc.1" }
-tenflowers-neural = { path = "../tenflowers-neural", version = "0.1.0-rc.1" }
-tenflowers-dataset = { path = "../tenflowers-dataset", version = "0.1.0-rc.1" }
+tenflowers-core = { workspace = true }
+tenflowers-autograd = { workspace = true }
+tenflowers-neural = { workspace = true }
+tenflowers-dataset = { workspace = true }
 scirs2-core = { workspace = true }
 scirs2-autograd = { workspace = true }
 pyo3 = { workspace = true }

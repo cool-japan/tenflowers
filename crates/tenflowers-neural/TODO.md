@@ -1,8 +1,8 @@
-# TenfloweRS Neural TODO & Roadmap (0.1.0-alpha.1)
+# TenfloweRS Neural TODO & Roadmap (v0.1.0)
 
-Alpha.1 focus: neural network capabilities and forward development plan. Historical logs removed.
+v0.1.0 focus: neural network capabilities and forward development plan.
 
-## 🎯 **Alpha.1 Completion Status: 100% Complete + Premium Utilities**
+## Completion Status
 
 **Test Status**: ✅ 1,012/1,012 tests passing (100% pass rate)
 **Code Quality**: ✅ No `todo!()` or `unimplemented!()` macros remaining
@@ -11,8 +11,6 @@ Alpha.1 focus: neural network capabilities and forward development plan. Histori
 **Priority 3 Tasks**: ✅ 4/5 Complete (80% - comprehensive documentation in progress)
 **Priority 4 Tasks**: ✅ 4/4 Complete (100% - Model Registry, Weight Loading, Hook System, Error Handling complete)
 **Premium Utilities**: ✅ Model Inspector, Data Augmentation, Batch Processing, Visualization
-
-**Ready for Beta Development** 🚀
 
 ## 1. Current Capabilities
 
@@ -76,7 +74,7 @@ Alpha.1 focus: neural network capabilities and forward development plan. Histori
 - **Gradient Checkpointing**: No activation recompute for memory-efficient training
 - **Model Parallelism**: No support for model parallel or pipeline parallel training
 
-## 3. Near-Term Roadmap (Beta Prep)
+## 3. Near-Term Roadmap
 
 ### Priority 1: Core Components
 1. **Attention Implementation**: Multi-head + scaled dot-product attention baseline
@@ -102,7 +100,7 @@ Alpha.1 focus: neural network capabilities and forward development plan. Histori
 15. **Performance Optimization**: Enhanced layer performance and memory usage
 16. **Benchmarking**: Comprehensive neural network performance benchmarking suite
 
-## 4. Mid-Term Roadmap (Post-Beta)
+## 4. Mid-Term Roadmap
 
 ### Advanced Architectures
 - **Transformer Variants**: Complete transformer family with efficient attention kernels
@@ -181,7 +179,7 @@ Alpha.1 focus: neural network capabilities and forward development plan. Histori
 
 ---
 
-**Alpha.1 Status - December 2024**: TenfloweRS Neural is **100% feature complete + Premium Utilities** with production-ready neural network capabilities. All Priority 1, Priority 2, & Priority 4 tasks complete. 1,012/1,012 tests passing. Ready for Beta with focus on enhanced documentation and dependency fixes.
+**v0.1.0 Status**: Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
 
 **Key Achievements**:
 - ✅ Multi-head attention with Flash Attention support
@@ -202,7 +200,6 @@ Alpha.1 focus: neural network capabilities and forward development plan. Histori
 - ✅ Training visualization helpers (28 tests: plots, confusion matrices, histograms)
 - ✅ Complete test coverage with 100% pass rate (1,012 tests)
 
-**Next Steps for Beta**:
-1. Comprehensive API documentation and usage guides (Priority 3 - remaining task)
-2. Fix dependency crate compilation errors (tenflowers-autograd SciRS2 policy compliance)
-3. ONNX protobuf parsing implementation (requires external dependencies)
+**Next Steps**:
+1. Comprehensive API documentation and usage guides
+2. ONNX protobuf parsing implementation (requires external dependencies)

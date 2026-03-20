@@ -36,7 +36,7 @@ pub fn register_visualization_functions(_py: Python, m: &Bound<'_, PyModule>) ->
 
 /// Quick gradient analysis for single tensors
 #[pyfunction]
-pub fn quick_gradient_analysis(py: Python, tensor_data: &Bound<'_, PyList>) -> PyResult<PyObject> {
+pub fn quick_gradient_analysis(py: Python, tensor_data: &Bound<'_, PyList>) -> PyResult<Py<PyAny>> {
     let analyzer = PyTensorAnalyzer::new();
     analyzer.analyze_tensor(py, tensor_data)
 }
@@ -46,7 +46,7 @@ pub fn quick_gradient_analysis(py: Python, tensor_data: &Bound<'_, PyList>) -> P
 pub fn advanced_gradient_analysis(
     py: Python,
     tensor_dict: &Bound<'_, PyDict>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let analyzer = PyTensorAnalyzer::new();
     analyzer.compare_tensors(py, tensor_dict)
 }
@@ -58,7 +58,7 @@ pub fn plot_tensor_distribution(
     tensor_data: &Bound<'_, PyList>,
     bins: Option<usize>,
     title: Option<&str>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let analyzer = PyTensorAnalyzer::new();
     let histogram = analyzer.generate_histogram(py, tensor_data, bins)?;
 
@@ -80,7 +80,7 @@ pub fn create_training_dashboard(
     py: Python,
     training_data: &Bound<'_, PyDict>,
     metrics_to_plot: Option<&Bound<'_, PyList>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let dashboard_data = PyDict::new(py);
 
     // Extract training data
@@ -144,7 +144,7 @@ fn generate_training_insights(
     py: Python,
     epochs: &Bound<'_, PyList>,
     metrics: &Bound<'_, PyDict>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let insights = PyDict::new(py);
 
     let total_epochs = epochs.len();

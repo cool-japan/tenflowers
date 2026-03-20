@@ -46,9 +46,23 @@
 //! # }
 //! ```
 
-use scirs2_core::ndarray::Array1;
-use std::collections::HashMap;
+use scirs2_core::ndarray::{Array, IxDyn};
 use tenflowers_core::{Result, Tensor, TensorError};
+
+/// Helper: create a scalar tensor filled with a single f32 value, matching the shape of `like`.
+fn scalar_like(like: &Tensor<f32>, value: f32) -> Tensor<f32> {
+    let shape = like.shape().dims();
+    let size: usize = shape.iter().product();
+    let data = vec![value; size];
+    let arr = Array::from_shape_vec(IxDyn(shape), data)
+        .expect("scalar_like: shape/data mismatch is impossible");
+    Tensor::from_array(arr)
+}
+
+/// Helper: create a scalar broadcast tensor of shape [1] for pow etc.
+fn scalar_tensor(value: f32) -> Tensor<f32> {
+    Tensor::from_array(scirs2_core::ndarray::arr0(value).into_dyn())
+}
 
 /// Clip gradients by global norm
 ///
@@ -147,10 +161,11 @@ pub fn clip_gradients_by_value(gradients: &mut [Tensor<f32>], clip_value: f32) -
 /// ```
 pub fn compute_global_norm(gradients: &[Tensor<f32>]) -> Result<f32> {
     let mut sum_sq = 0.0f32;
+    let two = scalar_tensor(2.0);
 
     for grad in gradients {
-        let grad_sq = grad.pow(2.0)?;
-        let grad_sum: f32 = grad_sq.sum()?.to_scalar()?;
+        let grad_sq = grad.pow(&two)?;
+        let grad_sum: f32 = grad_sq.sum(None, false)?.to_scalar()?;
         sum_sq += grad_sum;
     }
 
@@ -181,8 +196,11 @@ pub fn compute_global_norm(gradients: &[Tensor<f32>]) -> Result<f32> {
 /// ```
 pub fn are_gradients_finite(gradients: &[Tensor<f32>]) -> Result<bool> {
     for grad in gradients {
-        if !grad.is_finite()? {
-            return Ok(false);
+        let data = grad.to_vec()?;
+        for &val in &data {
+            if !val.is_finite() {
+                return Ok(false);
+            }
         }
     }
     Ok(true)
@@ -215,7 +233,7 @@ pub fn are_gradients_finite(gradients: &[Tensor<f32>]) -> Result<bool> {
 /// ```
 pub fn get_gradient_stats(gradients: &[Tensor<f32>]) -> Result<GradientUtilsStats> {
     if gradients.is_empty() {
-        return Err(TensorError::invalid_input_simple(
+        return Err(TensorError::invalid_operation_simple(
             "Cannot compute stats for empty gradient list".to_string(),
         ));
     }
@@ -226,9 +244,9 @@ pub fn get_gradient_stats(gradients: &[Tensor<f32>]) -> Result<GradientUtilsStat
     let mut count = 0usize;
 
     for grad in gradients {
-        let grad_min: f32 = grad.min()?.to_scalar()?;
-        let grad_max: f32 = grad.max()?.to_scalar()?;
-        let grad_sum: f32 = grad.sum()?.to_scalar()?;
+        let grad_min: f32 = grad.min(None, false)?.to_scalar()?;
+        let grad_max: f32 = grad.max(None, false)?.to_scalar()?;
+        let grad_sum: f32 = grad.sum(None, false)?.to_scalar()?;
         let grad_count = grad.shape().size();
 
         min_val = min_val.min(grad_min);
@@ -241,10 +259,12 @@ pub fn get_gradient_stats(gradients: &[Tensor<f32>]) -> Result<GradientUtilsStat
 
     // Compute std dev
     let mut var_sum = 0.0f32;
+    let two = scalar_tensor(2.0);
     for grad in gradients {
-        let centered = grad.sub_scalar(mean)?;
-        let squared = centered.pow(2.0)?;
-        let squared_sum: f32 = squared.sum()?.to_scalar()?;
+        let mean_tensor = scalar_like(grad, mean);
+        let centered = grad.sub(&mean_tensor)?;
+        let squared = centered.pow(&two)?;
+        let squared_sum: f32 = squared.sum(None, false)?.to_scalar()?;
         var_sum += squared_sum;
     }
 
@@ -322,7 +342,8 @@ impl GradientUtilsStats {
 /// ```
 pub fn zero_gradients(gradients: &mut [Tensor<f32>]) -> Result<()> {
     for grad in gradients.iter_mut() {
-        *grad = Tensor::zeros_like(grad)?;
+        let shape = grad.shape().dims();
+        *grad = Tensor::zeros(shape);
     }
     Ok(())
 }
@@ -355,18 +376,32 @@ pub fn add_gradient_noise(
     noise_scale: f32,
     seed: Option<u64>,
 ) -> Result<()> {
-    use scirs2_core::random::Random;
+    use scirs2_core::random::{Normal, Random};
 
-    let mut rng = if let Some(s) = seed {
-        Random::with_seed(s)
-    } else {
-        Random::new()
-    };
+    let seed_value = seed.unwrap_or_else(|| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+    });
+    let mut rng = Random::seed(seed_value);
+
+    let normal_dist = Normal::new(0.0f32, noise_scale).map_err(|e| {
+        TensorError::invalid_operation_simple(format!("Invalid noise scale: {}", e))
+    })?;
 
     for grad in gradients.iter_mut() {
         let shape = grad.shape().dims();
-        let noise = rng.normal(shape, 0.0, noise_scale as f64);
-        let noise_tensor = Tensor::from_array(noise)?;
+        let size: usize = shape.iter().product();
+
+        let noise_data: Vec<f32> = (0..size).map(|_| rng.sample(normal_dist)).collect();
+
+        let noise_array = Array::from_shape_vec(IxDyn(shape), noise_data).map_err(|e| {
+            TensorError::invalid_shape_simple(format!("Failed to create noise array: {}", e))
+        })?;
+
+        let noise_tensor = Tensor::from_array(noise_array);
         *grad = grad.add(&noise_tensor)?;
     }
 
@@ -420,18 +455,20 @@ pub fn compute_gradient_histogram(
 
     // Count values in each bin
     for grad in gradients {
-        // Convert to array for efficient iteration
         let data = grad.to_vec()?;
 
         for &value in &data {
-            // Find appropriate bin
-            let value_f32 = value as f32;
+            let value_f32 = value;
             if value_f32 < stats.min || value_f32 > stats.max {
                 continue;
             }
 
-            let bin_idx = ((value_f32 - stats.min) / bin_width) as usize;
-            let bin_idx = bin_idx.min(num_bins - 1); // Clamp to valid range
+            let bin_idx = if bin_width > 0.0 {
+                ((value_f32 - stats.min) / bin_width) as usize
+            } else {
+                0
+            };
+            let bin_idx = bin_idx.min(num_bins - 1);
 
             bin_counts[bin_idx] += 1;
         }
@@ -463,12 +500,9 @@ pub fn compute_gradient_histogram(
 /// # Ok(())
 /// # }
 /// ```
-pub fn clip_gradients_by_percentile(
-    gradients: &mut [Tensor<f32>],
-    percentile: f32,
-) -> Result<()> {
+pub fn clip_gradients_by_percentile(gradients: &mut [Tensor<f32>], percentile: f32) -> Result<()> {
     if percentile <= 0.0 || percentile >= 100.0 {
-        return Err(TensorError::invalid_input_simple(
+        return Err(TensorError::invalid_operation_simple(
             "Percentile must be between 0 and 100".to_string(),
         ));
     }
@@ -477,7 +511,11 @@ pub fn clip_gradients_by_percentile(
     let mut all_values = Vec::new();
     for grad in gradients.iter() {
         let values = grad.to_vec()?;
-        all_values.extend(values.iter().map(|&v| (v as f32).abs()));
+        all_values.extend(values.iter().map(|&v| v.abs()));
+    }
+
+    if all_values.is_empty() {
+        return Ok(());
     }
 
     // Sort to find percentile
@@ -527,9 +565,7 @@ mod tests {
 
     #[test]
     fn test_clip_gradients_by_norm() -> Result<()> {
-        let mut grads = vec![
-            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])?,
-        ];
+        let mut grads = vec![Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2])?];
 
         // Initial norm should be 5.0 (sqrt(9 + 16))
         let norm = compute_global_norm(&grads)?;
@@ -548,9 +584,7 @@ mod tests {
 
     #[test]
     fn test_gradient_stats() -> Result<()> {
-        let grads = vec![
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?,
-        ];
+        let grads = vec![Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?];
 
         let stats = get_gradient_stats(&grads)?;
 
@@ -565,9 +599,7 @@ mod tests {
 
     #[test]
     fn test_are_gradients_finite() -> Result<()> {
-        let grads = vec![
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?,
-        ];
+        let grads = vec![Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?];
 
         assert!(are_gradients_finite(&grads)?);
 
@@ -576,13 +608,11 @@ mod tests {
 
     #[test]
     fn test_zero_gradients() -> Result<()> {
-        let mut grads = vec![
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?,
-        ];
+        let mut grads = vec![Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])?];
 
         zero_gradients(&mut grads)?;
 
-        let sum: f32 = grads[0].sum()?.to_scalar()?;
+        let sum: f32 = grads[0].sum(None, false)?.to_scalar()?;
         assert!((sum - 0.0).abs() < 1e-5);
 
         Ok(())
@@ -590,9 +620,7 @@ mod tests {
 
     #[test]
     fn test_scale_gradients() -> Result<()> {
-        let mut grads = vec![
-            Tensor::<f32>::from_vec(vec![2.0, 4.0], &[2])?,
-        ];
+        let mut grads = vec![Tensor::<f32>::from_vec(vec![2.0, 4.0], &[2])?];
 
         scale_gradients(&mut grads, 0.5)?;
 
@@ -605,9 +633,7 @@ mod tests {
 
     #[test]
     fn test_clip_by_value() -> Result<()> {
-        let mut grads = vec![
-            Tensor::<f32>::from_vec(vec![-5.0, 5.0, 0.5], &[3])?,
-        ];
+        let mut grads = vec![Tensor::<f32>::from_vec(vec![-5.0, 5.0, 0.5], &[3])?];
 
         clip_gradients_by_value(&mut grads, 1.0)?;
 
@@ -621,9 +647,10 @@ mod tests {
 
     #[test]
     fn test_gradient_histogram() -> Result<()> {
-        let grads = vec![
-            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[5])?,
-        ];
+        let grads = vec![Tensor::<f32>::from_vec(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            &[5],
+        )?];
 
         let (counts, edges) = compute_gradient_histogram(&grads, 5)?;
 

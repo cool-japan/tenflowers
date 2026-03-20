@@ -213,7 +213,7 @@ impl AsyncGpuExecutor {
     pub async fn wait_for_completion(&self) -> Result<()> {
         // In a real implementation, this would wait for all pending GPU operations
         // For now, just poll the device to ensure completion
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
         Ok(())
     }
 
@@ -320,7 +320,7 @@ where
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("async_binary_op_pipeline_layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let entry_point = match operation {
@@ -487,7 +487,7 @@ where
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("async_reduction_pipeline_layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let entry_point = match operation {
@@ -675,7 +675,7 @@ where
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("async_matmul_pipeline_layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

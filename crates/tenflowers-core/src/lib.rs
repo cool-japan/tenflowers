@@ -177,7 +177,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tenflowers-core = { version = "0.1.0-rc.1", features = ["gpu"] }
+//! tenflowers-core = { version = "0.1.0", features = ["gpu"] }
 //! ```
 //!
 //! ## Safety and Correctness
@@ -241,6 +241,7 @@ pub mod eager_execution;
 pub mod error;
 pub mod fallback;
 pub mod gpu_memory_metrics;
+pub mod gpu_stub;
 pub mod gradient_clipping;
 pub mod gradient_coverage_audit;
 pub mod gradient_validation_framework;
@@ -344,8 +345,9 @@ pub use deterministic::{
 };
 pub use dispatch_init::ensure_initialized as ensure_dispatch_initialized;
 pub use dispatch_registry::{
-    get_registry, BackendType, BinaryKernelFn, DispatchRegistry, KernelImplementation,
-    OperationDescriptor, UnaryKernelFn, F32_REGISTRY, F64_REGISTRY, I32_REGISTRY,
+    get_registry, BackendType, BinaryKernelFn, DispatchBenchmarkResult, DispatchRegistry,
+    KernelImplementation, OperationDescriptor, UnaryKernelFn, F32_REGISTRY, F64_REGISTRY,
+    I32_REGISTRY,
 };
 pub use eager_execution::{
     CacheStatistics, EagerExecutionConfig, EagerExecutionEngine, EagerPerformanceReport,
@@ -420,7 +422,7 @@ pub use onnx_interop::{
     OnnxExporter,
     OnnxImporter,
     OnnxModel,
-    // TODO: Add back when implemented: utils as onnx_utils, BenchmarkStats, CompatibilityReport, TenfloweRSModel
+    // NOTE(v0.2): Add back when implemented: utils as onnx_utils, BenchmarkStats, CompatibilityReport, TenfloweRSModel
 };
 pub use ops::{
     execute_fused_graph, get_fusion_stats, infer_binary_elementwise,
