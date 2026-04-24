@@ -1,6 +1,8 @@
-# TenfloweRS FFI TODO & Roadmap (v0.1.0)
+# TenfloweRS FFI TODO & Roadmap (v0.1.1)
 
 Initial release capabilities and forward development plan.
+
+Last updated: 2026-04-24
 
 ## 1. Current Capabilities
 
@@ -111,30 +113,30 @@ Initial release capabilities and forward development plan.
 
 ### Immediate Development Tasks
 - [ ] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building
-- [ ] **Error Mapping Spec**: Design Rust -> Python exception mapping system
+- [x] **Error Mapping Spec**: Design Rust -> Python exception mapping system (done 2026-04-19: see docs/FFI_ERROR_MAPPING.md and error_mapping.rs)
 - [ ] **Gradient Parity Harness**: Python vs Rust gradient validation framework
 - [ ] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure
 - [ ] **Layer Export List**: Normalization + SSM Python API implementation
 
 ### Packaging & Distribution
-- [ ] **Dtype/Device Abstraction**: Design for f16/bf16 support and multi-device
-- [ ] **C Header Generator**: Automated header generation script
-- [ ] **Package Metadata**: PyPI package metadata and documentation
+- [x] **Dtype/Device Abstraction**: PyDevice class with Device.cpu()/gpu(id)/rocm(id) and PyDeviceKind (done 2026-04-20: device.rs)
+- [x] **C Header Generator**: Automated header generation script (done 2026-04-19: build.rs with TENFLOWERS_REGENERATE_C_HEADER=1 env-var opt-in, c-header-generate feature)
+- [x] **Package Metadata**: PyPI package metadata and documentation (done 2026-04-19: added Python 3.13 classifier, MIT OR Apache-2.0, OS Independent, Changelog URL, updated dev deps)
 - [ ] **Installation Testing**: Cross-platform installation validation
 - [ ] **Version Management**: Automated version bumping and release management
 
 ### API & Testing Enhancement
-- [ ] **Python Test Suite**: Comprehensive Python-side testing framework
+- [x] **Python Test Suite**: Comprehensive Python-side testing framework (done 2026-04-19: tests/conftest.py with shared fixtures, markers registered, duplicate test deduped)
 - [ ] **Performance Benchmarks**: Python binding performance regression testing
 - [ ] **Documentation**: Complete Python API documentation and tutorials
 - [ ] **Example Gallery**: Comprehensive example gallery and tutorials
 - [ ] **API Stabilization**: Prepare FFI APIs for stable release
 
 ### Infrastructure & Quality
-- [ ] **Memory Safety**: Enhanced memory safety validation and testing
-- [ ] **Error Handling**: Consistent error handling across language boundaries
+- [x] **Memory Safety**: Enhanced memory safety validation and testing (done 2026-04-19: scripts/run_miri.sh + docs/MEMORY_SAFETY.md created)
+- [x] **Error Handling**: Exhaustive TensorError → TenflowersError mapping, 23+ variants, 23+ tests (done 2026-04-20: error_mapping.rs)
 - [ ] **Profiling Integration**: Advanced profiling tool integration
-- [ ] **Debug Support**: Enhanced debugging capabilities for Python bindings
+- [x] **Debug Support**: PyTensor.__repr__ shows actual dtype; __len__, .ndim, .numel() properties added (done 2026-04-20)
 
 ## 6. Advanced Research Areas
 

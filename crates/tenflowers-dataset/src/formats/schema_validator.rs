@@ -433,6 +433,240 @@ impl Default for SchemaValidator {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Extended schema comparison: FieldDiff + ValidationReport + validate_full
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Per-field outcome of a full schema comparison.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FieldDiff {
+    /// Both schemas agree on name, type, and required-ness.
+    Compatible,
+    /// The actual type is a safe widening of the expected type (e.g. Int32 → Int64).
+    Widening {
+        /// The expected (narrower) type.
+        from: DataType,
+        /// The actual (wider) type.
+        to: DataType,
+    },
+    /// Actual type is incompatible with expected type — a hard mismatch.
+    TypeMismatch {
+        /// Expected type.
+        expected: DataType,
+        /// Actual type.
+        got: DataType,
+    },
+    /// A field that was required in the expected schema is absent from the actual schema.
+    MissingRequired {
+        /// Name of the absent field.
+        field: String,
+    },
+    /// A field present in the actual schema is not listed in the expected schema.
+    UnexpectedExtra {
+        /// Name of the unexpected field.
+        field: String,
+    },
+}
+
+/// Structured outcome of a full schema comparison.
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    /// Per-field diff results (one entry per unique field name across both schemas).
+    pub diffs: Vec<(String, FieldDiff)>,
+    /// `true` iff no `TypeMismatch` or `MissingRequired` entries exist.
+    pub compatible: bool,
+    /// Non-fatal informational warnings (e.g. widening detected).
+    pub warnings: Vec<ValidationWarning>,
+    /// Hard errors (type mismatch, missing required fields).
+    pub errors: Vec<ValidationError>,
+}
+
+impl ValidationReport {
+    fn new() -> Self {
+        Self {
+            diffs: Vec::new(),
+            compatible: true,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    fn push_diff(&mut self, field_name: String, diff: FieldDiff) {
+        match &diff {
+            FieldDiff::TypeMismatch { expected, got } => {
+                self.compatible = false;
+                self.errors.push(ValidationError {
+                    category: ValidationErrorCategory::TypeMismatch,
+                    field_name: Some(field_name.clone()),
+                    message: format!(
+                        "Type mismatch for '{}': expected {:?}, got {:?}",
+                        field_name, expected, got
+                    ),
+                });
+            }
+            FieldDiff::MissingRequired { field } => {
+                self.compatible = false;
+                self.errors.push(ValidationError {
+                    category: ValidationErrorCategory::MissingField,
+                    field_name: Some(field.clone()),
+                    message: format!("Required field '{}' is missing", field),
+                });
+            }
+            FieldDiff::Widening { from, to } => {
+                self.warnings.push(ValidationWarning {
+                    field_name: Some(field_name.clone()),
+                    message: format!("Type widening for '{}': {:?} → {:?}", field_name, from, to),
+                });
+            }
+            FieldDiff::UnexpectedExtra { field } => {
+                self.warnings.push(ValidationWarning {
+                    field_name: Some(field.clone()),
+                    message: format!("Unexpected extra field '{}' in actual schema", field),
+                });
+            }
+            FieldDiff::Compatible => {}
+        }
+        self.diffs.push((field_name, diff));
+    }
+}
+
+/// Validation policy used by `validate_full`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationPolicy {
+    /// Strict: type widening is treated as an error.
+    Strict,
+    /// Lenient: type widening is allowed and produces only a warning.
+    Lenient,
+}
+
+impl SchemaValidator {
+    /// Create a strict validator: widening is treated as a hard error.
+    pub fn strict() -> Self {
+        Self {
+            config: ValidationConfig {
+                strict_types: true,
+                ..ValidationConfig::default()
+            },
+        }
+    }
+
+    /// Create a lenient validator: widening between numeric types is allowed.
+    pub fn lenient() -> Self {
+        Self {
+            config: ValidationConfig {
+                strict_types: false,
+                ..ValidationConfig::default()
+            },
+        }
+    }
+
+    /// Perform a full structured comparison of `actual` against `expected` fields.
+    pub fn validate_full(
+        &self,
+        actual: &FormatMetadata,
+        expected: &[FieldInfo],
+    ) -> ValidationReport {
+        let policy = if self.config.strict_types {
+            ValidationPolicy::Strict
+        } else {
+            ValidationPolicy::Lenient
+        };
+
+        let mut report = ValidationReport::new();
+
+        let actual_map: std::collections::HashMap<&str, &FieldInfo> =
+            actual.fields.iter().map(|f| (f.name.as_str(), f)).collect();
+
+        let mut seen_expected: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for exp in expected {
+            seen_expected.insert(exp.name.as_str());
+            match actual_map.get(exp.name.as_str()) {
+                None => {
+                    report.push_diff(
+                        exp.name.clone(),
+                        FieldDiff::MissingRequired {
+                            field: exp.name.clone(),
+                        },
+                    );
+                }
+                Some(act) => {
+                    let diff = Self::classify_type_diff(&exp.dtype, &act.dtype, policy);
+                    report.push_diff(exp.name.clone(), diff);
+                }
+            }
+        }
+
+        for act in &actual.fields {
+            if !seen_expected.contains(act.name.as_str()) {
+                report.push_diff(
+                    act.name.clone(),
+                    FieldDiff::UnexpectedExtra {
+                        field: act.name.clone(),
+                    },
+                );
+            }
+        }
+
+        report
+    }
+
+    fn classify_type_diff(
+        expected: &DataType,
+        actual: &DataType,
+        policy: ValidationPolicy,
+    ) -> FieldDiff {
+        if expected == actual {
+            return FieldDiff::Compatible;
+        }
+
+        if Self::is_widening(expected, actual) {
+            return match policy {
+                ValidationPolicy::Lenient => FieldDiff::Widening {
+                    from: expected.clone(),
+                    to: actual.clone(),
+                },
+                ValidationPolicy::Strict => FieldDiff::TypeMismatch {
+                    expected: expected.clone(),
+                    got: actual.clone(),
+                },
+            };
+        }
+
+        FieldDiff::TypeMismatch {
+            expected: expected.clone(),
+            got: actual.clone(),
+        }
+    }
+
+    fn is_widening(expected: &DataType, actual: &DataType) -> bool {
+        use DataType::*;
+        matches!(
+            (expected, actual),
+            (Int8, Int16)
+                | (Int8, Int32)
+                | (Int8, Int64)
+                | (Int16, Int32)
+                | (Int16, Int64)
+                | (Int32, Int64)
+                | (UInt8, UInt16)
+                | (UInt8, UInt32)
+                | (UInt8, UInt64)
+                | (UInt16, UInt32)
+                | (UInt16, UInt64)
+                | (UInt32, UInt64)
+                | (Float32, Float64)
+                | (Int8, Float64)
+                | (Int16, Float64)
+                | (Int32, Float64)
+                | (Int64, Float64)
+                | (UInt8, Float64)
+                | (UInt16, Float64)
+                | (UInt32, Float64)
+                | (UInt64, Float64)
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,5 +786,133 @@ mod tests {
 
         assert!(validator.are_types_compatible(&DataType::Float32, &DataType::Float64));
         assert!(validator.are_types_compatible(&DataType::Int32, &DataType::Int64));
+    }
+
+    // ── validate_full tests ──────────────────────────────────────────────────
+
+    fn make_metadata(fields: Vec<FieldInfo>) -> FormatMetadata {
+        FormatMetadata {
+            format_name: "test".to_string(),
+            version: None,
+            num_samples: 10,
+            fields,
+            metadata: std::collections::HashMap::new(),
+            supports_random_access: true,
+            supports_streaming: true,
+        }
+    }
+
+    fn field(name: &str, dtype: DataType) -> FieldInfo {
+        FieldInfo {
+            name: name.to_string(),
+            dtype,
+            shape: None,
+            nullable: false,
+            description: None,
+        }
+    }
+
+    #[test]
+    fn test_field_diff_compatible() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("x", DataType::Float32)];
+        let actual = make_metadata(vec![field("x", DataType::Float32)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(report.compatible);
+        assert_eq!(report.diffs.len(), 1);
+        assert_eq!(report.diffs[0].1, FieldDiff::Compatible);
+    }
+
+    #[test]
+    fn test_field_diff_widening_lenient() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("x", DataType::Int32)];
+        let actual = make_metadata(vec![field("x", DataType::Int64)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(report.compatible, "lenient widening should be compatible");
+        assert!(!report.warnings.is_empty());
+        assert!(matches!(
+            &report.diffs[0].1,
+            FieldDiff::Widening {
+                from: DataType::Int32,
+                to: DataType::Int64
+            }
+        ));
+    }
+
+    #[test]
+    fn test_field_diff_widening_strict() {
+        let validator = SchemaValidator::strict();
+        let expected = vec![field("x", DataType::Int32)];
+        let actual = make_metadata(vec![field("x", DataType::Int64)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(!report.compatible);
+        assert!(matches!(
+            &report.diffs[0].1,
+            FieldDiff::TypeMismatch {
+                expected: DataType::Int32,
+                got: DataType::Int64
+            }
+        ));
+    }
+
+    #[test]
+    fn test_field_diff_type_mismatch() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("y", DataType::Float64)];
+        let actual = make_metadata(vec![field("y", DataType::String)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(!report.compatible);
+        assert!(matches!(&report.diffs[0].1, FieldDiff::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn test_field_diff_missing_required() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("a", DataType::Int32), field("b", DataType::Float32)];
+        let actual = make_metadata(vec![field("a", DataType::Int32)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(!report.compatible);
+        let has_missing = report
+            .diffs
+            .iter()
+            .any(|(_, d)| matches!(d, FieldDiff::MissingRequired { field } if field == "b"));
+        assert!(has_missing, "expected MissingRequired for 'b'");
+    }
+
+    #[test]
+    fn test_field_diff_unexpected_extra() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("a", DataType::Int32)];
+        let actual = make_metadata(vec![
+            field("a", DataType::Int32),
+            field("z", DataType::Bool),
+        ]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(
+            report.compatible,
+            "unexpected extra should not break compatibility"
+        );
+        let has_extra = report
+            .diffs
+            .iter()
+            .any(|(_, d)| matches!(d, FieldDiff::UnexpectedExtra { field } if field == "z"));
+        assert!(has_extra, "expected UnexpectedExtra for 'z'");
+    }
+
+    #[test]
+    fn test_float32_to_float64_widening() {
+        let validator = SchemaValidator::lenient();
+        let expected = vec![field("v", DataType::Float32)];
+        let actual = make_metadata(vec![field("v", DataType::Float64)]);
+        let report = validator.validate_full(&actual, &expected);
+        assert!(report.compatible);
+        assert!(matches!(
+            &report.diffs[0].1,
+            FieldDiff::Widening {
+                from: DataType::Float32,
+                to: DataType::Float64
+            }
+        ));
     }
 }

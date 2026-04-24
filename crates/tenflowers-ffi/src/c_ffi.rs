@@ -578,7 +578,8 @@ mod tests {
     /// 12. tf_dataset_from_csv returns null for a non-existent file.
     #[test]
     fn test_dataset_from_csv_missing_file() {
-        let path = CString::new("/tmp/this_file_does_not_exist_tenflowers.csv")
+        let tmp_path = std::env::temp_dir().join("this_file_does_not_exist_tenflowers.csv");
+        let path = CString::new(tmp_path.to_str().expect("valid path"))
             .expect("test: CString construction should succeed");
         let ds = unsafe { tf_dataset_from_csv(path.as_ptr(), 0) };
         assert!(ds.is_null());

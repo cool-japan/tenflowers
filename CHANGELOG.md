@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-24
+
+### Added
+
+#### Meta-Crate Ergonomics (`tenflowers`)
+- `tensor![]` declarative macro for shape-inferred tensor creation (1-D, 2-D, nested, explicit dtype)
+- Type aliases: `Tensor1D<T>`, `Tensor2D<T>`, `Tensor3D<T>`, `Tensor4D<T>`, `Vector`, `Matrix`, `BatchTensor`
+- Expanded prelude: `MultiHeadAttention`, `RMSNorm`, `TransformerEncoder/Decoder`, `GRU`, `LSTM`, `RNN`, `Optimizer`, `RandomSampler`, `DType`
+- `tenflowers::interop::ndarray` — `from_ndarray` / `to_ndarray` conversion utilities
+- `tenflowers::io` — `save_tensor` / `load_tensor` convenience wrappers
+- `tenflowers::onnx` — ONNX re-exports under `onnx` feature gate
+- `deprecated_use!` macro for structured deprecation notices
+- Feature presets: `experimental`, `minimal`, `standard`
+
+#### Documentation
+- Getting Started tutorial and PyTorch↔TenfloweRS API mapping table (35 rows) in README
+- Mermaid architecture diagram (crate dependency graph with feature-gate annotations)
+- `docs/QUICK_REFERENCE.md` — 10-section cheat sheet
+- `tenflowers/docs/MIGRATION_FROM_TENSORFLOW.md` — 5 side-by-side TF→Rust scenarios
+- `tenflowers/docs/TROUBLESHOOTING.md` — 10 symptom-fix triples
+- `tenflowers/docs/PRELUDE_STABILITY.md` — semver stability policy for prelude
+
+#### Release Tooling
+- `scripts/publish_meta.sh` — dry-run publish ordering script
+- `scripts/bump_version.sh` — workspace version sync script
+- `docs/RELEASE_CHECKLIST.md` — pre-release validation checklist
+- `scripts/run_miri.sh` + `docs/MEMORY_SAFETY.md` — Miri testing policy
+
+#### Dataset Crate (`tenflowers-dataset`)
+- `PidAdaptiveController` — PID-controlled prefetch depth driven by cache hit-rate signal
+- Criterion throughput benchmark harness (`benches/throughput.rs`)
+- Drift metrics: PSI, KS two-sample statistic, Jensen-Shannon divergence, `DriftReport`
+- `PipelineInspector` with per-step latency, shape-in/out, and `PipelineInspectionReport`
+- `SchemaValidator::validate_full` with per-field `FieldDiff` (TypeMismatch, Widening, MissingRequired, UnexpectedExtra)
+- Expanded module docs and API stabilization
+
+#### FFI Crate (`tenflowers-ffi`)
+- Structured `TensorError → TenflowersError` variant mapping (all 23 core variants, exhaustive match)
+- `into_py_err()` — maps `TenflowersError` to typed Python exceptions (`ValueError`, `RuntimeError`, `IndexError`, `MemoryError`, `NotImplementedError`)
+- `PyDevice` / `PyDeviceKind` — GPU/ROCm/CPU device as Python classes with `Device.cpu()`, `Device.gpu(id)`, `Device.rocm(id)`
+- `PyTensor.__repr__` fix: dtype now reflects actual tensor dtype (was hardcoded `float32`)
+- `PyTensor.__len__`, `.ndim`, `.numel()` properties
+- `build.rs` for opt-in cbindgen header regeneration (`TENFLOWERS_REGENERATE_C_HEADER=1`)
+- `tests/conftest.py` — shared pytest fixtures and marker registration
+- `docs/FFI_ERROR_MAPPING.md` — full error mapping reference table
+
+### Fixed
+
+- **wgpu v29 API compatibility** — 57 sites updated across `tenflowers-core` and `tenflowers-dataset`:
+  - `InstanceDescriptor::default()` replaced with `InstanceDescriptor::new_without_display_handle()`
+  - `bind_group_layouts: &[&layout]` updated to `&[Some(&layout)]` per wgpu 29 API
+- `data_quality.rs` — 9 `&str`/`String` type mismatches in drift metric constructors
+
+### Improved
+
+- Autograd module docs expanded to ~180 lines: mixed-precision, checkpointing, higher-order grads, custom ops
+- Neural module docs finalized (removed "IN PROGRESS" markers)
+- 3 new autograd examples: `mixed_precision.rs`, `gradient_checkpointing.rs`, `higher_order_grads.rs`
+- FFI package metadata: classifiers, project URLs, optional dependency groups in `pyproject.toml`
+
 ## [0.1.0] - 2026-03-20
 
 ### Summary

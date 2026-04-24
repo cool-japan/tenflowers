@@ -2,15 +2,15 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/tests-12949%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
+[![Tests](https://img.shields.io/badge/tests-13484%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
 [![Security](https://img.shields.io/badge/vulnerabilities-0-brightgreen)](https://github.com/cool-japan/tenflowers)
 
-> **v0.1.0 (2026-03-20)**
+> **v0.1.1 (2026-04-24)**
 >
-> TenfloweRS v0.1.0 is the first release, with 12,949 tests passing across 6 crates,
+> TenfloweRS v0.1.1 is the latest release, with 13,484 tests passing across 6 crates,
 > zero clippy warnings, zero security vulnerabilities, and comprehensive documentation.
 
 ## Overview
@@ -48,35 +48,34 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 - **GPU Support**: Cross-platform GPU acceleration via WGPU (Metal, Vulkan, DirectX)
 - **Rust Scientific Stack**: Built on NumRS2 and SciRS2 for numerical computing
 - **Python Bindings**: PyO3-based FFI crate with 48 passing tests
-- **Tensorboard Integration**: Pure Rust implementation with no protobuf dependency
 - **ONNX Support**: Import and export models for cross-framework compatibility
 - **Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
 - **150+ Research Domains**: From transformers and diffusion models to quantum ML and protein structure prediction
-- **Production Ready**: 12,949 tests passing, 0 security vulnerabilities, comprehensive docs
+- **Production Ready**: 13,484 tests passing, 0 security vulnerabilities, comprehensive docs
 
 ## Project Status
 
-**Current Version: 0.1.0** (Released 2026-03-20)
+**Current Version: 0.1.1** (Released 2026-04-24)
 
 First release with full-featured ML capabilities across all 6 crates.
 
-### v0.1.0 Quality Metrics
+### v0.1.1 Quality Metrics
 
-- **Tests:** 12,949 passing (100% pass rate)
-- **Code:** 1,453 Rust files, ~641K lines of Rust code
+- **Tests:** 13,484 passing, 41 skipped (100% pass rate)
+- **Code:** 1,465 Rust files, ~643K SLoC (~772K total Rust lines)
 - **Security:** 0 vulnerabilities
 - **Clippy:** 0 warnings, 0 errors
 - **Rustdoc:** Builds clean with `-D warnings`
-- **TODO markers:** 0 remaining
+- **TODO markers:** 3 remaining (stubs in autograd/neural)
 
 ### Published Crates
 
 | Crate | Tests | Status | Description |
 |-------|-------|--------|-------------|
-| tenflowers-core | 675 | Stable | Core tensor operations and GPU support |
-| tenflowers-autograd | 334 | Stable | Automatic differentiation engine |
-| tenflowers-neural | 11,407 | Stable | Neural network layers, models, and 150+ research domains |
-| tenflowers-dataset | 472 | Stable | Data loading and preprocessing |
+| tenflowers-core | 936 | Stable | Core tensor operations and GPU support |
+| tenflowers-autograd | 455 | Stable | Automatic differentiation engine |
+| tenflowers-neural | 11,537 | Stable | Neural network layers, models, and 150+ research domains |
+| tenflowers-dataset | 504 | Stable | Data loading and preprocessing |
 | tenflowers-ffi | 48 | Stable | Python bindings via PyO3 |
 | tenflowers | 13 (doc) | Stable | Unified API and prelude |
 
@@ -90,13 +89,12 @@ First release with full-featured ML capabilities across all 6 crates.
 - GPU acceleration via WGPU (cross-platform)
 - SciRS2/NumRS2 ecosystem integration
 - Python bindings with PyO3 (48 tests passing)
-- Tensorboard logging (pure Rust, no protobuf dependency)
 - Security hardening (zero vulnerabilities)
 - Comprehensive documentation
 
 ### tenflowers-neural Feature Coverage
 
-The neural crate alone has 11,407 tests covering:
+The neural crate alone has 11,537 tests covering:
 
 **Core architectures:** attention mechanisms (multi-head, flash, ALiBi, RoPE), RNN (LSTM, GRU, bidirectional), transformers (encoder, decoder, efficient variants including RetNet, Mamba-2, GQA), CNN, graph neural networks (GCN, GAT, GraphSAGE, GIN, and advanced variants)
 
@@ -116,20 +114,20 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.1.0"
-tenflowers-neural = "0.1.0"
+tenflowers-core = "0.1.1"
+tenflowers-neural = "0.1.1"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.0", features = ["gpu"] }
+tenflowers-core = { version = "0.1.1", features = ["gpu"] }
 ```
 
 For the unified API:
 ```toml
 [dependencies]
-tenflowers = "0.1.0"
+tenflowers = "0.1.1"
 ```
 
 ## Quick Start
@@ -345,12 +343,12 @@ Key areas where we need help:
 
 ## Roadmap
 
-### v0.1.0 (Released 2026-03-20)
+### v0.1.1 (Released 2026-04-24)
 - Core tensor operations and autograd
 - 150+ neural network research domains
 - GPU support via WGPU
 - Python bindings via PyO3
-- 12,949 tests, 0 warnings, 0 vulnerabilities
+- 13,484 tests, 41 skipped, 0 warnings, 0 vulnerabilities
 
 ### v0.2.0 (Planned)
 - Graph optimization passes (constant folding, operator fusion, dead code elimination)

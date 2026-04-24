@@ -6,7 +6,7 @@
 //! - Linear algebra operations (matmul, transpose, etc.)
 //! - Shape manipulation operations
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use tenflowers_autograd::TrackedTensor;
@@ -251,18 +251,60 @@ impl PyTensor {
         }
     }
 
-    /// String representation
+    /// The device this tensor resides on (always CPU in the current implementation).
+    #[getter]
+    pub fn device(&self) -> crate::device::PyDevice {
+        crate::device::PyDevice::cpu()
+    }
+
+    /// String representation.
+    ///
+    /// Includes shape, dtype (derived from the inner tensor type — always `float32`
+    /// for the current `Tensor<f32>` implementation), device, and requires_grad.
     fn __repr__(&self) -> String {
         format!(
-            "PyTensor(shape={:?}, dtype=float32, requires_grad={})",
+            "PyTensor(shape={:?}, dtype={}, device={}, requires_grad={})",
             self.shape(),
+            self.dtype(),
+            self.device().__str__(),
             self.requires_grad
         )
     }
 
-    /// String representation for print()
+    /// String representation for print().
     fn __str__(&self) -> String {
         self.__repr__()
+    }
+
+    /// Length along the first dimension (Python `len()` support).
+    ///
+    /// Raises `TypeError` for scalar (rank-0) tensors, matching NumPy / PyTorch behaviour.
+    fn __len__(&self) -> PyResult<usize> {
+        let shape = self.shape();
+        if shape.is_empty() {
+            Err(PyTypeError::new_err(
+                "len() of a scalar tensor (rank 0) is not defined",
+            ))
+        } else {
+            Ok(shape[0])
+        }
+    }
+
+    /// Iterator over slices along the first dimension.
+    ///
+    /// Raises `TypeError` for scalar (rank-0) tensors.
+    fn __iter__(&self) -> PyResult<PyTensorIter> {
+        let shape = self.shape();
+        if shape.is_empty() {
+            return Err(PyTypeError::new_err(
+                "cannot iterate over a scalar tensor (rank 0)",
+            ));
+        }
+        Ok(PyTensorIter {
+            source: self.clone(),
+            index: 0,
+            len: shape[0],
+        })
     }
 }
 
@@ -453,5 +495,72 @@ impl PyTrackedTensor {
     /// Check if this tensor requires gradients
     fn requires_grad(&self) -> bool {
         false // TrackedTensor doesn't expose requires_grad method
+    }
+}
+
+/// Iterator over first-dimension slices of a `PyTensor`.
+///
+/// Yielded items are rank-(N-1) tensors obtained by slicing one row.
+#[pyclass]
+pub struct PyTensorIter {
+    source: PyTensor,
+    index: usize,
+    len: usize,
+}
+
+#[pymethods]
+impl PyTensorIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> PyResult<Option<PyTensor>> {
+        if self.index >= self.len {
+            return Ok(None);
+        }
+
+        let full_shape = self.source.shape();
+        // Compute the shape of one slice: drop the first dimension.
+        let slice_shape: Vec<usize> = full_shape[1..].to_vec();
+        let slice_numel: usize = if slice_shape.is_empty() {
+            1
+        } else {
+            slice_shape.iter().product()
+        };
+
+        let start = self.index * slice_numel;
+        let end = start + slice_numel;
+
+        // Obtain the raw data vector from the tensor.
+        let all_data =
+            self.source.tensor.to_vec().map_err(|e| {
+                PyRuntimeError::new_err(format!("iterator: failed to get data: {}", e))
+            })?;
+
+        if end > all_data.len() {
+            return Err(PyRuntimeError::new_err(
+                "iterator: slice index out of range (data length mismatch)",
+            ));
+        }
+
+        let slice_data: Vec<f32> = all_data[start..end].to_vec();
+
+        // When slice_shape is empty (source was 1-D), wrap in a length-1 vector tensor.
+        let out_shape: Vec<usize> = if slice_shape.is_empty() {
+            vec![1]
+        } else {
+            slice_shape
+        };
+
+        let t = Tensor::from_vec(slice_data, &out_shape)
+            .map_err(|e| PyRuntimeError::new_err(format!("iterator: reshape failed: {}", e)))?;
+
+        self.index += 1;
+
+        Ok(Some(PyTensor {
+            tensor: Arc::new(t),
+            requires_grad: self.source.requires_grad,
+            is_pinned: self.source.is_pinned,
+        }))
     }
 }

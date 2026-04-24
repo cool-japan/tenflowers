@@ -1,6 +1,6 @@
-# TenfloweRS Neural TODO & Roadmap (v0.1.0)
+# TenfloweRS Neural TODO & Roadmap (v0.1.1)
 
-v0.1.0 focus: neural network capabilities and forward development plan.
+v0.1.1 focus: neural network capabilities and forward development plan.
 
 ## Completion Status
 
@@ -8,7 +8,7 @@ v0.1.0 focus: neural network capabilities and forward development plan.
 **Code Quality**: ✅ No `todo!()` or `unimplemented!()` macros remaining
 **Priority 1 Tasks**: ✅ 5/5 Complete (100% - Attention, Schedulers, Gradient Clipping, Mixed Precision, Export/Import)
 **Priority 2 Tasks**: ✅ 5/5 Complete (100% - Long Sequence Tests, ONNX Integration complete)
-**Priority 3 Tasks**: ✅ 4/5 Complete (80% - comprehensive documentation in progress)
+**Priority 3 Tasks**: ✅ 5/5 Complete (100% - documentation finalized 2026-04-19)
 **Priority 4 Tasks**: ✅ 4/4 Complete (100% - Model Registry, Weight Loading, Hook System, Error Handling complete)
 **Premium Utilities**: ✅ Model Inspector, Data Augmentation, Batch Processing, Visualization
 
@@ -140,7 +140,7 @@ v0.1.0 focus: neural network capabilities and forward development plan.
 - [x] **Distributed Training**: Multi-GPU training with optimizer state sync (COMPLETE - src/training/data_parallel.rs, distributed backends)
 - [x] **Performance Benchmarks**: Neural network operation benchmarking suite (COMPLETE - comprehensive benchmarks)
 - [x] **Memory Optimization**: Memory-efficient training technique implementation (COMPLETE - gradient accumulation, checkpointing)
-- [ ] **Documentation**: Comprehensive neural network concepts and usage guide (IN PROGRESS)
+- [x] **Documentation**: Comprehensive neural network concepts and usage guide (done 2026-04-19: verified no IN PROGRESS markers remain; lib.rs docs cover layers, training, PEFT, callbacks, optimizers, serialization — 218 lines of //! docs)
 - [x] **API Stabilization**: Prepare neural network APIs for stable release (COMPLETE - 684/684 tests passing, no todo!/unimplemented!)
 
 ### Integration Tasks (Priority 4) ✅ COMPLETED
@@ -179,7 +179,7 @@ v0.1.0 focus: neural network capabilities and forward development plan.
 
 ---
 
-**v0.1.0 Status**: Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
+**v0.1.1 Status**: Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
 
 **Key Achievements**:
 - ✅ Multi-head attention with Flash Attention support

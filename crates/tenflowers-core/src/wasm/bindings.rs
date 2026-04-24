@@ -35,7 +35,7 @@ pub fn wasm_tensor_info() -> String {
     let webgpu_available = WebGpuBackend::is_available();
 
     format!(
-        "TenfloweRS WASM Support v0.1.0 - Features: SIMD: {} (compile-time: {}), Threads: {}, WebGPU: {}, Bulk Memory: {}, Reference Types: {}, Operations: add, mul, sub, relu with SIMD/WebGPU optimization",
+        "TenfloweRS WASM Support v0.1.1 - Features: SIMD: {} (compile-time: {}), Threads: {}, WebGPU: {}, Bulk Memory: {}, Reference Types: {}, Operations: add, mul, sub, relu with SIMD/WebGPU optimization",
         features.simd, compile_time_simd, features.threads, webgpu_available, features.bulk_memory, features.reference_types
     )
 }

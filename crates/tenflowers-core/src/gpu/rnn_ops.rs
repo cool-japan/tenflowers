@@ -151,7 +151,10 @@ impl GpuRnnOps {
         // Create pipeline layouts
         let lstm_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("LSTM Cell Pipeline Layout"),
-            bind_group_layouts: &[&lstm_bind_group_layout, &param_bind_group_layout],
+            bind_group_layouts: &[
+                Some(&lstm_bind_group_layout),
+                Some(&param_bind_group_layout),
+            ],
             immediate_size: 0,
         });
 

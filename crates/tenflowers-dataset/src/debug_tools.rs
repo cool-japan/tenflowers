@@ -696,6 +696,172 @@ impl ConsistencyReport {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// PipelineInspector — per-step transform instrumentation
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Record of one transform step applied to a single sample.
+#[derive(Debug, Clone)]
+pub struct InspectionEvent {
+    /// Name given to this transform step.
+    pub step_name: String,
+    /// Shape of the feature tensor *before* the transform.
+    pub input_shape: Vec<usize>,
+    /// Shape of the feature tensor *after* the transform (None if an error occurred).
+    pub output_shape: Option<Vec<usize>>,
+    /// Wall-clock time the transform took in microseconds.
+    pub latency_micros: u64,
+    /// Error message if the transform failed, otherwise `None`.
+    pub error: Option<String>,
+}
+
+/// Aggregated result of running a `PipelineInspector` over one or more samples.
+#[derive(Debug, Clone)]
+pub struct PipelineInspectionReport {
+    /// All recorded events, in chronological order.
+    pub events: Vec<InspectionEvent>,
+    /// Sum of all per-event latencies (microseconds).
+    pub total_latency_micros: u64,
+    /// Number of events that recorded an error.
+    pub error_count: usize,
+    /// Number of samples processed.
+    pub sample_count: usize,
+}
+
+impl PipelineInspectionReport {
+    /// Create a new empty report.
+    pub fn new() -> Self {
+        Self {
+            events: Vec::new(),
+            total_latency_micros: 0,
+            error_count: 0,
+            sample_count: 0,
+        }
+    }
+
+    fn push_event(&mut self, event: InspectionEvent) {
+        self.total_latency_micros += event.latency_micros;
+        if event.error.is_some() {
+            self.error_count += 1;
+        }
+        self.events.push(event);
+    }
+
+    /// Average latency per step in microseconds. Returns `0` if no events recorded.
+    pub fn avg_latency_per_step_micros(&self) -> u64 {
+        if self.events.is_empty() {
+            return 0;
+        }
+        self.total_latency_micros / self.events.len() as u64
+    }
+
+    /// Fraction of steps that produced an error (in [0, 1]).
+    pub fn error_rate(&self) -> f64 {
+        if self.events.is_empty() {
+            return 0.0;
+        }
+        self.error_count as f64 / self.events.len() as f64
+    }
+}
+
+impl Default for PipelineInspectionReport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// An instrumented transform pipeline that records per-step latency, shapes, and errors.
+///
+/// Steps are appended with [`InspectablePipeline::add_step`] and the pipeline is exercised via
+/// [`InspectablePipeline::inspect_sample`] or [`InspectablePipeline::run_inspection_batch`].
+pub struct InspectablePipeline {
+    steps: Vec<(String, Box<dyn crate::transforms::Transform<f32>>)>,
+}
+
+impl InspectablePipeline {
+    /// Create an empty pipeline.
+    pub fn new() -> Self {
+        Self { steps: Vec::new() }
+    }
+
+    /// Append a named transform step to the pipeline.
+    pub fn add_step(
+        &mut self,
+        name: impl Into<String>,
+        transform: Box<dyn crate::transforms::Transform<f32>>,
+    ) {
+        self.steps.push((name.into(), transform));
+    }
+
+    /// Run all steps on a single `(features, labels)` sample and return one
+    /// `InspectionEvent` per step.
+    pub fn inspect_sample(
+        &self,
+        sample: (tenflowers_core::Tensor<f32>, tenflowers_core::Tensor<f32>),
+    ) -> Vec<InspectionEvent> {
+        let mut events = Vec::with_capacity(self.steps.len());
+        let mut current = sample;
+
+        for (name, transform) in &self.steps {
+            let input_shape = current.0.shape().to_vec();
+            let start = std::time::Instant::now();
+            match transform.apply(current.clone()) {
+                Ok(out) => {
+                    let latency_micros = start.elapsed().as_micros() as u64;
+                    let output_shape = Some(out.0.shape().to_vec());
+                    events.push(InspectionEvent {
+                        step_name: name.clone(),
+                        input_shape,
+                        output_shape,
+                        latency_micros,
+                        error: None,
+                    });
+                    current = out;
+                }
+                Err(e) => {
+                    let latency_micros = start.elapsed().as_micros() as u64;
+                    events.push(InspectionEvent {
+                        step_name: name.clone(),
+                        input_shape,
+                        output_shape: None,
+                        latency_micros,
+                        error: Some(e.to_string()),
+                    });
+                    break;
+                }
+            }
+        }
+
+        events
+    }
+
+    /// Inspect `n_samples` from a `Dataset` and return an aggregated `PipelineInspectionReport`.
+    pub fn run_inspection_batch<D>(&self, dataset: &D, n_samples: usize) -> PipelineInspectionReport
+    where
+        D: crate::Dataset<f32>,
+    {
+        let mut report = PipelineInspectionReport::new();
+        let count = n_samples.min(dataset.len());
+
+        for idx in 0..count {
+            if let Ok(sample) = dataset.get(idx) {
+                for event in self.inspect_sample(sample) {
+                    report.push_event(event);
+                }
+                report.sample_count += 1;
+            }
+        }
+
+        report
+    }
+}
+
+impl Default for InspectablePipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -783,5 +949,77 @@ mod tests {
 
         assert!(report_string.contains("Pipeline Profiling Report"));
         assert!(report_string.contains("data_loading"));
+    }
+
+    // ── InspectablePipeline tests ────────────────────────────────────────────
+
+    struct IdentityTransform;
+
+    impl crate::transforms::Transform<f32> for IdentityTransform {
+        fn apply(
+            &self,
+            sample: (Tensor<f32>, Tensor<f32>),
+        ) -> tenflowers_core::Result<(Tensor<f32>, Tensor<f32>)> {
+            Ok(sample)
+        }
+    }
+
+    #[test]
+    fn test_inspectable_pipeline_records_events() {
+        let mut pipeline = InspectablePipeline::new();
+        pipeline.add_step("identity", Box::new(IdentityTransform));
+
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation should succeed");
+        let labels =
+            Tensor::<f32>::from_vec(vec![1.0], &[1]).expect("test: tensor creation should succeed");
+
+        let events = pipeline.inspect_sample((features, labels));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].step_name, "identity");
+        assert!(events[0].error.is_none());
+        assert!(events[0].output_shape.is_some());
+    }
+
+    #[test]
+    fn test_inspectable_pipeline_shape_tracking() {
+        let mut pipeline = InspectablePipeline::new();
+        pipeline.add_step("step1", Box::new(IdentityTransform));
+        pipeline.add_step("step2", Box::new(IdentityTransform));
+
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
+
+        let events = pipeline.inspect_sample((features, labels));
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].input_shape, vec![2, 2]);
+        assert_eq!(events[1].input_shape, vec![2, 2]);
+    }
+
+    #[test]
+    fn test_run_inspection_batch_aggregation() {
+        let features = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation should succeed");
+        let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0], &[2])
+            .expect("test: tensor creation should succeed");
+        let dataset = TensorDataset::new(features, labels);
+
+        let mut pipeline = InspectablePipeline::new();
+        pipeline.add_step("identity", Box::new(IdentityTransform));
+
+        let report = pipeline.run_inspection_batch(&dataset, 100);
+        assert_eq!(report.sample_count, 2);
+        assert_eq!(report.events.len(), 2);
+        assert_eq!(report.error_count, 0);
+        assert_eq!(report.error_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_pipeline_inspection_report_empty() {
+        let report = PipelineInspectionReport::new();
+        assert_eq!(report.avg_latency_per_step_micros(), 0);
+        assert_eq!(report.error_rate(), 0.0);
     }
 }

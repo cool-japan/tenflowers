@@ -300,10 +300,9 @@ where
     let n = input_shape[0];
 
     // Compute Cholesky decomposition of input matrix
-    #[allow(non_snake_case)]
-    let L = cholesky(input)?;
+    let chol = cholesky(input)?;
 
-    // grad_output should have the same shape as L
+    // grad_output should have the same shape as chol
     let grad_shape = grad_output.shape().dims();
     if grad_shape != input_shape {
         return Err(TensorError::InvalidArgument {
@@ -328,7 +327,7 @@ where
                 .ok_or_else(|| TensorError::other("Failed to get gradient element".into()))?;
             grad_l_matrix[[i, j]] = grad_elem;
 
-            let l_elem = L
+            let l_elem = chol
                 .get(&[i, j])
                 .ok_or_else(|| TensorError::other("Failed to get Cholesky element".into()))?;
             l_matrix[[i, j]] = l_elem;

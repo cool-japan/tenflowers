@@ -96,7 +96,8 @@ pub use cross_format::{
 
 // Re-export schema validation
 pub use schema_validator::{
-    SchemaValidator, ValidationConfig, ValidationError, ValidationErrorCategory, ValidationResult,
+    FieldDiff, SchemaValidator, ValidationConfig, ValidationError, ValidationErrorCategory,
+    ValidationPolicy, ValidationReport as SchemaValidationReport, ValidationResult,
     ValidationWarning,
 };
 

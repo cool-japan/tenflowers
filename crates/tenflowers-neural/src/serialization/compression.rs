@@ -126,16 +126,16 @@ impl Compressor {
     fn compress_gzip(data: &[u8], level: u8) -> Result<Vec<u8>> {
         #[cfg(feature = "gzip")]
         {
-            use flate2::write::GzEncoder;
-            use flate2::Compression;
-
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level as u32));
-            encoder.write_all(data).map_err(|e| {
-                TensorError::serialization_error_simple(format!("Gzip compression failed: {}", e))
-            })?;
-            encoder.finish().map_err(|e| {
-                TensorError::serialization_error_simple(format!("Gzip compression failed: {}", e))
-            })
+            use oxiarc_archive::gzip::GzipWriter;
+            GzipWriter::new()
+                .level(level)
+                .compress_to_vec(data)
+                .map_err(|e| {
+                    TensorError::serialization_error_simple(format!(
+                        "Gzip compression failed: {}",
+                        e
+                    ))
+                })
         }
         #[cfg(not(feature = "gzip"))]
         {
@@ -150,14 +150,16 @@ impl Compressor {
     fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
         #[cfg(feature = "gzip")]
         {
-            use flate2::read::GzDecoder;
-
-            let mut decoder = GzDecoder::new(data);
-            let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed).map_err(|e| {
-                TensorError::serialization_error_simple(format!("Gzip decompression failed: {}", e))
+            use oxiarc_archive::GzipReader;
+            let mut gzip_reader = GzipReader::new(std::io::Cursor::new(data)).map_err(|e| {
+                TensorError::serialization_error_simple(format!(
+                    "Gzip decompression init failed: {}",
+                    e
+                ))
             })?;
-            Ok(decompressed)
+            gzip_reader.decompress().map_err(|e| {
+                TensorError::serialization_error_simple(format!("Gzip decompression failed: {}", e))
+            })
         }
         #[cfg(not(feature = "gzip"))]
         {

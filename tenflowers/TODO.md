@@ -14,25 +14,25 @@ This file tracks tasks specific to the meta crate (`tenflowers`), which serves a
 ## High Priority
 
 ### Documentation & Examples
-- [ ] Add comprehensive doc examples for prelude usage patterns
-- [ ] Create migration guide from TensorFlow to TenfloweRS
-- [ ] Add doctests for all prelude re-exports
-- [ ] Create "Getting Started" tutorial in README
-- [ ] Add comparison table with PyTorch/TensorFlow APIs
+- [x] Add comprehensive doc examples for prelude usage patterns (done 2026-04-19: 4 narrative prelude examples in lib.rs: minimal-model, MNIST train loop, regression Adam, inference)
+- [x] Create migration guide from TensorFlow to TenfloweRS (done 2026-04-20: docs/MIGRATION_FROM_TENSORFLOW.md)
+- [x] Add doctests for all prelude re-exports (done 2026-04-19: 23 doctests pass; lib.rs no_run blocks + macros.rs runnable doctest + type_aliases.rs doctests)
+- [x] Create "Getting Started" tutorial in README (done 2026-04-20: README.md)
+- [x] Add comparison table with PyTorch/TensorFlow APIs (done 2026-04-20: README.md)
 
 ### API Surface
-- [ ] Review prelude exports - ensure most common types are included
-- [ ] Add convenience macros (e.g., `tensor![]` for tensor creation)
-- [ ] Consider adding `nn` module alias for `neural`
-- [ ] Add `data` module alias for `dataset`
+- [x] Review prelude exports - ensure most common types are included (done 2026-04-19: prelude includes MultiHeadAttention, RMSNorm, TransformerEncoder/Decoder, GRU, LSTM, RNN, all optimizers + loss fns)
+- [x] Add convenience macros (e.g., `tensor![]` for tensor creation) (done 2026-04-19: tenflowers/src/macros.rs with tensor! macro + tensor_macro tests)
+- [x] Consider adding `nn` module alias for `neural` (done 2026-04-19: pub mod nn in lib.rs)
+- [x] Add `data` module alias for `dataset` (done 2026-04-19: pub mod data in lib.rs)
 - [ ] Ensure all feature flags are properly tested
 
 ### Testing
-- [ ] Add integration tests using prelude
+- [x] Add integration tests using prelude (done 2026-04-19: tenflowers/tests/integration_test.rs, prelude_surface.rs, tensor_macro.rs, type_aliases.rs, feature_flags_test.rs)
 - [ ] Test feature flag combinations
 - [ ] Add CI tests for meta crate
 - [ ] Test compile-time with minimal features
-- [ ] Verify all examples compile with meta crate
+- [x] Verify all examples compile with meta crate (done 2026-04-19: cargo check + doctests pass)
 
 ## Medium Priority
 
@@ -44,34 +44,34 @@ This file tracks tasks specific to the meta crate (`tenflowers`), which serves a
 - [ ] Add common utility functions module
 
 ### Documentation
-- [ ] Add architecture diagram to README
-- [ ] Create "Quick Reference" guide
+- [x] Add architecture diagram to README (done 2026-04-20: README.md)
+- [x] Create "Quick Reference" guide (done 2026-04-20: docs/QUICK_REFERENCE.md)
 - [ ] Add performance comparison charts
-- [ ] Document feature flag combinations
-- [ ] Add troubleshooting section
+- [x] Document feature flag combinations (done 2026-04-20: README.md Feature Flags section)
+- [x] Add troubleshooting section (done 2026-04-20: docs/TROUBLESHOOTING.md)
 
 ### Tooling
-- [ ] Add publish script for meta crate
-- [ ] Ensure version bumps are synchronized
+- [x] Add publish script for meta crate
+- [x] Ensure version bumps are synchronized
 - [ ] Add changelog automation
-- [ ] Create release checklist
-- [ ] Add deprecation warnings for API changes
+- [x] Create release checklist
+- [x] Add deprecation warnings for API changes
 
 ## Low Priority
 
 ### Future Enhancements
-- [ ] Consider adding commonly used type aliases
-- [ ] Add experimental features flag
-- [ ] Create "batteries-included" preset features
+- [x] Consider adding commonly used type aliases (done 2026-04-19: tenflowers/src/type_aliases.rs with Tensor1D/2D/3D/4D, Vector, Matrix, Scalar aliases for f32/f64/generic)
+- [x] Add experimental features flag
+- [x] Create "batteries-included" preset features
 - [ ] Add platform-specific optimizations
-- [ ] Consider stability guarantees for prelude
+- [x] Consider stability guarantees for prelude (done 2026-04-19: docs/PRELUDE_STABILITY.md created; prelude module doc references it)
 
 ### Ecosystem Integration
 - [ ] Ensure compatibility with common Rust ML crates
 - [ ] Add interop examples with other frameworks
-- [ ] Create conversion utilities for ndarray
-- [ ] Add serialization format helpers
-- [ ] Consider ONNX import/export helpers
+- [x] Create conversion utilities for ndarray (done 2026-04-19: tenflowers/src/interop/ndarray.rs with from_ndarray/to_ndarray/round_trip/from_slice_with_shape + 7 unit tests)
+- [x] Add serialization format helpers (done 2026-04-19: tenflowers/src/io.rs with save_tensor/load_tensor wrappers, serialize feature gated, stub for no-feature builds)
+- [x] Consider ONNX import/export helpers (done 2026-04-19: #[cfg(feature="onnx")] pub mod onnx re-exports tenflowers_neural::onnx surface in tenflowers/src/lib.rs)
 
 ## Completed
 

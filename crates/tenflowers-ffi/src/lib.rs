@@ -218,6 +218,7 @@
 // Module declarations - organize functionality into logical groups
 pub mod benchmarks;
 pub mod bottleneck_detection;
+pub mod device; // Device abstraction (CPU/GPU/ROCm as Python classes)
 pub mod dtype; // Data type abstraction for f16/bf16/etc support
 pub mod dtype_promotion;
 pub mod eager_execution_optimizer;
@@ -541,14 +542,19 @@ fn setup_default_pytorch_compatibility(
 #[pymodule]
 fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add version info
-    m.setattr("__version__", "0.1.0")?;
+    m.setattr("__version__", "0.1.1")?;
     m.setattr("__author__", "TenfloweRS Team")?;
 
     // Register custom exceptions
     error_mapping::register_exceptions(py, m)?;
 
-    // Register core tensor class
+    // Register core tensor class and iterator
     m.add_class::<tensor_ops::PyTensor>()?;
+    m.add_class::<tensor_ops::PyTensorIter>()?;
+
+    // Register device abstraction classes
+    m.add_class::<device::PyDevice>()?;
+    m.add_class::<device::PyDeviceKind>()?;
 
     // Register dtype system
     m.add_class::<dtype::PyDType>()?;

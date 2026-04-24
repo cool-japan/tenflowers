@@ -394,15 +394,23 @@ mod tests {
 
     #[test]
     fn test_tensorboard_callback_creation() {
-        let cb = TensorboardCallback::new("/tmp/tb_test");
-        assert_eq!(cb.log_dir, "/tmp/tb_test");
+        let log_dir = std::env::temp_dir()
+            .join("tb_test")
+            .to_string_lossy()
+            .into_owned();
+        let cb = TensorboardCallback::new(&log_dir);
+        assert_eq!(cb.log_dir, log_dir);
         assert!(!cb.write_graph);
         assert!(!cb.initialized);
     }
 
     #[test]
     fn test_tensorboard_with_graph() {
-        let cb = TensorboardCallback::new("/tmp/tb_test").with_graph();
+        let log_dir = std::env::temp_dir()
+            .join("tb_test")
+            .to_string_lossy()
+            .into_owned();
+        let cb = TensorboardCallback::new(&log_dir).with_graph();
         assert!(cb.write_graph);
     }
 

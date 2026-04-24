@@ -1,6 +1,6 @@
-# TenfloweRS Dataset TODO & Roadmap (v0.1.0)
+# TenfloweRS Dataset TODO & Roadmap (v0.1.1)
 
-v0.1.0 focus: data loading and preprocessing capabilities and forward development plan.
+v0.1.1 focus: data loading and preprocessing capabilities and forward development plan.
 
 ## 1. Current Capabilities
 
@@ -123,30 +123,30 @@ v0.1.0 focus: data loading and preprocessing capabilities and forward developmen
   - 25+ test cases covering all functionality
   - Example code in `examples/distributed_streaming_example.rs`
   - Documentation in `docs/distributed_streaming.md`
-- [ ] **Unified Reader Trait**: Draft format abstraction layer design
-- [ ] **Arrow Zero-Copy Prototype**: Implement initial Apache Arrow integration
-- [ ] **Cache Telemetry System**: Metrics collection for cache performance
-- [ ] **Error Taxonomy Mapping**: Align error patterns with core crate standards
+- [x] **Unified Reader Trait**: Draft format abstraction layer design (COMPLETED 2026-04-19)
+- [x] **Arrow Zero-Copy Prototype**: Implement initial Apache Arrow integration (COMPLETED 2026-04-19)
+- [x] **Cache Telemetry System**: Metrics collection for cache performance (COMPLETED 2026-04-19)
+- [x] **Error Taxonomy Mapping**: Align error patterns with core crate standards (COMPLETED 2026-04-19)
 
 ### Performance & Optimization
-- [ ] **Adaptive Prefetch Policy**: Auto-tuning cache policy implementation
-- [ ] **Throughput Benchmark Setup**: Performance harness for data pipeline analysis
+- [x] **Adaptive Prefetch Policy**: Auto-tuning cache policy implementation (COMPLETED 2026-04-19 — PidAdaptiveController with PID+anti-windup in adaptive_prefetch.rs)
+- [x] **Throughput Benchmark Setup**: Performance harness for data pipeline analysis (COMPLETED 2026-04-19 — benches/throughput.rs with Criterion, raw_get/dataloader_workers/transform_chain groups)
 - [ ] **Memory Usage Optimization**: Enhanced memory allocation and usage patterns
 - [ ] **SIMD Optimization**: Advanced SIMD acceleration for transform operations
 - [ ] **GPU Transform Expansion**: Additional GPU-accelerated data transforms
 
 ### Integration & Quality
-- [ ] **Schema Validation**: Unified validation system across formats
+- [x] **Schema Validation**: Unified validation system across formats (COMPLETED 2026-04-19 — FieldDiff/ValidationReport/validate_full/strict/lenient in schema_validator.rs)
 - [ ] **Advanced HDF5 Features**: Enhanced HDF5 support and optimization
 - [ ] **Format Integration**: Improved Parquet, TFRecord, and other format support
-- [ ] **Documentation**: Comprehensive data loading concepts and usage guide
-- [ ] **API Stabilization**: Prepare dataset APIs for stable release
+- [x] **Documentation**: Comprehensive data loading concepts and usage guide (COMPLETED 2026-04-19 — expanded //! docs in lib.rs with PipelineInspector/DriftMetrics/PID/SchemaValidation sections + runnable doctest)
+- [x] **API Stabilization**: Prepare dataset APIs for stable release (COMPLETED 2026-04-19 — doc comments on all new public items, verified re-exports)
 
 ### Infrastructure Tasks
 - [ ] **Distributed Coordination**: Multi-worker dataset coordinator implementation
 - [ ] **Streaming Enhancement**: Advanced streaming capabilities and optimization
-- [ ] **Debug Tools**: Data pipeline debugging and profiling tool development
-- [ ] **Quality Metrics**: Data quality assessment and monitoring implementation
+- [x] **Debug Tools**: Data pipeline debugging and profiling tool development (COMPLETED 2026-04-19 — InspectablePipeline/InspectionEvent/PipelineInspectionReport in debug_tools.rs)
+- [x] **Quality Metrics**: Data quality assessment and monitoring implementation (COMPLETED 2026-04-19 — PSI/KS/JSD functions + DriftReport + compute_drift in data_quality.rs)
 
 ## 6. Advanced Research Areas
 
@@ -184,4 +184,4 @@ v0.1.0 focus: data loading and preprocessing capabilities and forward developmen
 
 ---
 
-**v0.1.0 Status**: Production-ready data loading capabilities with comprehensive format support, GPU acceleration, and SciRS2 integration. Forward development focuses on distributed loading and advanced format integration.
+**v0.1.1 Status**: Production-ready data loading capabilities with comprehensive format support, GPU acceleration, and SciRS2 integration. Forward development focuses on distributed loading and advanced format integration.

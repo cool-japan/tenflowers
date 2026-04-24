@@ -19,6 +19,7 @@ workspace = true
 [lib]
 name = "tenflowers"
 crate-type = ["cdylib", "rlib"]
+doc = false
 
 [dependencies]
 tenflowers-core = { workspace = true }
@@ -36,9 +37,19 @@ chrono = { workspace = true }
 libloading = { workspace = true }
 libc = { workspace = true }
 
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
+pyo3-build-config = { version = "0.28", features = ["resolve-config"] }
+
 [features]
 default = []
 extension-module = ["pyo3/extension-module"]
 gpu = ["tenflowers-core/gpu"]
+# ROCm (AMD GPU) support — mirrors the corresponding tenflowers-core feature
+rocm = ["tenflowers-core/rocm"]
+# BLAS acceleration support — mirrors the corresponding tenflowers-core feature
+blas = ["tenflowers-core/blas"]
 # Feature to enable FFI tests when Python environment is available
 python-tests = []
+# Feature to enable C header regeneration via cbindgen during build
+c-header-generate = ["dep:cbindgen"]

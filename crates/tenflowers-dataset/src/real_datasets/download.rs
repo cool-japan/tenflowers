@@ -11,10 +11,7 @@ use super::common::{error_utils, ProgressTracker};
 use reqwest::blocking::Client;
 
 #[cfg(feature = "download")]
-use flate2::read::GzDecoder;
-
-#[cfg(feature = "download")]
-use tar::Archive;
+use oxiarc_archive::{GzipReader, TarReader};
 
 /// Download utilities for dataset files
 pub struct Downloader {
@@ -29,7 +26,7 @@ impl Downloader {
             #[cfg(feature = "download")]
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(300)) // 5 minutes timeout
-                .user_agent("tenflowers-dataset/0.1.0")
+                .user_agent("tenflowers-dataset/0.1.1")
                 .build()
                 .unwrap_or_else(|_| Client::new()),
         }
@@ -105,13 +102,24 @@ impl Downloader {
         let gz_file = File::open(gz_path)
             .map_err(|e| error_utils::io_error_with_context(e, "Failed to open gzip file"))?;
 
-        let mut decoder = GzDecoder::new(gz_file);
+        let mut gzip_reader = GzipReader::new(gz_file).map_err(|e| {
+            error_utils::io_error_with_context(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                "Failed to open gzip file",
+            )
+        })?;
+        let decompressed = gzip_reader.decompress().map_err(|e| {
+            error_utils::io_error_with_context(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                "Failed to extract gzip file",
+            )
+        })?;
         let mut dest_file = File::create(dest_path).map_err(|e| {
             error_utils::io_error_with_context(e, "Failed to create destination file")
         })?;
-
-        std::io::copy(&mut decoder, &mut dest_file)
-            .map_err(|e| error_utils::io_error_with_context(e, "Failed to extract gzip file"))?;
+        dest_file
+            .write_all(&decompressed)
+            .map_err(|e| error_utils::io_error_with_context(e, "Failed to write extracted file"))?;
 
         println!("{} extracted successfully!", description);
         Ok(())
@@ -144,12 +152,49 @@ impl Downloader {
         let tar_gz_file = File::open(tar_gz_path)
             .map_err(|e| error_utils::io_error_with_context(e, "Failed to open tar.gz file"))?;
 
-        let gz_decoder = GzDecoder::new(tar_gz_file);
-        let mut archive = Archive::new(gz_decoder);
-
-        archive.unpack(dest_dir).map_err(|e| {
-            error_utils::io_error_with_context(e, "Failed to extract tar.gz archive")
+        let mut gzip_reader = GzipReader::new(tar_gz_file).map_err(|e| {
+            error_utils::io_error_with_context(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                "Failed to open gzip file",
+            )
         })?;
+        let decompressed = gzip_reader.decompress().map_err(|e| {
+            error_utils::io_error_with_context(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                "Failed to decompress tar.gz file",
+            )
+        })?;
+        let mut tar_reader = TarReader::new(std::io::Cursor::new(decompressed)).map_err(|e| {
+            error_utils::io_error_with_context(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                "Failed to parse tar archive",
+            )
+        })?;
+        // Clone entries first to avoid borrow conflict (Entry: Clone)
+        let entries = tar_reader.entries().to_vec();
+        for entry in &entries {
+            let dest_path = dest_dir.join(&entry.name);
+            if entry.name.ends_with('/') {
+                std::fs::create_dir_all(&dest_path).map_err(|e| {
+                    error_utils::io_error_with_context(e, "Failed to create directory")
+                })?;
+            } else {
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        error_utils::io_error_with_context(e, "Failed to create parent directory")
+                    })?;
+                }
+                let data = tar_reader.extract_to_vec(entry).map_err(|e| {
+                    error_utils::io_error_with_context(
+                        std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                        "Failed to extract tar entry",
+                    )
+                })?;
+                std::fs::write(&dest_path, &data).map_err(|e| {
+                    error_utils::io_error_with_context(e, "Failed to write extracted file")
+                })?;
+            }
+        }
 
         println!("{} archive extracted successfully!", description);
         Ok(())
@@ -265,10 +310,40 @@ impl Downloader {
                 error_utils::io_error_with_context(e, "Failed to open validation tar file")
             })?;
 
-            let mut archive = Archive::new(tar_file);
-            archive.unpack(&val_images_dir).map_err(|e| {
-                error_utils::io_error_with_context(e, "Failed to extract validation images")
+            let mut tar_reader = TarReader::new(tar_file).map_err(|e| {
+                error_utils::io_error_with_context(
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                    "Failed to parse tar archive",
+                )
             })?;
+            // Clone entries first to avoid borrow conflict (Entry: Clone)
+            let entries = tar_reader.entries().to_vec();
+            for entry in &entries {
+                let dest_path = val_images_dir.join(&entry.name);
+                if entry.name.ends_with('/') {
+                    std::fs::create_dir_all(&dest_path).map_err(|e| {
+                        error_utils::io_error_with_context(e, "Failed to create directory")
+                    })?;
+                } else {
+                    if let Some(parent) = dest_path.parent() {
+                        std::fs::create_dir_all(parent).map_err(|e| {
+                            error_utils::io_error_with_context(
+                                e,
+                                "Failed to create parent directory",
+                            )
+                        })?;
+                    }
+                    let data = tar_reader.extract_to_vec(entry).map_err(|e| {
+                        error_utils::io_error_with_context(
+                            std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)),
+                            "Failed to extract tar entry",
+                        )
+                    })?;
+                    std::fs::write(&dest_path, &data).map_err(|e| {
+                        error_utils::io_error_with_context(e, "Failed to write extracted file")
+                    })?;
+                }
+            }
 
             // Clean up tar file
             let _ = std::fs::remove_file(val_tar_path);

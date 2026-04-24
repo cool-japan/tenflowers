@@ -2,7 +2,7 @@
 
 Foreign Function Interface for TenfloweRS, providing Python bindings and C API for seamless integration with other languages and frameworks.
 
-> v0.1.0 (2026-03-20) | 48 tests passing | 0 clippy warnings
+> v0.1.1 (2026-04-24) | 48 tests passing | 0 clippy warnings
 > Python bindings are functional. Build from source via maturin.
 
 ## Overview
@@ -14,15 +14,20 @@ Foreign Function Interface for TenfloweRS, providing Python bindings and C API f
 - **Visualization**: Gradient flow analysis and visualization utilities
 - **DType Promotion**: Automatic dtype promotion across the Python/Rust boundary
 - **Eager Execution Optimizer**: Python-side eager execution optimization
+- **Device Abstraction**: `PyDevice` class with `Device.cpu()`, `Device.gpu(id)`, `Device.rocm(id)` constructors
+- **Structured Error Mapping**: Exhaustive `TensorError` → `TenflowersError` mapping covering all 23 variants
+- **Rich Tensor Repr**: `PyTensor.__repr__` shows actual dtype; `__len__`, `.ndim`, `.numel()` properties added
+- **C Header Generation**: `build.rs` regenerates `tenflowers.h` when `TENFLOWERS_REGENERATE_C_HEADER=1` is set
 
 ## Features
 
 - **Zero-Copy Interop**: Efficient data exchange with Python/NumPy where possible
 - **Pythonic API**: Familiar interface for Python users
 - **Type Safety**: Automatic type conversions with safety checks
-- **Error Handling**: Proper exception propagation from Rust to Python
-- **GPU Support**: Tensor operations on GPU from Python
+- **Error Handling**: Exhaustive Rust→Python exception mapping (all 23 `TensorError` variants)
+- **GPU Support**: Tensor operations on GPU from Python via `PyDevice`
 - **Gradient Flow Analysis**: Inspect and visualize gradient propagation
+- **Debug Support**: `__repr__` with real dtype, `__len__`, `.ndim`, `.numel()` on `PyTensor`
 
 ## Python API Usage
 

@@ -2,7 +2,7 @@
 
 Data loading and preprocessing utilities for TenfloweRS, providing efficient dataset management, transformations, and data pipelines for machine learning workflows.
 
-> Stable (v0.1.0 -- 2026-03-20) | 472 tests passing | 0 clippy warnings
+> Stable (v0.1.1 -- 2026-04-24) | 504 tests passing | 0 clippy warnings
 
 ## Overview
 

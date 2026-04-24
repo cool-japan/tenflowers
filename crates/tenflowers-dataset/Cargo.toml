@@ -30,9 +30,8 @@ parquet = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 bytemuck = { workspace = true }
-flate2 = { workspace = true, optional = true }
+oxiarc-archive = { workspace = true, optional = true }
 crc32fast = { workspace = true, optional = true }
-tar = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
 hdf5 = { workspace = true, optional = true }
 symphonia = { workspace = true, optional = true }
@@ -52,11 +51,15 @@ serde_yaml = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 
 # For PandRS integration (when available)
-# pandrs = "0.1.0"
+# pandrs = "0.3.1"
 
 [dev-dependencies]
 criterion = { workspace = true }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "throughput"
+harness = false
 
 [features]
 default = ["parallel", "images", "serialize", "mmap", "parquet", "csv_format", "regex", "tfrecord", "msgpack", "audio", "download", "webdataset", "numa"]
@@ -70,14 +73,14 @@ mmap = ["dep:memmap2"]
 parquet = ["dep:arrow", "dep:parquet"]
 csv_format = ["dep:csv"]
 regex = ["dep:regex"]
-tfrecord = ["dep:flate2", "dep:crc32fast"]
+tfrecord = ["dep:oxiarc-archive", "dep:crc32fast"]
 msgpack = ["dep:rmp-serde", "serialize"]
 hdf5 = ["dep:hdf5"]
 audio = ["dep:symphonia", "dep:rubato"]
-download = ["dep:reqwest", "dep:flate2", "dep:tar", "serialize"]
-webdataset = ["dep:tar", "serialize"]
+download = ["dep:reqwest", "dep:oxiarc-archive", "serialize"]
+webdataset = ["dep:oxiarc-archive", "serialize"]
 gpu = ["tenflowers-core/gpu", "dep:wgpu", "dep:futures", "dep:pollster", "dep:tokio"]
 numa = ["dep:libc"]
 distributed = ["dep:tokio", "dep:futures", "dep:async-trait", "serialize"]
 cloud = ["dep:reqwest", "dep:tokio", "dep:futures", "serialize"]
-compression = ["dep:flate2"]
+compression = ["dep:oxiarc-archive"]

@@ -24,7 +24,7 @@ rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
-flate2 = { workspace = true, optional = true }
+oxiarc-archive = { workspace = true, optional = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
 ndarray-linalg = { workspace = true, optional = true }
@@ -90,7 +90,7 @@ blas-mkl = ["blas", "ndarray-linalg/intel-mkl-system"]
 blas-accelerate = ["blas"]
 simd = []
 serialize = ["serde", "serde_json", "rmp-serde"]
-compression = ["flate2"]
+compression = ["dep:oxiarc-archive"]
 benchmark = ["serialize"]
 wasm = ["wasm-bindgen", "js-sys", "web-sys"]
 onnx = ["prost", "prost-types"]

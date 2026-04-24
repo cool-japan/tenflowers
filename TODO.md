@@ -1,10 +1,10 @@
-# TenfloweRS TODO & Roadmap (v0.1.0 · 2026-03-20)
+# TenfloweRS TODO & Roadmap (v0.1.1 · 2026-04-24)
 
 ## Current Capabilities
 
 ### Project Status
-- **Tests**: 12,949 passing across all crates
-- **Code Size**: ~790K SLoC (Pure Rust)
+- **Tests**: 13,484 passing, 41 skipped across all crates
+- **Code Size**: ~643K SLoC Rust code (~772K total Rust lines, 1,465 files)
 - **Warnings**: 0 compilation warnings, 0 clippy warnings
 - **Vulnerabilities**: 0 known vulnerabilities
 - **SciRS2 Integration**: Full migration to SciRS2 ecosystem
@@ -46,15 +46,13 @@
 - C API scaffolding (types, tensor creation)
 - Hook system (forward/backward), benchmarking, visualization
 
-## Known Limitations (v0.1.0)
+## Known Limitations (v0.1.1)
 
 - Graph optimizer passes not yet enabled (CSE, constant fold, scheduling)
 - Many GPU operations still fall back to CPU; GPU memory management inconsistent
 - Higher-order gradients unreliable for composite activation chains
-- Multi-head / scaled dot-product attention not yet implemented
 - Advanced LR schedulers (cosine, one-cycle, warmup) absent
 - No published Python wheels or packaging pipeline
-- No ONNX export/import support
 
 ## Roadmap
 

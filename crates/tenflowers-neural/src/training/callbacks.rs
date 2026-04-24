@@ -1179,7 +1179,8 @@ mod tests {
     #[test]
     fn test_callback_names() {
         let es = EarlyStopping::new(3);
-        let ckpt = ModelCheckpoint::new("/tmp/x.json");
+        let tmp_path = std::env::temp_dir().join("x.json");
+        let ckpt = ModelCheckpoint::new(tmp_path.to_str().expect("valid path"));
         let reducer = ReduceLrOnPlateau::new(0.01, 0.5, 3).expect("valid");
         let logger = ProgressLogger::new(10);
         let hist = History::new();

@@ -92,6 +92,79 @@
 //! # }
 //! ```
 //!
+//! ### Mixed-Precision Autograd
+//!
+//! The [`amp_policy`] module provides a full Automatic Mixed Precision (AMP)
+//! policy.  During the forward pass, selected ops run in `f16`/`bf16`; the
+//! gradient tape records in higher precision to avoid underflow.  A
+//! dynamic loss scaler adapts the scale factor every N steps.
+//!
+//! ```rust,ignore
+//! use tenflowers_autograd::amp_policy::{AmpPolicy, DynamicLossScaler};
+//! use tenflowers_autograd::GradientTape;
+//!
+//! let policy = AmpPolicy::default(); // f16 forward, f32 backward
+//! let scaler = DynamicLossScaler::new(1024.0, 2.0, 2000);
+//!
+//! // Wrap your tape with the AMP policy
+//! let mut tape = GradientTape::new();
+//! // scaler.scale(loss)  →  backward  →  scaler.unscale(grads)  →  step
+//! ```
+//!
+//! See [`amp_policy`] and the `mixed_precision.rs` example for the full API.
+//!
+//! ### Gradient Checkpointing
+//!
+//! Gradient checkpointing trades recomputation for memory.  Only every N-th
+//! intermediate activation is kept; the others are recomputed on demand during
+//! backpropagation.  The [`CheckpointManager`] and [`checkpoint_sequence`]
+//! function implement this strategy.
+//!
+//! ```rust,ignore
+//! use tenflowers_autograd::{CheckpointManager, CheckpointStrategy, checkpoint_sequence};
+//!
+//! let manager = CheckpointManager::new(CheckpointStrategy::EveryNLayers(2));
+//!
+//! // Wrap N layer closures; only even-indexed layers are stored.
+//! let output = checkpoint_sequence(&tape, input, &layers, &manager)?;
+//! ```
+//!
+//! See [`checkpointing`] and the `gradient_checkpointing.rs` example for more.
+//!
+//! ### Higher-Order Derivatives (grad-of-grad)
+//!
+//! The [`higher_order`] module exposes Hessian-vector products, second-order
+//! partial derivatives, and arbitrary nth-order differentiation.  These are
+//! implemented by nesting `GradientTape` scopes — no separate API is required.
+//!
+//! ```rust,no_run
+//! use tenflowers_autograd::{GradientTape, TrackedTensor};
+//! use tenflowers_core::Tensor;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut outer_tape = GradientTape::new();
+//! let x = outer_tape.watch(Tensor::<f32>::ones(&[4]));
+//!
+//! // First-order gradient ∂L/∂x
+//! let gradients = outer_tape.gradient(&[x.clone()], &[x.clone()])?;
+//!
+//! // For true second-order (Hessian), use higher_order::compute_hessian
+//! // or nest two GradientTape::new() scopes.
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`higher_order`] and the `higher_order_grads.rs` example.
+//!
+//! ### Custom Gradient Operations
+//!
+//! Implement [`CustomGradientFunction`] to register arbitrary forward/backward
+//! kernels.  The engine calls `forward` during the forward pass and `backward`
+//! during reverse accumulation, so the custom op is fully integrated with
+//! kernel fusion and checkpointing.
+//!
+//! See [`custom_gradients`] and the `custom_gradient_operations.rs` example.
+//!
 //! ## Performance Features
 //!
 //! - **Kernel Fusion**: Automatically fuses operations to reduce memory bandwidth

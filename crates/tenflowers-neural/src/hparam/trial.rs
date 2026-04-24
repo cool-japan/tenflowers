@@ -255,12 +255,16 @@ mod tests {
     #[test]
     fn test_trial_result_metadata() {
         let params = HParamSet::new();
+        let ckpt_path = std::env::temp_dir()
+            .join("ckpt.bin")
+            .to_string_lossy()
+            .into_owned();
         let trial = TrialResult::new(0, params, 0.1, 2.5)
-            .with_metadata("checkpoint", "/tmp/ckpt.bin")
+            .with_metadata("checkpoint", &ckpt_path)
             .with_metadata("epoch", "10");
         assert_eq!(
             trial.metadata.get("checkpoint").map(|s| s.as_str()),
-            Some("/tmp/ckpt.bin")
+            Some(ckpt_path.as_str())
         );
         assert_eq!(trial.metadata.get("epoch").map(|s| s.as_str()), Some("10"));
     }

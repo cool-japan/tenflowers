@@ -583,32 +583,23 @@ where
 /// Compress bytes using gzip
 #[cfg(feature = "compression")]
 pub fn compress_bytes(data: &[u8], level: u8) -> Result<Vec<u8>> {
-    use flate2::write::GzEncoder;
-    use flate2::Compression;
-
-    let compression_level = Compression::new(level.min(9) as u32);
-    let mut encoder = GzEncoder::new(Vec::new(), compression_level);
-    encoder.write_all(data).map_err(|e| {
-        TensorError::serialization_error_simple(format!("Compression failed: {}", e))
-    })?;
-
-    encoder.finish().map_err(|e| {
-        TensorError::serialization_error_simple(format!("Compression finalization failed: {}", e))
-    })
+    use oxiarc_archive::gzip::GzipWriter;
+    GzipWriter::new()
+        .level(level.min(9))
+        .compress_to_vec(data)
+        .map_err(|e| TensorError::serialization_error_simple(format!("Compression failed: {}", e)))
 }
 
 /// Decompress gzip-compressed bytes
 #[cfg(feature = "compression")]
 pub fn decompress_bytes(data: &[u8]) -> Result<Vec<u8>> {
-    use flate2::read::GzDecoder;
-
-    let mut decoder = GzDecoder::new(data);
-    let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed).map_err(|e| {
-        TensorError::serialization_error_simple(format!("Decompression failed: {}", e))
+    use oxiarc_archive::GzipReader;
+    let mut gzip_reader = GzipReader::new(std::io::Cursor::new(data)).map_err(|e| {
+        TensorError::serialization_error_simple(format!("Decompression init failed: {}", e))
     })?;
-
-    Ok(decompressed)
+    gzip_reader.decompress().map_err(|e| {
+        TensorError::serialization_error_simple(format!("Decompression failed: {}", e))
+    })
 }
 
 /// Unified serialize API using SerializationOptions - Binary only without serialize feature

@@ -2,7 +2,7 @@
 
 The foundational crate of TenfloweRS, providing core tensor operations, device management, and the computational infrastructure for machine learning in Rust.
 
-> Stable (v0.1.0 -- 2026-03-20) | 675 tests passing | 0 clippy warnings
+> Stable (v0.1.1 -- 2026-04-24) | 936 tests passing | 0 clippy warnings
 
 ## Overview
 

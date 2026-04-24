@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.1.0"
+tenflowers = "0.1.1"
 ```
 
 ### Basic Example
@@ -137,31 +137,36 @@ TenfloweRS provides several optional features:
 ### Language Bindings
 - `python`: Python bindings via PyO3 (requires Python environment)
 
-### Convenience
+### Presets
+- `minimal`: Only `std` (smallest possible build)
+- `standard`: `std` + `parallel` (same as the default features)
 - `full`: Enable most features (gpu, blas-oxiblas, simd, serialize, compression, onnx, autograd)
+
+### Experimental
+- `experimental`: Opt-in to preview APIs not covered by stability guarantees
 
 ### Enable GPU Support
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0", features = ["gpu"] }
+tenflowers = { version = "0.1.1", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0", features = ["full"] }
+tenflowers = { version = "0.1.1", features = ["full"] }
 ```
 
 ## Architecture
 
 TenfloweRS is organized into focused subcrates:
 
-- **[tenflowers-core](../crates/tenflowers-core)**: Core tensor operations and device management (675 tests)
-- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine (334 tests)
-- **[tenflowers-neural](../crates/tenflowers-neural)**: Neural network layers, models, and 150+ ML domains (11,407 tests)
-- **[tenflowers-dataset](../crates/tenflowers-dataset)**: Data loading and preprocessing (472 tests)
+- **[tenflowers-core](../crates/tenflowers-core)**: Core tensor operations and device management (936 tests)
+- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine (455 tests)
+- **[tenflowers-neural](../crates/tenflowers-neural)**: Neural network layers, models, and 150+ ML domains (11,537 tests)
+- **[tenflowers-dataset](../crates/tenflowers-dataset)**: Data loading and preprocessing (504 tests)
 - **[tenflowers-ffi](../crates/tenflowers-ffi)**: Python and C bindings (48 tests)
 
 This meta crate re-exports all public APIs for convenience, including the `tensor!` macro and `prelude` module.
@@ -199,7 +204,7 @@ Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://
 
 ## Status
 
-TenfloweRS v0.1.0 is the first release (2026-03-20). All 11,477 tests passing across the workspace, 0 clippy warnings, 0 TODO markers. The project comprises ~765K SLoC of Rust across 1,446 files in 6 published crates.
+TenfloweRS v0.1.1 (2026-04-24). All 13,484 tests passing across the workspace, 0 clippy warnings, 0 TODO markers. The project comprises ~765K SLoC of Rust across 1,446 files in 6 published crates.
 
 ## Links
 

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 // Cloud-native and compression support
 #[cfg(feature = "compression")]
-use flate2::read::GzDecoder;
+use oxiarc_archive::GzipReader;
 #[cfg(feature = "cloud")]
 /// Cloud storage backend types
 #[derive(Debug, Clone, PartialEq)]
@@ -767,10 +767,15 @@ where
                 match compressor.as_str() {
                     #[cfg(feature = "compression")]
                     "gzip" => {
-                        use std::io::Read;
-                        let mut decoder = GzDecoder::new(compressed_data);
-                        let mut decompressed = Vec::new();
-                        decoder.read_to_end(&mut decompressed).map_err(|e| {
+                        let mut gzip_reader = GzipReader::new(std::io::Cursor::new(
+                            compressed_data,
+                        ))
+                        .map_err(|e| {
+                            TensorError::invalid_argument(format!(
+                                "Gzip decompression init failed: {e}"
+                            ))
+                        })?;
+                        let decompressed = gzip_reader.decompress().map_err(|e| {
                             TensorError::invalid_argument(format!("Gzip decompression failed: {e}"))
                         })?;
                         Ok(decompressed)

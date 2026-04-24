@@ -17,7 +17,7 @@
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! // Create tensors
 //! let a = Tensor::<f32>::zeros(&[2, 3]);
 //! let b = Tensor::<f32>::ones(&[2, 3]);
@@ -39,7 +39,7 @@
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! // Create a simple feedforward network
 //! let model = Sequential::<f32>::new(vec![])
 //!     .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
@@ -57,7 +57,7 @@
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! // Create model and data
 //! let model = Sequential::<f32>::new(vec![])
 //!     .add(Box::new(Dense::new(10, 64, true).with_activation("relu".to_string())))
@@ -77,7 +77,7 @@
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # #[cfg(feature = "gpu")]
 //! # {
 //! // Move computation to GPU
@@ -94,7 +94,7 @@
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let mut tape = GradientTape::new();
 //!
 //! // Create tracked tensors
@@ -112,9 +112,8 @@
 //!
 //! ```rust,no_run
 //! use tenflowers::prelude::*;
-//! use tenflowers::dataset::RandomSampler;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! // Load dataset
 //! let dataset: CsvDataset<f32> = CsvDatasetBuilder::new()
 //!     .from_path("data.csv")
@@ -218,21 +217,168 @@ pub use tenflowers_neural as neural;
 // Declarative macros (tensor![], etc.)
 pub mod macros;
 
+// Deprecation helpers for wrapping pub-use items with #[deprecated].
+pub mod deprecations;
+
+// Common-shape type aliases (Tensor1D, Tensor2D, Vector, Matrix, …)
+pub mod type_aliases;
+pub use type_aliases::*;
+
+// Result and TensorError at crate root for ergonomic `use tenflowers::Result`
+pub use tenflowers_core::{Result, TensorError};
+
+// Interoperability utilities (ndarray conversions, etc.)
+pub mod interop;
+
+// High-level I/O helpers (save/load tensors and models).
+pub mod io;
+
+// ONNX import/export helpers (re-exports tenflowers-neural's ONNX surface).
+#[cfg(feature = "onnx")]
+pub mod onnx {
+    //! ONNX model import/export helpers.
+    //!
+    //! This module re-exports the ONNX surface from `tenflowers-neural`.
+    //! Enable it with the `onnx` Cargo feature:
+    //!
+    //! ```toml
+    //! tenflowers = { features = ["onnx"] }
+    //! ```
+    //!
+    //! ## Supported operations
+    //!
+    //! - [`OnnxImport`] / [`OnnxExport`] traits for model-level import and export.
+    //! - [`OnnxModel`]: parsed ONNX graph representation.
+    //! - [`OnnxGraph`], [`OnnxNode`], [`OnnxTensor`], [`OnnxValueInfo`]: graph primitives.
+    //! - [`OnnxDataType`], [`OnnxFormat`], [`OnnxError`]: type and error enums.
+    //!
+    //! ## Example
+    //!
+    //! ```rust,ignore
+    //! use tenflowers::onnx::{OnnxExport, OnnxFormat};
+    //!
+    //! // Export a Sequential model to an ONNX file
+    //! let model = /* ... */;
+    //! model.export_onnx("model.onnx", OnnxFormat::Protobuf)?;
+    //! ```
+    //!
+    //! See [`tenflowers_neural::onnx`] for the full API surface.
+    pub use tenflowers_neural::onnx::{
+        OnnxAttribute, OnnxDataType, OnnxError, OnnxExport, OnnxFormat, OnnxGraph, OnnxImport,
+        OnnxModel, OnnxNode, OnnxTensor, OnnxValueInfo,
+    };
+}
+
 // #[cfg(feature = "python")]
 // pub use tenflowers_ffi as ffi;
 
-/// Prelude module for convenient imports
+/// Prelude module for convenient imports.
 ///
-/// This module re-exports the most commonly used types and traits,
-/// allowing users to get started quickly with a single glob import:
+/// Import the entire prelude with a single glob import to get everything you
+/// need for a typical training loop without extra `use` statements:
 ///
 /// ```rust
 /// use tenflowers::prelude::*;
 /// ```
+///
+/// See the `docs/PRELUDE_STABILITY.md` file in the meta crate for the stability
+/// policy (additions allowed in minor releases; removals require a major version bump).
+///
+/// # Example — minimal model construction
+///
+/// ```rust,no_run
+/// use tenflowers::prelude::*;
+///
+/// // Build a two-layer feedforward network
+/// let model = Sequential::<f32>::new(vec![])
+///     .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
+///     .add(Box::new(Dense::new(128, 10, true)));
+///
+/// // Create an Adam optimizer
+/// let _optimizer = Adam::<f32>::new(1e-3);
+/// ```
+///
+/// # Example — MNIST-style classification train loop
+///
+/// ```rust,ignore
+/// use tenflowers::prelude::*;
+///
+/// // 1. Build network: 784-input → 128 ReLU → 10-output
+/// let model = Sequential::<f32>::new(vec![])
+///     .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
+///     .add(Box::new(Dense::new(128, 10, true)));
+///
+/// // 2. Dummy data (replace with a real DataLoader in production)
+/// let x_train = Tensor::<f32>::zeros(&[128, 784]); // batch=128, features=784
+/// let y_train = Tensor::<f32>::zeros(&[128, 10]);   // one-hot labels
+///
+/// // 3. Set up optimiser and trainer
+/// let optimizer = SGD::<f32>::new(0.01);
+/// let trainer = Trainer::new(model, optimizer);
+///
+/// // 4. Run 5 epochs (Trainer handles forward / backward / parameter update)
+/// for epoch in 0..5 {
+///     let loss = trainer.train_step(&x_train, &y_train, categorical_cross_entropy)?;
+///     println!("Epoch {}: loss = {:.4}", epoch, loss);
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Example — regression with Adam
+///
+/// ```rust,ignore
+/// use tenflowers::prelude::*;
+///
+/// // 1. Small regression network: 10-input → 64 ReLU → 1-output
+/// let model = Sequential::<f32>::new(vec![])
+///     .add(Box::new(Dense::new(10, 64, true).with_activation("relu".to_string())))
+///     .add(Box::new(Dense::new(64, 1, true)));
+///
+/// // 2. Synthetic data
+/// let x = Tensor::<f32>::zeros(&[200, 10]);
+/// let y = Tensor::<f32>::zeros(&[200, 1]);
+///
+/// // 3. Adam optimiser with default hyper-parameters
+/// let optimizer = Adam::<f32>::new(1e-3);
+/// let trainer = Trainer::new(model, optimizer);
+///
+/// // 4. Training loop with MSE loss
+/// for epoch in 0..20 {
+///     let loss = trainer.train_step(&x, &y, mse)?;
+///     println!("Epoch {}: MSE = {:.6}", epoch, loss);
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Example — inference from a loaded model
+///
+/// ```rust,ignore
+/// use tenflowers::prelude::*;
+///
+/// // 1. Re-create the architecture (must match saved weights)
+/// let mut model = Sequential::<f32>::new(vec![])
+///     .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
+///     .add(Box::new(Dense::new(128, 10, true)));
+///
+/// // 2. Load weights (oxicode / JSON backend, gated by `serialize` feature)
+/// // model.load_weights(std::path::Path::new("checkpoint.json"))?;
+///
+/// // 3. Run inference on a single sample (shape [1, 784])
+/// let sample = Tensor::<f32>::zeros(&[1, 784]);
+/// let logits = model.forward(&sample)?;
+///
+/// // 4. Apply softmax to get probabilities (operations via the `ops` module)
+/// let probs = ops::softmax(&logits, 1)?;
+/// println!("Class probabilities: {:?}", probs.shape().dims());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub mod prelude {
     // Core types
     pub use crate::core::ops;
-    pub use crate::core::{dtype, Device, Tensor};
+    pub use crate::core::{dtype, DType, Device, Tensor};
+
+    // Error handling at user level
+    pub use crate::core::{Result, TensorError};
 
     // Autograd
     pub use crate::autograd::{GradientTape, TrackedTensor};
@@ -241,11 +387,16 @@ pub mod prelude {
     pub use crate::neural::layers::{BatchNorm, Conv2D, Dense, Dropout, MaxPool2D};
     pub use crate::neural::ActivationFunction;
 
+    // Transformer / attention / recurrent layers
+    pub use crate::neural::{
+        MultiHeadAttention, RMSNorm, TransformerDecoder, TransformerEncoder, GRU, LSTM, RNN,
+    };
+
     // Models
     pub use crate::neural::{Model, Sequential};
 
-    // Optimizers
-    pub use crate::neural::{Adam, AdamW, SGD};
+    // Optimizers (trait + common types)
+    pub use crate::neural::{Adam, AdamW, Optimizer, ParameterGroup, SGD};
 
     // Loss functions
     pub use crate::neural::{binary_cross_entropy, categorical_cross_entropy, mse};
@@ -259,12 +410,15 @@ pub mod prelude {
     // Dataset
     pub use crate::dataset::{
         CsvDataset, CsvDatasetBuilder, DataLoader, DataLoaderBuilder, ImageFolderDataset,
-        ImageFolderDatasetBuilder,
+        ImageFolderDatasetBuilder, RandomSampler,
     };
 
     // Common trait re-exports
     pub use crate::dataset::Dataset;
     pub use crate::neural::Layer;
+
+    // Type aliases (Tensor1D, Tensor2D, Tensor3D, Tensor4D, Vector, Matrix, …)
+    pub use crate::type_aliases::*;
 }
 
 /// Neural network layers, activations, and models
@@ -333,6 +487,18 @@ pub mod common {
     pub type Shape = Vec<usize>;
 }
 
+/// Experimental and preview APIs. Not covered by stability guarantees.
+///
+/// Enable with the `experimental` Cargo feature:
+/// ```toml
+/// tenflowers = { features = ["experimental"] }
+/// ```
+#[cfg(feature = "experimental")]
+pub mod experimental {
+    // Future experimental re-exports go here.
+    // Example: pub use some_crate::UnstableType;
+}
+
 // Version information
 /// The version of the TenfloweRS framework
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -349,7 +515,7 @@ pub fn version() -> &'static str {
 /// `env!()` macros.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionInfo {
-    /// Semver version string (e.g. `"0.1.0"`).
+    /// Semver version string (e.g. `"0.1.1"`).
     pub version: &'static str,
     /// Crate / package name (always `"tenflowers"`).
     pub pkg_name: &'static str,

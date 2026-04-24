@@ -10,9 +10,9 @@
 //! - etc.
 
 use crate::Dataset;
+use oxiarc_archive::TarReader;
 use scirs2_core::rand_prelude::SliceRandom;
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -101,33 +101,27 @@ where
         let file = std::fs::File::open(tar_path.as_ref())
             .map_err(|e| TensorError::invalid_argument(format!("Failed to open tar file: {e}")))?;
 
-        let mut archive = tar::Archive::new(file);
+        let mut tar_reader = TarReader::new(file)
+            .map_err(|e| TensorError::invalid_argument(format!("Failed to open tar file: {e}")))?;
         let mut sample_map: HashMap<String, WebDatasetSample> = HashMap::new();
 
-        // Parse tar entries and group by sample key
-        for entry in archive.entries().map_err(|e| {
-            TensorError::invalid_argument(format!("Failed to read tar entries: {e}"))
-        })? {
-            let mut entry = entry.map_err(|e| {
-                TensorError::invalid_argument(format!("Failed to read tar entry: {e}"))
-            })?;
+        // Clone entries to avoid borrow conflict (oxiarc needs mutable borrow for extraction)
+        let entries = tar_reader.entries().to_vec();
+        for entry in &entries {
+            let file_name = std::path::Path::new(&entry.name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(entry.name.as_str());
 
-            let path = entry.path().map_err(|e| {
-                TensorError::invalid_argument(format!("Failed to get entry path: {e}"))
-            })?;
+            if let Some((basename, extension)) = Self::parse_filename(file_name) {
+                let data = tar_reader.extract_to_vec(entry).map_err(|e| {
+                    TensorError::invalid_argument(format!("Failed to read entry data: {e}"))
+                })?;
 
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if let Some((basename, extension)) = Self::parse_filename(file_name) {
-                    let mut data = Vec::new();
-                    entry.read_to_end(&mut data).map_err(|e| {
-                        TensorError::invalid_argument(format!("Failed to read entry data: {e}"))
-                    })?;
-
-                    let sample = sample_map
-                        .entry(basename.clone())
-                        .or_insert_with(|| WebDatasetSample::new(basename));
-                    sample.add_data(extension, data);
-                }
+                let sample = sample_map
+                    .entry(basename.clone())
+                    .or_insert_with(|| WebDatasetSample::new(basename));
+                sample.add_data(extension, data);
             }
         }
 

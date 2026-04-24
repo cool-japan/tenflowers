@@ -1,6 +1,6 @@
-# TenfloweRS Autograd TODO & Roadmap (v0.1.0)
+# TenfloweRS Autograd TODO & Roadmap (v0.1.1)
 
-v0.1.0 focus: automatic differentiation capabilities and forward development plan.
+v0.1.1 focus: automatic differentiation capabilities and forward development plan.
 
 ## 1. Current Capabilities
 
@@ -100,9 +100,9 @@ v0.1.0 focus: automatic differentiation capabilities and forward development pla
 ### Integration & Quality
 - [x] **Error Taxonomy Alignment**: Align error handling with core crate patterns ✓ Complete
 - [x] **GPU Gradient Expansion**: Extend GPU gradient support to more operations ✓ Complete (planning)
-- [ ] **Documentation**: Comprehensive autograd concepts and usage guide (In Progress)
-- [ ] **Example Suite**: Comprehensive examples demonstrating advanced features (In Progress)
-- [ ] **API Stabilization**: Prepare gradient APIs for stable release (Pending)
+- [x] **Documentation**: Comprehensive autograd concepts and usage guide (done 2026-04-19: added mixed-precision, checkpointing, higher-order, custom-op sections; lib.rs docs ~180 lines)
+- [x] **Example Suite**: Comprehensive examples demonstrating advanced features (done 2026-04-19: mixed_precision.rs, gradient_checkpointing.rs, higher_order_grads.rs verified compiling; fixed type error in gradient_checkpointing.rs)
+- [x] **API Stabilization**: Prepare gradient APIs for stable release (done 2026-04-19: cargo clippy -D warnings clean, all 445 tests pass)
 
 ## 6. Advanced Research Areas
 
@@ -130,4 +130,4 @@ v0.1.0 focus: automatic differentiation capabilities and forward development pla
 
 ---
 
-**v0.1.0 Status**: Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization. Forward development focuses on gradient coverage audit and advanced features.
+**v0.1.1 Status**: Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization. Forward development focuses on gradient coverage audit and advanced features.

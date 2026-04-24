@@ -73,7 +73,7 @@ impl OnnxImporter {
                 version: self.config.opset_version,
             }],
             producer_name: "TenfloweRS".to_string(),
-            producer_version: "0.1.0".to_string(),
+            producer_version: "0.1.1".to_string(),
         };
 
         println!("ONNX model imported from: {:?}", path.as_ref());
@@ -107,7 +107,7 @@ impl OnnxImporter {
                 version: self.config.opset_version,
             }],
             producer_name: "TenfloweRS".to_string(),
-            producer_version: "0.1.0".to_string(),
+            producer_version: "0.1.1".to_string(),
         };
 
         println!("ONNX model imported from {} bytes", bytes.len());

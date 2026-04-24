@@ -637,6 +637,252 @@ pub trait DataQualityExt<T>: Dataset<T> + Sized {
 // Blanket implementation for all datasets
 impl<T, D: Dataset<T>> DataQualityExt<T> for D {}
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Drift metrics: PSI, KS two-sample test, Jensen-Shannon divergence
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Drift analysis report combining multiple statistical measures.
+#[derive(Debug, Clone)]
+pub struct DriftReport {
+    /// Population Stability Index (PSI). Values < 0.1 indicate stable, 0.1–0.2 moderate
+    /// shift, > 0.2 significant shift.
+    pub psi: f64,
+    /// Kolmogorov-Smirnov two-sample test statistic (max |ECDF_a − ECDF_b|). Range [0, 1].
+    pub ks_statistic: f64,
+    /// Jensen-Shannon divergence (log base 2). Range [0, 1]; 0 = identical distributions.
+    pub jsd: f64,
+    /// `true` when PSI > 0.2 or KS > 0.1 — coarse flag for downstream alerting.
+    pub is_significant_drift: bool,
+}
+
+/// Compute the Population Stability Index (PSI) between a reference and a current distribution.
+///
+/// Both slices are binned into `n_bins` equal-width bins spanning
+/// `[min(all values), max(all values)]`.  Epsilon smoothing prevents log(0).
+///
+/// # Errors
+/// Returns an error if either slice is empty or `n_bins == 0`.
+pub fn population_stability_index(
+    reference: &[f64],
+    current: &[f64],
+    n_bins: usize,
+) -> Result<f64> {
+    if reference.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "reference slice is empty".to_string(),
+        ));
+    }
+    if current.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "current slice is empty".to_string(),
+        ));
+    }
+    if n_bins == 0 {
+        return Err(TensorError::invalid_argument(
+            "n_bins must be > 0".to_string(),
+        ));
+    }
+
+    let min_val = reference
+        .iter()
+        .chain(current.iter())
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let max_val = reference
+        .iter()
+        .chain(current.iter())
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    if (max_val - min_val).abs() < f64::EPSILON {
+        return Ok(0.0);
+    }
+
+    let bin_width = (max_val - min_val) / n_bins as f64;
+    let epsilon = 1e-9_f64;
+
+    let count_bins = |samples: &[f64]| -> Vec<f64> {
+        let n = samples.len() as f64;
+        let mut counts = vec![0_usize; n_bins];
+        for &v in samples {
+            let idx = ((v - min_val) / bin_width).floor() as usize;
+            counts[idx.min(n_bins - 1)] += 1;
+        }
+        counts
+            .into_iter()
+            .map(|c| (c as f64 + epsilon) / (n + n_bins as f64 * epsilon))
+            .collect()
+    };
+
+    let ref_pct = count_bins(reference);
+    let cur_pct = count_bins(current);
+
+    let psi = ref_pct
+        .iter()
+        .zip(cur_pct.iter())
+        .map(|(&r, &c)| (c - r) * (c / r).ln())
+        .sum::<f64>();
+
+    Ok(psi)
+}
+
+/// Compute the Kolmogorov-Smirnov two-sample test statistic.
+///
+/// Returns `max |ECDF_a(x) − ECDF_b(x)|` over all observed values.
+///
+/// # Errors
+/// Returns an error if either slice is empty.
+pub fn ks_two_sample(sample_a: &[f64], sample_b: &[f64]) -> Result<f64> {
+    if sample_a.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "sample_a is empty".to_string(),
+        ));
+    }
+    if sample_b.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "sample_b is empty".to_string(),
+        ));
+    }
+
+    let na = sample_a.len() as f64;
+    let nb = sample_b.len() as f64;
+
+    let mut sorted_a = sample_a.to_vec();
+    let mut sorted_b = sample_b.to_vec();
+    sorted_a.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    sorted_b.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut ia = 0_usize;
+    let mut ib = 0_usize;
+    let mut max_diff = 0.0_f64;
+
+    while ia < sorted_a.len() || ib < sorted_b.len() {
+        let x = match (sorted_a.get(ia), sorted_b.get(ib)) {
+            (Some(&a), Some(&b)) => a.min(b),
+            (Some(&a), None) => a,
+            (None, Some(&b)) => b,
+            (None, None) => break,
+        };
+
+        while ia < sorted_a.len() && sorted_a[ia] <= x {
+            ia += 1;
+        }
+        while ib < sorted_b.len() && sorted_b[ib] <= x {
+            ib += 1;
+        }
+
+        let ecdf_a = ia as f64 / na;
+        let ecdf_b = ib as f64 / nb;
+        let diff = (ecdf_a - ecdf_b).abs();
+        if diff > max_diff {
+            max_diff = diff;
+        }
+    }
+
+    Ok(max_diff)
+}
+
+/// Compute the Jensen-Shannon divergence (log base 2) between two distributions.
+///
+/// Both `p` and `q` are treated as un-normalised histograms; they are normalised
+/// inside the function.  Returns a value in [0, 1] (0 = identical).
+///
+/// # Errors
+/// Returns an error if either slice is empty or sums to zero, or if lengths differ.
+pub fn jensen_shannon_divergence(p: &[f64], q: &[f64]) -> Result<f64> {
+    if p.is_empty() || q.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "p and q must be non-empty".to_string(),
+        ));
+    }
+    if p.len() != q.len() {
+        return Err(TensorError::invalid_argument(
+            "p and q must have the same length".to_string(),
+        ));
+    }
+
+    let sum_p: f64 = p.iter().sum();
+    let sum_q: f64 = q.iter().sum();
+
+    if sum_p <= 0.0 {
+        return Err(TensorError::invalid_argument("p sums to zero".to_string()));
+    }
+    if sum_q <= 0.0 {
+        return Err(TensorError::invalid_argument("q sums to zero".to_string()));
+    }
+
+    let norm_p: Vec<f64> = p.iter().map(|&v| v / sum_p).collect();
+    let norm_q: Vec<f64> = q.iter().map(|&v| v / sum_q).collect();
+
+    let m: Vec<f64> = norm_p
+        .iter()
+        .zip(norm_q.iter())
+        .map(|(&pi, &qi)| (pi + qi) * 0.5)
+        .collect();
+
+    let kl_div = |dist: &[f64], mix: &[f64]| -> f64 {
+        dist.iter()
+            .zip(mix.iter())
+            .filter(|(&pi, &mi)| pi > 0.0 && mi > 0.0)
+            .map(|(&pi, &mi)| pi * (pi / mi).log2())
+            .sum::<f64>()
+    };
+
+    let jsd = 0.5 * kl_div(&norm_p, &m) + 0.5 * kl_div(&norm_q, &m);
+    Ok(jsd.clamp(0.0, 1.0))
+}
+
+/// Run PSI, KS, and JSD on a pair of 1-D sample arrays and return a combined `DriftReport`.
+///
+/// Drift is flagged as significant when PSI > 0.2 or KS > 0.1.
+///
+/// # Errors
+/// Propagates errors from the underlying statistical functions.
+pub fn compute_drift(reference: &[f64], current: &[f64]) -> Result<DriftReport> {
+    let psi = population_stability_index(reference, current, 20)?;
+    let ks_statistic = ks_two_sample(reference, current)?;
+
+    let n_bins = 20_usize;
+    let min_val = reference
+        .iter()
+        .chain(current.iter())
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let max_val = reference
+        .iter()
+        .chain(current.iter())
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let jsd = if (max_val - min_val).abs() < f64::EPSILON {
+        0.0
+    } else {
+        let bin_width = (max_val - min_val) / n_bins as f64;
+        let mut hist_ref = vec![0_f64; n_bins];
+        let mut hist_cur = vec![0_f64; n_bins];
+
+        for &v in reference {
+            let idx = ((v - min_val) / bin_width).floor() as usize;
+            hist_ref[idx.min(n_bins - 1)] += 1.0;
+        }
+        for &v in current {
+            let idx = ((v - min_val) / bin_width).floor() as usize;
+            hist_cur[idx.min(n_bins - 1)] += 1.0;
+        }
+
+        jensen_shannon_divergence(&hist_ref, &hist_cur)?
+    };
+
+    let is_significant_drift = psi > 0.2 || ks_statistic > 0.1;
+
+    Ok(DriftReport {
+        psi,
+        ks_statistic,
+        jsd,
+        is_significant_drift,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -700,5 +946,53 @@ mod tests {
         assert_eq!(config.reference_window_size, 1000);
         assert_eq!(config.detection_threshold, 0.05);
         assert_eq!(config.statistical_test, StatisticalTest::KolmogorovSmirnov);
+    }
+
+    #[test]
+    fn test_psi_identical_distributions_is_zero() {
+        let data: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let psi =
+            population_stability_index(&data, &data, 10).expect("PSI should compute without error");
+        assert!(
+            psi < 1e-6,
+            "PSI of identical distributions should be < 1e-6, got {}",
+            psi
+        );
+    }
+
+    #[test]
+    fn test_ks_identical_sorted_is_zero() {
+        let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
+        let ks = ks_two_sample(&data, &data).expect("KS statistic should compute without error");
+        assert!(
+            ks < 1e-10,
+            "KS of identical distributions should be 0, got {}",
+            ks
+        );
+    }
+
+    #[test]
+    fn test_jsd_identical_is_zero() {
+        let data: Vec<f64> = vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05];
+        let jsd =
+            jensen_shannon_divergence(&data, &data).expect("JSD should compute without error");
+        assert!(
+            jsd < 1e-10,
+            "JSD of identical distributions should be 0, got {}",
+            jsd
+        );
+    }
+
+    #[test]
+    fn test_psi_shifted_distribution_positive() {
+        let reference: Vec<f64> = (0..100).map(|i| i as f64 * 0.1).collect();
+        let current: Vec<f64> = (0..100).map(|i| 50.0 + i as f64 * 0.1).collect();
+        let psi = population_stability_index(&reference, &current, 10)
+            .expect("PSI should compute without error");
+        assert!(
+            psi > 0.1,
+            "PSI of shifted distributions should be > 0.1, got {}",
+            psi
+        );
     }
 }

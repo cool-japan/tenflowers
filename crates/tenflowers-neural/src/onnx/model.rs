@@ -30,7 +30,7 @@ impl OnnxModel {
         Self {
             ir_version: 7,
             producer_name: "TenfloweRS".to_string(),
-            producer_version: "0.1.0".to_string(),
+            producer_version: "0.1.1".to_string(),
             domain: "ai.tenflowers".to_string(),
             model_version: 1,
             doc_string: "Model exported from TenfloweRS".to_string(),

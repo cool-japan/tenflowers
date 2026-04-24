@@ -19,6 +19,10 @@ tenflowers-core = { workspace = true }
 tenflowers-autograd = { workspace = true }
 tenflowers-neural = { workspace = true }
 tenflowers-dataset = { workspace = true }
+# Scientific computing primitives (ndarray, num_traits, etc.)
+scirs2-core = { workspace = true }
+# Pod trait for tensor serialization helpers
+bytemuck = { workspace = true }
 
 # Optional Python bindings (requires Python environment, not published)
 # tenflowers-ffi = { version = "0.1.0", path = "../crates/tenflowers-ffi", optional = true }
@@ -27,6 +31,13 @@ tenflowers-dataset = { workspace = true }
 default = ["std", "parallel"]
 std = ["tenflowers-core/std"]
 parallel = ["tenflowers-core/parallel"]
+
+# Batteries-included presets
+minimal = ["std"]
+standard = ["std", "parallel"]
+
+# Experimental / preview APIs (not covered by stability guarantees)
+experimental = []
 
 # GPU support
 gpu = ["tenflowers-core/gpu"]
@@ -55,7 +66,7 @@ compression = ["tenflowers-core/compression"]
 wasm = ["tenflowers-core/wasm"]
 
 # ONNX support
-onnx = ["tenflowers-core/onnx"]
+onnx = ["tenflowers-core/onnx", "tenflowers-neural/onnx"]
 
 # Autograd
 autograd = ["tenflowers-core/autograd"]

@@ -370,7 +370,7 @@ fn convert_u8_to_u32_gpu_buffer(
     // Create compute pipeline
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("u8_to_u32_convert_pipeline_layout"),
-        bind_group_layouts: &[&bind_group_layout],
+        bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
 
@@ -521,7 +521,7 @@ fn convert_u32_to_u8_gpu_buffer(
     // Create compute pipeline
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("convert_pipeline_layout"),
-        bind_group_layouts: &[&bind_group_layout],
+        bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
 

@@ -2,7 +2,7 @@
 
 Automatic differentiation engine for TenfloweRS, providing both tape-based (eager) and graph-based (static) automatic differentiation capabilities.
 
-> Stable (v0.1.0 -- 2026-03-20) | 334 tests passing | 0 clippy warnings
+> Stable (v0.1.1 -- 2026-04-24) | 455 tests passing | 0 clippy warnings
 
 ## Overview
 

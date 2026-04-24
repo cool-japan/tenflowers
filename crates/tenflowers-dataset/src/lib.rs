@@ -272,6 +272,94 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Pipeline Inspection
+//!
+//! [`InspectablePipeline`] instruments each transform step to record per-step latency,
+//! input/output shapes, and error rates:
+//!
+//! ```rust,ignore
+//! use tenflowers_dataset::{InspectablePipeline};
+//!
+//! # fn main() {
+//! let mut pipeline = InspectablePipeline::new();
+//! // pipeline.add_step("norm", Box::new(my_transform));
+//! // let report = pipeline.run_inspection_batch(&dataset, 100);
+//! // println!("avg latency: {} μs", report.avg_latency_per_step_micros());
+//! # }
+//! ```
+//!
+//! ## Data Drift Metrics
+//!
+//! Three statistical drift measures are available as free functions:
+//!
+//! - [`population_stability_index`]: PSI over equal-width bins; < 0.1 stable, > 0.2 significant.
+//! - [`ks_two_sample`]: Kolmogorov-Smirnov max |ECDF_a − ECDF_b|, range [0, 1].
+//! - [`jensen_shannon_divergence`]: Symmetric KL-based divergence, range [0, 1].
+//! - [`compute_drift`]: Convenience wrapper returning a [`DriftReport`] with all three.
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::compute_drift;
+//!
+//! let reference: Vec<f64> = (0..100).map(|i| i as f64).collect();
+//! let current: Vec<f64> = (0..100).map(|i| i as f64 + 50.0).collect();
+//! let report = compute_drift(&reference, &current).expect("drift computation failed");
+//! println!("PSI: {:.4}, KS: {:.4}, significant: {}", report.psi, report.ks_statistic, report.is_significant_drift);
+//! ```
+//!
+//! ## Adaptive Prefetch PID Controller
+//!
+//! [`PidAdaptiveController`] adjusts prefetch depth based on cache-hit rate telemetry
+//! using a classic PID algorithm with anti-windup integral clamping:
+//!
+//! ```rust,no_run
+//! use tenflowers_dataset::PidAdaptiveController;
+//!
+//! let mut ctrl = PidAdaptiveController::new(0.5, 0.05, 0.01, 0.80, 4, 1, 32);
+//! let new_depth = ctrl.tick(0.65); // below setpoint → depth increases
+//! println!("Recommended prefetch depth: {}", new_depth);
+//! ```
+//!
+//! ## Schema Validation
+//!
+//! [`SchemaValidator::validate_full`] returns a [`SchemaValidationReport`] with structured
+//! [`FieldDiff`] entries for every field:
+//!
+//! ```rust,ignore
+//! use tenflowers_dataset::{SchemaValidator, FieldDiff};
+//!
+//! # fn main() {
+//! let validator = SchemaValidator::lenient(); // widening allowed
+//! // let report = validator.validate_full(&actual_metadata, &expected_fields);
+//! // for (name, diff) in &report.diffs { println!("{}: {:?}", name, diff); }
+//! # }
+//! ```
+//!
+//! ## Quick Start (Runnable Doctest)
+//!
+//! The following example builds a tiny in-memory dataset and verifies all samples
+//! can be retrieved — no file I/O or external dependencies required:
+//!
+//! ```rust
+//! use tenflowers_dataset::{Dataset, TensorDataset};
+//! use tenflowers_core::Tensor;
+//!
+//! let features = Tensor::<f32>::from_vec(
+//!     vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+//!     &[4, 2],
+//! ).expect("tensor creation failed");
+//! let labels = Tensor::<f32>::from_vec(vec![0.0, 1.0, 0.0, 1.0], &[4])
+//!     .expect("tensor creation failed");
+//!
+//! let dataset = TensorDataset::new(features, labels);
+//! assert_eq!(dataset.len(), 4);
+//!
+//! for i in 0..dataset.len() {
+//!     let (feat, lbl) = dataset.get(i).expect("get should succeed");
+//!     assert_eq!(feat.shape().dims()[0], 2);
+//!     assert_eq!(lbl.shape().size(), 1);
+//! }
+//! ```
 
 #![warn(unsafe_code)]
 #![allow(unexpected_cfgs)]
@@ -340,9 +428,10 @@ pub mod work_stealing;
 pub mod zero_copy;
 
 pub use data_quality::{
+    compute_drift, jensen_shannon_divergence, ks_two_sample, population_stability_index,
     DataQualityAnalyzer, DataQualityExt, DataQualityIssue, DataQualityMetrics,
-    DriftDetectionConfig, DriftDetectionResult, DriftType, IssueCategory, IssueSeverity,
-    OutlierDetectionMethod, QualityAnalysisConfig, StatisticalTest,
+    DriftDetectionConfig, DriftDetectionResult, DriftReport, DriftType, IssueCategory,
+    IssueSeverity, OutlierDetectionMethod, QualityAnalysisConfig, StatisticalTest,
 };
 pub use dataloader::{
     BatchResult, BucketCollate, CollateFn, DataLoader, DataLoaderBuilder, DataLoaderConfig,
@@ -351,8 +440,9 @@ pub use dataloader::{
 };
 pub use debug_tools::{
     Bottleneck, BottleneckCategory, ConsistencyReport, DatasetDebugger, EventType,
-    PipelineProfiler, ProfileEvent, ProfileReport, ProfilerConfig, SampleInfo as DebugSampleInfo,
-    Severity, StageStatistics, StageTimer,
+    InspectablePipeline, InspectionEvent, PipelineInspectionReport, PipelineProfiler, ProfileEvent,
+    ProfileReport, ProfilerConfig, SampleInfo as DebugSampleInfo, Severity, StageStatistics,
+    StageTimer,
 };
 pub use enhanced_dataloader::{
     EnhancedDataLoader, EnhancedDataLoaderBuilder, LoaderStats, WorkerStats,
@@ -369,6 +459,9 @@ pub use formats::image::{
 };
 pub use formats::registry::{
     global as format_registry, register_format_factory, FormatInfo, GlobalFormatRegistry,
+};
+pub use formats::schema_validator::{
+    FieldDiff, SchemaValidator, ValidationPolicy, ValidationReport as SchemaValidationReport,
 };
 pub use transforms::{
     AddNoise, BackgroundNoise, DatasetExt, GaussianNoise, GlobalNormalize, MinMaxScale, NoiseType,
@@ -393,7 +486,7 @@ pub use active_learning::{
     UncertaintyStrategy, UnlabeledSubset,
 };
 pub use adaptive_prefetch::{
-    AdaptationStrategy, AdaptivePrefetchPolicy, AdaptivePrefetchTuner,
+    AdaptationStrategy, AdaptivePrefetchPolicy, AdaptivePrefetchTuner, PidAdaptiveController,
     PrefetchMetrics as AdaptivePrefetchMetrics, TuningDecision,
 };
 pub use advanced_benchmarks::{

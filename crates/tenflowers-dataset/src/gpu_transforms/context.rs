@@ -29,9 +29,12 @@ impl GpuContext {
     /// Create a new GPU context
     pub async fn new() -> Result<Self> {
         // Request an adapter
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            flags: Default::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let adapter = instance
@@ -92,7 +95,7 @@ impl GpuContext {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("Transform Pipeline Layout"),
-                bind_group_layouts: &[bind_group_layout],
+                bind_group_layouts: &[Some(bind_group_layout)],
                 immediate_size: 0,
             });
 

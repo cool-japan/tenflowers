@@ -139,7 +139,7 @@ fn test_gpu_linalg_context_with_adaptive_config() {
     use wgpu::{Backends, DeviceDescriptor, Features, Instance, Limits, RequestAdapterOptions};
 
     // This test requires GPU features but should compile without GPU
-    let instance = Instance::new(&wgpu::InstanceDescriptor::default());
+    let instance = Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
     // Try to get an adapter - this might fail in CI/testing environments
     let adapter_future = instance.request_adapter(&RequestAdapterOptions::default());

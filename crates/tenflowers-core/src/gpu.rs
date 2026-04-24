@@ -124,7 +124,8 @@ impl GpuContext {
     /// Create a new GPU context
     pub fn new() -> Result<Self> {
         pollster::block_on(async {
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+            let instance =
+                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {

@@ -521,6 +521,111 @@ impl AdaptivePrefetchTuner {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// PID-controlled adaptive prefetch depth controller
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// A PID-based controller that adjusts prefetch depth according to cache-hit rate telemetry.
+///
+/// Each call to [`PidAdaptiveController::tick`] supplies the current hit rate and returns the new recommended
+/// prefetch depth.  The controller computes the classical PID update:
+///
+/// ```text
+/// error      = setpoint_hit_rate − current_hit_rate
+/// integral   = clamp(integral + error, −integral_cap, +integral_cap)
+/// derivative = error − prev_error
+/// output     = kp·error + ki·integral + kd·derivative
+/// new_depth  = clamp(current_depth + round(output), min_depth, max_depth)
+/// ```
+///
+/// *A positive error* means hit rate is below the setpoint → increase depth.
+/// *Anti-windup* is provided via `integral_cap`.
+#[derive(Debug, Clone)]
+pub struct PidAdaptiveController {
+    /// Proportional gain.
+    pub kp: f64,
+    /// Integral gain.
+    pub ki: f64,
+    /// Derivative gain.
+    pub kd: f64,
+    /// Target (setpoint) hit rate in [0, 1].
+    pub setpoint_hit_rate: f64,
+    /// Accumulated integral term (anti-windup clamped).
+    integral: f64,
+    /// Previous error (for derivative term).
+    prev_error: f64,
+    /// Maximum absolute value of the integral accumulator (anti-windup cap).
+    pub integral_cap: f64,
+    /// Minimum allowed prefetch depth.
+    pub min_depth: usize,
+    /// Maximum allowed prefetch depth.
+    pub max_depth: usize,
+    /// Current prefetch depth recommendation.
+    current_depth: usize,
+}
+
+impl PidAdaptiveController {
+    /// Create a new PID controller.
+    ///
+    /// - `kp`, `ki`, `kd`: PID gains
+    /// - `setpoint_hit_rate`: desired cache-hit rate in [0, 1]
+    /// - `initial_depth`: starting prefetch depth
+    /// - `min_depth`, `max_depth`: hard bounds on depth output
+    pub fn new(
+        kp: f64,
+        ki: f64,
+        kd: f64,
+        setpoint_hit_rate: f64,
+        initial_depth: usize,
+        min_depth: usize,
+        max_depth: usize,
+    ) -> Self {
+        let clamped_depth = initial_depth.clamp(min_depth, max_depth);
+        Self {
+            kp,
+            ki,
+            kd,
+            setpoint_hit_rate: setpoint_hit_rate.clamp(0.0, 1.0),
+            integral: 0.0,
+            prev_error: 0.0,
+            integral_cap: 10.0,
+            min_depth,
+            max_depth,
+            current_depth: clamped_depth,
+        }
+    }
+
+    /// Update the controller with the latest cache-hit rate and return the new prefetch depth.
+    pub fn tick(&mut self, current_hit_rate: f64) -> usize {
+        let error = self.setpoint_hit_rate - current_hit_rate.clamp(0.0, 1.0);
+
+        self.integral = (self.integral + error).clamp(-self.integral_cap, self.integral_cap);
+
+        let derivative = error - self.prev_error;
+        self.prev_error = error;
+
+        let output = self.kp * error + self.ki * self.integral + self.kd * derivative;
+
+        let delta = output.round() as i64;
+        let new_depth = (self.current_depth as i64 + delta)
+            .clamp(self.min_depth as i64, self.max_depth as i64) as usize;
+
+        self.current_depth = new_depth;
+        new_depth
+    }
+
+    /// Return the current recommended prefetch depth without performing a tick.
+    pub fn current_depth(&self) -> usize {
+        self.current_depth
+    }
+
+    /// Reset the controller state (integral and derivative terms).
+    pub fn reset(&mut self) {
+        self.integral = 0.0;
+        self.prev_error = 0.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,5 +768,54 @@ mod tests {
         assert_eq!(policy.max_depth, 16);
         assert!((policy.target_hit_rate - 0.75).abs() < 0.01);
         assert_eq!(policy.strategy, AdaptationStrategy::Custom);
+    }
+
+    #[test]
+    fn test_pid_controller_step_response() {
+        // With kp=0.5, ki=0.05, integral_cap=10, error=0.30 per tick:
+        // output ≈ 0.15 + (ki * integral).  Integral saturates at 10 in ~34 ticks →
+        // output = 0.15 + 0.50 = 0.65 → rounds to 1. Use 50 ticks to guarantee
+        // at least one depth increment.
+        let mut ctrl = PidAdaptiveController::new(0.5, 0.05, 0.01, 0.80, 4, 1, 32);
+        let initial = ctrl.current_depth();
+        let mut last_depth = initial;
+        for _ in 0..50 {
+            last_depth = ctrl.tick(0.50);
+        }
+        assert!(
+            last_depth > initial,
+            "depth should increase when hit rate is below setpoint (init={}, last={})",
+            initial,
+            last_depth
+        );
+    }
+
+    #[test]
+    fn test_pid_controller_steady_state() {
+        let mut ctrl = PidAdaptiveController::new(0.3, 0.0, 0.0, 0.80, 4, 1, 32);
+        let mut depth = 0;
+        for _ in 0..100 {
+            depth = ctrl.tick(0.80);
+        }
+        assert!(
+            (1_usize..=32).contains(&depth),
+            "depth out of bounds: {}",
+            depth
+        );
+    }
+
+    #[test]
+    fn test_pid_controller_boundaries() {
+        let mut ctrl = PidAdaptiveController::new(10.0, 1.0, 1.0, 0.80, 4, 1, 8);
+        for _ in 0..50 {
+            ctrl.tick(0.0);
+        }
+        assert_eq!(ctrl.current_depth(), 8, "depth should be clamped to max=8");
+
+        let mut ctrl2 = PidAdaptiveController::new(10.0, 1.0, 1.0, 0.80, 4, 2, 16);
+        for _ in 0..50 {
+            ctrl2.tick(1.0);
+        }
+        assert_eq!(ctrl2.current_depth(), 2, "depth should be clamped to min=2");
     }
 }

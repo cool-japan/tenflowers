@@ -1,7 +1,7 @@
-# TenfloweRS Core TODO & Roadmap (v0.1.0)
+# TenfloweRS Core TODO & Roadmap (v0.1.1)
 
-**Version:** 0.1.0  
-**Date:** 2026-03-20
+**Version:** 0.1.1  
+**Date:** 2026-04-24
 
 ## 1. Current Capabilities
 

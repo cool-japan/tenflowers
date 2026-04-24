@@ -18,7 +18,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["COOLJAPAN OU (Team KitaSan)"]
 edition = "2021"
 rust-version = "1.70"
@@ -57,32 +57,32 @@ unused_doc_comments = "allow"
 
 [workspace.dependencies]
 # Internal crates
-tenflowers-core = { path = "crates/tenflowers-core", version = "0.1.0" }
-tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.1.0" }
-tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.1.0" }
-tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.1.0" }
+tenflowers-core = { path = "crates/tenflowers-core", version = "0.1.1" }
+tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.1.1" }
+tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.1.1" }
+tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.1.1" }
 
 # Core dependencies (using SciRS2 ecosystem)
-rayon = "1.11"
+rayon = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 anyhow = "1.0"
 
 # NumRS2 and SciRS2 ecosystem (using latest versions)
-numrs2 = "0.3"
-scirs2-core = "0.3.4"
-scirs2-autograd = "0.3.4"
-scirs2-neural = "0.3.4"
-scirs2-linalg = "0.3.4"
-scirs2-numpy = "0.3.4"
-optirs = "0.2"
+numrs2 = "0.3.3"
+scirs2-core = "0.4.2"
+scirs2-autograd = "0.4.2"
+scirs2-neural = "0.4.2"
+scirs2-linalg = "0.4.2"
+scirs2-numpy = "0.4.2"
+optirs = "0.3"
 
 # GPU support
-wgpu = { version = "28.0", features = ["wgsl"] }
+wgpu = { version = "29.0", features = ["wgsl"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 futures = "0.3"
 pollster = "0.4"
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 num_cpus = "1.17"
 
 # Serialization
@@ -92,7 +92,7 @@ rmp-serde = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Python bindings - using scirs2-numpy for ndarray 0.17 compatibility
-pyo3 = { version = "0.28" }
+pyo3 = { version = "0.28", default-features = false, features = ["macros"] }
 
 # Linear algebra (matching scirs2-linalg version)
 ndarray-linalg = { version = "0.18.1", default-features = false }
@@ -100,7 +100,7 @@ ndarray-linalg = { version = "0.18.1", default-features = false }
 # Testing and benchmarking
 criterion = { version = "0.8", features = ["html_reports"] }
 approx = "0.5"
-proptest = "1.10"
+proptest = "1.11"
 
 # Half precision types
 half = { version = "2.7", features = ["bytemuck", "serde", "num-traits"] }
@@ -109,8 +109,8 @@ half = { version = "2.7", features = ["bytemuck", "serde", "num-traits"] }
 image = "0.25"
 
 # Data processing
-arrow = "58.0"
-parquet = "58.0"
+arrow = "58.1"
+parquet = "58.1"
 memmap2 = "0.9"
 regex = "1.12"
 csv = "1.4"
@@ -132,19 +132,18 @@ petgraph = "0.8"
 reqwest = { version = "0.13", features = ["blocking", "stream"] }
 
 # Compression and archives
-flate2 = "1.1"
+oxiarc-archive = "0.2.6"
 crc32fast = "1.5"
-tar = "0.4"
 
 # File formats
 hdf5 = "0.8"
 
 # Audio processing
 symphonia = { version = "0.5", features = ["wav", "mp3", "flac"] }
-rubato = "1.0"
+rubato = "2.0"
 
 # Utilities
-uuid = { version = "1.22", features = ["v4"] }
+uuid = { version = "1.23", features = ["v4"] }
 async-trait = "0.1"
 tempfile = "3.27"
 
@@ -152,7 +151,7 @@ tempfile = "3.27"
 oxiblas-ndarray = "0.2.1"
 lazy_static = "1.5"
 sys-info = "0.9"
-oxifft = "0.1.3"
+oxifft = "0.2.0"
 num-complex = "0.4"
 once_cell = "1.21"
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -162,9 +161,12 @@ web-sys = { version = "0.3", features = ["console", "Performance", "Window", "Wo
 metal = "0.33.0"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_ProcessStatus"] }
 libc = "0.2"
-toml = "1.0"
+toml = "1.1"
 serde_yaml = "0.9"
 libloading = "0.9"
+
+# Build tooling (optional, gated behind features)
+cbindgen = { version = "0.29", default-features = false }
 
 [profile.release]
 lto = "fat"                    # Full LTO for maximum optimization

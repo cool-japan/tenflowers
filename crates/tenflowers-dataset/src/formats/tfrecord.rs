@@ -47,7 +47,7 @@ use std::path::Path;
 #[cfg(feature = "tfrecord")]
 use crc32fast::Hasher;
 #[cfg(feature = "tfrecord")]
-use flate2::read::GzDecoder;
+use oxiarc_archive::GzipReader;
 
 #[cfg(feature = "tfrecord")]
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -385,10 +385,21 @@ fn create_reader(file_path: &str, config: &TFRecordConfig) -> Result<Box<dyn Rea
     let file = File::open(file_path)
         .map_err(|e| TensorError::invalid_argument(format!("Failed to open file: {e}")))?;
 
-    let reader = BufReader::with_capacity(config.buffer_size, file);
+    let mut reader = BufReader::with_capacity(config.buffer_size, file);
 
     if config.compression {
-        Ok(Box::new(GzDecoder::new(reader)))
+        use std::io::Read;
+        let mut raw_data = Vec::new();
+        reader.read_to_end(&mut raw_data).map_err(|e| {
+            TensorError::invalid_argument(format!("Failed to read tfrecord file: {e}"))
+        })?;
+        let mut gzip_reader = GzipReader::new(std::io::Cursor::new(raw_data)).map_err(|e| {
+            TensorError::invalid_argument(format!("Failed to init gzip reader: {e}"))
+        })?;
+        let decompressed = gzip_reader.decompress().map_err(|e| {
+            TensorError::invalid_argument(format!("Failed to decompress tfrecord: {e}"))
+        })?;
+        Ok(Box::new(std::io::Cursor::new(decompressed)))
     } else {
         Ok(Box::new(reader))
     }
