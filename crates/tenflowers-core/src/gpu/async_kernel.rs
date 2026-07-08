@@ -222,7 +222,7 @@ impl AsyncGpuExecutor {
         let pending = self
             .pending_kernels
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         !pending.is_empty()
     }
 }

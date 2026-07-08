@@ -58,6 +58,19 @@ pub enum ResetGateVariation {
     ResetAfter,
 }
 
+/// Nonlinearity used by the vanilla [`RNN`] cell.
+///
+/// Selects the activation applied to each recurrent step's pre-activation sum,
+/// mirroring PyTorch's `nonlinearity` argument for `nn.RNN`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RnnNonlinearity {
+    /// Hyperbolic tangent activation (default): `h_t = tanh(W_ih x_t + W_hh h_{t-1} + b)`.
+    Tanh,
+
+    /// Rectified linear activation: `h_t = relu(W_ih x_t + W_hh h_{t-1} + b)`.
+    Relu,
+}
+
 /// Packed sequence structure for variable length sequences
 #[derive(Debug)]
 pub struct PackedSequence<T>

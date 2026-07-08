@@ -29,7 +29,7 @@ where
 /// For y = transpose(x, axes), grad_x = transpose(grad_y, reverse_axes)
 pub fn transpose_backward<T>(grad_output: &Tensor<T>, axes: Option<&[usize]>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod,
 {
     match axes {
         Some(axes) => {

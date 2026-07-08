@@ -5,10 +5,9 @@
 //! Supports AllReduce, AllGather, ReduceScatter, and Broadcast operations.
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
-use crate::{Device, Result, Tensor, TensorError};
+use crate::{Result, Tensor, TensorError};
+#[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
-use std::sync::Arc;
 
 /// NCCL communicator for managing multi-GPU communication
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
@@ -378,18 +377,23 @@ impl NcclCommunicator {
     }
 
     fn broadcast_unique_id(
-        unique_id: &NcclUniqueId,
-        master_addr: &str,
-        master_port: u16,
+        _unique_id: &NcclUniqueId,
+        _master_addr: &str,
+        _master_port: u16,
     ) -> Result<()> {
-        // Implementation would broadcast unique ID to all nodes
-        // This could use MPI, TCP sockets, or other communication mechanisms
-        Ok(())
+        Err(TensorError::not_implemented_simple(
+            "NCCL unique-ID broadcast requires a transport (MPI/TCP) and libnccl.so; \
+             implement with a real nccl-sys binding"
+                .to_string(),
+        ))
     }
 
-    fn receive_unique_id(master_addr: &str, master_port: u16) -> Result<NcclUniqueId> {
-        // Implementation would receive unique ID from rank 0
-        Ok(NcclUniqueId::default())
+    fn receive_unique_id(_master_addr: &str, _master_port: u16) -> Result<NcclUniqueId> {
+        Err(TensorError::not_implemented_simple(
+            "NCCL unique-ID receive requires a transport (MPI/TCP) and libnccl.so; \
+             implement with a real nccl-sys binding"
+                .to_string(),
+        ))
     }
 }
 
@@ -514,7 +518,7 @@ impl DistributedTrainer {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct NcclComm {
-    handle: *mut std::ffi::c_void,
+    _handle: *mut std::ffi::c_void,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -542,92 +546,126 @@ impl NcclUniqueId {
     }
 }
 
-// Simplified NCCL FFI functions (in practice these would be proper extern "C" bindings)
+// NCCL FFI stub functions.
+//
+// None of these functions link against libnccl.so because no nccl-sys crate
+// is listed as a dependency.  They all return an honest error so that callers
+// fail loudly at runtime rather than silently producing wrong results.
+
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 unsafe fn nccl_init() -> Result<()> {
-    // ncclInit()
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "NCCL runtime initialization requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
-unsafe fn nccl_get_unique_id(unique_id: *mut NcclUniqueId) -> Result<()> {
-    // ncclGetUniqueId(unique_id)
-    Ok(())
+unsafe fn nccl_get_unique_id(_unique_id: *mut NcclUniqueId) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "ncclGetUniqueId requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
-unsafe fn nccl_comm_init_rank(unique_id: NcclUniqueId, nranks: i32, rank: i32) -> Result<NcclComm> {
-    // ncclCommInitRank(&comm, nranks, unique_id, rank)
-    Ok(NcclComm {
-        handle: std::ptr::null_mut(),
-    })
+unsafe fn nccl_comm_init_rank(
+    _unique_id: NcclUniqueId,
+    _nranks: i32,
+    _rank: i32,
+) -> Result<NcclComm> {
+    Err(TensorError::not_implemented_simple(
+        "ncclCommInitRank requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 unsafe fn nccl_all_reduce(
-    sendbuff: *const std::ffi::c_void,
-    recvbuff: *mut std::ffi::c_void,
-    count: usize,
-    datatype: NcclDataType,
-    op: NcclReductionOp,
-    comm: NcclComm,
-    stream: *mut std::ffi::c_void,
+    _sendbuff: *const std::ffi::c_void,
+    _recvbuff: *mut std::ffi::c_void,
+    _count: usize,
+    _datatype: NcclDataType,
+    _op: NcclReductionOp,
+    _comm: NcclComm,
+    _stream: *mut std::ffi::c_void,
 ) -> Result<()> {
-    // ncclAllReduce(sendbuff, recvbuff, count, datatype, op, comm, stream)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "ncclAllReduce requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 unsafe fn nccl_all_gather(
-    sendbuff: *const std::ffi::c_void,
-    recvbuff: *mut std::ffi::c_void,
-    sendcount: usize,
-    datatype: NcclDataType,
-    comm: NcclComm,
-    stream: *mut std::ffi::c_void,
+    _sendbuff: *const std::ffi::c_void,
+    _recvbuff: *mut std::ffi::c_void,
+    _sendcount: usize,
+    _datatype: NcclDataType,
+    _comm: NcclComm,
+    _stream: *mut std::ffi::c_void,
 ) -> Result<()> {
-    // ncclAllGather(sendbuff, recvbuff, sendcount, datatype, comm, stream)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "ncclAllGather requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 unsafe fn nccl_broadcast(
-    sendbuff: *const std::ffi::c_void,
-    recvbuff: *mut std::ffi::c_void,
-    count: usize,
-    datatype: NcclDataType,
-    root: i32,
-    comm: NcclComm,
-    stream: *mut std::ffi::c_void,
+    _sendbuff: *const std::ffi::c_void,
+    _recvbuff: *mut std::ffi::c_void,
+    _count: usize,
+    _datatype: NcclDataType,
+    _root: i32,
+    _comm: NcclComm,
+    _stream: *mut std::ffi::c_void,
 ) -> Result<()> {
-    // ncclBcast(buff, count, datatype, root, comm, stream)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "ncclBroadcast requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
 unsafe fn nccl_reduce_scatter(
-    sendbuff: *const std::ffi::c_void,
-    recvbuff: *mut std::ffi::c_void,
-    recvcount: usize,
-    datatype: NcclDataType,
-    op: NcclReductionOp,
-    comm: NcclComm,
-    stream: *mut std::ffi::c_void,
+    _sendbuff: *const std::ffi::c_void,
+    _recvbuff: *mut std::ffi::c_void,
+    _recvcount: usize,
+    _datatype: NcclDataType,
+    _op: NcclReductionOp,
+    _comm: NcclComm,
+    _stream: *mut std::ffi::c_void,
 ) -> Result<()> {
-    // ncclReduceScatter(sendbuff, recvbuff, recvcount, datatype, op, comm, stream)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "ncclReduceScatter requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
-unsafe fn nccl_set_network_interface(interface: *const u8) -> Result<()> {
-    // Set NCCL_SOCKET_IFNAME environment variable or similar
-    Ok(())
+unsafe fn nccl_set_network_interface(_interface: *const u8) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "NCCL network interface configuration requires libnccl.so; \
+         add nccl-sys as a dependency and link against the NCCL library"
+            .to_string(),
+    ))
 }
 
 #[cfg(all(feature = "nccl", any(target_os = "linux", target_os = "windows")))]
-unsafe fn cuda_set_device(device_id: i32) -> Result<()> {
-    // cudaSetDevice(device_id)
-    Ok(())
+unsafe fn cuda_set_device(_device_id: i32) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "cudaSetDevice requires libcudart.so; \
+         build with the CUDA toolkit installed"
+            .to_string(),
+    ))
 }
 
 /// Stub implementation for non-NCCL platforms
@@ -788,9 +826,15 @@ mod tests {
             algorithm: None,
         };
 
+        // Must fail loudly: no libnccl.so is linked in this build
         let result = NcclCommunicator::new_single_node(&config);
-        // Test should pass on systems with NCCL support
-        assert!(result.is_ok() || result.unwrap_err().to_string().contains("NCCL"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("NCCL") || err.contains("nccl") || err.contains("libcudart"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

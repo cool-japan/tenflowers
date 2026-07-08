@@ -938,9 +938,15 @@ where
                 })
             }
             #[cfg(feature = "gpu")]
-            TensorStorage::Gpu(_) => Err(TensorError::unsupported_operation_simple(
-                "GPU scalar multiply not yet implemented".to_string(),
-            )),
+            TensorStorage::Gpu(_) => {
+                // No native GPU scalar-multiply kernel is wired up here yet.
+                // This is value-returning (not in-place), so a plain
+                // device->host readback + CPU delegate is sufficient: the
+                // caller receives whatever device the result naturally ends
+                // up on, with no re-upload required.
+                let cpu_self = self.to_cpu()?;
+                cpu_self.multiply_scalar(scalar)
+            }
         }
     }
 
@@ -968,5 +974,33 @@ where
             + std::ops::Mul<Output = T>,
     {
         crate::ops::outer(self, other)
+    }
+}
+
+// GPU-resident correctness test for the readback+delegate fix in
+// `multiply_scalar()`'s GPU arm. This is value-returning (not in-place), so
+// the result is simply whatever `to_cpu()` + `mapv` produces - no re-upload
+// is needed. Skips gracefully (without failing the suite) if no GPU adapter
+// is available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_multiply_scalar_matches_cpu_reference() {
+        let src = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+
+        let src_gpu = match src.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = src_gpu
+            .multiply_scalar(2.5)
+            .expect("test: gpu multiply_scalar should succeed with a real adapter");
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![2.5, 5.0, 7.5, 10.0]);
     }
 }

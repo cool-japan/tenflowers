@@ -1,10 +1,59 @@
-# TenfloweRS Neural TODO & Roadmap (v0.1.1)
+# TenfloweRS Neural TODO & Roadmap (v0.1.2)
 
 v0.1.1 focus: neural network capabilities and forward development plan.
 
+## v0.1.2 — Honesty Hardening (2026-06-22, continued 2026-07-07)
+
+- Removed production lock-poison panics via signature-preserving recovery; a
+  poisoned lock no longer aborts the process.
+- Fixed the MultiHeadAttention head-reshape bug (the `[0,2,1,3]` permutation),
+  unblocking the neural Transformer encoder/decoder.
+- `data_parallel` ran a no-op "simulate_backward" → real gradient computation.
+- `ultra_dense*` layers used zeros-init → real random initialization.
+- Fabricated attention/layer metrics → real computed values or an honest
+  "not measured" sentinel.
+- NCCL collectives and TensorFlow protobuf import now return honest errors
+  (were faked) until their runtimes/parsers are wired.
+- (2026-07-07) Gloo, MPI, and Thread communication backends (`src/backends/{gloo,mpi,thread}.rs`)
+  now get the same honest-error treatment as NCCL: `all_reduce`/`all_gather`/`broadcast`/
+  `send_f32`/`recv_f32` return `NotImplemented` instead of silently scaling, echoing, or
+  cloning the caller's own local tensor as a fake cross-rank result. Thread backend's dead
+  `mpsc`-channel scaffolding (receiver dropped immediately, so sends silently no-op'd) removed.
+- (2026-07-07) `DataParallelTrainer::train_step` (`src/training/data_parallel.rs`): backward
+  pass was fully simulated (gradient buckets marked "ready" without computing anything) and
+  the optimizer step zeroed gradients as a placeholder — now computes real per-parameter
+  gradients via central finite differences against the actual mini-batch loss, all-reduces
+  them, and calls the real optimizer step.
+- (2026-07-07) `deployment::pruning::engine`: every strategy previously computed statistics
+  from synthetic simulated data and returned an unmodified, fabricated `Sequential`;
+  `Magnitude`/`Random` pruning now genuinely zero real weight tensors (actual magnitude
+  quantiles / seeded RNG), while `Structured`/`Gradual`/`LotteryTicket` honestly report
+  `NotImplemented` with a specific rationale instead of fabricating results.
+- (2026-07-07) `layers::moe::TopKRouter` routed everything to expert 0 unconditionally — now
+  performs real top-k expert selection with a genuine Switch-Transformer-style
+  load-balancing loss; `MixtureOfExperts::forward` evaluates and combines every selected
+  expert with renormalized weights.
+- (2026-07-07) `serialization::weight_loader`: every format previously silently no-op'd
+  (`load_*` returned an empty weight map with a warning, `save_*` wrote nothing while
+  returning `Ok`) — now a real, versioned JSON weight save/load format; `Binary`/
+  `SafeTensors`/`NumPy` honestly report `NotImplemented` naming the missing dependency.
+- (2026-07-07) `tensorflow_compat::SavedModelLoader`: `load_from_pb`/`parse_pbtxt_content`
+  no longer fabricate a `SavedModel` with hardcoded metadata; `convert_operation_to_layer`
+  now derives real layer dimensions from the operation's actual weight tensor, honestly
+  erroring when no matching weight variable exists.
+- (2026-07-07) ONNX protobuf handling (`serialization::onnx`, `onnx::data`): `OnnxLoader::
+  load_from_file`/`load_from_bytes` now perform real prost-based protobuf decoding behind
+  the `onnx` feature (previously hardcoded `Err`s); `convert_weights` does real byte-level
+  reinterpretation of ONNX initializer data into `Tensor<T>` via `bytemuck`; `OnnxTensor::
+  from_protobuf`/`OnnxAttribute::from_protobuf` now reject unrecognized protobuf type codes
+  with an error instead of silently defaulting to `Float32`/`Float(0.0)` (`OnnxValueInfo::
+  from_protobuf` still defaults unrecognized element-type codes to `Float32` — a
+  documented, genuine representational limit of that struct, which only distinguishes 4
+  dtypes).
+
 ## Completion Status
 
-**Test Status**: ✅ 1,012/1,012 tests passing (100% pass rate)
+**Test Status**: ✅ 11,596/11,596 tests passing, 8 skipped (2026-07-07, `cargo nextest run -p tenflowers-neural --all-features`)
 **Code Quality**: ✅ No `todo!()` or `unimplemented!()` macros remaining
 **Priority 1 Tasks**: ✅ 5/5 Complete (100% - Attention, Schedulers, Gradient Clipping, Mixed Precision, Export/Import)
 **Priority 2 Tasks**: ✅ 5/5 Complete (100% - Long Sequence Tests, ONNX Integration complete)
@@ -74,6 +123,20 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 - **Gradient Checkpointing**: No activation recompute for memory-efficient training
 - **Model Parallelism**: No support for model parallel or pipeline parallel training
 
+### Honest-error deferrals (post-2026-06-22/2026-07-07 sweeps; fail loudly, not faked)
+- **NCCL collective ops**: require the `libnccl` runtime; return an honest error until linked.
+- **Gloo/MPI/Thread collective ops**: none of these backends links a real collective-communications
+  runtime either; `all_reduce`/`all_gather`/`broadcast`/`send_f32`/`recv_f32` all return an honest
+  `NotImplemented` naming the missing transport rather than faking a result. There is currently no
+  backend in this crate that performs genuine cross-process/cross-rank communication.
+- **Pruning `Structured`/`Gradual`/`LotteryTicket` strategies**: honestly report `NotImplemented`
+  with a specific rationale (only `Magnitude`/`Random` pruning are real today).
+- **Weight-loader `Binary`/`SafeTensors`/`NumPy` formats**: honestly report `NotImplemented` naming
+  the missing dependency (only the JSON format is real today).
+- **TensorFlow protobuf import**: no protobuf parser wired → honest error (the separate
+  `tenflowers-neural::serialization::onnx` / `onnx::data` ONNX subsystem now has a real,
+  prost-based protobuf decoder, unlike TensorFlow SavedModel import).
+
 ## 3. Near-Term Roadmap
 
 ### Priority 1: Core Components
@@ -132,7 +195,7 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 ### Model & Training Infrastructure (Priority 2) ✅ COMPLETE
 - [x] **Parameter Group Config**: API for parameter grouping and weight decay (COMPLETE - optimizer infrastructure)
 - [x] **Long Sequence Tests**: Mamba/SSM stability testing @ 32K tokens (COMPLETE - tests/test_long_sequence_stability.rs with 26 tests)
-- [x] **ONNX Integration**: Basic model loading and conversion capabilities (COMPLETE - src/serialization/onnx.rs with 16 tests)
+- [x] **ONNX Integration**: Real prost-based protobuf model loading and conversion (COMPLETE - src/serialization/onnx.rs with 23 tests; updated 2026-07-07 from scaffolding-only to genuine protobuf decode + bytemuck-based weight reinterpretation, behind the `onnx` feature)
 - [x] **Memory Checkpointing**: Gradient checkpointing for memory efficiency (COMPLETE - implemented in training)
 - [x] **Advanced Regularization**: Label smoothing and dropout variant implementations (COMPLETE - multiple dropout variants, regularization layers)
 
@@ -145,7 +208,7 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 
 ### Integration Tasks (Priority 4) ✅ COMPLETED
 - [x] **Model Registry**: Basic model registration and management system (COMPLETE - src/pretrained/registry.rs with 12 passing tests)
-- [x] **Weight Loading System**: Standardized pretrained weight loading format (COMPLETE - src/serialization/weight_loader.rs with 13 passing tests)
+- [x] **Weight Loading System**: Standardized pretrained weight loading format (COMPLETE - src/serialization/weight_loader.rs with 16 passing tests; updated 2026-07-07 from a silent no-op save/load to a real versioned JSON format, with Binary/SafeTensors/NumPy honestly reporting `NotImplemented`)
 - [x] **Hook System Enhancement**: Advanced training hooks and callback system (COMPLETE - comprehensive callback system in src/trainer/callbacks/)
 - [x] **Error Handling**: Consistent error taxonomy alignment with core crates (COMPLETE - using TensorError from core)
 
@@ -179,27 +242,41 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 
 ---
 
-**v0.1.1 Status**: Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
+**v0.1.1 Status** (historical snapshot): Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
+
+**v0.1.2 Status** (current, 2026-07-07): 11,596/11,596 tests passing, 8 skipped (`cargo nextest run -p tenflowers-neural --all-features`). See the "Honesty Hardening" section above for this cycle's fixes — several previously-fabricated code paths (distributed collective ops, several pruning strategies, weight-loader binary formats) now honestly report `NotImplemented` rather than faking success, which is a net increase in correctness even though it narrows what's marked "done" below.
 
 **Key Achievements**:
 - ✅ Multi-head attention with Flash Attention support
 - ✅ Complete learning rate scheduler suite (Step, Cosine, Exponential, Warmup, etc.)
 - ✅ Gradient clipping utilities (by value and by norm)
 - ✅ Comprehensive serialization system with versioning and compression
-- ✅ Distributed training with multiple backends (Gloo, Thread, NCCL)
-- ✅ Advanced deployment features (pruning, quantization, mobile optimization)
+- ⚠️ Distributed training scaffolding with multiple backend interfaces (Gloo, MPI, Thread, NCCL) —
+  as of 2026-07-07 all four honestly report `NotImplemented` for actual cross-rank collective ops
+  (no real transport is linked); `DataParallelTrainer::train_step` itself does real local gradient
+  computation (finite differences) and a real optimizer step, single-process
+- ⚠️ Deployment features (quantization, mobile optimization) plus partial pruning — `Magnitude`/
+  `Random` pruning strategies are real (genuinely zero weights by magnitude/seeded RNG);
+  `Structured`/`Gradual`/`LotteryTicket` honestly report `NotImplemented` as of 2026-07-07
 - ✅ PEFT methods (LoRA, QLoRA, Prefix Tuning, P-Tuning v2)
 - ✅ Model registry system for pretrained model management (12 tests)
-- ✅ Weight loading system with multi-format support (13 tests)
-- ✅ ONNX integration with comprehensive model loading scaffolding (16 tests)
+- ✅ Weight loading system with a real versioned JSON format (16 tests); Binary/SafeTensors/NumPy
+  honestly report `NotImplemented`
+- ✅ ONNX integration with real prost-based protobuf decode/encode behind the `onnx` feature (23 tests)
 - ✅ Long sequence stability testing infrastructure (26 tests: 8K, 16K, 32K token support)
 - ✅ Enhanced training metrics system with statistical analysis (44 tests)
 - ✅ Model inspection and debugging utilities (33 tests: layer analysis, gradient flow, profiling)
 - ✅ Data augmentation framework (34 tests: image, text, audio augmentation)
 - ✅ Batch processing utilities (30 tests: sampling, collation, padding strategies)
 - ✅ Training visualization helpers (28 tests: plots, confusion matrices, histograms)
-- ✅ Complete test coverage with 100% pass rate (1,012 tests)
+- ✅ Complete test coverage with 100% pass rate (11,596 tests passing, 8 skipped, as of 2026-07-07)
 
 **Next Steps**:
 1. Comprehensive API documentation and usage guides
-2. ONNX protobuf parsing implementation (requires external dependencies)
+2. ~~ONNX protobuf parsing implementation~~ — DONE (2026-07-07): real prost-based decode/encode
+   behind the `onnx` feature, in `serialization::onnx` and `onnx::data`
+3. Real collective-communications transport for at least one of Gloo/MPI/NCCL/Thread (all four
+   currently return honest `NotImplemented` for cross-rank ops — none links a real runtime)
+4. `Structured`/`Gradual`/`LotteryTicket` pruning strategies (currently honest `NotImplemented`)
+5. `Binary`/`SafeTensors`/`NumPy` weight-loader formats (currently honest `NotImplemented`;
+   only JSON is implemented)

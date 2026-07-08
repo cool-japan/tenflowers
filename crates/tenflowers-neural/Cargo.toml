@@ -36,7 +36,6 @@ oxiarc-archive = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx = { workspace = true }
-criterion = { workspace = true }
 tempfile = { workspace = true }
 
 [features]

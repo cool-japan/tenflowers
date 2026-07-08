@@ -15,47 +15,41 @@
 //! All functionality maintains 100% backward compatibility through strategic re-exports.
 
 // Import the modularized cross-datacenter replication functionality
-pub mod topology;
+pub mod compression;
 pub mod config;
 pub mod connection;
-pub mod compression;
-pub mod operations;
 pub mod core;
+pub mod operations;
+pub mod topology;
 
 // Re-export all types and functionality for backward compatibility
 
 // Topology structures
 pub use topology::{
-    DatacenterTopology, DatacenterInfo, DatacenterCapacity, NetworkLink,
-    ReductionTree, AggregationStrategy
+    AggregationStrategy, DatacenterCapacity, DatacenterInfo, DatacenterTopology, NetworkLink,
+    ReductionTree,
 };
 
 // Configuration structures
 pub use config::{
-    ReplicationConfig, CompressionConfig, CompressionAlgorithm,
-    FaultToleranceConfig, RetryPolicy, BandwidthOptimizationConfig,
-    AdaptiveCompressionConfig
+    AdaptiveCompressionConfig, BandwidthOptimizationConfig, CompressionAlgorithm,
+    CompressionConfig, FaultToleranceConfig, ReplicationConfig, RetryPolicy,
 };
 
 // Connection and bandwidth management
 pub use connection::{
-    DatacenterConnection, ConnectionStatus, BandwidthMonitor,
-    BandwidthStats, BandwidthMeasurement, BandwidthOptimizer
+    BandwidthMeasurement, BandwidthMonitor, BandwidthOptimizer, BandwidthStats, ConnectionStatus,
+    DatacenterConnection,
 };
 
 // Compression functionality
-pub use compression::{
-    CompressionEngine, CompressionCodec, NetworkConditions
-};
+pub use compression::{CompressionCodec, CompressionEngine, NetworkConditions};
 
 // Operation structures
 pub use operations::{
-    ReplicationOperation, OperationType, ReplicationPayload,
-    ParameterMetadata, CompressionInfo, Priority, DatacenterStatus
+    CompressionInfo, DatacenterStatus, OperationType, ParameterMetadata, Priority,
+    ReplicationOperation, ReplicationPayload,
 };
 
 // Core replicator and consistency models
-pub use core::{
-    CrossDatacenterReplicator, ConsistencyModel,
-    PrepareResult, ReplicationHealth
-};
+pub use core::{ConsistencyModel, CrossDatacenterReplicator, PrepareResult, ReplicationHealth};

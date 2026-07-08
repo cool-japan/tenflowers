@@ -2,11 +2,16 @@ use crate::distributed::{
     BackendConfig, CommunicationBackendImpl, CommunicationGroup, ReductionOp,
 };
 use std::collections::HashMap;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Thread-based communication backend for single-node multi-GPU
-/// This backend simulates distributed operations using threads and shared memory
+///
+/// This backend provides real, working group/barrier bookkeeping for
+/// synchronization, but does not implement genuine cross-rank data exchange. See
+/// the doc comments on `simulate_all_reduce`, `send_f32`, and `recv_f32` for why
+/// those operations honestly report unavailability instead of fabricating a
+/// result.
 pub struct ThreadBackend {
     name: String,
     initialized: bool,
@@ -18,8 +23,6 @@ pub struct ThreadBackend {
 struct ThreadBackendState {
     /// Communication groups and their participants
     groups: HashMap<String, ThreadGroupState>,
-    /// Message passing channels for point-to-point communication
-    channels: HashMap<(String, usize, usize), mpsc::Sender<ThreadMessage>>,
 }
 
 /// State for a specific communication group
@@ -28,17 +31,6 @@ struct ThreadGroupState {
     world_size: usize,
     /// Barrier synchronization for collective operations
     barrier: Arc<ThreadBarrier>,
-}
-
-/// Message for point-to-point communication
-#[derive(Debug)]
-struct ThreadMessage {
-    /// Sender rank
-    src_rank: usize,
-    /// Message ID for tracking
-    msg_id: usize,
-    /// Serialized tensor data (placeholder - in real implementation would be actual data)
-    data: Vec<u8>,
 }
 
 /// Thread-based barrier for synchronization
@@ -64,30 +56,51 @@ impl ThreadBackend {
             initialized: false,
             shared_state: Arc::new(Mutex::new(ThreadBackendState {
                 groups: HashMap::new(),
-                channels: HashMap::new(),
             })),
         }
     }
 
-    /// Simulate all-reduce by gathering all tensors and broadcasting result
+    /// Perform thread-backend all-reduce.
+    ///
+    /// A real all-reduce combines every rank's own distinct local tensor into one
+    /// result (a genuine sum needs each rank's actual value, not just this
+    /// caller's). `ThreadBackend` has no infrastructure that could do that: this
+    /// method only ever receives the calling instance's own local `tensor`
+    /// argument, and never touches `self.shared_state` at all. Even if it did,
+    /// `shared_state` is created fresh by every `ThreadBackend::new()` call and is
+    /// never shared across the distinct instances that
+    /// `distributed::data_parallel::utils::init_process_group` /
+    /// `distributed::pipeline_parallel::utils::init_distributed` construct for each
+    /// simulated rank -- each gets its own unconnected `Arc<Mutex<ThreadBackendState>>`.
+    /// There is no channel, registry, or other mechanism anywhere in this file that
+    /// lets one rank's call observe another rank's data.
+    ///
+    /// The previous implementation returned `tensor * world_size` for `Sum` and
+    /// `tensor.clone()` for `Average`, which only coincide with the true cross-rank
+    /// result in the degenerate case where every rank happens to hold
+    /// bit-identical data -- never guaranteed in real distributed training, where
+    /// each rank typically holds a distinct data shard and therefore a distinct
+    /// local gradient. Returning `Ok` for either would silently fabricate a
+    /// successful reduction, exactly like the `Min`/`Max`/`Product` case already
+    /// handled by the catch-all below, so `Sum` and `Average` now surface their own
+    /// honest error alongside it instead of being fabricated.
     fn simulate_all_reduce(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         group: &CommunicationGroup,
         op: ReductionOp,
     ) -> Result<Tensor<f32>> {
-        // For thread backend simulation, we'll just return the tensor scaled by group size
-        // In a real distributed setting, this would actually gather from all ranks
         match op {
-            ReductionOp::Sum => {
-                // Simulate sum by multiplying by world size (as if we summed across all ranks)
-                let scale_factor = group.world_size as f32;
-                let scale_tensor = Tensor::from_scalar(scale_factor);
-                tensor.mul(&scale_tensor)
-            }
-            ReductionOp::Average => {
-                // For average, return the original tensor (sum divided by world_size = original)
-                Ok(tensor.clone())
+            ReductionOp::Sum | ReductionOp::Average => {
+                Err(TensorError::not_implemented_simple(format!(
+                    "Reduction op {op:?} not implemented for thread backend: this \
+                     instance's `shared_state` only ever holds this rank's own data \
+                     (group={}, world_size={}), and no cross-instance transport \
+                     connects it to any other rank's `ThreadBackend`. Scaling or \
+                     echoing back the local tensor would silently fabricate a \
+                     cross-rank reduction.",
+                    group.group_id, group.world_size
+                )))
             }
             _ => Err(TensorError::not_implemented_simple(format!(
                 "Reduction op {op:?} not implemented for thread backend"
@@ -142,18 +155,9 @@ impl CommunicationBackendImpl for ThreadBackend {
 
         state.groups.insert(group.group_id.clone(), group_state);
 
-        // Create channels for point-to-point communication
-        for src in 0..group.world_size {
-            for dest in 0..group.world_size {
-                if src != dest {
-                    let (sender, _receiver) = mpsc::channel();
-                    state
-                        .channels
-                        .insert((group.group_id.clone(), src, dest), sender);
-                }
-            }
-        }
-
+        // No point-to-point channels are created here: `send_f32`/`recv_f32` below
+        // explain why no genuine channel-based transport is possible for this
+        // backend (separate `ThreadBackend` instances never share `shared_state`).
         Ok(())
     }
 
@@ -184,43 +188,59 @@ impl CommunicationBackendImpl for ThreadBackend {
         Ok(tensor.clone())
     }
 
+    /// Send an f32 tensor to a specific rank (point-to-point).
+    ///
+    /// A real send needs a live receiver on the other end of a channel connecting
+    /// this rank's `ThreadBackend` instance to `dest_rank`'s. The previous
+    /// implementation created per-(group, src, dest) `mpsc` channels in
+    /// `create_group` but immediately dropped the `Receiver` half
+    /// (`let (sender, _receiver) = mpsc::channel();`), so no receiver was ever
+    /// reachable here -- every `sender.send(..)` call was destined to fail with a
+    /// disconnected-channel error for any real cross-rank pair, or silently no-op
+    /// when no channel entry existed. Separate `ThreadBackend` instances (one per
+    /// simulated rank; see `simulate_all_reduce`'s doc comment) do not even share
+    /// the `shared_state` that held those channels. The message body also used a
+    /// fixed 1024-byte placeholder (`vec![0; 1024]`) instead of the real tensor --
+    /// the `tensor` argument was never read. Returning `Ok(())` without
+    /// transmitting real data would falsely report a delivered message to
+    /// `dest_rank`, so we surface an honest error instead, mirroring
+    /// `NcclBackend::send_f32`.
     fn send_f32(
         &self,
         _tensor: &Tensor<f32>,
         dest_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<()> {
-        // Simulate send by putting message in appropriate channel
-        let state = self
-            .shared_state
-            .lock()
-            .map_err(|_| TensorError::other("Failed to acquire shared state lock".to_string()))?;
-
-        let key = (group.group_id.clone(), group.rank, dest_rank);
-        if let Some(sender) = state.channels.get(&key) {
-            let message = ThreadMessage {
-                src_rank: group.rank,
-                msg_id: 0,           // Would use proper message ID in real implementation
-                data: vec![0; 1024], // Placeholder data
-            };
-
-            sender
-                .send(message)
-                .map_err(|_| TensorError::other("Failed to send message".to_string()))?;
-        }
-
-        Ok(())
+        Err(TensorError::not_implemented_simple(format!(
+            "Thread backend point-to-point send (group={}, src={}, dest={dest_rank}) \
+             is not available: no genuine cross-rank data transport connects \
+             separate `ThreadBackend` instances, so no data can be transmitted.",
+            group.group_id, group.rank
+        )))
     }
 
+    /// Receive an f32 tensor from a specific rank (point-to-point).
+    ///
+    /// A real receive blocks until the sender's actual bytes arrive over a working
+    /// channel. The previous implementation ignored `src_rank` and `group` entirely
+    /// and unconditionally fabricated a zero tensor of the requested `shape`,
+    /// regardless of whether -- or what -- anything was ever sent by `send_f32`.
+    /// Returning fabricated zeros as if they were genuinely received data is
+    /// exactly the silent fabrication this cleanup removes, so we surface an
+    /// honest error instead, mirroring `NcclBackend::recv_f32`.
     fn recv_f32(
         &self,
         shape: &[usize],
-        _src_rank: usize,
-        _group: &CommunicationGroup,
+        src_rank: usize,
+        group: &CommunicationGroup,
     ) -> Result<Tensor<f32>> {
-        // Simulate receive by returning zero tensor
-        // In real implementation, would wait for message from sender
-        Ok(Tensor::zeros(shape))
+        Err(TensorError::not_implemented_simple(format!(
+            "Thread backend point-to-point recv (group={}, src={src_rank}, \
+             shape={shape:?}) is not available: no genuine cross-rank data \
+             transport connects separate `ThreadBackend` instances, so no data can \
+             be received.",
+            group.group_id
+        )))
     }
 
     fn finalize(&mut self) -> Result<()> {
@@ -230,7 +250,6 @@ impl CommunicationBackendImpl for ThreadBackend {
             .map_err(|_| TensorError::other("Failed to acquire shared state lock".to_string()))?;
 
         state.groups.clear();
-        state.channels.clear();
         self.initialized = false;
 
         Ok(())
@@ -251,7 +270,10 @@ impl ThreadBarrier {
     }
 
     fn wait(&self) {
-        let mut waiting = self.waiting.lock().expect("lock should not be poisoned");
+        let mut waiting = self
+            .waiting
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *waiting += 1;
 
         if *waiting == self.num_threads {
@@ -356,7 +378,16 @@ mod tests {
     }
 
     #[test]
-    fn test_thread_all_reduce() {
+    fn test_thread_all_reduce_returns_honest_error() {
+        // `ThreadBackend`'s `shared_state` is created fresh per instance and is
+        // never shared across the ranks that would need to contribute distinct
+        // local tensors (see `simulate_all_reduce`'s doc comment), so no genuine
+        // cross-rank reduction can be performed here. Every `ReductionOp` variant
+        // must surface an honest error rather than silently returning a scaled or
+        // unscaled clone of the caller's own local tensor as if it were a real
+        // reduction across ranks. This covers Sum and Average too: multiplying or
+        // echoing back only the local rank's tensor is just as fabricated as doing
+        // so for Min/Max/Product once ranks hold genuinely different data.
         let mut backend = ThreadBackend::new();
         let config = BackendConfig::default();
         backend
@@ -376,9 +407,59 @@ mod tests {
             .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[2, 3]);
-        let result = backend.all_reduce_f32(&tensor, &group, ReductionOp::Average);
 
-        assert!(result.is_ok());
+        for op in [
+            ReductionOp::Sum,
+            ReductionOp::Average,
+            ReductionOp::Min,
+            ReductionOp::Max,
+            ReductionOp::Product,
+        ] {
+            let result = backend.all_reduce_f32(&tensor, &group, op);
+            assert!(
+                result.is_err(),
+                "all-reduce must never silently fabricate a result for {op:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_thread_send_recv_do_not_fabricate() {
+        // send_f32 previously returned Ok(()) without transmitting anything
+        // (putting a fixed placeholder payload into a channel whose Receiver was
+        // already dropped in create_group, so it either silently no-op'd or failed
+        // for the wrong reason), and recv_f32 previously fabricated a zero tensor
+        // as if it were real data from src_rank. Separate `ThreadBackend` instances
+        // share no real transport, so neither can genuinely happen; both must
+        // surface honest errors instead.
+        let mut backend = ThreadBackend::new();
+        let config = BackendConfig::default();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
+
+        let group = CommunicationGroup {
+            group_id: "test".to_string(),
+            rank: 0,
+            world_size: 2,
+            devices: vec![Device::Cpu],
+            backend: CommunicationBackend::Thread,
+        };
+
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
+
+        let tensor = Tensor::<f32>::ones(&[8]);
+
+        assert!(
+            backend.send_f32(&tensor, 1, &group).is_err(),
+            "send must never silently report a fabricated delivery"
+        );
+        assert!(
+            backend.recv_f32(&[8], 1, &group).is_err(),
+            "recv must never silently return a fabricated zero tensor"
+        );
     }
 
     #[test]

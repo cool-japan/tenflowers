@@ -159,7 +159,7 @@ impl ThroughputBenchmarkHarness {
         let latencies = self
             .sample_latencies
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let stats = calculate_latency_statistics(&latencies);
 
@@ -168,7 +168,7 @@ impl ThroughputBenchmarkHarness {
             let memory_samples = self
                 .memory_samples
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -190,7 +190,7 @@ impl ThroughputBenchmarkHarness {
         let per_thread_stats = self
             .thread_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
 
         ThroughputBenchmarkResult {
@@ -241,7 +241,7 @@ impl ThroughputBenchmarkHarness {
         let latencies = self
             .sample_latencies
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let stats = calculate_latency_statistics(&latencies);
 
@@ -250,7 +250,7 @@ impl ThroughputBenchmarkHarness {
             let memory_samples = self
                 .memory_samples
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -272,7 +272,7 @@ impl ThroughputBenchmarkHarness {
         let per_thread_stats = self
             .thread_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
 
         ThroughputBenchmarkResult {
@@ -337,7 +337,7 @@ impl ThroughputBenchmarkHarness {
         // Clear thread stats
         self.thread_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
 
         // Measurement phase with parallel execution
@@ -374,7 +374,7 @@ impl ThroughputBenchmarkHarness {
                 // Record thread statistics
                 let mut stats = thread_stats_mutex
                     .lock()
-                    .expect("lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 stats.push(ThreadStats {
                     thread_id: *thread_id,
                     samples_processed,
@@ -389,7 +389,7 @@ impl ThroughputBenchmarkHarness {
         let thread_stats = self
             .thread_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let total_processed: usize = thread_stats.iter().map(|s| s.samples_processed).sum();
         let avg_latency_us = (total_duration.as_micros() as f64) / (total_processed as f64);
@@ -399,7 +399,7 @@ impl ThroughputBenchmarkHarness {
             let memory_samples = self
                 .memory_samples
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if !memory_samples.is_empty() {
                 let peak_bytes = *memory_samples.iter().max().unwrap_or(&0);
                 let avg_bytes = memory_samples.iter().sum::<usize>() / memory_samples.len();
@@ -439,24 +439,25 @@ impl ThroughputBenchmarkHarness {
     pub fn reset(&mut self) {
         self.sample_latencies
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.memory_samples
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.thread_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
-    /// Get current memory usage (platform-specific approximation)
+    /// Get current process memory usage (resident-set size) in bytes.
+    ///
+    /// On Linux this is a real measurement read from `/proc/self/statm`. On
+    /// platforms where it cannot be measured, 0 is returned ("unknown") rather
+    /// than a fabricated figure.
     fn get_current_memory_usage(&self) -> usize {
-        // This is a basic approximation. On Linux/Unix systems, you could read from /proc
-        // For now, we'll return 0 as a placeholder. Real implementation would use
-        // platform-specific APIs or crates like `jemalloc_ctl` or `memory-stats`
-        0
+        read_process_rss_bytes().unwrap_or(0)
     }
 
     /// Track memory usage during benchmark
@@ -465,7 +466,7 @@ impl ThroughputBenchmarkHarness {
             let mem = self.get_current_memory_usage();
             self.memory_samples
                 .lock()
-                .expect("lock should not be poisoned")
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(mem);
         }
     }
@@ -492,7 +493,7 @@ impl ThroughputBenchmarkHarness {
         let mut latencies = self
             .sample_latencies
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         latencies.clear();
 
         for _ in 0..self.config.measurement_iterations {
@@ -545,7 +546,7 @@ impl ThroughputBenchmarkHarness {
         let mut latencies = self
             .sample_latencies
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         latencies.clear();
 
         for _ in 0..self.config.measurement_iterations {
@@ -622,6 +623,26 @@ fn calculate_latency_statistics(latencies: &[u64]) -> LatencyStatistics {
         p95: percentile(0.95),
         p99: percentile(0.99),
         std_dev,
+    }
+}
+
+/// Read this process's resident-set size in bytes from `/proc/self/statm`.
+///
+/// Returns `None` when the measurement is unavailable (non-Linux targets or a
+/// read/parse failure) so callers can fall back to an honest "unknown" (0).
+fn read_process_rss_bytes() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        // statm fields are in pages: size, resident, shared, text, lib, data, dt.
+        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let resident_pages: usize = statm.split_whitespace().nth(1)?.parse().ok()?;
+        // 4096 is the standard page size on the supported Linux targets.
+        const PAGE_SIZE: usize = 4096;
+        Some(resident_pages.saturating_mul(PAGE_SIZE))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
     }
 }
 

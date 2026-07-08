@@ -427,21 +427,22 @@ impl NumaScheduler {
             return Ok(());
         }
 
-        // Platform-specific affinity setting
-        #[cfg(target_os = "linux")]
+        // Platform-specific affinity setting. The Linux implementation relies on
+        // `libc`, which is only linked in via the `numa` feature.
+        #[cfg(all(target_os = "linux", feature = "numa"))]
         {
             Self::set_linux_affinity(&assignment.cpu_cores)
         }
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(all(target_os = "linux", feature = "numa")))]
         {
-            // For non-Linux platforms, this is a no-op
-            // Could implement platform-specific affinity setting here
+            // For non-Linux platforms, or when the `numa` feature is disabled,
+            // thread affinity setting is a no-op.
             Ok(())
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "numa"))]
     fn set_linux_affinity(cpu_cores: &[usize]) -> Result<()> {
         use std::mem;
 

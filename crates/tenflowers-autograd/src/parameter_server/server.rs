@@ -58,7 +58,7 @@ impl ParameterServer {
         let mut worker_status = inner
             .worker_status
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for worker_id in 0..config.num_workers {
             worker_status.insert(
                 worker_id,
@@ -93,11 +93,11 @@ impl ParameterServer {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut parameters = self
-            .inner
-            .parameters
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut parameters = self.inner.parameters.write().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         // Assign worker based on load balancing strategy
         let assigned_worker = self.assign_worker_for_parameter(tensor_id)?;
@@ -113,11 +113,11 @@ impl ParameterServer {
         parameters.insert(tensor_id, entry);
 
         // Update statistics
-        let mut stats = self
-            .inner
-            .stats
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut stats = self.inner.stats.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
         stats.total_parameters += 1;
 
         Ok(())
@@ -151,11 +151,11 @@ impl ParameterServer {
         };
 
         // Add to gradient queue
-        let mut queues = self
-            .inner
-            .gradient_queues
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut queues = self.inner.gradient_queues.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
         let queue = queues.entry(worker_id).or_default();
 
         // Check queue size limits
@@ -166,11 +166,11 @@ impl ParameterServer {
         queue.push_back(update);
 
         // Update worker status
-        let mut worker_status = self
-            .inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = self.inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.pending_gradients += 1;
             status.last_heartbeat = Instant::now();
@@ -187,11 +187,11 @@ impl ParameterServer {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let parameters = self
-            .inner
-            .parameters
-            .read()
-            .expect("read lock should not be poisoned");
+        let parameters = self.inner.parameters.read().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         if let Some(entry) = parameters.get(&tensor_id) {
             if let Some(param) = entry.parameter.downcast_ref::<Tensor<T>>() {
@@ -216,11 +216,11 @@ impl ParameterServer {
         T: Clone + Send + Sync + 'static,
     {
         let mut results = Vec::new();
-        let parameters = self
-            .inner
-            .parameters
-            .read()
-            .expect("read lock should not be poisoned");
+        let parameters = self.inner.parameters.read().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         for &tensor_id in tensor_ids {
             if let Some(entry) = parameters.get(&tensor_id) {
@@ -239,11 +239,11 @@ impl ParameterServer {
         }
 
         // Update worker heartbeat
-        let mut worker_status = self
-            .inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = self.inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.last_heartbeat = Instant::now();
         }
@@ -258,11 +258,11 @@ impl ParameterServer {
         capacity: f64,
         latency_ms: f64,
     ) -> Result<()> {
-        let mut worker_status = self
-            .inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = self.inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.capacity = capacity;
@@ -278,11 +278,11 @@ impl ParameterServer {
 
     /// Send heartbeat from worker
     pub fn heartbeat(&self, worker_id: usize, computational_load: f64) -> Result<()> {
-        let mut worker_status = self
-            .inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = self.inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.last_heartbeat = Instant::now();
@@ -301,7 +301,7 @@ impl ParameterServer {
         self.inner
             .stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -312,7 +312,7 @@ impl ParameterServer {
             .inner
             .update_handles
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for handle in handles.drain(..) {
             let _ = handle.join();
         }
@@ -320,11 +320,11 @@ impl ParameterServer {
 
     /// Assign a worker for a parameter based on load balancing strategy
     fn assign_worker_for_parameter(&self, _tensor_id: TensorId) -> Result<Option<usize>> {
-        let worker_status = self
-            .inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let worker_status = self.inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         match self.inner.config.load_balancing {
             LoadBalancingStrategy::RoundRobin => {
@@ -436,7 +436,7 @@ impl ParameterServer {
         let mut handles = inner
             .update_handles
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         handles.push(gradient_thread);
         handles.push(health_thread);
         handles.push(load_balancing_thread);
@@ -452,7 +452,7 @@ impl ParameterServer {
                 let mut queues = inner
                     .gradient_queues
                     .lock()
-                    .expect("lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 for (_worker_id, queue) in queues.iter_mut() {
                     while let Some(update) = queue.pop_front() {
                         updates_to_process.push(update);
@@ -473,7 +473,7 @@ impl ParameterServer {
                 let queues = inner
                     .gradient_queues
                     .lock()
-                    .expect("lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let _result = inner
                     .gradient_signal
                     .wait_timeout(queues, Duration::from_millis(100));
@@ -489,17 +489,22 @@ impl ParameterServer {
         inner: &Arc<ParameterServerInner>,
         update: GradientUpdate,
     ) -> Result<()> {
-        let mut parameters = inner
-            .parameters
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut parameters = inner.parameters.write().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         if let Some(entry) = parameters.get_mut(&update.tensor_id) {
             // Check for staleness
             let staleness = entry.version.saturating_sub(update.parameter_version);
             if staleness > inner.config.staleness_threshold as u64 {
                 // Discard stale update
-                let mut stats = inner.stats.lock().expect("lock should not be poisoned");
+                let mut stats = inner.stats.lock().map_err(|_| {
+                    tenflowers_core::TensorError::invalid_operation_simple(
+                        "parameter server lock poisoned".to_string(),
+                    )
+                })?;
                 stats.stale_updates += 1;
                 return Ok(());
             }
@@ -511,14 +516,19 @@ impl ParameterServer {
             entry.pending_updates = entry.pending_updates.saturating_sub(1);
 
             // Update statistics
-            let mut stats = inner.stats.lock().expect("lock should not be poisoned");
+            let mut stats = inner.stats.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "parameter server lock poisoned".to_string(),
+                )
+            })?;
             stats.total_updates += 1;
 
             // Update worker status
-            let mut worker_status = inner
-                .worker_status
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut worker_status = inner.worker_status.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "parameter server lock poisoned".to_string(),
+                )
+            })?;
             if let Some(status) = worker_status.get_mut(&update.worker_id) {
                 status.pending_gradients = status.pending_gradients.saturating_sub(1);
             }
@@ -578,7 +588,7 @@ impl ParameterServer {
             let mut worker_status = inner
                 .worker_status
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let timeout = Duration::from_millis(inner.config.heartbeat_timeout_ms);
             let now = Instant::now();
 
@@ -587,7 +597,10 @@ impl ParameterServer {
                     status.is_alive = false;
 
                     // Update statistics
-                    let mut stats = inner.stats.lock().expect("lock should not be poisoned");
+                    let mut stats = inner
+                        .stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     stats.worker_failures += 1;
 
                     println!("Worker {worker_id} detected as failed");
@@ -656,10 +669,11 @@ impl ParameterServer {
         // 3. Update worker status and resume processing
 
         // For now, implement a basic recovery mechanism
-        let mut worker_status = inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
         if let Some(status) = worker_status.get_mut(&worker_id) {
             status.is_alive = true;
             status.last_heartbeat = Instant::now();
@@ -686,10 +700,11 @@ impl ParameterServer {
         // 3. Synchronize parameter state
         // 4. Update routing tables
 
-        let mut worker_status = inner
-            .worker_status
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut worker_status = inner.worker_status.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "parameter server lock poisoned".to_string(),
+            )
+        })?;
 
         // Find an available backup worker (simplified selection)
         let backup_worker_id = worker_status
@@ -728,7 +743,7 @@ impl ParameterServer {
         let mut worker_status = inner
             .worker_status
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // 1. Analyze current load distribution
         let mut load_distribution: Vec<(usize, f64, usize)> = worker_status

@@ -427,15 +427,24 @@ impl MetalBenchmark {
     // Private helper methods
 
     fn calculate_efficiency(&self, throughput_gops: f64, memory_bandwidth_gbps: f64) -> f64 {
-        // Simplified efficiency calculation based on theoretical peak performance
-        // This would be more sophisticated in a real implementation
-        let theoretical_peak_gops = 1000.0; // Placeholder value
-        let theoretical_peak_bandwidth = 400.0; // GB/s for high-end Apple Silicon
+        // Reference peak for Apple M1 (base).  Higher-end chips (M1 Pro / Max / Ultra,
+        // M2, M3) have proportionally more GPU cores and proportionally higher peaks,
+        // but this codebase does not yet query the Metal device for its exact peak
+        // FLOP rate at runtime, so we use the M1 baseline as a conservative reference.
+        // Label deliberately chosen to make it clear this is NOT device-specific.
+        //
+        // Apple M1 GPU: 8 cores × 128 SIMD-lanes × 2 FP32 ops × 1.278 GHz ≈ 2.6 TFLOPS
+        // ≈ 2600 GOPS for FP32.  We use 2600.0 here; efficiency > 100 % on faster
+        // Apple Silicon chips signals that they exceed this reference baseline.
+        /// Apple M1 GPU theoretical FP32 peak (GOPS) — reference only, not device-specific.
+        const REFERENCE_PEAK_GOPS: f64 = 2600.0;
+        /// Apple M1 GPU memory bandwidth (GB/s) — reference for high-bandwidth Apple Silicon.
+        const REFERENCE_PEAK_BANDWIDTH_GBPS: f64 = 68.25; // M1 unified memory bandwidth
 
-        let compute_efficiency = (throughput_gops / theoretical_peak_gops) * 100.0;
-        let memory_efficiency = (memory_bandwidth_gbps / theoretical_peak_bandwidth) * 100.0;
+        let compute_efficiency = (throughput_gops / REFERENCE_PEAK_GOPS) * 100.0;
+        let memory_efficiency = (memory_bandwidth_gbps / REFERENCE_PEAK_BANDWIDTH_GBPS) * 100.0;
 
-        // Return the lower of compute and memory efficiency (bottleneck)
+        // Report the bottleneck (lower of compute vs memory) capped at 100 %.
         compute_efficiency.min(memory_efficiency).min(100.0)
     }
 

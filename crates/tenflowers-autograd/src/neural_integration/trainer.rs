@@ -208,18 +208,32 @@ where
         self.metrics = TrainingMetrics::default();
     }
 
-    /// Save training checkpoint
+    /// Save training checkpoint.
+    ///
+    /// Checkpointing the trainer requires serializing the optimizer's internal
+    /// state (momentum/velocity buffers and the gradient tape) together with the
+    /// generic training metrics. That serialization infrastructure does not yet
+    /// exist for the autograd optimizer, so this returns an explicit error
+    /// instead of silently pretending the checkpoint was written.
     pub fn save_checkpoint(&self, _path: &str) -> Result<()> {
-        // Placeholder for checkpoint saving
-        // In a real implementation, this would serialize the optimizer state and metrics
-        Ok(())
+        Err(tenflowers_core::TensorError::not_implemented_simple(
+            "trainer checkpoint saving is not implemented: the autograd optimizer and gradient \
+             tape state are not yet serializable"
+                .to_string(),
+        ))
     }
 
-    /// Load training checkpoint
+    /// Load training checkpoint.
+    ///
+    /// See [`AutogradTrainer::save_checkpoint`]: the matching deserialization
+    /// path is not implemented, so this returns an explicit error rather than
+    /// leaving the trainer silently unchanged.
     pub fn load_checkpoint(&mut self, _path: &str) -> Result<()> {
-        // Placeholder for checkpoint loading
-        // In a real implementation, this would deserialize the optimizer state and metrics
-        Ok(())
+        Err(tenflowers_core::TensorError::not_implemented_simple(
+            "trainer checkpoint loading is not implemented: the autograd optimizer and gradient \
+             tape state are not yet deserializable"
+                .to_string(),
+        ))
     }
 
     /// Get current learning rate
@@ -237,26 +251,128 @@ where
         self.optimizer.zero_grad()
     }
 
-    /// Extract scalar value from tensor (helper method)
-    fn extract_scalar_value(&self, _tensor: &Tensor<T>) -> Result<T> {
-        // For now, just return a placeholder value
-        // In a real implementation, this would extract the actual scalar value from the tensor
-        Ok(T::zero())
+    /// Extract the scalar value from a (reduced) tensor.
+    ///
+    /// This reads the first element of the tensor's flat data, which is the
+    /// genuine value of a scalar loss/metric produced by a reduction such as
+    /// `mean`. An empty tensor has no scalar value and is reported as an error.
+    fn extract_scalar_value(&self, tensor: &Tensor<T>) -> Result<T> {
+        let values = tensor.to_vec()?;
+        values.into_iter().next().ok_or_else(|| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "cannot extract a scalar value from an empty tensor".to_string(),
+            )
+        })
     }
 
-    /// Compute accuracy for classification tasks
+    /// Compute classification accuracy from real predictions and targets.
+    ///
+    /// The accuracy is the fraction of correctly classified samples:
+    ///
+    /// - For multi-class outputs shaped `[batch, num_classes]`, the predicted
+    ///   class is the `argmax` over the class axis and the target class is the
+    ///   `argmax` of the (one-hot) target row.
+    /// - For 1-D outputs the comparison is per-element: the prediction and
+    ///   target are each thresholded at `0.5` (binary classification) before
+    ///   being compared.
+    ///
+    /// Returns a value in `[0, 1]`.
     pub fn compute_accuracy(
         &self,
         predictions: &TrackedTensor<T>,
         targets: &TrackedTensor<T>,
     ) -> Result<T> {
-        // Placeholder implementation for accuracy computation
-        // In a real implementation, this would compute classification accuracy
-        let _pred_argmax = predictions; // Would compute argmax
-        let _target_argmax = targets; // Would compute argmax
+        let pred_dims = predictions.tensor.shape().dims().to_vec();
+        let target_dims = targets.tensor.shape().dims().to_vec();
 
-        // Return placeholder accuracy
-        Ok(T::from_f64(0.95).unwrap_or_else(|| T::zero()))
+        let pred_values = predictions.tensor.to_vec()?;
+        let target_values = targets.tensor.to_vec()?;
+
+        if pred_values.is_empty() {
+            return Err(tenflowers_core::TensorError::invalid_operation_simple(
+                "cannot compute accuracy from empty predictions".to_string(),
+            ));
+        }
+
+        // Determine whether we are in a multi-class (2-D) layout.
+        let (num_samples, num_classes) = match pred_dims.len() {
+            2 => (pred_dims[0], pred_dims[1]),
+            _ => (pred_values.len(), 1usize),
+        };
+
+        let correct = if num_classes > 1 {
+            // Multi-class: compare argmax of each prediction row with the argmax
+            // of the corresponding (one-hot or probability) target row.
+            if target_dims.len() != 2
+                || target_dims[0] != num_samples
+                || target_dims[1] != num_classes
+            {
+                return Err(tenflowers_core::TensorError::invalid_operation_simple(
+                    format!(
+                    "accuracy: prediction shape {pred_dims:?} and target shape {target_dims:?} \
+                     are incompatible"
+                ),
+                ));
+            }
+
+            let mut hits = 0usize;
+            for sample in 0..num_samples {
+                let base = sample * num_classes;
+                let pred_class = Self::argmax(&pred_values[base..base + num_classes]);
+                let target_class = Self::argmax(&target_values[base..base + num_classes]);
+                if pred_class == target_class {
+                    hits += 1;
+                }
+            }
+            hits
+        } else {
+            // Binary / regression-as-classification: threshold both sides at 0.5.
+            if target_values.len() != pred_values.len() {
+                return Err(tenflowers_core::TensorError::invalid_operation_simple(
+                    format!(
+                        "accuracy: {} predictions but {} targets",
+                        pred_values.len(),
+                        target_values.len()
+                    ),
+                ));
+            }
+
+            let half = T::from_f64(0.5).unwrap_or_else(T::zero);
+            pred_values
+                .iter()
+                .zip(target_values.iter())
+                .filter(|(pred, target)| {
+                    let pred_label = **pred > half;
+                    let target_label = **target > half;
+                    pred_label == target_label
+                })
+                .count()
+        };
+
+        let total = num_samples.max(1);
+        let accuracy = correct as f64 / total as f64;
+        T::from_f64(accuracy).ok_or_else(|| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "failed to convert computed accuracy into the tensor element type".to_string(),
+            )
+        })
+    }
+
+    /// Index of the maximum value in a slice (argmax). Returns 0 for an empty
+    /// slice. Uses a total order tolerant of partially-ordered float types.
+    fn argmax(values: &[T]) -> usize {
+        let mut best_index = 0usize;
+        if values.is_empty() {
+            return best_index;
+        }
+        let mut best_value = values[0];
+        for (index, value) in values.iter().enumerate().skip(1) {
+            if *value > best_value {
+                best_value = *value;
+                best_index = index;
+            }
+        }
+        best_index
     }
 
     /// Early stopping check

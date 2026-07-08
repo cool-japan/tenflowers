@@ -224,14 +224,47 @@ pub mod deprecations;
 pub mod type_aliases;
 pub use type_aliases::*;
 
-// Result and TensorError at crate root for ergonomic `use tenflowers::Result`
-pub use tenflowers_core::{Result, TensorError};
+// TensorError at crate root; CoreResult preserves the TensorError-based alias.
+pub use tenflowers_core::Result as CoreResult;
+pub use tenflowers_core::TensorError;
 
 // Interoperability utilities (ndarray conversions, etc.)
 pub mod interop;
 
 // High-level I/O helpers (save/load tensors and models).
 pub mod io;
+
+/// Unified error types for the TenfloweRS framework.
+///
+/// See [`error::FrameworkError`] and [`error::Result`].
+pub mod error;
+
+/// Top-level `Result` alias using [`error::FrameworkError`].
+///
+/// ```rust
+/// use tenflowers::Result;
+///
+/// fn ok_val() -> Result<u32> { Ok(1) }
+/// assert_eq!(ok_val().unwrap(), 1);
+/// ```
+pub use error::Result;
+
+/// Subcrate version consistency checking.
+///
+/// See [`version_check::check_version_consistency`] and
+/// [`version_check::assert_versions_consistent`].
+pub mod version_check;
+
+/// Unified logging and diagnostic interface.
+///
+/// See [`logging::set_log_level`], [`logging::init_from_env`], and the
+/// `log_info!`, `log_warn!`, `log_error!`, `log_debug!`, `log_trace!` macros.
+pub mod logging;
+
+/// Common utility functions.
+///
+/// See [`utils::softmax`], [`utils::sigmoid`], [`utils::bytes_to_human_readable`], etc.
+pub mod utils;
 
 // ONNX import/export helpers (re-exports tenflowers-neural's ONNX surface).
 #[cfg(feature = "onnx")]
@@ -377,8 +410,10 @@ pub mod prelude {
     pub use crate::core::ops;
     pub use crate::core::{dtype, DType, Device, Tensor};
 
-    // Error handling at user level
-    pub use crate::core::{Result, TensorError};
+    // Error handling (CoreResult = TensorError-based; Result = FrameworkError-based)
+    pub use crate::core::TensorError;
+    pub use crate::error::{FrameworkError, Result};
+    pub use crate::CoreResult;
 
     // Autograd
     pub use crate::autograd::{GradientTape, TrackedTensor};
@@ -475,16 +510,16 @@ pub mod data {
     };
 }
 
-/// Common types and utilities
+/// Common types and utilities.
 ///
 /// This module provides type aliases and utility functions that are
 /// commonly used throughout TenfloweRS applications.
 pub mod common {
-    /// Result type using TenfloweRS error types
-    pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-    /// Shape type for tensor dimensions
+    /// Shape type for tensor dimensions.
     pub type Shape = Vec<usize>;
+
+    /// Re-export the unified framework `Result` for convenience.
+    pub use crate::error::Result;
 }
 
 /// Experimental and preview APIs. Not covered by stability guarantees.
@@ -498,6 +533,11 @@ pub mod experimental {
     // Future experimental re-exports go here.
     // Example: pub use some_crate::UnstableType;
 }
+
+/// Platform detection and SIMD capability introspection.
+///
+/// See [`platform::current_platform`], [`platform::detect_simd_capabilities`].
+pub mod platform;
 
 // Version information
 /// The version of the TenfloweRS framework
@@ -515,7 +555,7 @@ pub fn version() -> &'static str {
 /// `env!()` macros.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionInfo {
-    /// Semver version string (e.g. `"0.1.1"`).
+    /// Semver version string (e.g. `"0.1.2"`).
     pub version: &'static str,
     /// Crate / package name (always `"tenflowers"`).
     pub pkg_name: &'static str,

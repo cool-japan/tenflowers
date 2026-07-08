@@ -168,7 +168,9 @@ impl UltraEfficientMemoryPool {
 
         // Update statistics
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.allocation_count += 1;
             stats.total_allocated += total_bytes;
             stats.current_usage += total_bytes;
@@ -198,7 +200,9 @@ impl UltraEfficientMemoryPool {
 
         // Update statistics
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.deallocation_count += 1;
             stats.total_freed += total_bytes;
             stats.current_usage = stats.current_usage.saturating_sub(total_bytes);
@@ -209,24 +213,32 @@ impl UltraEfficientMemoryPool {
                 // Return to pool for reuse
                 pool.return_buffer(buffer.into_raw_parts())?;
 
-                let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
                 stats.cache_hits += 1;
             }
             BufferStorage::DiskBacked { .. } => {
                 // Disk-backed buffers are automatically cleaned up
-                let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
                 stats.disk_backed_ops += 1;
             }
             BufferStorage::ZeroCopy { .. } => {
                 // Zero-copy buffers require special handling
-                let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
                 stats.zero_copy_operations += 1;
             }
             BufferStorage::AdaptiveChunked { .. } => {
                 // Adaptive chunked buffers are processed by chunk processor
                 self.chunk_processor.process_deallocation(buffer.into_raw_parts())?;
 
-                let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
                 stats.adaptive_chunking_ops += 1;
             }
         }
@@ -236,7 +248,10 @@ impl UltraEfficientMemoryPool {
 
     /// Get memory usage statistics
     pub fn get_stats(&self) -> MemoryStats {
-        self.stats.lock().expect("lock should not be poisoned").clone()
+        self.stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Perform background cleanup and optimization
@@ -245,7 +260,9 @@ impl UltraEfficientMemoryPool {
 
         // Clean up unused pools
         {
-            let mut pools = self.pools.write().expect("write lock should not be poisoned");
+            let mut pools = self.pools
+                .write()
+                .map_err(|_| TensorError::invalid_operation_simple("pools write lock poisoned".to_string()))?;
             pools.retain(|_, pool| !pool.is_empty());
         }
 
@@ -257,7 +274,9 @@ impl UltraEfficientMemoryPool {
 
         // Update statistics
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.last_cleanup = Some(start_time);
 
             // Calculate fragmentation ratio
@@ -272,7 +291,10 @@ impl UltraEfficientMemoryPool {
 
     /// Check if system is under memory pressure
     fn is_memory_pressure(&self) -> bool {
-        let stats = self.stats.lock().expect("lock should not be poisoned");
+        let stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let usage_ratio = stats.current_usage as f64 / self.config.max_pool_size as f64;
         usage_ratio > self.config.memory_pressure_threshold
     }
@@ -284,7 +306,9 @@ impl UltraEfficientMemoryPool {
 
         // Trigger garbage collection in pools
         {
-            let pools = self.pools.read().expect("read lock should not be poisoned");
+            let pools = self.pools
+                .read()
+                .map_err(|_| TensorError::invalid_operation_simple("pools read lock poisoned".to_string()))?;
             for pool in pools.values() {
                 pool.force_cleanup()?;
             }
@@ -325,14 +349,18 @@ impl UltraEfficientMemoryPool {
 
         // Get or create pool
         let pool = {
-            let pools = self.pools.read().expect("read lock should not be poisoned");
+            let pools = self.pools
+                .read()
+                .map_err(|_| TensorError::invalid_operation_simple("pools read lock poisoned".to_string()))?;
             if let Some(pool) = pools.get(&pool_key) {
                 pool.clone()
             } else {
                 drop(pools);
 
                 // Create new pool
-                let mut pools = self.pools.write().expect("write lock should not be poisoned");
+                let mut pools = self.pools
+                .write()
+                .map_err(|_| TensorError::invalid_operation_simple("pools write lock poisoned".to_string()))?;
                 let pool = Arc::new(BufferPool::new(
                     self.config.max_pool_size / 16, // Divide among multiple pools
                     element_size,
@@ -347,7 +375,9 @@ impl UltraEfficientMemoryPool {
 
         // Update cache stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.cache_hits += 1;
         }
 
@@ -401,7 +431,9 @@ impl UltraEfficientMemoryPool {
 
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.disk_backed_ops += 1;
         }
 
@@ -429,7 +461,9 @@ impl UltraEfficientMemoryPool {
 
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats
+                .lock()
+                .map_err(|_| TensorError::invalid_operation_simple("stats lock poisoned".to_string()))?;
             stats.zero_copy_operations += 1;
         }
 
@@ -477,7 +511,9 @@ impl UltraEfficientMemoryPool {
 
         // Run defragmentation on all pools
         {
-            let pools = self.pools.read().expect("read lock should not be poisoned");
+            let pools = self.pools
+                .read()
+                .map_err(|_| TensorError::invalid_operation_simple("pools read lock poisoned".to_string()))?;
             for pool in pools.values() {
                 pool.defragment()?;
             }

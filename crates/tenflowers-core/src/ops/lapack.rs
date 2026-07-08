@@ -139,7 +139,7 @@ where
 /// Enhanced matrix inverse using LAPACK when available
 pub fn inverse_lapack<T>(input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Float + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     // Dispatch to specific implementations based on type
     #[cfg(feature = "blas")]
@@ -175,7 +175,7 @@ where
 /// Enhanced determinant computation using LAPACK when available
 pub fn determinant_lapack<T>(input: &Tensor<T>) -> Result<T>
 where
-    T: Clone + Default + Zero + One + Float + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     #[cfg(feature = "blas")]
     {
@@ -703,9 +703,8 @@ pub fn lapack_provider() -> &'static str {
             feature = "blas-accelerate"
         ))
     ))]
-    {
-        return "Generic BLAS";
-    }
+    return "Generic BLAS";
+
     #[cfg(not(feature = "blas"))]
     {
         "None (Pure Rust)"

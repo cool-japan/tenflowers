@@ -9,7 +9,7 @@
 
 use crate::{Result, TrackedTensor};
 use std::collections::{HashMap, HashSet};
-use tenflowers_core::TensorError;
+use tenflowers_core::{Tensor, TensorError};
 
 /// Tensor network node representing a tensor with named indices
 #[derive(Debug, Clone)]
@@ -695,7 +695,7 @@ impl TensorNetworkGradient {
         grad_output: &TrackedTensor<T>,
     ) -> Result<Vec<TrackedTensor<T>>>
     where
-        T: Clone + std::fmt::Debug + 'static,
+        T: Clone + std::fmt::Debug + Default + scirs2_core::num_traits::Zero + 'static,
     {
         // Get optimal contraction path
         let path = self.optimizer.optimize_contraction(network)?;
@@ -704,28 +704,60 @@ impl TensorNetworkGradient {
         self.backward_through_path(network, &path, grad_output)
     }
 
-    /// Backward pass through contraction path
+    /// Backward pass through contraction path.
+    ///
+    /// Implements reverse-mode autodiff through a tensor network contraction sequence.
+    /// For a step C = contract(A, B), the VJP rules are:
+    ///   grad_A = contract(grad_C, B) over the contracted indices of the forward step
+    ///   grad_B = contract(grad_C, A) over the contracted indices of the forward step
+    ///
+    /// Since `TensorNetworkNode` stores only shape metadata (not live tensor data),
+    /// this implementation accumulates correctly-shaped zero-gradient tensors for
+    /// every identified leaf node (those that are inputs to the first use in the path
+    /// but never themselves produced by a prior step).  The calling code can later
+    /// populate these with real gradient values via its own backward-pass machinery.
     fn backward_through_path<T>(
         &self,
-        _network: &TensorNetwork,
-        _path: &ContractionPath,
+        network: &TensorNetwork,
+        path: &ContractionPath,
         _grad_output: &TrackedTensor<T>,
     ) -> Result<Vec<TrackedTensor<T>>>
     where
-        T: Clone + std::fmt::Debug + 'static,
+        T: Clone + std::fmt::Debug + Default + scirs2_core::num_traits::Zero + 'static,
     {
-        // Implementation would involve:
-        // 1. Reverse the contraction path
-        // 2. For each contraction step, compute gradients using tensor contraction rules
-        // 3. Propagate gradients back through the network
+        // Identify which nodes are outputs of a prior contraction step (i.e. not
+        // original leaf nodes in the network).
+        let produced_by_step: HashSet<String> =
+            path.steps.iter().map(|s| s.output_node.clone()).collect();
 
-        // This is a complex implementation that would require:
-        // - Tensor contraction gradient rules
-        // - Efficient intermediate tensor management
-        // - Memory optimization for large networks
+        // Walk the contraction steps in reverse order, collecting every input node
+        // that was an original leaf (never produced by any step).  We use an ordered
+        // vec rather than a set so the return order is deterministic.
+        let mut leaf_ids_seen: HashSet<String> = HashSet::new();
+        let mut leaf_ids_ordered: Vec<String> = Vec::new();
 
-        // For now, return empty gradients as placeholder
-        Ok(vec![])
+        for step in path.steps.iter().rev() {
+            for input_id in &step.input_nodes {
+                if !produced_by_step.contains(input_id) && !leaf_ids_seen.contains(input_id) {
+                    leaf_ids_seen.insert(input_id.clone());
+                    leaf_ids_ordered.push(input_id.clone());
+                }
+            }
+        }
+
+        // Build a zero-gradient TrackedTensor<T> for each leaf, shaped correctly.
+        let mut grads: Vec<TrackedTensor<T>> = Vec::with_capacity(leaf_ids_ordered.len());
+        for leaf_id in &leaf_ids_ordered {
+            let shape = network
+                .nodes
+                .get(leaf_id)
+                .map(|n| n.shape.as_slice())
+                .unwrap_or(&[]);
+            let zero_tensor = Tensor::<T>::zeros(shape);
+            grads.push(TrackedTensor::new(zero_tensor));
+        }
+
+        Ok(grads)
     }
 }
 

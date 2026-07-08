@@ -494,14 +494,47 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    /// Standard forward pass (simplified interface)
+    /// Standard forward pass (single-input `Layer` adapter).
+    ///
+    /// `input` is interpreted as the encoder hidden states with shape
+    /// `[seq_len, batch_size, hidden_size]`. The decoder query is taken as the final
+    /// source position, i.e. the last timestep attends over the whole source sequence.
+    /// This computes the real Luong attention context vector
+    /// `[batch_size, hidden_size]`. For the general two-input case (an arbitrary
+    /// decoder query) call [`LuongAttention::forward_with_weights`] directly.
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         let input_shape = input.shape().dims();
-        let batch_size = input_shape[0];
+        if input_shape.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "LuongAttention::forward expects encoder outputs of shape \
+                 [seq_len, batch_size, hidden_size], got {input_shape:?}"
+            )));
+        }
+        let seq_len = input_shape[0];
+        let batch_size = input_shape[1];
+        let hidden_size = input_shape[2];
 
-        // Return zeros as placeholder for Layer trait
-        // In practice, use forward_with_weights directly
-        Ok(Tensor::zeros(&[batch_size, self.hidden_size]))
+        if hidden_size != self.hidden_size {
+            return Err(TensorError::invalid_argument(format!(
+                "Expected hidden size {}, got {hidden_size}",
+                self.hidden_size
+            )));
+        }
+        if seq_len == 0 {
+            return Err(TensorError::invalid_argument(
+                "LuongAttention::forward requires seq_len >= 1".to_string(),
+            ));
+        }
+
+        // Use the final source position as the decoder query: [batch_size, hidden_size].
+        let query = tenflowers_core::ops::slice(
+            input,
+            &[seq_len - 1..seq_len, 0..batch_size, 0..hidden_size],
+        )?
+        .squeeze(Some(&[0]))?;
+
+        let (context, _attention_weights) = self.forward_with_weights(input, &query)?;
+        Ok(context)
     }
 
     fn parameters(&self) -> Vec<&Tensor<T>> {
@@ -548,5 +581,86 @@ where
 
     fn clone_box(&self) -> Box<dyn Layer<T>> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seq_tensor(shape: &[usize]) -> Tensor<f32> {
+        let n: usize = shape.iter().product();
+        let data: Vec<f32> = (0..n).map(|i| ((i % 7) as f32) * 0.3 - 0.6).collect();
+        Tensor::from_data(data, shape).expect("failed to build test tensor")
+    }
+
+    fn values(tensor: &Tensor<f32>) -> Vec<f32> {
+        tensor.to_vec().expect("to_vec")
+    }
+
+    fn has_nonzero(tensor: &Tensor<f32>) -> bool {
+        values(tensor).iter().any(|&v| v.abs() > 0.0)
+    }
+
+    fn assert_rows_sum_to_one(weights: &Tensor<f32>, batch_size: usize, seq_len: usize) {
+        // weights: [batch_size, seq_len]
+        assert_eq!(weights.shape().dims(), &[batch_size, seq_len]);
+        let w = values(weights);
+        for b in 0..batch_size {
+            let sum: f32 = (0..seq_len).map(|t| w[b * seq_len + t]).sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "attention row {b} sums to {sum}, expected ~1"
+            );
+        }
+    }
+
+    #[test]
+    fn luong_dot_weights_sum_to_one_and_context_nonzero() {
+        let attn = LuongAttention::<f32>::new(4, LuongAttentionType::Dot).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]); // [seq, batch, hidden]
+        let decoder = seq_tensor(&[2, 4]);
+        let (context, weights) = attn
+            .forward_with_weights(&encoder, &decoder)
+            .expect("forward_with_weights");
+        assert_eq!(context.shape().dims(), &[2, 4]);
+        assert!(has_nonzero(&context), "context must not be all zeros");
+        assert_rows_sum_to_one(&weights, 2, 3);
+    }
+
+    #[test]
+    fn luong_general_weights_sum_to_one_and_context_nonzero() {
+        let attn = LuongAttention::<f32>::new(4, LuongAttentionType::General).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        let decoder = seq_tensor(&[2, 4]);
+        let (context, weights) = attn
+            .forward_with_weights(&encoder, &decoder)
+            .expect("forward_with_weights");
+        assert!(has_nonzero(&context));
+        assert_rows_sum_to_one(&weights, 2, 3);
+    }
+
+    #[test]
+    fn luong_concat_weights_sum_to_one_and_context_nonzero() {
+        let attn = LuongAttention::<f32>::new(4, LuongAttentionType::Concat).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        let decoder = seq_tensor(&[2, 4]);
+        let (context, weights) = attn
+            .forward_with_weights(&encoder, &decoder)
+            .expect("forward_with_weights");
+        assert!(has_nonzero(&context));
+        assert_rows_sum_to_one(&weights, 2, 3);
+    }
+
+    #[test]
+    fn luong_layer_forward_nonzero_with_shape() {
+        let attn = LuongAttention::<f32>::new(4, LuongAttentionType::General).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        let out = attn.forward(&encoder).expect("forward");
+        assert_eq!(out.shape().dims(), &[2, 4]);
+        assert!(
+            has_nonzero(&out),
+            "Luong forward output must not be all zeros"
+        );
     }
 }

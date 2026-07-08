@@ -3,7 +3,7 @@
 
 use crate::error::{Result, TensorError};
 use crate::gpu::{kernel_fusion::*, GpuBuffer, GpuContext};
-use crate::{Device, Tensor};
+use crate::{Device, Shape, Tensor};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -167,10 +167,9 @@ impl UltraGpuFusionCoordinator {
         let start_time = std::time::Instant::now();
 
         let result_buffer = {
-            let mut scheduler = self
-                .fusion_scheduler
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut scheduler = self.fusion_scheduler.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("fusion scheduler lock poisoned".to_string())
+            })?;
             scheduler
                 .execute_ultra_sophisticated_fusion(
                     fusion_pattern,
@@ -266,14 +265,14 @@ impl UltraGpuFusionCoordinator {
         result_buffer: GpuBuffer<f32>,
         output_shape: &[usize],
     ) -> Result<Tensor<f32>> {
-        // Create tensor from GPU buffer with sophisticated device management
-        let device = result_buffer.device_enum();
-
-        // Create storage for the result tensor
-        let storage = crate::tensor::TensorStorage::Gpu(result_buffer);
-
-        // Create tensor with sophisticated metadata
-        Ok(Tensor::from_storage(storage, device))
+        // `Tensor::from_storage` panics for GPU storage (GPU buffers don't
+        // carry shape information, so it can't derive one) - `from_gpu_buffer`
+        // is the correct constructor here: it takes the shape explicitly and
+        // derives device placement from the buffer itself.
+        Ok(Tensor::from_gpu_buffer(
+            result_buffer,
+            Shape::from_slice(output_shape),
+        ))
     }
 
     /// Record ultra-sophisticated operation performance metrics
@@ -304,10 +303,11 @@ impl UltraGpuFusionCoordinator {
 
         // Record metrics with sophisticated analytics
         {
-            let mut monitor = self
-                .performance_monitor
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut monitor = self.performance_monitor.lock().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "performance monitor lock poisoned".to_string(),
+                )
+            })?;
             monitor
                 .current_metrics
                 .insert(fusion_pattern.to_string(), metrics.clone());
@@ -333,10 +333,9 @@ impl UltraGpuFusionCoordinator {
 
     /// Queue operation for sophisticated batch processing
     pub async fn queue_operation(&self, operation: QueuedOperation) -> Result<()> {
-        let mut queue = self
-            .operation_queue
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut queue = self.operation_queue.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("operation queue lock poisoned".to_string())
+        })?;
 
         if queue.len() >= self.config.max_queue_size {
             return Err(TensorError::invalid_argument(
@@ -355,10 +354,9 @@ impl UltraGpuFusionCoordinator {
     /// Process sophisticated operation queue with advanced batching
     pub async fn process_operation_queue(&self) -> Result<Vec<String>> {
         let operations = {
-            let mut queue = self
-                .operation_queue
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut queue = self.operation_queue.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("operation queue lock poisoned".to_string())
+            })?;
             let batch_size = std::cmp::min(queue.len(), self.config.max_concurrent_operations);
             queue.drain(0..batch_size).collect::<Vec<_>>()
         };
@@ -380,7 +378,7 @@ impl UltraGpuFusionCoordinator {
         let monitor = self
             .performance_monitor
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         monitor.current_metrics.clone()
     }
 
@@ -390,10 +388,9 @@ impl UltraGpuFusionCoordinator {
             return Ok(());
         }
 
-        let mut scheduler = self
-            .fusion_scheduler
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut scheduler = self.fusion_scheduler.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("fusion scheduler lock poisoned".to_string())
+        })?;
         scheduler.analyze_and_optimize_fusion_patterns()?;
 
         Ok(())
@@ -545,5 +542,78 @@ impl FusionPerformanceMonitor {
     /// Get sophisticated anomaly report
     pub fn get_anomaly_report(&self) -> Vec<PerformanceAnomaly> {
         self.anomaly_detector.detected_anomalies.clone()
+    }
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod tests {
+    use super::*;
+
+    /// Regression test for two related bugs in the result-tensor creation
+    /// path:
+    ///  1. `create_result_tensor` used to build `TensorStorage::Gpu(...)` and
+    ///     hand it to `Tensor::from_storage`, which unconditionally panics for
+    ///     GPU storage (see `tensor/creation.rs`) - a guaranteed crash on
+    ///     every real invocation. It must now succeed instead of aborting the
+    ///     process.
+    ///  2. `Tensor::from_gpu_buffer` used to hardcode `Device::Gpu(0)`
+    ///     regardless of the buffer's actual device id. A non-zero device id
+    ///     (1) is used deliberately here so a regression back to the
+    ///     hardcoded-0 behavior would be caught by the device assertion below
+    ///     rather than passing coincidentally.
+    ///
+    /// This exercises `create_result_tensor` directly (it is a private method
+    /// reachable from this same-file test module) rather than going through
+    /// the public `execute_fused_tensor_operation`, because that path's
+    /// separate `prepare_gpu_buffers` step is a distinct, already-tracked,
+    /// deliberately-deferred gap (`NOTE(v0.2)` in this file) unrelated to the
+    /// crash bug fixed here.
+    #[test]
+    fn create_result_tensor_from_gpu_storage_does_not_panic_and_preserves_device_id() {
+        // Skip gracefully if no GPU adapter is available in this environment,
+        // mirroring the attempt-and-match idiom already used by
+        // `ops/einsum/gpu.rs`'s `gpu_delegate_tests` module.
+        let gpu_context = match GpuContext::new() {
+            Ok(ctx) => Arc::new(ctx),
+            Err(_) => {
+                eprintln!(
+                    "skipping create_result_tensor_from_gpu_storage_does_not_panic_and_preserves_device_id: \
+                     no GPU adapter available"
+                );
+                return;
+            }
+        };
+
+        let coordinator = pollster::block_on(UltraGpuFusionCoordinator::new(
+            gpu_context,
+            UltraFusionConfig::default(),
+        ))
+        .expect("test: coordinator construction should succeed once a GPU adapter is present");
+
+        let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let device_id = 1; // deliberately non-zero to catch the old hardcoded-0 bug
+        let gpu_buffer = GpuBuffer::from_slice(&data, &Device::Gpu(device_id))
+            .expect("test: GPU buffer creation should succeed once a GPU adapter is present");
+
+        // This is the exact call that used to panic via Tensor::from_storage.
+        let result = pollster::block_on(coordinator.create_result_tensor(gpu_buffer, &[2, 3]));
+
+        let tensor = result
+            .expect("create_result_tensor must return Ok, not panic, for GPU-resident storage");
+        assert_eq!(tensor.shape().dims(), &[2, 3]);
+        assert_eq!(
+            tensor.device(),
+            &Device::Gpu(device_id),
+            "device must be derived from the GPU buffer, not hardcoded to device 0"
+        );
+
+        let cpu_tensor = tensor
+            .to_cpu()
+            .expect("round-trip to_cpu should succeed for a well-formed GPU tensor");
+        assert_eq!(
+            cpu_tensor.as_slice().expect("tensor should be contiguous"),
+            &data[..],
+            "data must round-trip correctly through the GPU buffer"
+        );
     }
 }

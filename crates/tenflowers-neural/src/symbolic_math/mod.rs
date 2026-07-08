@@ -725,8 +725,12 @@ impl ExprBasis {
 
     /// Standard library: {1, x0, x1, x0^2, x1^2, x0*x1, sin(x0), cos(x0), exp(x0), ln|x0|}
     pub fn standard(n_vars: usize) -> Self {
-        let mut exprs = vec![Expr::Const(1.0)];
-        let mut names = vec!["1".to_string()];
+        // One constant term plus four basis functions per variable.
+        let capacity = 1 + 4 * n_vars;
+        let mut exprs = Vec::with_capacity(capacity);
+        let mut names = Vec::with_capacity(capacity);
+        exprs.push(Expr::Const(1.0));
+        names.push("1".to_string());
         for i in 0..n_vars {
             let var = Expr::Var(format!("x{i}"));
             names.push(format!("x{i}"));

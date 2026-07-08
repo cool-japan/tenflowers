@@ -18,7 +18,7 @@ impl CacheTelemetryCollector {
         let events = self
             .recent_events
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let mut hit_bytes: u64 = 0;
         let mut total_bytes: u64 = 0;
@@ -48,7 +48,7 @@ impl CacheTelemetryCollector {
         let histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if histogram.is_empty() {
             return 0.0;
@@ -68,7 +68,7 @@ impl CacheTelemetryCollector {
         let histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if histogram.is_empty() {
             return 0.0;
@@ -86,7 +86,7 @@ impl CacheTelemetryCollector {
         let histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if histogram.is_empty() {
             return 0.0;
@@ -102,7 +102,7 @@ impl CacheTelemetryCollector {
         let histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if histogram.is_empty() {
             return 0.0;
@@ -118,7 +118,7 @@ impl CacheTelemetryCollector {
         let histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if histogram.is_empty() {
             return 0.0;
@@ -132,7 +132,7 @@ impl CacheTelemetryCollector {
         let metrics = self
             .current_metrics
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metrics.hits + metrics.misses
     }
 
@@ -141,7 +141,7 @@ impl CacheTelemetryCollector {
         let metrics = self
             .current_metrics
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let total = metrics.hits + metrics.misses;
         if total == 0 {
             0.0
@@ -154,7 +154,7 @@ impl CacheTelemetryCollector {
     pub fn avg_hit_latency_us(&self) -> f64 {
         self.current_metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .avg_hit_latency_us
     }
 
@@ -162,7 +162,7 @@ impl CacheTelemetryCollector {
     pub fn avg_miss_latency_us(&self) -> f64 {
         self.current_metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .avg_miss_latency_us
     }
 
@@ -173,7 +173,7 @@ impl CacheTelemetryCollector {
         let metrics = self
             .current_metrics
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let elapsed = metrics.window_start.elapsed();
         let secs = elapsed.as_secs_f64();
         if secs <= 0.0 {
@@ -189,7 +189,7 @@ impl CacheTelemetryCollector {
     pub fn latency_histogram_snapshot(&self) -> std::collections::HashMap<u64, u64> {
         self.latency_histogram
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -198,7 +198,7 @@ impl CacheTelemetryCollector {
         !self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .is_empty()
     }
 

@@ -185,7 +185,8 @@ where
         + scirs2_core::numeric::Float
         + Send
         + Sync
-        + 'static,
+        + 'static
+        + bytemuck::Pod,
 {
     fn len(&self) -> usize {
         self.samples.len()
@@ -209,7 +210,8 @@ where
         + scirs2_core::numeric::Float
         + Send
         + Sync
-        + 'static,
+        + 'static
+        + bytemuck::Pod,
 {
     /// Fuse modalities according to the configured strategy
     pub fn fuse_modalities(&self, sample: &MultimodalSample<T>) -> Result<Tensor<T>> {

@@ -11,6 +11,12 @@ use tenflowers_core::{Device, Result, Tensor, TensorError};
 
 use super::{LoadResult, ModelMetadata, SemanticVersion};
 
+/// The real, prost-based protobuf ONNX parser this loader delegates to.
+/// Only referenced from behind `#[cfg(feature = "onnx")]`, since none of its
+/// protobuf-decoding functionality exists without that feature.
+#[cfg(feature = "onnx")]
+use crate::onnx as onnx_impl;
+
 /// ONNX data types
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -583,6 +589,160 @@ impl OnnxLoadConfig {
     }
 }
 
+/// Decode raw ONNX protobuf bytes into the top-level `ModelProto` message.
+///
+/// This is the single real prost-based decode step that both the metadata-only
+/// path (`utils::get_onnx_info`) and the full-load path (`parse_protobuf_model`)
+/// build on, so bytes are only parsed once per call either way (rather than,
+/// say, decoding once via `onnx::model::OnnxModel::from_protobuf` for the graph
+/// and a second time just to recover `opset_import`, which that struct doesn't
+/// retain).
+#[cfg(feature = "onnx")]
+fn decode_model_proto(bytes: &[u8]) -> Result<onnx_impl::onnx_proto::ModelProto> {
+    use prost::Message;
+
+    onnx_impl::onnx_proto::ModelProto::decode(bytes).map_err(|e| {
+        TensorError::serialization_error_simple(format!("Failed to decode ONNX protobuf: {e}"))
+    })
+}
+
+/// Build the target [`OnnxModelMetadata`] directly from a decoded `ModelProto`,
+/// without touching its `graph` field at all. Field defaults intentionally
+/// mirror `crate::onnx::model::OnnxModel::from_protobuf` exactly, so metadata
+/// read this way is identical to metadata read via a full model load.
+#[cfg(feature = "onnx")]
+fn metadata_from_proto_model(proto_model: &onnx_impl::onnx_proto::ModelProto) -> OnnxModelMetadata {
+    OnnxModelMetadata {
+        model_version: proto_model.model_version.unwrap_or(1),
+        producer_name: proto_model
+            .producer_name
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string()),
+        producer_version: proto_model
+            .producer_version
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string()),
+        domain: proto_model.domain.clone().unwrap_or_default(),
+        ir_version: proto_model.ir_version.unwrap_or(7),
+        opset_imports: proto_model
+            .opset_import
+            .iter()
+            .map(|op| {
+                (
+                    op.domain.clone().unwrap_or_default(),
+                    op.version.unwrap_or_default(),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// Map the source (4-variant) ONNX dtype onto the target (13-variant) dtype.
+#[cfg(feature = "onnx")]
+fn convert_source_dtype(dtype: onnx_impl::types::OnnxDataType) -> OnnxDataType {
+    match dtype {
+        onnx_impl::types::OnnxDataType::Float32 => OnnxDataType::Float32,
+        onnx_impl::types::OnnxDataType::Float64 => OnnxDataType::Float64,
+        onnx_impl::types::OnnxDataType::Int32 => OnnxDataType::Int32,
+        onnx_impl::types::OnnxDataType::Int64 => OnnxDataType::Int64,
+    }
+}
+
+/// Map a source attribute value onto the target attribute representation.
+#[cfg(feature = "onnx")]
+fn convert_attribute(real_attr: &onnx_impl::data::OnnxAttribute) -> OnnxAttribute {
+    match real_attr {
+        onnx_impl::data::OnnxAttribute::Float(v) => OnnxAttribute::Float(*v),
+        onnx_impl::data::OnnxAttribute::Int(v) => OnnxAttribute::Int(*v),
+        onnx_impl::data::OnnxAttribute::String(v) => OnnxAttribute::String(v.clone()),
+        onnx_impl::data::OnnxAttribute::Floats(v) => OnnxAttribute::Floats(v.clone()),
+        onnx_impl::data::OnnxAttribute::Ints(v) => OnnxAttribute::Ints(v.clone()),
+        onnx_impl::data::OnnxAttribute::Strings(v) => OnnxAttribute::Strings(v.clone()),
+    }
+}
+
+/// Map a source node onto the target node representation.
+#[cfg(feature = "onnx")]
+fn convert_node(real_node: &onnx_impl::data::OnnxNode) -> OnnxNode {
+    let mut node = OnnxNode::new(real_node.name.clone(), real_node.op_type.clone());
+    node.inputs = real_node.inputs.clone();
+    node.outputs = real_node.outputs.clone();
+    for (k, v) in &real_node.attributes {
+        node.attributes.insert(k.clone(), convert_attribute(v));
+    }
+    node
+}
+
+/// ONNX represents unknown/dynamic dimensions with a negative sentinel value
+/// (see the `DimParam` handling in `onnx::data::OnnxValueInfo::from_protobuf`);
+/// map those onto `None` for the target's `Vec<Option<i64>>` shape representation.
+#[cfg(feature = "onnx")]
+fn dim_to_optional(d: i64) -> Option<i64> {
+    if d < 0 {
+        None
+    } else {
+        Some(d)
+    }
+}
+
+/// Map a source value-info (graph input/output) onto the target tensor-info representation.
+#[cfg(feature = "onnx")]
+fn convert_value_info(real_vi: &onnx_impl::data::OnnxValueInfo) -> OnnxTensorInfo {
+    let dtype = convert_source_dtype(real_vi.elem_type);
+    let shape = real_vi.shape.iter().map(|&d| dim_to_optional(d)).collect();
+    OnnxTensorInfo::new(real_vi.name.clone(), dtype, shape)
+    // .data intentionally stays None: OnnxValueInfo carries no tensor data on the source side.
+}
+
+/// Map a source initializer tensor (with raw weight bytes) onto the target tensor-info representation.
+#[cfg(feature = "onnx")]
+fn convert_tensor(real_tensor: &onnx_impl::data::OnnxTensor) -> OnnxTensorInfo {
+    let dtype = convert_source_dtype(real_tensor.data_type);
+    let shape = real_tensor
+        .dims
+        .iter()
+        .map(|&d| dim_to_optional(d))
+        .collect();
+    let mut info = OnnxTensorInfo::new(real_tensor.name.clone(), dtype, shape);
+    info.data = Some(real_tensor.raw_data.clone());
+    info
+}
+
+/// Map a whole source graph onto the target graph representation.
+#[cfg(feature = "onnx")]
+fn convert_graph(real_graph: &onnx_impl::data::OnnxGraph) -> OnnxGraph {
+    OnnxGraph {
+        name: real_graph.name.clone(),
+        nodes: real_graph.nodes.iter().map(convert_node).collect(),
+        inputs: real_graph.inputs.iter().map(convert_value_info).collect(),
+        outputs: real_graph.outputs.iter().map(convert_value_info).collect(),
+        initializers: real_graph.initializers.iter().map(convert_tensor).collect(),
+        // `onnx::data::OnnxGraph` has no `value_info` field at all -- its own
+        // `from_protobuf` never reads `GraphProto.value_info` either, so this
+        // is genuinely absent on the source side rather than dropped here.
+        value_info: Vec::new(),
+    }
+}
+
+/// Parse real ONNX protobuf bytes into the target [`OnnxModel`] representation
+/// by delegating to the working prost-based parser in `crate::onnx`: one
+/// top-level decode, then the real `OnnxGraph::from_protobuf` graph conversion
+/// (the same two steps `onnx::model::OnnxModel::from_protobuf` performs
+/// internally -- reusing them directly here avoids decoding the bytes twice).
+#[cfg(feature = "onnx")]
+fn parse_protobuf_model(bytes: &[u8]) -> Result<OnnxModel> {
+    let proto_model = decode_model_proto(bytes)?;
+    let metadata = metadata_from_proto_model(&proto_model);
+
+    let graph_proto = proto_model.graph.as_ref().ok_or_else(|| {
+        TensorError::serialization_error_simple("Missing graph in model".to_string())
+    })?;
+    let real_graph = onnx_impl::data::OnnxGraph::from_protobuf(graph_proto)?;
+    let graph = convert_graph(&real_graph);
+
+    Ok(OnnxModel { metadata, graph })
+}
+
 /// ONNX model loader
 pub struct OnnxLoader {
     config: OnnxLoadConfig,
@@ -602,39 +762,149 @@ impl OnnxLoader {
     }
 
     /// Load ONNX model from file
-    pub fn load_from_file<P: AsRef<Path>>(&self, _path: P) -> Result<OnnxModel> {
-        // NOTE(v0.2): Implement actual ONNX protobuf parsing
-        // This requires the prost or similar protobuf library
-        Err(TensorError::serialization_error_simple(
-            "ONNX loading not yet implemented - requires protobuf parsing".to_string(),
-        ))
+    pub fn load_from_file<P: AsRef<Path>>(&self, path: P) -> Result<OnnxModel> {
+        #[cfg(feature = "onnx")]
+        {
+            let bytes = std::fs::read(path.as_ref()).map_err(|e| {
+                TensorError::serialization_error_simple(format!(
+                    "Failed to read ONNX file '{}': {e}",
+                    path.as_ref().display()
+                ))
+            })?;
+            self.load_from_bytes(&bytes)
+        }
+        #[cfg(not(feature = "onnx"))]
+        {
+            Err(TensorError::serialization_error_simple(format!(
+                "ONNX protobuf loading requires the 'onnx' feature to be enabled (path: '{}')",
+                path.as_ref().display()
+            )))
+        }
     }
 
     /// Load ONNX model from bytes
-    pub fn load_from_bytes(&self, _bytes: &[u8]) -> Result<OnnxModel> {
-        // NOTE(v0.2): Implement actual ONNX protobuf parsing
-        Err(TensorError::serialization_error_simple(
-            "ONNX loading not yet implemented - requires protobuf parsing".to_string(),
-        ))
+    pub fn load_from_bytes(&self, bytes: &[u8]) -> Result<OnnxModel> {
+        #[cfg(feature = "onnx")]
+        {
+            let model = parse_protobuf_model(bytes)?;
+            if self.config.strict_validation {
+                model.validate()?;
+            }
+            Ok(model)
+        }
+        #[cfg(not(feature = "onnx"))]
+        {
+            Err(TensorError::serialization_error_simple(format!(
+                "ONNX protobuf loading requires the 'onnx' feature to be enabled ({} bytes provided)",
+                bytes.len()
+            )))
+        }
     }
 
     /// Convert ONNX weights to TenfloweRS format
     pub fn convert_weights<T>(&self, model: &OnnxModel) -> Result<HashMap<String, Tensor<T>>>
     where
-        T: Clone + Default,
+        T: Clone + Default + bytemuck::Pod + bytemuck::Zeroable + 'static,
     {
         let mut weights = HashMap::new();
 
         for initializer in &model.graph.initializers {
-            // NOTE(v0.2): Implement actual weight conversion
-            // This would parse the raw bytes in initializer.data
-            // and create Tensor<T> objects
-            let _name = &initializer.name;
-            let _dtype = &initializer.dtype;
-            let _shape = &initializer.shape;
+            let tensor = Self::tensor_from_initializer::<T>(initializer)?;
+            weights.insert(initializer.name.clone(), tensor);
         }
 
         Ok(weights)
+    }
+
+    /// Check whether the requested Rust element type matches an ONNX dtype's
+    /// on-disk representation (byte layout), so raw bytes can be soundly
+    /// reinterpreted as `[T]`.
+    fn dtype_matches<T: 'static>(dtype: OnnxDataType) -> bool {
+        use std::any::TypeId;
+
+        let target = TypeId::of::<T>();
+        match dtype {
+            OnnxDataType::Float32 => target == TypeId::of::<f32>(),
+            OnnxDataType::Float64 => target == TypeId::of::<f64>(),
+            OnnxDataType::Int32 => target == TypeId::of::<i32>(),
+            OnnxDataType::Int64 => target == TypeId::of::<i64>(),
+            OnnxDataType::Uint8 => target == TypeId::of::<u8>(),
+            OnnxDataType::Int8 => target == TypeId::of::<i8>(),
+            OnnxDataType::Uint16 => target == TypeId::of::<u16>(),
+            OnnxDataType::Int16 => target == TypeId::of::<i16>(),
+            // ONNX bool tensors store one raw byte per element.
+            OnnxDataType::Bool => target == TypeId::of::<u8>(),
+            OnnxDataType::Float16
+            | OnnxDataType::BFloat16
+            | OnnxDataType::Complex64
+            | OnnxDataType::Complex128 => false,
+        }
+    }
+
+    /// Reinterpret an initializer's raw bytes as a `Tensor<T>`, validating
+    /// shape, dtype, and byte-length along the way. Never fabricates data:
+    /// any mismatch results in a typed `Err`.
+    fn tensor_from_initializer<T>(info: &OnnxTensorInfo) -> Result<Tensor<T>>
+    where
+        T: Clone + Default + bytemuck::Pod + bytemuck::Zeroable + 'static,
+    {
+        let shape_i64 = info.static_shape().ok_or_else(|| {
+            TensorError::serialization_error_simple(format!(
+                "initializer '{}' has a dynamic shape {:?}; weights must be fully static",
+                info.name, info.shape
+            ))
+        })?;
+
+        let mut shape = Vec::with_capacity(shape_i64.len());
+        for d in shape_i64 {
+            if d < 0 {
+                return Err(TensorError::serialization_error_simple(format!(
+                    "initializer '{}' has an invalid negative dimension {d}",
+                    info.name
+                )));
+            }
+            shape.push(d as usize);
+        }
+
+        if !Self::dtype_matches::<T>(info.dtype) {
+            return Err(TensorError::serialization_error_simple(format!(
+                "initializer '{}' has ONNX dtype {:?} which does not match the requested Rust \
+                 element type (size {} bytes); call convert_weights::<T>() with a T matching \
+                 the tensor's declared dtype",
+                info.name,
+                info.dtype,
+                std::mem::size_of::<T>()
+            )));
+        }
+
+        let raw = info.data.as_deref().ok_or_else(|| {
+            TensorError::serialization_error_simple(format!(
+                "initializer '{}' has no raw tensor data to convert",
+                info.name
+            ))
+        })?;
+
+        let count: usize = shape.iter().product();
+        let expected_bytes = count * std::mem::size_of::<T>();
+        if raw.len() != expected_bytes {
+            return Err(TensorError::serialization_error_simple(format!(
+                "initializer '{}' raw data is {} bytes but shape {:?} with dtype {:?} expects {} bytes",
+                info.name,
+                raw.len(),
+                shape,
+                info.dtype,
+                expected_bytes
+            )));
+        }
+
+        let values: &[T] = bytemuck::try_cast_slice(raw).map_err(|e| {
+            TensorError::serialization_error_simple(format!(
+                "initializer '{}' raw bytes could not be reinterpreted as the target element type: {e}",
+                info.name
+            ))
+        })?;
+
+        Tensor::from_vec(values.to_vec(), &shape)
     }
 
     /// Get configuration
@@ -663,9 +933,29 @@ pub mod utils {
     }
 
     /// Get ONNX file info without loading the full model
-    pub fn get_onnx_info<P: AsRef<Path>>(_path: P) -> Result<OnnxModelMetadata> {
-        // NOTE(v0.2): Implement lightweight metadata extraction
-        Ok(OnnxModelMetadata::default())
+    pub fn get_onnx_info<P: AsRef<Path>>(path: P) -> Result<OnnxModelMetadata> {
+        #[cfg(feature = "onnx")]
+        {
+            let bytes = std::fs::read(path.as_ref()).map_err(|e| {
+                TensorError::serialization_error_simple(format!(
+                    "Failed to read ONNX file '{}': {e}",
+                    path.as_ref().display()
+                ))
+            })?;
+            // Decode only the top-level `ModelProto` and read metadata straight
+            // off it -- this never runs the `OnnxGraph::from_protobuf` graph
+            // conversion (node/tensor/attribute allocation), so it is genuinely
+            // lighter than a full `load_from_bytes` call.
+            let proto_model = super::decode_model_proto(&bytes)?;
+            Ok(super::metadata_from_proto_model(&proto_model))
+        }
+        #[cfg(not(feature = "onnx"))]
+        {
+            Err(TensorError::serialization_error_simple(format!(
+                "ONNX metadata reading requires the 'onnx' feature to be enabled (path: '{}')",
+                path.as_ref().display()
+            )))
+        }
     }
 
     /// Convert ONNX data type to TenfloweRS dtype
@@ -878,5 +1168,307 @@ mod tests {
     fn test_convert_dtype() {
         assert_eq!(utils::convert_dtype(OnnxDataType::Float32), "f32");
         assert_eq!(utils::convert_dtype(OnnxDataType::Int64), "i64");
+    }
+
+    // ---- Real loader tests -------------------------------------------------
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_onnx_loader_round_trip_from_bytes_and_file() {
+        use crate::onnx::onnx_proto;
+        use prost::Message;
+
+        let node = onnx_proto::NodeProto {
+            input: vec!["x".to_string(), "w".to_string()],
+            output: vec!["y".to_string()],
+            name: Some("matmul_node".to_string()),
+            op_type: Some("MatMul".to_string()),
+            attribute: vec![onnx_proto::AttributeProto {
+                name: Some("axes".to_string()),
+                r#type: Some(onnx_proto::AttributeType::Ints as i32),
+                ints: vec![0, 1],
+                ..Default::default()
+            }],
+        };
+
+        // Mixed shape: one dynamic (DimParam) dim + one static (DimValue) dim,
+        // to exercise the dynamic -> None mapping end to end.
+        let input_shape = onnx_proto::TensorShapeProto {
+            dim: vec![
+                onnx_proto::tensor_shape_proto::Dimension {
+                    value: Some(onnx_proto::tensor_shape_proto::dimension::Value::DimParam(
+                        "batch".to_string(),
+                    )),
+                },
+                onnx_proto::tensor_shape_proto::Dimension {
+                    value: Some(onnx_proto::tensor_shape_proto::dimension::Value::DimValue(
+                        3,
+                    )),
+                },
+            ],
+        };
+        let input_vi = onnx_proto::ValueInfoProto {
+            name: Some("x".to_string()),
+            r#type: Some(onnx_proto::TypeProto {
+                value: Some(onnx_proto::type_proto::Value::TensorType(
+                    onnx_proto::type_proto::Tensor {
+                        elem_type: Some(onnx_proto::TensorDataType::Float as i32),
+                        shape: Some(input_shape),
+                    },
+                )),
+            }),
+            doc_string: None,
+        };
+
+        let output_shape = onnx_proto::TensorShapeProto {
+            dim: vec![onnx_proto::tensor_shape_proto::Dimension {
+                value: Some(onnx_proto::tensor_shape_proto::dimension::Value::DimValue(
+                    2,
+                )),
+            }],
+        };
+        let output_vi = onnx_proto::ValueInfoProto {
+            name: Some("y".to_string()),
+            r#type: Some(onnx_proto::TypeProto {
+                value: Some(onnx_proto::type_proto::Value::TensorType(
+                    onnx_proto::type_proto::Tensor {
+                        elem_type: Some(onnx_proto::TensorDataType::Float as i32),
+                        shape: Some(output_shape),
+                    },
+                )),
+            }),
+            doc_string: None,
+        };
+
+        let weight_values: [f32; 6] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let weight_bytes = bytemuck::cast_slice(&weight_values).to_vec();
+        let initializer = onnx_proto::TensorProto {
+            dims: vec![2, 3],
+            data_type: Some(onnx_proto::TensorDataType::Float as i32),
+            name: Some("w".to_string()),
+            raw_data: Some(weight_bytes),
+            ..Default::default()
+        };
+
+        let graph = onnx_proto::GraphProto {
+            node: vec![node],
+            name: Some("test_graph".to_string()),
+            initializer: vec![initializer],
+            input: vec![input_vi],
+            output: vec![output_vi],
+            value_info: Vec::new(),
+        };
+
+        let model_proto = onnx_proto::ModelProto {
+            ir_version: Some(9),
+            opset_import: vec![onnx_proto::OperatorSetIdProto {
+                domain: Some("".to_string()),
+                version: Some(17),
+            }],
+            producer_name: Some("pytest-onnx".to_string()),
+            producer_version: Some("1.2.3".to_string()),
+            domain: Some("ai.example".to_string()),
+            model_version: Some(42),
+            doc_string: Some("a test model".to_string()),
+            graph: Some(graph),
+        };
+
+        let bytes = model_proto.encode_to_vec();
+
+        let loader = OnnxLoader::new();
+        let model = loader
+            .load_from_bytes(&bytes)
+            .expect("test: load_from_bytes should succeed on a well-formed model");
+
+        // Metadata
+        assert_eq!(model.metadata.ir_version, 9);
+        assert_eq!(model.metadata.producer_name, "pytest-onnx");
+        assert_eq!(model.metadata.producer_version, "1.2.3");
+        assert_eq!(model.metadata.domain, "ai.example");
+        assert_eq!(model.metadata.model_version, 42);
+        assert_eq!(model.metadata.opset_imports, vec![("".to_string(), 17)]);
+
+        // Graph / node
+        assert_eq!(model.graph.name, "test_graph");
+        assert_eq!(model.graph.nodes.len(), 1);
+        let n = &model.graph.nodes[0];
+        assert_eq!(n.name, "matmul_node");
+        assert_eq!(n.op_type, "MatMul");
+        assert_eq!(n.inputs, vec!["x".to_string(), "w".to_string()]);
+        assert_eq!(n.outputs, vec!["y".to_string()]);
+        match n.attributes.get("axes") {
+            Some(OnnxAttribute::Ints(v)) => assert_eq!(v, &vec![0, 1]),
+            other => panic!("expected Ints attribute, got {other:?}"),
+        }
+
+        // Input: dynamic dim mapped to None, static dim mapped to Some
+        assert_eq!(model.graph.inputs.len(), 1);
+        assert_eq!(model.graph.inputs[0].shape, vec![None, Some(3)]);
+        assert_eq!(model.graph.inputs[0].dtype, OnnxDataType::Float32);
+
+        // Output
+        assert_eq!(model.graph.outputs.len(), 1);
+        assert_eq!(model.graph.outputs[0].shape, vec![Some(2)]);
+
+        // Initializer / weight bytes
+        assert_eq!(model.graph.initializers.len(), 1);
+        let init = &model.graph.initializers[0];
+        assert_eq!(init.name, "w");
+        assert_eq!(init.dtype, OnnxDataType::Float32);
+        assert_eq!(init.static_shape(), Some(vec![2, 3]));
+        let data_bytes = init
+            .data
+            .as_ref()
+            .expect("test: initializer should carry raw data");
+        let floats: &[f32] = bytemuck::cast_slice(data_bytes.as_slice());
+        assert_eq!(floats, &weight_values);
+
+        // File round-trip through the same bytes
+        let file_path = std::env::temp_dir().join(format!(
+            "tenflowers_onnx_roundtrip_test_{}.onnx",
+            std::process::id()
+        ));
+        std::fs::write(&file_path, &bytes).expect("test: writing temp onnx file should succeed");
+        let model_from_file = loader
+            .load_from_file(&file_path)
+            .expect("test: load_from_file should succeed");
+        assert_eq!(
+            model_from_file.metadata.ir_version,
+            model.metadata.ir_version
+        );
+        assert_eq!(model_from_file.graph.name, model.graph.name);
+        assert_eq!(model_from_file.graph.nodes.len(), model.graph.nodes.len());
+
+        // convert_weights
+        let weights = loader
+            .convert_weights::<f32>(&model)
+            .expect("test: convert_weights should succeed");
+        let tensor = weights
+            .get("w")
+            .expect("test: weight 'w' should be present");
+        assert_eq!(tensor.shape().dims(), &[2, 3]);
+        assert_eq!(tensor.data(), &weight_values);
+
+        // get_onnx_info (lightweight metadata read)
+        let info = utils::get_onnx_info(&file_path).expect("test: get_onnx_info should succeed");
+        assert_eq!(info.ir_version, 9);
+        assert_eq!(info.producer_name, "pytest-onnx");
+        assert_eq!(info.opset_imports, vec![("".to_string(), 17)]);
+
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_onnx_load_from_bytes_garbage_returns_err() {
+        let loader = OnnxLoader::new();
+        let result = loader.load_from_bytes(&[0xFF, 0x00, 0xAB]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_onnx_load_from_bytes_missing_graph_returns_err() {
+        use crate::onnx::onnx_proto;
+        use prost::Message;
+
+        let model_proto = onnx_proto::ModelProto {
+            ir_version: Some(9),
+            graph: None,
+            ..Default::default()
+        };
+        let bytes = model_proto.encode_to_vec();
+
+        let loader = OnnxLoader::new();
+        let result = loader.load_from_bytes(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_convert_weights_dtype_mismatch_returns_err() {
+        let mut graph = OnnxGraph::new("g".to_string());
+        let mut info = OnnxTensorInfo::new("w".to_string(), OnnxDataType::Float32, vec![Some(2)]);
+        info.data = Some(bytemuck::cast_slice(&[1.0f32, 2.0f32]).to_vec());
+        graph.add_initializer(info);
+        let model = OnnxModel::new(graph);
+
+        let loader = OnnxLoader::new();
+        let result = loader.convert_weights::<i64>(&model);
+        assert!(result.is_err());
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn test_onnx_load_from_bytes_without_onnx_feature_returns_err() {
+        let loader = OnnxLoader::new();
+        let result = loader.load_from_bytes(b"not real onnx data");
+        assert!(result.is_err());
+        let message = result
+            .err()
+            .expect("test: error should be present")
+            .to_string();
+        assert!(
+            message.contains("feature"),
+            "error message should mention the missing feature: {message}"
+        );
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn test_onnx_load_from_file_without_onnx_feature_returns_err() {
+        let loader = OnnxLoader::new();
+        let result = loader.load_from_file("/nonexistent/path/model.onnx");
+        assert!(result.is_err());
+        let message = result
+            .err()
+            .expect("test: error should be present")
+            .to_string();
+        assert!(
+            message.contains("feature"),
+            "error message should mention the missing feature: {message}"
+        );
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn test_get_onnx_info_without_onnx_feature_returns_err() {
+        let result = utils::get_onnx_info("/nonexistent/path/model.onnx");
+        assert!(result.is_err());
+        let message = result
+            .err()
+            .expect("test: error should be present")
+            .to_string();
+        assert!(
+            message.contains("feature"),
+            "error message should mention the missing feature: {message}"
+        );
+    }
+
+    /// Exercises `convert_weights` using only hand-built target types (no
+    /// protobuf involved at all), so it runs -- and gives real coverage --
+    /// in both the default build and the `onnx`-feature build.
+    #[test]
+    fn test_convert_weights_pure_target_types_f32() {
+        let mut graph = OnnxGraph::new("g".to_string());
+        let values: [f32; 4] = [10.0, 20.0, 30.0, 40.0];
+        let mut info = OnnxTensorInfo::new(
+            "weight".to_string(),
+            OnnxDataType::Float32,
+            vec![Some(2), Some(2)],
+        );
+        info.data = Some(bytemuck::cast_slice(&values).to_vec());
+        graph.add_initializer(info);
+        let model = OnnxModel::new(graph);
+
+        let loader = OnnxLoader::new();
+        let weights = loader
+            .convert_weights::<f32>(&model)
+            .expect("test: convert_weights should succeed");
+        let tensor = weights
+            .get("weight")
+            .expect("test: 'weight' should be present");
+        assert_eq!(tensor.shape().dims(), &[2, 2]);
+        assert_eq!(tensor.data(), &values);
     }
 }

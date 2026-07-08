@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tenflowers_core::{Result, Tensor};
+use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Access pattern types detected by the system
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -370,7 +370,9 @@ where
             while !shutdown.load(Ordering::Relaxed) {
                 // Process prefetch requests
                 let indices_to_prefetch: Vec<usize> = {
-                    let mut queue_guard = queue.lock().expect("lock should not be poisoned");
+                    let mut queue_guard = queue
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     let mut indices = Vec::new();
 
                     // Take up to max_prefetch_count items
@@ -387,8 +389,9 @@ where
                 // Prefetch the data
                 for index in indices_to_prefetch {
                     if let Ok(data) = dataset.get(index) {
-                        let mut cache_guard =
-                            cache.write().expect("write lock should not be poisoned");
+                        let mut cache_guard = cache
+                            .write()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
                         // Check cache size limit
                         if cache_guard.len() >= config.max_cache_size {
@@ -413,8 +416,9 @@ where
                         );
 
                         // Update stats
-                        let mut stats_guard =
-                            stats.write().expect("write lock should not be poisoned");
+                        let mut stats_guard = stats
+                            .write()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
                         stats_guard.bandwidth_saved +=
                             std::mem::size_of::<(Tensor<T>, Tensor<T>)>() as u64;
                     }
@@ -422,7 +426,9 @@ where
 
                 // Clean up expired entries
                 {
-                    let mut cache_guard = cache.write().expect("write lock should not be poisoned");
+                    let mut cache_guard = cache
+                        .write()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     let now = Instant::now();
                     cache_guard
                         .retain(|_, entry| now.duration_since(entry.timestamp) < config.cache_ttl);
@@ -437,44 +443,39 @@ where
     pub fn get(&self, index: usize) -> Result<(Tensor<T>, Tensor<T>)> {
         // Update statistics
         {
-            let mut stats = self
-                .stats
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut stats = self.stats.write().map_err(|_| {
+                TensorError::invalid_operation_simple("stats lock poisoned".to_string())
+            })?;
             stats.total_accesses += 1;
         }
 
         // Record access pattern
         {
-            let mut detector = self
-                .pattern_detector
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut detector = self.pattern_detector.write().map_err(|_| {
+                TensorError::invalid_operation_simple("pattern detector lock poisoned".to_string())
+            })?;
             detector.record_access(index);
         }
 
         // Check cache first
         {
-            let mut cache = self
-                .prefetch_cache
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut cache = self.prefetch_cache.write().map_err(|_| {
+                TensorError::invalid_operation_simple("cache lock poisoned".to_string())
+            })?;
             if let Some(entry) = cache.get_mut(&index) {
                 entry.access_count += 1;
                 entry.timestamp = Instant::now(); // Update LRU
 
-                let mut stats = self
-                    .stats
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut stats = self.stats.write().map_err(|_| {
+                    TensorError::invalid_operation_simple("stats lock poisoned".to_string())
+                })?;
                 stats.prefetch_hits += 1;
 
                 return Ok(entry.data.clone());
             } else {
-                let mut stats = self
-                    .stats
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut stats = self.stats.write().map_err(|_| {
+                    TensorError::invalid_operation_simple("stats lock poisoned".to_string())
+                })?;
                 stats.prefetch_misses += 1;
             }
         }
@@ -492,7 +493,7 @@ where
             let detector = self
                 .pattern_detector
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             detector.predict_next(current_index, self.config.max_prefetch_count)
         };
 
@@ -500,13 +501,13 @@ where
             let mut queue = self
                 .prefetch_queue
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             for predicted_index in predictions {
                 // Only queue if not already cached
                 let cache = self
                     .prefetch_cache
                     .read()
-                    .expect("read lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 if !cache.contains_key(&predicted_index) {
                     queue.push_back(predicted_index);
                 }
@@ -516,13 +517,13 @@ where
             let mut stats = self
                 .stats
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             stats.pattern_hits += 1;
         } else {
             let mut stats = self
                 .stats
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             stats.pattern_misses += 1;
         }
     }
@@ -531,7 +532,7 @@ where
     pub fn stats(&self) -> AccessStats {
         self.stats
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -539,7 +540,7 @@ where
     pub fn dominant_pattern(&self) -> Option<AccessPattern> {
         self.pattern_detector
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .dominant_pattern()
     }
 
@@ -548,7 +549,7 @@ where
         let mut cache = self
             .prefetch_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache.clear();
     }
 
@@ -557,7 +558,7 @@ where
         let cache = self
             .prefetch_cache
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         (cache.len(), self.config.max_cache_size)
     }
 }

@@ -2,7 +2,7 @@
 
 Automatic differentiation engine for TenfloweRS, providing both tape-based (eager) and graph-based (static) automatic differentiation capabilities.
 
-> Stable (v0.1.1 -- 2026-04-24) | 455 tests passing | 0 clippy warnings
+> Stable (v0.1.2 -- 2026-07-08) | 521 tests passing (5 skipped) | 0 clippy warnings
 
 ## Overview
 
@@ -34,93 +34,112 @@ Automatic differentiation engine for TenfloweRS, providing both tape-based (eage
 ### Basic Gradient Computation
 
 ```rust
-use tenflowers_autograd::{GradientTape, TensorAutograd};
-use tenflowers_core::{Tensor, Device};
+use tenflowers_autograd::GradientTape;
+use tenflowers_core::Tensor;
 
 // Create a gradient tape context
 let tape = GradientTape::new();
 
-// Create tracked tensors
-let x = tape.variable(Tensor::from_vec(vec![2.0, 3.0], &[2], Device::Cpu)?);
-let w = tape.variable(Tensor::from_vec(vec![1.0, 0.5], &[2], Device::Cpu)?);
+// Watch tensors so operations against them are recorded
+let x = tape.watch(Tensor::from_vec(vec![2.0f32, 3.0], &[2])?);
+let w = tape.watch(Tensor::from_vec(vec![1.0f32, 0.5], &[2])?);
 
 // Perform computations (automatically tracked)
-let y = x.mul(&w)?;  // y = x * w
-let z = y.sum()?;    // z = sum(y)
+let y = x.mul(&w)?;               // y = x * w
+let z = y.sum(None, false)?;      // z = sum(y) over all axes
 
-// Compute gradients
-let grads = tape.gradient(&z, &[&x, &w])?;
-// grads[0] = dz/dx = w = [1.0, 0.5]
-// grads[1] = dz/dw = x = [2.0, 3.0]
+// Compute gradients (targets and sources are slices of TrackedTensor)
+let grads = tape.gradient(&[z], &[x, w])?;
+// grads[0] = Some(dz/dx) = Some(w) = Some([1.0, 0.5])
+// grads[1] = Some(dz/dw) = Some(x) = Some([2.0, 3.0])
 ```
 
 ### Forward Mode Automatic Differentiation
 
 ```rust
-use tenflowers_autograd::{ForwardADContext, DualTensor};
+use tenflowers_autograd::{ForwardMode, forward_ops};
+use tenflowers_core::Tensor;
 
-// Create forward AD context
-let mut ctx = ForwardADContext::new();
+// ForwardMode drives dual-tensor id assignment
+let mut mode: ForwardMode<f32> = ForwardMode::new();
 
-// Create dual tensors (value + derivative)
-let x = DualTensor::new(
-    Tensor::scalar(2.0, Device::Cpu)?,
-    Tensor::scalar(1.0, Device::Cpu)?  // dx/dx = 1
-);
+// `variable` seeds a unit tangent (dx/dx = 1) in a fresh direction;
+// `constant` carries no tangent at all
+let x = mode.variable(Tensor::from_vec(vec![2.0f32], &[1])?)?;
+let two = mode.constant(Tensor::from_vec(vec![2.0f32], &[1])?);
 
-// Compute function and derivative simultaneously
-let y = ctx.sin(&x)?;     // y = sin(x), dy/dx = cos(x)
-let z = ctx.mul(&y, &x)?;  // z = y * x, dz/dx = ...
+// Compute function and derivative simultaneously: y = x * 2, z = relu(y)
+let y = forward_ops::mul(&x, &two)?;
+let z = forward_ops::relu(&y)?;
 
-println!("f(x) = {}", z.value());
-println!("f'(x) = {}", z.tangent());
+println!("f(x) = {:?}", z.primal);
+println!("f'(x) = {:?}", z.tangent(x.id));
 ```
 
 ### Higher-order Derivatives
 
+> Note: reverse-mode `GradientTape` does not yet support persistent-tape
+> higher-order autodiff (there is no `.persistent()` method). For second-order
+> quantities, use the finite-difference helpers in [`second_order`], which are
+> real and tested today:
+
 ```rust
-use tenflowers_autograd::{GradientTape, TensorAutograd};
+use tenflowers_autograd::second_order::hessian_vector_product_fd;
+use tenflowers_core::Tensor;
 
-// Enable higher-order derivatives
-let tape = GradientTape::new().persistent();
+let x = Tensor::from_vec(vec![1.0f32, 2.0], &[2])?;
+let v = Tensor::from_vec(vec![1.0f32, 0.0], &[2])?;
 
-let x = tape.variable(Tensor::scalar(2.0, Device::Cpu)?);
-
-// f(x) = x^3
-let y = x.pow(3)?;
-
-// First derivative: f'(x) = 3x^2
-let grad = tape.gradient(&y, &[&x])?[0];
-
-// Second derivative: f''(x) = 6x
-let grad2 = tape.gradient(&grad, &[&x])?[0];
+// Hessian-vector product Hv for f(x) = x^2 (gradient_fn returns ∇f(x) = 2x)
+let hv = hessian_vector_product_fd(
+    |x_val| Ok(vec![x_val.mul(&Tensor::from_scalar(2.0f32))?]),
+    &x,
+    &v,
+    Some(1e-5),
+)?;
 ```
+
+[`second_order`]: https://docs.rs/tenflowers-autograd/latest/tenflowers_autograd/second_order/index.html
 
 ### Custom Gradient Functions
 
 ```rust
-use tenflowers_autograd::{CustomOp, GradientTape};
+use tenflowers_autograd::{CustomGradientFunction, CustomGradientOp, GradientTape};
+use tenflowers_core::{Result, Tensor};
 
-// Define custom operation with gradient
+// Define a custom operation with gradient
 struct ClipGradient;
 
-impl CustomOp for ClipGradient {
+impl CustomGradientFunction<f32> for ClipGradient {
     fn forward(&self, inputs: &[&Tensor<f32>]) -> Result<Tensor<f32>> {
         // Forward pass: identity
         Ok(inputs[0].clone())
     }
 
-    fn backward(&self, grad_output: &Tensor<f32>, inputs: &[&Tensor<f32>]) -> Result<Vec<Tensor<f32>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<f32>,
+        _inputs: &[&Tensor<f32>],
+        _output: &Tensor<f32>,
+    ) -> Result<Vec<Tensor<f32>>> {
         // Backward pass: clip gradients to [-1, 1]
-        let clipped = grad_output.clamp(-1.0, 1.0)?;
-        Ok(vec![clipped])
+        Ok(vec![grad_output.clamp(-1.0, 1.0)?])
+    }
+
+    fn name(&self) -> &str {
+        "ClipGradient"
     }
 }
 
-// Use in computation
+// Wrap and run the forward pass through the tape
 let tape = GradientTape::new();
-let x = tape.variable(tensor);
-let y = tape.custom_op(&ClipGradient, &[&x])?;
+let x = tape.watch(tensor);
+let op = CustomGradientOp::new(ClipGradient);
+let y = op.apply(&tape, &[&x])?;
+// Note: `CustomGradientOp::apply` currently runs the custom forward pass and
+// records the output on the tape, but does not yet wire the custom `backward`
+// into `tape.gradient()`'s traversal — full backward-pass integration is
+// tracked in TODO.md.
 ```
 
 ## Architecture
@@ -164,14 +183,16 @@ Differentiable operations:
 - Reductions: `sum`, `mean`, `max` (with indices)
 - Activations: `relu`, `sigmoid`, `tanh`, `softmax`, `gelu`, `mish`
 - Neural: `conv2d`, `max_pool2d`, `batch_norm`
-- Advanced: `logsumexp`, `layer_norm`, `group_norm`
+- Advanced: `layer_norm`, `group_norm`, `instance_norm`, `einsum`
 
 ## Feature Flags
 
-- `default`: Standard reverse-mode autograd
+- `default`: Standard reverse-mode autograd (no optional features enabled)
 - `gpu`: GPU-accelerated gradient computations
+- `rocm`: AMD ROCm GPU backend (via `tenflowers-core/rocm`)
 - `parallel`: Parallel gradient accumulation
 - `jit`: JIT compilation of gradient kernels
+- `distributed`: Enables the `distributed_replication` module re-export (cross-datacenter replication scaffolding — see module docs for what is and isn't implemented yet)
 
 ## License
 

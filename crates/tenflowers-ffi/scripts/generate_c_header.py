@@ -13,7 +13,52 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+
+# Root workspace Cargo.toml, relative to this script:
+# crates/tenflowers-ffi/scripts/generate_c_header.py -> ../../../Cargo.toml
+_WORKSPACE_CARGO_TOML = Path(__file__).resolve().parents[3] / "Cargo.toml"
+
+# Fallback used only if the workspace Cargo.toml cannot be read (e.g. this
+# script is copied out of the repo). Kept in the historical 0.1.0 form so a
+# missing manifest fails loudly via an obviously-a-fallback value rather than
+# silently emitting a plausible-but-wrong version.
+_FALLBACK_VERSION = "0.0.0"
+
+
+def _read_workspace_version(cargo_toml_path: Path = _WORKSPACE_CARGO_TOML) -> str:
+    """Read `[workspace.package] version = "X.Y.Z"` from the root Cargo.toml.
+
+    This avoids hardcoding a version string in this script: every crate in
+    the workspace inherits its version from this single source of truth via
+    `version.workspace = true`, so the generated C header should too.
+    """
+    try:
+        text = cargo_toml_path.read_text(encoding="utf-8")
+    except OSError:
+        return _FALLBACK_VERSION
+
+    in_workspace_package = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_workspace_package = stripped == "[workspace.package]"
+            continue
+        if in_workspace_package:
+            match = re.match(r'version\s*=\s*"([^"]+)"', stripped)
+            if match:
+                return match.group(1)
+    return _FALLBACK_VERSION
+
+
+def _parse_semver(version: str) -> Tuple[int, int, int]:
+    """Parse a `major.minor.patch[-pre][+build]` string into an int triple."""
+    core = version.split("-", 1)[0].split("+", 1)[0]
+    parts = core.split(".")
+    major = int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    return major, minor, patch
 
 
 class CHeaderGenerator:
@@ -24,6 +69,10 @@ class CHeaderGenerator:
         self.types: List[str] = []
         self.functions: List[str] = []
         self.constants: Dict[str, str] = {}
+        self.version_string: str = _read_workspace_version()
+        self.version_major, self.version_minor, self.version_patch = _parse_semver(
+            self.version_string
+        )
 
     def generate_header(self) -> str:
         """Generate the complete C header file content"""
@@ -46,12 +95,13 @@ class CHeaderGenerator:
         header.append("#endif")
         header.append("")
 
-        # Version information
+        # Version information (read from the workspace Cargo.toml so this
+        # never drifts from the real crate version — see _read_workspace_version).
         header.append("/* TenfloweRS FFI Version Information */")
-        header.append("#define TENFLOWERS_VERSION_MAJOR 0")
-        header.append("#define TENFLOWERS_VERSION_MINOR 1")
-        header.append("#define TENFLOWERS_VERSION_PATCH 0")
-        header.append("#define TENFLOWERS_VERSION_STRING \"0.1.0\"")
+        header.append(f"#define TENFLOWERS_VERSION_MAJOR {self.version_major}")
+        header.append(f"#define TENFLOWERS_VERSION_MINOR {self.version_minor}")
+        header.append(f"#define TENFLOWERS_VERSION_PATCH {self.version_patch}")
+        header.append(f"#define TENFLOWERS_VERSION_STRING \"{self.version_string}\"")
         header.append("")
 
         # Opaque types

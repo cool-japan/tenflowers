@@ -32,11 +32,11 @@ impl InPlaceOptimizer {
         let ref_counts = self
             .tensor_ref_counts
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let safe_tensors = self
             .safe_inplace_tensors
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // A tensor can be modified in-place if:
         // 1. It has only one reference (not shared)
@@ -54,7 +54,7 @@ impl InPlaceOptimizer {
         let mut safe_tensors = self
             .safe_inplace_tensors
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         safe_tensors.insert(tensor_id, true);
     }
 
@@ -63,7 +63,7 @@ impl InPlaceOptimizer {
         let mut ref_counts = self
             .tensor_ref_counts
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *ref_counts.entry(tensor_id).or_insert(0) += 1;
     }
 
@@ -72,7 +72,7 @@ impl InPlaceOptimizer {
         let mut ref_counts = self
             .tensor_ref_counts
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(count) = ref_counts.get_mut(&tensor_id) {
             *count = count.saturating_sub(1);
         }
@@ -82,11 +82,11 @@ impl InPlaceOptimizer {
     pub fn clear(&self) {
         self.safe_inplace_tensors
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.tensor_ref_counts
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 }

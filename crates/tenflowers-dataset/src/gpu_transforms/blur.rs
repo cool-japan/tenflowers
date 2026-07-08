@@ -186,17 +186,85 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         })
     }
 
-    /// Apply Gaussian blur to image tensor using GPU
+    /// Apply separable Gaussian blur to a C×H×W image tensor.
+    ///
+    /// A 1-D Gaussian kernel of length `kernel_size` with standard deviation `sigma`
+    /// is applied first horizontally, then vertically (separable convolution), giving
+    /// O(k·N) complexity instead of O(k²·N) for a full 2-D kernel.  Pixels outside
+    /// the image boundary are treated as zero (zero-padding).
+    ///
+    /// A native WGPU compute-shader path is deferred; this CPU path is mathematically
+    /// correct and is used as the fallback.
     pub async fn blur_tensor(&self, input: &Tensor<f32>) -> Result<Tensor<f32>> {
         if input.shape().rank() != 3 {
             return Err(TensorError::invalid_argument(
-                "Expected 3D tensor (C×H×W)".to_string(),
+                "GpuGaussianBlur: expected 3D tensor (C×H×W)".to_string(),
             ));
         }
 
-        // Implementation similar to other transforms...
-        // For brevity, returning a placeholder implementation
-        Ok(input.clone())
+        let shape = input.shape().dims();
+        let (channels, height, width) = (shape[0], shape[1], shape[2]);
+        let k = self.kernel_size as usize;
+
+        if k == 0 {
+            return Err(TensorError::invalid_argument(
+                "GpuGaussianBlur: kernel_size must be ≥ 1".to_string(),
+            ));
+        }
+
+        let data = input.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument("GpuGaussianBlur: cannot access tensor data".to_string())
+        })?;
+
+        // Build normalised 1-D Gaussian kernel.
+        let half = (k / 2) as isize;
+        let sigma = self.sigma;
+        let mut kernel: Vec<f32> = (0..k)
+            .map(|i| {
+                let x = i as f32 - half as f32;
+                (-0.5 * (x / sigma) * (x / sigma)).exp()
+            })
+            .collect();
+        let kernel_sum: f32 = kernel.iter().sum();
+        kernel.iter_mut().for_each(|v| *v /= kernel_sum);
+
+        // Horizontal pass: convolve along width axis.
+        let mut h_pass = vec![0.0f32; channels * height * width];
+        for c in 0..channels {
+            for y in 0..height {
+                for x in 0..width {
+                    let mut acc = 0.0f32;
+                    for (ki, &kv) in kernel.iter().enumerate() {
+                        let sx = x as isize + ki as isize - half;
+                        if sx >= 0 && sx < width as isize {
+                            let idx = c * height * width + y * width + sx as usize;
+                            acc += data[idx] * kv;
+                        }
+                    }
+                    h_pass[c * height * width + y * width + x] = acc;
+                }
+            }
+        }
+
+        // Vertical pass: convolve along height axis.
+        let mut out = vec![0.0f32; channels * height * width];
+        for c in 0..channels {
+            for y in 0..height {
+                for x in 0..width {
+                    let mut acc = 0.0f32;
+                    for (ki, &kv) in kernel.iter().enumerate() {
+                        let sy = y as isize + ki as isize - half;
+                        if sy >= 0 && sy < height as isize {
+                            let idx = c * height * width + sy as usize * width + x;
+                            acc += h_pass[idx] * kv;
+                        }
+                    }
+                    out[c * height * width + y * width + x] = acc;
+                }
+            }
+        }
+
+        Tensor::from_vec(out, &[channels, height, width])
     }
 }
 

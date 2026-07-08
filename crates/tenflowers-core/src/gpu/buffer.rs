@@ -162,6 +162,19 @@ impl<T> Clone for GpuBuffer<T> {
     }
 }
 
+// Plain metadata accessors that don't touch the buffer's element data at all
+// (just clone a `Device` tag) belong in an unbounded impl block: unlike
+// `zeros`/`from_cpu_array`/`to_cpu`/etc., they need no `Pod`/`Zeroable`
+// byte-reinterpretation bound, so gating them behind one would impose an
+// unnecessary bound on every caller (mirrors `Clone`/`Drop` above, which are
+// likewise unbounded).
+impl<T> GpuBuffer<T> {
+    /// Get the device this buffer lives on.
+    pub fn device_enum(&self) -> Device {
+        self.device_enum.clone()
+    }
+}
+
 impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuBuffer<T> {
     /// Track a new GPU allocation
     #[cfg(feature = "gpu")]
@@ -453,7 +466,9 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
 
         match futures::executor::block_on(receiver) {
             Ok(Ok(())) => {
-                let data = buffer_slice.get_mapped_range();
+                let data = buffer_slice.get_mapped_range().map_err(|_| {
+                    TensorError::invalid_operation_simple("Failed to read GPU buffer".to_string())
+                })?;
                 let result = bytemuck::cast_slice(&data).to_vec();
                 drop(data);
                 staging_buffer.unmap();
@@ -471,10 +486,6 @@ impl<T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static> GpuB
 
     pub fn buffer_arc(&self) -> Arc<wgpu::Buffer> {
         Arc::clone(&self.buffer)
-    }
-
-    pub fn device_enum(&self) -> Device {
-        self.device_enum.clone()
     }
 
     pub fn device(&self) -> &wgpu::Device {

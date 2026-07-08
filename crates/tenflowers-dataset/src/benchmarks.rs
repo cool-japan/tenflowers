@@ -291,8 +291,8 @@ pub struct MnistDataset<T> {
     num_samples: usize,
 }
 
-impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
-    for MnistDataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod>
+    Dataset<T> for MnistDataset<T>
 {
     fn len(&self) -> usize {
         self.num_samples
@@ -335,8 +335,8 @@ pub struct CifarDataset<T> {
     num_samples: usize,
 }
 
-impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
-    for CifarDataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod>
+    Dataset<T> for CifarDataset<T>
 {
     fn len(&self) -> usize {
         self.num_samples
@@ -377,8 +377,8 @@ pub struct IrisDataset<T> {
     num_samples: usize,
 }
 
-impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
-    for IrisDataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod>
+    Dataset<T> for IrisDataset<T>
 {
     fn len(&self) -> usize {
         self.num_samples

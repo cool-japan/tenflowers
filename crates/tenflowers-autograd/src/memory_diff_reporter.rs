@@ -31,6 +31,7 @@
 //! println!("{}", diff.format_report());
 //! ```
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -388,10 +389,16 @@ impl MemoryDiffReporter {
     /// Take a named snapshot of current memory state
     pub fn snapshot(&mut self, name: &str) -> &MemorySnapshot {
         let snapshot = MemorySnapshot::capture();
-        self.snapshots.insert(name.to_string(), snapshot);
-        self.snapshots
-            .get(name)
-            .expect("snapshot should exist after insertion")
+        // Use the entry API so the inserted snapshot's reference is returned
+        // directly, preserving the original overwrite-on-every-call semantics
+        // without any fallible `get` and therefore no panic path.
+        match self.snapshots.entry(name.to_string()) {
+            Entry::Occupied(mut occupied) => {
+                occupied.insert(snapshot);
+                &*occupied.into_mut()
+            }
+            Entry::Vacant(vacant) => &*vacant.insert(snapshot),
+        }
     }
 
     /// Take a snapshot with custom data

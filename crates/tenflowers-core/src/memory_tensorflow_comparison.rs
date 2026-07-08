@@ -184,14 +184,20 @@ impl TensorFlowMemoryProfiler {
         // Store snapshot
         self.snapshots
             .write()
-            .expect("write lock should not be poisoned")
+            .map_err(|_| {
+                TensorError::invalid_operation_simple("snapshots write lock poisoned".to_string())
+            })?
             .push(snapshot.clone());
 
         // Update baseline if we have TensorFlow data
         if let Some(tf_memory) = tensorflow_memory {
             self.baseline_memory_usage
                 .lock()
-                .expect("baseline memory usage lock should not be poisoned")
+                .map_err(|_| {
+                    TensorError::invalid_operation_simple(
+                        "baseline memory usage lock poisoned".to_string(),
+                    )
+                })?
                 .insert(operation.to_string(), tf_memory);
         }
 
@@ -512,10 +518,10 @@ print(f"{{memory_used:.2f}}")
 
     /// Generate optimization suggestions for high memory usage
     fn generate_optimization_suggestions(&self, snapshot: &MemorySnapshot) {
-        let mut suggestions = self
-            .optimization_suggestions
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut suggestions = match self.optimization_suggestions.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
 
         // Check for excessive memory usage
         if let Some(tf_memory) = snapshot.tensorflow_memory_mb {
@@ -559,18 +565,18 @@ print(f"{{memory_used:.2f}}")
 
     /// Get all memory snapshots
     pub fn get_snapshots(&self) -> Vec<MemorySnapshot> {
-        self.snapshots
-            .read()
-            .expect("read lock should not be poisoned")
-            .clone()
+        match self.snapshots.read() {
+            Ok(g) => g.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Get optimization suggestions
     pub fn get_optimization_suggestions(&self) -> Vec<MemoryOptimizationSuggestion> {
-        self.optimization_suggestions
-            .read()
-            .expect("read lock should not be poisoned")
-            .clone()
+        match self.optimization_suggestions.read() {
+            Ok(g) => g.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Generate comprehensive memory comparison report

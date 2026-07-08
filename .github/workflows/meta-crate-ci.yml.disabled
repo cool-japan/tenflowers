@@ -1,0 +1,122 @@
+name: Meta Crate CI
+
+on:
+  push:
+    branches: [main, master, "0.*"]
+    paths:
+      - "tenflowers/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "tenflowers/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Check the meta crate compiles with default features
+  check-default:
+    name: Check (default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check -p tenflowers
+
+  # Check the meta crate compiles with minimal features
+  check-minimal:
+    name: Check (minimal features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check minimal features
+        run: cargo check -p tenflowers --features minimal --no-default-features
+      - name: Check no features
+        run: cargo check -p tenflowers --no-default-features
+
+  # Run all unit and integration tests
+  test:
+    name: Test (default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test -p tenflowers --lib --tests
+      - name: Run doctests
+        run: cargo test -p tenflowers --doc
+
+  # Verify version consistency across subcrates
+  version-check:
+    name: Version consistency check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run version consistency test
+        run: |
+          cargo test -p tenflowers version_check::tests::test_check_version_consistency_passes
+
+  # Test feature flag combinations
+  feature-combinations:
+    name: Feature combinations
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "std"
+          - "parallel"
+          - "simd"
+          - "experimental"
+          - "std,parallel,simd"
+          - "full"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check feature combination ${{ matrix.features }}
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo check -p tenflowers --no-default-features
+          else
+            cargo check -p tenflowers --no-default-features --features "${{ matrix.features }}"
+          fi
+
+  # Clippy lints
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy -p tenflowers -- -D warnings
+
+  # Cross-platform compilation check
+  cross-platform:
+    name: Cross-platform check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: cargo check -p tenflowers

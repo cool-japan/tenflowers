@@ -175,12 +175,13 @@ impl GaussianProcess {
 
         // Cholesky: K + σ_n² I = L Lᵀ
         let l = self.cholesky(&k_mat)?;
-        self.chol_l = l.clone();
 
         // alpha = K⁻¹ y = L⁻ᵀ (L⁻¹ y)
         let v = self.solve_lower_triangular(&l, &y_norm)?;
         let alpha = self.solve_lower_triangular_transpose(&l, &v)?;
         self.alpha = alpha;
+        // `l` is no longer needed below; move it into the cached factor.
+        self.chol_l = l;
 
         // K_inv = (L Lᵀ)⁻¹
         self.k_inv = self.invert_via_cholesky(&k_mat)?;

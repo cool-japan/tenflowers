@@ -201,9 +201,9 @@ where
 {
     use std::time::Instant;
     let start_time = Instant::now();
-    let config = STATS_CONFIG
-        .read()
-        .expect("read lock should not be poisoned");
+    let config = STATS_CONFIG.read().map_err(|_| {
+        TensorError::invalid_operation_simple("stats config lock poisoned".to_string())
+    })?;
 
     match &x.storage {
         TensorStorage::Cpu(arr) => {

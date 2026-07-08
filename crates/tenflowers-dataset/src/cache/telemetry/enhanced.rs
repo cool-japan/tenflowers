@@ -63,7 +63,7 @@ impl EnhancedTelemetryCollector {
     pub fn get_aggregated_stats(&self) -> AggregatedStats {
         self.aggregated_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -71,7 +71,7 @@ impl EnhancedTelemetryCollector {
     pub fn get_active_alerts(&self) -> Vec<PerformanceAlert> {
         self.active_alerts
             .lock()
-            .expect("active_alerts lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .values()
             .cloned()
             .collect()
@@ -102,7 +102,10 @@ impl EnhancedTelemetryCollector {
             .sum::<f64>()
             / n;
 
-        let mut baselines = self.baselines.lock().expect("lock should not be poisoned");
+        let mut baselines = self
+            .baselines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         baselines.baseline_hit_rate = avg_hit_rate;
         baselines.baseline_latency_us = avg_latency;
         baselines.baseline_throughput = avg_throughput;
@@ -114,7 +117,7 @@ impl EnhancedTelemetryCollector {
     pub fn get_baselines(&self) -> PerformanceBaselines {
         self.baselines
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -123,7 +126,7 @@ impl EnhancedTelemetryCollector {
         *self
             .alert_thresholds
             .lock()
-            .expect("lock should not be poisoned") = thresholds;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = thresholds;
     }
 
     // ---- private helpers ----
@@ -142,7 +145,7 @@ impl EnhancedTelemetryCollector {
         let mut stats = self
             .aggregated_stats
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let n = recent.len() as f64;
 
@@ -184,11 +187,11 @@ impl EnhancedTelemetryCollector {
         let thresholds = self
             .alert_thresholds
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut alerts = self
             .active_alerts
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Hit rate check
         if metrics.hit_ratio < thresholds.min_hit_rate {

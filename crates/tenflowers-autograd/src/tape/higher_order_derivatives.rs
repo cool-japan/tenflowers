@@ -237,7 +237,11 @@ impl GradientTape {
 
         // VJP is essentially the same as computing gradients with custom initial gradients
         // Instead of ones, we use the provided vectors
-        let inner = self.inner.lock().expect("lock should not be poisoned");
+        let inner = self.inner.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "higher-order tape lock poisoned".to_string(),
+            )
+        })?;
         let mut gradients: HashMap<TensorId, Tensor<T>> = HashMap::new();
 
         // Set gradients of outputs to provided vectors (instead of ones)

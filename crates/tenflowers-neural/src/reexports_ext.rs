@@ -1690,3 +1690,4 @@ pub use robotics::extensions::{
     PhysicsParams,
     SimToRealEvaluator,
 };
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

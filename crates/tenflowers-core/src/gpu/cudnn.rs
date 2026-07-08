@@ -6,15 +6,20 @@
 
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 use crate::{Device, Result, Tensor, TensorError};
+#[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 use std::collections::HashMap;
+#[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 use std::sync::Arc;
 
-/// cuDNN handle wrapper for managing cuDNN context
+/// cuDNN handle wrapper for managing cuDNN context.
+///
+/// Note: construction always fails (see `CudnnHandle::new`) because no cuDNN
+/// SDK is linked. Fields are preserved for documentation purposes.
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 #[derive(Debug)]
 pub struct CudnnHandle {
-    /// cuDNN handle (placeholder for actual cudnnHandle_t)
-    handle: *mut std::ffi::c_void,
+    /// cuDNN handle (cudnnHandle_t equivalent — requires libcudnn.so)
+    _handle: *mut std::ffi::c_void,
     device_id: usize,
 }
 
@@ -152,20 +157,18 @@ pub struct CudnnContext {
 
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 impl CudnnHandle {
-    /// Create a new cuDNN handle for the specified device
-    pub fn new(device_id: usize) -> Result<Self> {
-        // Placeholder implementation
-        // Real implementation would:
-        // 1. Call cudaSetDevice(device_id)
-        // 2. Call cudnnCreate(&handle)
-        // 3. Call cudnnSetStream(handle, stream) if using custom stream
-
-        println!("Creating cuDNN handle for device {}", device_id);
-
-        Ok(CudnnHandle {
-            handle: std::ptr::null_mut(), // Placeholder
-            device_id,
-        })
+    /// Create a new cuDNN handle for the specified device.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked. Build with the
+    /// actual CUDA/cuDNN toolkit present for a real implementation.
+    pub fn new(_device_id: usize) -> Result<Self> {
+        Err(TensorError::not_implemented_simple(
+            "cuDNN handle creation requires libcudnn.so; \
+             build with the CUDA/cuDNN toolkit installed and link against it"
+                .to_string(),
+        ))
     }
 
     /// Get the device ID for this handle
@@ -173,21 +176,26 @@ impl CudnnHandle {
         self.device_id
     }
 
-    /// Set the CUDA stream for this cuDNN handle
-    pub fn set_stream(&mut self, stream: *mut std::ffi::c_void) -> Result<()> {
-        // Placeholder implementation
-        // Real implementation would call cudnnSetStream(self.handle, stream)
-        println!("Setting cuDNN stream for device {}", self.device_id);
-        Ok(())
+    /// Set the CUDA stream for this cuDNN handle.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked.
+    pub fn set_stream(&mut self, _stream: *mut std::ffi::c_void) -> Result<()> {
+        Err(TensorError::not_implemented_simple(
+            "cuDNN stream configuration requires libcudnn.so; \
+             build with the CUDA/cuDNN toolkit installed"
+                .to_string(),
+        ))
     }
 }
 
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 impl Drop for CudnnHandle {
     fn drop(&mut self) {
-        // Placeholder implementation
-        // Real implementation would call cudnnDestroy(self.handle)
-        println!("Destroying cuDNN handle for device {}", self.device_id);
+        // No cuDNN handle to destroy — CudnnHandle::new always fails, so this
+        // path is unreachable in practice. If a handle were created via unsafe
+        // code, the caller is responsible for cleanup.
     }
 }
 
@@ -433,36 +441,34 @@ impl CudnnContext {
         }
     }
 
-    /// Check if cuDNN is available
+    /// Check if cuDNN is available.
+    ///
+    /// Always returns `false` because no cuDNN SDK is linked in this build.
     pub fn is_available() -> bool {
-        // Placeholder implementation
-        // Real implementation would check for cuDNN library and compatible CUDA driver
-        #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
-        {
-            // Check environment variables or library availability
-            std::env::var("CUDNN_LIBRARY_PATH").is_ok() || std::env::var("CUDA_PATH").is_ok()
-        }
-        #[cfg(not(feature = "cudnn"))]
-        {
-            false
-        }
+        false
     }
 
-    /// Get cuDNN version information
+    /// Get cuDNN version information.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked.
     pub fn version_info() -> Result<String> {
-        // Placeholder implementation
-        // Real implementation would call cudnnGetVersion()
-        Ok("cuDNN 8.x.x (placeholder)".to_string())
+        Err(TensorError::not_implemented_simple(
+            "cuDNN version query requires libcudnn.so; \
+             build with the CUDA/cuDNN toolkit installed"
+                .to_string(),
+        ))
     }
 
     /// Perform cuDNN convolution forward pass
     pub fn convolution_forward<T>(
         &mut self,
         input: &Tensor<T>,
-        weights: &Tensor<T>,
-        bias: Option<&Tensor<T>>,
-        conv_desc: &CudnnConvolutionDescriptor,
-        output_desc: &CudnnTensorDescriptor,
+        _weights: &Tensor<T>,
+        _bias: Option<&Tensor<T>>,
+        _conv_desc: &CudnnConvolutionDescriptor,
+        _output_desc: &CudnnTensorDescriptor,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Send + Sync + 'static,
@@ -482,25 +488,14 @@ impl CudnnContext {
             }
         };
 
-        let handle = self.get_handle(device_id)?;
+        // `get_handle` always fails (CudnnHandle::new returns Err) — propagate.
+        let _handle = self.get_handle(device_id)?;
 
-        // Placeholder implementation
-        // Real implementation would:
-        // 1. Create tensor descriptors for input, weights, bias, output
-        // 2. Find best convolution algorithm using cudnnFindConvolutionForwardAlgorithm
-        // 3. Allocate workspace memory if needed
-        // 4. Call cudnnConvolutionForward
-        // 5. Add bias if present using cudnnAddTensor
-
-        println!(
-            "cuDNN convolution forward: device={}, input_shape={:?}",
-            device_id,
-            input.shape()
-        );
-
-        // For now, fall back to existing implementation
-        Err(TensorError::unsupported_operation_simple(
-            "cuDNN convolution not yet implemented - falling back to WGPU".to_string(),
+        // Unreachable: get_handle always errors. Kept for type coherence.
+        Err(TensorError::not_implemented_simple(
+            "cuDNN convolution_forward requires libcudnn.so; \
+             use the WGPU backend for GPU convolution"
+                .to_string(),
         ))
     }
 
@@ -508,8 +503,8 @@ impl CudnnContext {
     pub fn pooling_forward<T>(
         &mut self,
         input: &Tensor<T>,
-        pooling_desc: &CudnnPoolingDescriptor,
-        output_desc: &CudnnTensorDescriptor,
+        _pooling_desc: &CudnnPoolingDescriptor,
+        _output_desc: &CudnnTensorDescriptor,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Send + Sync + 'static,
@@ -529,22 +524,14 @@ impl CudnnContext {
             }
         };
 
-        let handle = self.get_handle(device_id)?;
+        // `get_handle` always fails (CudnnHandle::new returns Err) — propagate.
+        let _handle = self.get_handle(device_id)?;
 
-        // Placeholder implementation
-        // Real implementation would:
-        // 1. Create tensor descriptors for input and output
-        // 2. Call cudnnPoolingForward
-
-        println!(
-            "cuDNN pooling forward: device={}, input_shape={:?}",
-            device_id,
-            input.shape()
-        );
-
-        // For now, fall back to existing implementation
-        Err(TensorError::unsupported_operation_simple(
-            "cuDNN pooling not yet implemented - falling back to WGPU".to_string(),
+        // Unreachable: get_handle always errors. Kept for type coherence.
+        Err(TensorError::not_implemented_simple(
+            "cuDNN pooling_forward requires libcudnn.so; \
+             use the WGPU backend for GPU pooling"
+                .to_string(),
         ))
     }
 
@@ -552,9 +539,9 @@ impl CudnnContext {
     pub fn activation_forward<T>(
         &mut self,
         input: &Tensor<T>,
-        activation_mode: CudnnActivationMode,
-        alpha: f64,
-        beta: f64,
+        _activation_mode: CudnnActivationMode,
+        _alpha: f64,
+        _beta: f64,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Send + Sync + 'static,
@@ -574,22 +561,14 @@ impl CudnnContext {
             }
         };
 
-        let handle = self.get_handle(device_id)?;
+        // `get_handle` always fails (CudnnHandle::new returns Err) — propagate.
+        let _handle = self.get_handle(device_id)?;
 
-        // Placeholder implementation
-        // Real implementation would:
-        // 1. Create activation descriptor using cudnnCreateActivationDescriptor
-        // 2. Set activation descriptor using cudnnSetActivationDescriptor
-        // 3. Call cudnnActivationForward
-
-        println!(
-            "cuDNN activation forward: device={}, mode={:?}",
-            device_id, activation_mode
-        );
-
-        // For now, fall back to existing implementation
-        Err(TensorError::unsupported_operation_simple(
-            "cuDNN activation not yet implemented - falling back to WGPU".to_string(),
+        // Unreachable: get_handle always errors. Kept for type coherence.
+        Err(TensorError::not_implemented_simple(
+            "cuDNN activation_forward requires libcudnn.so; \
+             use the WGPU backend for GPU activations"
+                .to_string(),
         ))
     }
 
@@ -613,13 +592,18 @@ impl Default for CudnnContext {
 static GLOBAL_CUDNN_CONTEXT: std::sync::OnceLock<std::sync::Mutex<CudnnContext>> =
     std::sync::OnceLock::new();
 
-/// Get global cuDNN context
+/// Get global cuDNN context.
+///
+/// # Panics
+///
+/// Panics if the internal mutex has been poisoned by a panicking thread.
+/// This is a hard error (the global state is corrupted) with no recovery path.
 #[cfg(all(feature = "cudnn", any(target_os = "linux", target_os = "windows")))]
 pub fn global_cudnn_context() -> std::sync::MutexGuard<'static, CudnnContext> {
     GLOBAL_CUDNN_CONTEXT
         .get_or_init(|| std::sync::Mutex::new(CudnnContext::new()))
         .lock()
-        .expect("cuDNN context mutex poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Utility functions for cuDNN integration
@@ -648,48 +632,62 @@ pub mod utils {
         CudnnTensorDescriptor::infer_data_type::<T>().is_ok()
     }
 
-    /// Convert tensor format between NCHW and NHWC
+    /// Convert tensor format between NCHW and NHWC.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked. Without cuDNN,
+    /// there is no safe GPU-side transpose and silently cloning the tensor
+    /// would return wrong data.
     pub fn convert_tensor_format<T>(
-        tensor: &Tensor<T>,
-        target_format: CudnnTensorFormat,
+        _tensor: &Tensor<T>,
+        _target_format: CudnnTensorFormat,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Send + Sync + 'static,
     {
-        // Placeholder implementation
-        // Real implementation would perform tensor transpose to convert formats
-        println!("Converting tensor format to {:?}", target_format);
-        Ok(tensor.clone())
+        Err(TensorError::not_implemented_simple(
+            "cuDNN tensor format conversion requires libcudnn.so; \
+             build with the CUDA/cuDNN toolkit installed"
+                .to_string(),
+        ))
     }
 
-    /// Get optimal cuDNN algorithm for convolution
+    /// Get optimal cuDNN algorithm for convolution.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked.
     pub fn find_best_convolution_algorithm(
-        input_desc: &CudnnTensorDescriptor,
-        filter_desc: &CudnnTensorDescriptor,
-        conv_desc: &CudnnConvolutionDescriptor,
-        output_desc: &CudnnTensorDescriptor,
+        _input_desc: &CudnnTensorDescriptor,
+        _filter_desc: &CudnnTensorDescriptor,
+        _conv_desc: &CudnnConvolutionDescriptor,
+        _output_desc: &CudnnTensorDescriptor,
     ) -> Result<i32> {
-        // Placeholder implementation
-        // Real implementation would call cudnnFindConvolutionForwardAlgorithm
-        println!("Finding best cuDNN convolution algorithm");
-        Ok(0) // Return placeholder algorithm ID
+        Err(TensorError::not_implemented_simple(
+            "cuDNN algorithm selection (cudnnFindConvolutionForwardAlgorithm) \
+             requires libcudnn.so; build with the CUDA/cuDNN toolkit installed"
+                .to_string(),
+        ))
     }
 
-    /// Calculate workspace size needed for operation
+    /// Calculate workspace size needed for operation.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no cuDNN SDK is linked.
     pub fn get_convolution_workspace_size(
-        input_desc: &CudnnTensorDescriptor,
-        filter_desc: &CudnnTensorDescriptor,
-        conv_desc: &CudnnConvolutionDescriptor,
-        output_desc: &CudnnTensorDescriptor,
-        algorithm: i32,
+        _input_desc: &CudnnTensorDescriptor,
+        _filter_desc: &CudnnTensorDescriptor,
+        _conv_desc: &CudnnConvolutionDescriptor,
+        _output_desc: &CudnnTensorDescriptor,
+        _algorithm: i32,
     ) -> Result<usize> {
-        // Placeholder implementation
-        // Real implementation would call cudnnGetConvolutionForwardWorkspaceSize
-        println!(
-            "Calculating cuDNN workspace size for algorithm {}",
-            algorithm
-        );
-        Ok(1024 * 1024) // Return 1MB placeholder
+        Err(TensorError::not_implemented_simple(
+            "cuDNN workspace size query (cudnnGetConvolutionForwardWorkspaceSize) \
+             requires libcudnn.so; build with the CUDA/cuDNN toolkit installed"
+                .to_string(),
+        ))
     }
 }
 
@@ -753,16 +751,17 @@ mod tests {
 
     #[test]
     fn test_cudnn_availability() {
-        // This test will vary based on system configuration
-        let available = CudnnContext::is_available();
-        println!("cuDNN available: {}", available);
-        // We don't assert since availability depends on system setup
+        // No cuDNN SDK linked — must always return false
+        assert!(!CudnnContext::is_available());
     }
 
     #[test]
     fn test_version_info() {
-        let version = CudnnContext::version_info().expect("test: version_info should succeed");
-        assert!(version.contains("cuDNN"));
+        // version_info always errors when no cuDNN SDK is linked
+        let result = CudnnContext::version_info();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cuDNN") || err.contains("libcudnn"));
     }
 
     #[test]

@@ -260,7 +260,10 @@ where
     /// Get an item from cache (checks all levels)
     pub fn get(&self, key: &K) -> Option<(Tensor<T>, Tensor<T>)> {
         let start_time = Instant::now();
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.total_requests += 1;
         drop(stats);
 
@@ -298,7 +301,10 @@ where
         }
 
         // Cache miss
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.misses += 1;
         None
     }
@@ -328,7 +334,9 @@ where
             CacheLevel::L3Remote => &self.l3_cache,
         };
 
-        let cache_read = cache.read().expect("read lock should not be poisoned");
+        let cache_read = cache
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache_read.get(key).and_then(|entry| {
             if entry.is_expired() {
                 None
@@ -365,7 +373,9 @@ where
             entry.ttl = Some(Instant::now() + ttl);
         }
 
-        let mut size_guard = current_size.lock().expect("lock should not be poisoned");
+        let mut size_guard = current_size
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Check if we need to evict entries
         while *size_guard + entry.size > max_size {
@@ -374,17 +384,21 @@ where
             }
             *size_guard = current_size
                 .lock()
-                .expect("lock should not be poisoned")
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .saturating_sub(entry.size);
         }
 
         // Insert the entry
-        let mut cache_write = cache.write().expect("write lock should not be poisoned");
+        let mut cache_write = cache
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache_write.insert(key.clone(), entry.clone());
         *size_guard += entry.size;
 
         // Update access order for LRU
-        let mut order = access_order.lock().expect("lock should not be poisoned");
+        let mut order = access_order
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         order.push_back(key);
 
         true
@@ -399,7 +413,9 @@ where
 
         let victim_key = match self.policy {
             EvictionPolicy::LRU => {
-                let mut order = access_order.lock().expect("lock should not be poisoned");
+                let mut order = access_order
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 order.pop_front()
             }
             EvictionPolicy::LFU | EvictionPolicy::Adaptive | EvictionPolicy::Hybrid => {
@@ -409,12 +425,19 @@ where
         };
 
         if let Some(key) = victim_key {
-            let mut cache_write = cache.write().expect("write lock should not be poisoned");
+            let mut cache_write = cache
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(entry) = cache_write.remove(&key) {
-                let mut size_guard = current_size.lock().expect("lock should not be poisoned");
+                let mut size_guard = current_size
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 *size_guard = size_guard.saturating_sub(entry.size);
 
-                let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                let mut stats = self
+                    .stats
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 stats.evictions += 1;
 
                 return true;
@@ -425,7 +448,9 @@ where
     }
 
     fn find_lfu_victim(&self, cache: &Arc<RwLock<HashMap<K, CacheEntry<T>>>>) -> Option<K> {
-        let cache_read = cache.read().expect("read lock should not be poisoned");
+        let cache_read = cache
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache_read
             .iter()
             .min_by(|(_, a), (_, b)| {
@@ -438,7 +463,9 @@ where
     }
 
     fn find_expired_victim(&self, cache: &Arc<RwLock<HashMap<K, CacheEntry<T>>>>) -> Option<K> {
-        let cache_read = cache.read().expect("read lock should not be poisoned");
+        let cache_read = cache
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache_read
             .iter()
             .find(|(_, entry)| entry.is_expired())
@@ -454,26 +481,32 @@ where
                     let mut cache = self
                         .l3_cache
                         .write()
-                        .expect("write lock should not be poisoned");
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     cache.remove(&key);
                 }
                 CacheLevel::L2Storage => {
                     let mut cache = self
                         .l2_cache
                         .write()
-                        .expect("write lock should not be poisoned");
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     cache.remove(&key);
                 }
                 _ => {}
             }
 
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self
+                .stats
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             stats.promotions += 1;
         }
     }
 
     fn update_stats_hit(&self, level: CacheLevel, start_time: Instant) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match level {
             CacheLevel::L1Memory => stats.l1_hits += 1,
             CacheLevel::L2Storage => stats.l2_hits += 1,
@@ -491,7 +524,7 @@ where
     pub fn stats(&self) -> CacheStats {
         self.stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -500,15 +533,15 @@ where
         let mut l1 = self
             .l1_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut l2 = self
             .l2_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut l3 = self
             .l3_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         l1.clear();
         l2.clear();
@@ -517,15 +550,15 @@ where
         *self
             .l1_current_size
             .lock()
-            .expect("lock should not be poisoned") = 0;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
         *self
             .l2_current_size
             .lock()
-            .expect("lock should not be poisoned") = 0;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
         *self
             .l3_current_size
             .lock()
-            .expect("lock should not be poisoned") = 0;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
     }
 
     /// Run background cleanup to remove expired entries
@@ -793,7 +826,10 @@ where
     pub fn get(&self, key: &K) -> Option<(Tensor<T>, Tensor<T>)> {
         // Record access for pattern learning
         {
-            let mut predictor = self.predictor.lock().expect("lock should not be poisoned");
+            let mut predictor = self
+                .predictor
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             predictor.record_access(key.clone());
         }
 
@@ -831,14 +867,17 @@ where
     /// Trigger predictive prefetching based on current access
     fn trigger_prefetch(&self, current_key: &K) {
         let predictions = {
-            let predictor = self.predictor.lock().expect("lock should not be poisoned");
+            let predictor = self
+                .predictor
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             predictor.predict_next_accesses(current_key, 3) // Predict up to 3 next accesses
         };
 
         let mut prefetch_queue = self
             .prefetch_queue
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         for (predicted_key, confidence) in predictions {
             // Only prefetch if confidence is high enough and not already cached
@@ -872,7 +911,7 @@ where
             let mut prefetch_queue = self
                 .prefetch_queue
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
 
             // Process a few items from the prefetch queue
             for _ in 0..3 {

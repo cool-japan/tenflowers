@@ -438,6 +438,19 @@ pub mod utils {
                     Box::new(crate::backends::nccl::NcclBackend::new()),
                 );
             }
+            #[cfg(feature = "gloo")]
+            CommunicationBackend::Gloo => {
+                comm_runtime.register_backend(
+                    CommunicationBackend::Gloo,
+                    Box::new(crate::backends::gloo::GlooBackend::new()),
+                );
+            }
+            #[cfg(not(feature = "gloo"))]
+            CommunicationBackend::Gloo => {
+                return Err(TensorError::unsupported_operation_simple(
+                    "Gloo backend not compiled in. Enable 'gloo' feature".to_string(),
+                ));
+            }
             _ => {
                 return Err(TensorError::unsupported_operation_simple(format!(
                     "Backend {backend:?} not supported"
@@ -484,5 +497,38 @@ pub mod utils {
         let config = DDPConfig::default();
 
         DistributedDataParallel::new(model, device, process_group, comm_runtime, config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// With the "gloo" feature enabled, `init_process_group` should register the real
+    /// `GlooBackend`, initialize the runtime, and create a rank=0/world_size=1 process
+    /// group successfully instead of falling through to the generic
+    /// "Backend Gloo not supported" error.
+    #[cfg(feature = "gloo")]
+    #[test]
+    fn test_init_process_group_gloo_registers_backend() {
+        let (_runtime, group) = utils::init_process_group(CommunicationBackend::Gloo, 0, 1)
+            .expect("gloo backend should register and initialize a process group");
+
+        assert_eq!(group.rank, 0);
+        assert_eq!(group.world_size, 1);
+        assert_eq!(group.backend, CommunicationBackend::Gloo);
+    }
+
+    /// Without the "gloo" feature, the Gloo arm must still return a clear,
+    /// explicit error rather than compiling out entirely or panicking.
+    #[cfg(not(feature = "gloo"))]
+    #[test]
+    fn test_init_process_group_gloo_not_compiled_in() {
+        let result = utils::init_process_group(CommunicationBackend::Gloo, 0, 1);
+
+        assert!(
+            result.is_err(),
+            "expected an error when the 'gloo' feature is disabled"
+        );
     }
 }

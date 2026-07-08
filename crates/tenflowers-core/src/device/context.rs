@@ -245,10 +245,9 @@ impl DeviceManager {
     pub fn get_context(&self, device: &Device) -> Result<Arc<dyn DeviceContext>> {
         // Check cache first
         {
-            let contexts = self
-                .contexts
-                .read()
-                .expect("read lock should not be poisoned");
+            let contexts = self.contexts.read().map_err(|_| {
+                TensorError::invalid_operation_simple("device contexts lock poisoned".to_string())
+            })?;
             if let Some(ctx) = contexts.get(device) {
                 return Ok(Arc::clone(ctx));
             }
@@ -265,10 +264,9 @@ impl DeviceManager {
 
         // Cache it
         {
-            let mut contexts = self
-                .contexts
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut contexts = self.contexts.write().map_err(|_| {
+                TensorError::invalid_operation_simple("device contexts lock poisoned".to_string())
+            })?;
             contexts.insert(*device, Arc::clone(&context));
         }
 
@@ -305,6 +303,7 @@ impl GpuContext {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: None,
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .map_err(|_e| {
@@ -336,6 +335,22 @@ impl GpuContext {
             allocator,
             device_enum: Device::Gpu(device_id),
         })
+    }
+
+    /// Real capability data read directly from the live `wgpu::Adapter`.
+    ///
+    /// This is a thin, honest snapshot of exactly what `wgpu::Adapter` exposes: the raw
+    /// `AdapterInfo` (name/vendor id/backend/driver strings), `Limits` (workgroup size,
+    /// shared-memory size, buffer size caps, ...), and `Features` (optional capability
+    /// flags such as `SHADER_F16`). No reinterpretation or vendor-specific guessing
+    /// happens here — that mapping lives in callers (e.g.
+    /// `crate::gpu::advanced_kernel_manager`) that need it.
+    pub fn adapter_capabilities(&self) -> GpuAdapterCapabilities {
+        GpuAdapterCapabilities {
+            info: self.adapter.get_info(),
+            limits: self.adapter.limits(),
+            features: self.adapter.features(),
+        }
     }
 }
 
@@ -397,29 +412,37 @@ impl GpuAllocator {
 
 #[cfg(feature = "gpu")]
 impl DeviceAllocator for GpuAllocator {
-    fn allocate(&self, size: usize) -> Result<*mut u8> {
-        // WGPU doesn't expose raw pointers, return a placeholder
-        // Real GPU allocation happens through wgpu::Buffer
-        Ok(size as *mut u8) // Placeholder pointer
+    fn allocate(&self, _size: usize) -> Result<*mut u8> {
+        // WGPU does not expose raw host-side pointers for GPU memory.
+        // GPU buffers must be managed through wgpu::Buffer / wgpu::Queue::write_buffer.
+        // Use the wgpu-native buffer API (GpuContextInfo / wgpu::Device::create_buffer)
+        // for GPU memory management instead of this raw-pointer interface.
+        Err(TensorError::unsupported_operation_simple(
+            "raw-pointer GPU allocation is not supported; use wgpu::Buffer API for GPU memory management".to_string(),
+        ))
     }
 
     unsafe fn deallocate(&self, _ptr: *mut u8, _size: usize) {
-        // GPU buffers are managed by WGPU automatically
+        // No allocation was ever performed through this interface, so there is
+        // nothing to free.  wgpu::Buffer handles its own lifetime via Drop.
     }
 
     fn copy_from_host(&self, _dst: *mut u8, _src: &[u8]) -> Result<()> {
-        // GPU memory operations are handled by buffer operations
-        Ok(())
+        Err(TensorError::unsupported_operation_simple(
+            "raw-pointer GPU copy_from_host is not supported; use wgpu::Queue::write_buffer for host-to-GPU transfers".to_string(),
+        ))
     }
 
     fn copy_to_host(&self, _dst: &mut [u8], _src: *const u8) -> Result<()> {
-        // GPU memory operations are handled by buffer operations
-        Ok(())
+        Err(TensorError::unsupported_operation_simple(
+            "raw-pointer GPU copy_to_host is not supported; use wgpu::Buffer::map_read for GPU-to-host transfers".to_string(),
+        ))
     }
 
     fn copy_device_to_device(&self, _dst: *mut u8, _src: *const u8, _size: usize) -> Result<()> {
-        // GPU memory operations are handled by buffer operations
-        Ok(())
+        Err(TensorError::unsupported_operation_simple(
+            "raw-pointer GPU copy_device_to_device is not supported; use wgpu::CommandEncoder::copy_buffer_to_buffer for GPU-to-GPU copies".to_string(),
+        ))
     }
 }
 
@@ -469,6 +492,20 @@ pub fn get_gpu_context(device_id: usize) -> Result<GpuContextInfo> {
     })
 }
 
+/// Look up the real `wgpu::Adapter` capabilities for a GPU device by id.
+///
+/// Mirrors [`get_gpu_context`]'s "create on demand" approach: constructs a `GpuContext`
+/// for `device_id` (which internally calls `wgpu::Instance::request_adapter`) and returns
+/// its adapter's `AdapterInfo`/`Limits`/`Features` verbatim, with no reinterpretation.
+/// Callers that need vendor/feature data beyond what [`DeviceProperties`] captures (e.g.
+/// [`crate::gpu::advanced_kernel_manager`]) should use this instead of re-deriving their
+/// own adapter handle.
+#[cfg(feature = "gpu")]
+pub fn get_gpu_adapter_capabilities(device_id: usize) -> Result<GpuAdapterCapabilities> {
+    let gpu_ctx = GpuContext::new(device_id)?;
+    Ok(gpu_ctx.adapter_capabilities())
+}
+
 /// Enhanced GPU context with backend selection capabilities
 #[cfg(any(feature = "gpu", feature = "cudnn"))]
 pub fn get_enhanced_gpu_context(device_id: usize) -> Result<EnhancedGpuContext> {
@@ -513,6 +550,23 @@ pub fn get_enhanced_gpu_context(device_id: usize) -> Result<EnhancedGpuContext> 
 pub struct GpuContextInfo {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
+}
+
+/// Real, unprocessed `wgpu::Adapter` capability data.
+///
+/// Every field here comes directly from a live `wgpu::Adapter` query
+/// (`get_info()`/`limits()`/`features()`) with no fabrication or vendor-specific
+/// guessing applied. See [`GpuContext::adapter_capabilities`] and
+/// [`get_gpu_adapter_capabilities`].
+#[cfg(feature = "gpu")]
+#[derive(Debug, Clone)]
+pub struct GpuAdapterCapabilities {
+    /// Adapter identity: name, PCI vendor/device id, device type, backend, driver strings.
+    pub info: wgpu::AdapterInfo,
+    /// Real hardware/backend limits (workgroup size, shared memory, buffer sizes, ...).
+    pub limits: wgpu::Limits,
+    /// Optional capability flags supported by this adapter (e.g. `SHADER_F16`).
+    pub features: wgpu::Features,
 }
 
 /// GPU backend selection enum

@@ -37,9 +37,16 @@ chrono = { workspace = true }
 libloading = { workspace = true }
 libc = { workspace = true }
 
+[dev-dependencies]
+criterion = { workspace = true }
+
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
-pyo3-build-config = { version = "0.28", features = ["resolve-config"] }
+pyo3-build-config = { workspace = true, features = ["resolve-config"] }
+
+[[bench]]
+name = "bindings_bench"
+harness = false
 
 [features]
 default = []

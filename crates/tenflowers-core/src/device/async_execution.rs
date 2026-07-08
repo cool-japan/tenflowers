@@ -43,7 +43,10 @@ impl AsyncOperation {
     /// Check if operation is complete
     pub fn is_complete(&self) -> bool {
         matches!(
-            *self.state.lock().expect("lock should not be poisoned"),
+            *self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
             OperationState::Completed
         )
     }
@@ -51,7 +54,10 @@ impl AsyncOperation {
     /// Check if operation failed
     pub fn is_failed(&self) -> bool {
         matches!(
-            *self.state.lock().expect("lock should not be poisoned"),
+            *self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
             OperationState::Failed(_)
         )
     }
@@ -63,7 +69,10 @@ impl AsyncOperation {
 
     /// Mark operation as completed
     pub(crate) fn complete(&self) {
-        let mut state = self.state.lock().expect("lock should not be poisoned");
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if matches!(*state, OperationState::Running) {
             *state = OperationState::Completed;
         }
@@ -71,7 +80,10 @@ impl AsyncOperation {
 
     /// Mark operation as failed
     pub(crate) fn fail(&self, error: String) {
-        let mut state = self.state.lock().expect("lock should not be poisoned");
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if matches!(*state, OperationState::Running) {
             *state = OperationState::Failed(error);
         }
@@ -79,7 +91,10 @@ impl AsyncOperation {
 
     /// Mark operation as running
     pub(crate) fn start(&self) {
-        let mut state = self.state.lock().expect("lock should not be poisoned");
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if matches!(*state, OperationState::Pending) {
             *state = OperationState::Running;
         }
@@ -102,7 +117,10 @@ impl Future for AsyncWaitFuture {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let state = self.state.lock().expect("lock should not be poisoned");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match *state {
             OperationState::Completed => Poll::Ready(Ok(())),
             OperationState::Failed(ref err) => {
@@ -221,7 +239,10 @@ impl AsyncExecutor {
         priority: Priority,
     ) -> AsyncOperation {
         let id = {
-            let mut next_id = self.next_id.lock().expect("lock should not be poisoned");
+            let mut next_id = self
+                .next_id
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let id = *next_id;
             *next_id += 1;
             id
@@ -241,11 +262,14 @@ impl AsyncExecutor {
                 let mut queue = self
                     .high_priority_queue
                     .lock()
-                    .expect("lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 queue.push_back(pending);
             }
             Priority::Normal | Priority::Low => {
-                let mut queue = self.queue.lock().expect("lock should not be poisoned");
+                let mut queue = self
+                    .queue
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 queue.push_back(pending);
             }
         }
@@ -257,10 +281,9 @@ impl AsyncExecutor {
     pub async fn process_queue(&self) -> Result<()> {
         // Check if already processing to avoid race conditions
         {
-            let mut is_processing = self
-                .is_processing
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut is_processing = self.is_processing.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("is_processing lock poisoned".to_string())
+            })?;
             if *is_processing {
                 return Ok(());
             }
@@ -271,10 +294,9 @@ impl AsyncExecutor {
 
         // Release processing lock
         {
-            let mut is_processing = self
-                .is_processing
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut is_processing = self.is_processing.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("is_processing lock poisoned".to_string())
+            })?;
             *is_processing = false;
         }
 
@@ -301,7 +323,9 @@ impl AsyncExecutor {
             &self.queue
         };
 
-        let mut queue_guard = queue.lock().expect("lock should not be poisoned");
+        let mut queue_guard = queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if queue_guard.is_empty() {
             return None;
         }
@@ -390,7 +414,10 @@ impl AsyncExecutor {
 
     /// Update execution statistics
     fn update_stats(&self, batch_size: usize, execution_time: std::time::Duration, success: bool) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if success {
             stats.operations_completed += batch_size as u64;
@@ -413,12 +440,12 @@ impl AsyncExecutor {
         let normal_len = self
             .queue
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let high_len = self
             .high_priority_queue
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         normal_len + high_len
     }
@@ -428,12 +455,12 @@ impl AsyncExecutor {
         if high_priority {
             self.high_priority_queue
                 .lock()
-                .expect("lock should not be poisoned")
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .len()
         } else {
             self.queue
                 .lock()
-                .expect("lock should not be poisoned")
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .len()
         }
     }
@@ -442,7 +469,10 @@ impl AsyncExecutor {
     pub fn clear_queue(&self) {
         // Clear normal priority queue
         {
-            let mut queue = self.queue.lock().expect("lock should not be poisoned");
+            let mut queue = self
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             for op in queue.drain(..) {
                 op.handle.fail("Operation cancelled".to_string());
             }
@@ -453,7 +483,7 @@ impl AsyncExecutor {
             let mut queue = self
                 .high_priority_queue
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             for op in queue.drain(..) {
                 op.handle.fail("Operation cancelled".to_string());
             }
@@ -464,13 +494,16 @@ impl AsyncExecutor {
     pub fn get_stats(&self) -> ExecutorStats {
         self.stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
     /// Reset execution statistics
     pub fn reset_stats(&self) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *stats = ExecutorStats::default();
     }
 
@@ -484,7 +517,7 @@ impl AsyncExecutor {
         *self
             .is_processing
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -503,7 +536,10 @@ impl AsyncExecutorManager {
 
     /// Get or create executor for a device
     pub fn get_executor(&self, device: Device) -> Arc<AsyncExecutor> {
-        let mut executors = self.executors.lock().expect("lock should not be poisoned");
+        let mut executors = self
+            .executors
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(executor) = executors.get(&device) {
             Arc::clone(executor)
@@ -517,7 +553,9 @@ impl AsyncExecutorManager {
     /// Process all device queues
     pub async fn process_all(&self) -> Result<()> {
         let executors = {
-            let executors = self.executors.lock().expect("lock should not be poisoned");
+            let executors = self.executors.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("executors lock poisoned".to_string())
+            })?;
             executors.values().cloned().collect::<Vec<_>>()
         };
 

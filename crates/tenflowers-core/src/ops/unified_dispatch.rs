@@ -209,7 +209,9 @@ impl UnifiedDispatcher {
     ) -> Result<Vec<Box<dyn Any>>> {
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("dispatch stats lock poisoned".to_string())
+            })?;
             let op_stats = stats.entry(op_name.to_string()).or_default();
             op_stats.total_dispatches += 1;
         }
@@ -279,7 +281,10 @@ impl UnifiedDispatcher {
 
     /// Record a successful dispatch
     fn record_success(&self, op_name: &str, primary: bool) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let op_stats = stats.entry(op_name.to_string()).or_default();
         if primary {
             op_stats.primary_successes += 1;
@@ -290,20 +295,29 @@ impl UnifiedDispatcher {
 
     /// Record a failed dispatch
     fn record_failure(&self, op_name: &str) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let op_stats = stats.entry(op_name.to_string()).or_default();
         op_stats.failures += 1;
     }
 
     /// Get dispatch statistics
     pub fn get_stats(&self, op_name: &str) -> Option<DispatchStats> {
-        let stats = self.stats.lock().expect("lock should not be poisoned");
+        let stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.get(op_name).cloned()
     }
 
     /// Print dispatch statistics report
     pub fn print_stats(&self) {
-        let stats = self.stats.lock().expect("lock should not be poisoned");
+        let stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         println!("=== Unified Dispatch Statistics ===");
         for (op_name, op_stats) in stats.iter() {
             println!("\nOperation: {}", op_name);

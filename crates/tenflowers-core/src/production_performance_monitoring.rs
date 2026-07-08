@@ -572,13 +572,33 @@ impl PerformanceAnalyticsEngine {
     }
 
     pub fn generate_report(&self) -> AnalyticsReport {
+        // Derive honest values from the data actually held by this engine.
+        //
+        // total_operations_analyzed: number of distinct operation types for which
+        // a baseline has been registered (a proxy for "how many ops are tracked").
+        let total_operations_analyzed = self.performance_baselines.len() as u64;
+
+        // performance_score: mean model accuracy across registered prediction
+        // models, scaled to [0, 100].  Returns 0.0 when no models are registered
+        // so callers can detect the "engine not yet populated" state.
+        let performance_score = if self.prediction_models.is_empty() {
+            0.0
+        } else {
+            let accuracy_sum: f64 = self
+                .prediction_models
+                .values()
+                .map(|m| m.accuracy.clamp(0.0, 1.0))
+                .sum();
+            (accuracy_sum / self.prediction_models.len() as f64) * 100.0
+        };
+
         AnalyticsReport {
             timestamp: SystemTime::now(),
-            total_operations_analyzed: 1000, // Placeholder
-            performance_score: 85.0,         // Placeholder
-            trends: Vec::new(),              // Placeholder
+            total_operations_analyzed,
+            performance_score,
+            trends: Vec::new(),
             recommendations: self.optimization_recommendations.clone(),
-            anomalies: Vec::new(), // Placeholder
+            anomalies: Vec::new(),
         }
     }
 }

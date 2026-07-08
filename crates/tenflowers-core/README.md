@@ -2,7 +2,7 @@
 
 The foundational crate of TenfloweRS, providing core tensor operations, device management, and the computational infrastructure for machine learning in Rust.
 
-> Stable (v0.1.1 -- 2026-04-24) | 936 tests passing | 0 clippy warnings
+> Stable (v0.1.2 -- 2026-07-08) | 1171 tests passing | 0 clippy warnings
 
 ## Overview
 
@@ -22,16 +22,20 @@ The foundational crate of TenfloweRS, providing core tensor operations, device m
   - Arithmetic: element-wise and broadcasting operations
   - Linear Algebra: matrix multiplication, decompositions, eigenvalues
   - Neural Network: convolutions, pooling, activations
-  - Reductions: sum, mean, max, argmax along axes
+  - Reductions: sum, mean, max, argmax along axes (including real `StdDev`, `L1Norm`, `L2Norm`; segment reductions now support N-D data, not just 1-D)
   - Manipulation: reshape, transpose, concatenate, slice
   - Advanced Math: logsumexp, GELU, Mish, Swish, and more
-- **GPU Acceleration**: WGPU-based compute shaders for cross-platform GPU support
+- **GPU Acceleration**: WGPU-based compute shaders for cross-platform GPU support; `device::get_gpu_adapter_capabilities` exposes a real, unprocessed `wgpu::Adapter` capability snapshot (no vendor-specific guessing)
 - **Operation Registry**: Extensible dispatch registry with shape inference
 - **Kernel Fusion**: Automatic fusion of eligible operation sequences
 - **Autocast**: Automatic dtype promotion for mixed-precision workflows
 - **Sparse Tensors**: COO and CSR sparse tensor support
 - **Fused Ops**: Pre-fused compound operations for performance
 - **BLAS Integration**: Optional acceleration via OxiBLAS
+- **LAPACK f64 Ops**: `ops::lapack_f64` — real LAPACK-backed `inverse_f64`, `determinant_f64`, `svd_f64`, `solve_f64` via `scirs2-linalg`
+- **Graph Optimization**: `session::SessionConfig::enable_graph_optimization` (default `true`) wires constant folding, algebraic simplification, CSE, strength reduction, scheduling, and dead-code elimination into real session execution, with fetch-history-aware output protection across repeated `run()` calls with different fetch lists
+- **ONNX Graph Interop**: `onnx_interop::{convert, lowering, proto}` — real protobuf import/export for `tenflowers-core`'s own graph representation (`OnnxModel`/`OnnxGraph`/`OnnxNode`/`OnnxTensor` `to_protobuf`/`from_protobuf`), plus `lowering::{OnnxOpMapping, StandardOpMapping, lower_graph}` mapping parsed ONNX nodes (`Add, Sub, Mul, Div, Relu, Sigmoid, Tanh, MatMul, Reshape, Transpose, Identity, Concat, Softmax, Flatten, Gemm`) to real tenflowers-core ops; `OnnxImporter`/`OnnxExporter` file/byte round-trips are real behind the `onnx` feature (this is distinct from `tenflowers-neural`'s separate `Sequential`-model ONNX subsystem)
+- **Gradient Executor Bridge**: `gradient_executor` module — a `GradientExecutor` trait (`register_gradient_executor`/`get_gradient_executor`) letting `gradient_validation_framework` call into a real forward+backward implementation supplied by `tenflowers-autograd` without a circular crate dependency; without a registered executor, validation now reports an honest "unverified" status instead of fabricating `passed: true`
 
 ## Usage
 
@@ -92,6 +96,8 @@ let result = session.run(
 )?;
 ```
 
+By default (`SessionConfig::enable_graph_optimization == true`), `Session::run` applies constant folding, algebraic simplification, common-subexpression elimination, strength reduction, scheduling, and dead-code elimination before executing the graph; nodes fetched by any prior `run()` call remain protected from later optimization passes even under a different fetch list.
+
 ## Architecture
 
 ### Core Components
@@ -131,6 +137,7 @@ let array_back: Array2<f32> = tensor.to_numrs2()?;
 - `blas-oxiblas`: Use OxiBLAS for accelerated linear algebra
 - `simd`: SIMD vectorization optimizations
 - `serialize`: Enable serialization support via serde
+- `onnx`: Real protobuf-backed ONNX graph import/export (`onnx_interop::{OnnxImporter, OnnxExporter}`)
 
 ## Performance Considerations
 

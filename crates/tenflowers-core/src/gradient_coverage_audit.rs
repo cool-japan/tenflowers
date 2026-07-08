@@ -355,10 +355,10 @@ impl GradientCoverageAuditor {
 
     /// Initialize known gradient implementations
     fn initialize_known_gradients(&mut self) {
-        let mut ops = self
-            .gradient_ops
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut ops = match self.gradient_ops.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
 
         // Binary elementwise operations with gradients
         ops.insert("add".to_string());
@@ -397,10 +397,10 @@ impl GradientCoverageAuditor {
         ops.insert("permute".to_string());
 
         // Non-differentiable operations
-        let mut non_diff = self
-            .non_differentiable_ops
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut non_diff = match self.non_differentiable_ops.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         non_diff.insert("eq".to_string());
         non_diff.insert("ne".to_string());
         non_diff.insert("gt".to_string());
@@ -415,34 +415,32 @@ impl GradientCoverageAuditor {
 
     /// Register an operation as having gradient support
     pub fn register_gradient(&self, operation: &str) {
-        self.gradient_ops
-            .lock()
-            .expect("gradient ops lock should not be poisoned")
-            .insert(operation.to_string());
+        if let Ok(mut g) = self.gradient_ops.lock() {
+            g.insert(operation.to_string());
+        }
     }
 
     /// Register an operation as non-differentiable
     pub fn register_non_differentiable(&self, operation: &str) {
-        self.non_differentiable_ops
-            .lock()
-            .expect("non-differentiable ops lock should not be poisoned")
-            .insert(operation.to_string());
+        if let Ok(mut g) = self.non_differentiable_ops.lock() {
+            g.insert(operation.to_string());
+        }
     }
 
     /// Check if an operation has gradient support
     pub fn has_gradient(&self, operation: &str) -> bool {
-        self.gradient_ops
-            .lock()
-            .expect("lock should not be poisoned")
-            .contains(operation)
+        match self.gradient_ops.lock() {
+            Ok(g) => g.contains(operation),
+            Err(_) => false,
+        }
     }
 
     /// Check if an operation is non-differentiable
     pub fn is_non_differentiable(&self, operation: &str) -> bool {
-        self.non_differentiable_ops
-            .lock()
-            .expect("non-differentiable ops lock should not be poisoned")
-            .contains(operation)
+        match self.non_differentiable_ops.lock() {
+            Ok(g) => g.contains(operation),
+            Err(_) => false,
+        }
     }
 
     /// Audit gradient coverage for all operations

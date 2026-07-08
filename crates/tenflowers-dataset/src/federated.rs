@@ -324,10 +324,9 @@ where
             return Ok((features, labels));
         }
 
-        let mut privacy_manager = self
-            .privacy_manager
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut privacy_manager = self.privacy_manager.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("privacy manager lock poisoned".to_string())
+        })?;
         let noisy_features =
             privacy_manager.add_noise_tensor(&features, &self.config.privacy_config, 1.0)?;
 
@@ -380,10 +379,9 @@ where
 
         // Compute means with differential privacy
         let mut private_means = Vec::new();
-        let mut privacy_manager = self
-            .privacy_manager
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut privacy_manager = self.privacy_manager.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("privacy manager lock poisoned".to_string())
+        })?;
 
         for i in 0..feature_dim {
             let mean = if feature_counts[i] > 0 {

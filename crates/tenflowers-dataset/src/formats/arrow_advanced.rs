@@ -214,6 +214,80 @@ pub struct StreamingArrowReader {
     schema: Arc<Schema>,
 }
 
+/// Shared downcast + compute-kernel dispatch for column-vs-scalar comparisons.
+///
+/// Centralizes the `ArrowValue` match that used to be duplicated (with
+/// drifting coverage) across `evaluate_equals`, `evaluate_greater_than`, and
+/// `evaluate_less_than`: `evaluate_equals` covered Int32/Int64/Float64,
+/// while `evaluate_greater_than`/`evaluate_less_than` covered only
+/// Int32/Float64. This single function now covers all six `ArrowValue`
+/// variants (Int32/Int64/Float32/Float64/String/Bool) for every caller, so
+/// the coverage cannot drift apart again.
+///
+/// # Scalar broadcasting correctness
+///
+/// The comparison value is wrapped in [`arrow::array::Scalar::new`] before
+/// being handed to `kernel`. This is required for correctness: arrow's
+/// `cmp` kernels (`eq`/`gt`/`lt`) only broadcast one side against a longer
+/// array when that side is explicitly marked scalar via `Scalar`. Comparing
+/// a plain, non-scalar length-1 array against an N-row column is *not*
+/// broadcasting: `arrow_ord::cmp::compare_op` explicitly rejects two
+/// non-scalar operands of different lengths with
+/// `ArrowError::InvalidArgumentError("Cannot compare arrays of different
+/// lengths, got N vs 1")`. In other words, without this `Scalar` wrapper,
+/// every call to `evaluate_equals`/`evaluate_greater_than`/
+/// `evaluate_less_than` on a batch with more than one row would fail
+/// outright (verified empirically against arrow 59.0.0) -- this predicate
+/// subsystem was unusable for realistically-sized batches until this fix.
+#[cfg(feature = "parquet")]
+fn evaluate_comparison(
+    batch: &RecordBatch,
+    column: &str,
+    value: &ArrowValue,
+    kernel: impl Fn(
+        &dyn Datum,
+        &dyn Datum,
+    ) -> std::result::Result<BooleanArray, arrow::error::ArrowError>,
+    op_name: &str,
+) -> Result<BooleanArray> {
+    let col = batch
+        .column_by_name(column)
+        .ok_or_else(|| error_helpers::schema_mismatch(op_name, column, "column not found"))?;
+
+    // A local macro parameterized over the concrete Arrow array type. `col`
+    // is passed explicitly (rather than captured as a free identifier) so
+    // this doesn't depend on macro-hygiene name resolution at all.
+    macro_rules! compare_column_as {
+        ($col:expr, $array_ty:ty, $scalar_value:expr) => {{
+            let typed_col = $col.as_any().downcast_ref::<$array_ty>().ok_or_else(|| {
+                TensorError::unsupported_operation_simple(format!(
+                    "{}: column '{}' has Arrow type {:?}, incompatible with predicate value {:?}",
+                    op_name,
+                    column,
+                    $col.data_type(),
+                    value
+                ))
+            })?;
+            let scalar = Scalar::new(<$array_ty>::from(vec![$scalar_value]));
+            kernel(typed_col, &scalar).map_err(|e| {
+                TensorError::unsupported_operation_simple(format!(
+                    "{}: comparison kernel failed on column '{}': {}",
+                    op_name, column, e
+                ))
+            })
+        }};
+    }
+
+    match value {
+        ArrowValue::Int32(v) => compare_column_as!(col, Int32Array, *v),
+        ArrowValue::Int64(v) => compare_column_as!(col, Int64Array, *v),
+        ArrowValue::Float32(v) => compare_column_as!(col, Float32Array, *v),
+        ArrowValue::Float64(v) => compare_column_as!(col, Float64Array, *v),
+        ArrowValue::String(v) => compare_column_as!(col, StringArray, v.clone()),
+        ArrowValue::Bool(v) => compare_column_as!(col, BooleanArray, *v),
+    }
+}
+
 #[cfg(feature = "parquet")]
 impl StreamingArrowReader {
     /// Create a new streaming reader
@@ -369,6 +443,37 @@ impl StreamingArrowReader {
             ArrowPredicate::LessThan(column, value) => {
                 self.evaluate_less_than(batch, column, value)
             }
+            ArrowPredicate::In(column, values) => {
+                if values.is_empty() {
+                    // An empty IN-list can never match any row: this is
+                    // "match nothing", not an error condition.
+                    let col = batch.column_by_name(column).ok_or_else(|| {
+                        error_helpers::schema_mismatch(
+                            "evaluate_predicate",
+                            column,
+                            "column not found",
+                        )
+                    })?;
+                    return Ok(BooleanArray::from(vec![false; col.len()]));
+                }
+
+                let mut result: Option<BooleanArray> = None;
+                for value in values {
+                    let mask = self.evaluate_equals(batch, column, value)?;
+                    result = match result {
+                        None => Some(mask),
+                        Some(existing) => Some(compute::or(&existing, &mask).map_err(|e| {
+                            TensorError::unsupported_operation_simple(format!(
+                                "Failed to OR IN-predicate masks: {}",
+                                e
+                            ))
+                        })?),
+                    };
+                }
+                result.ok_or_else(|| {
+                    TensorError::unsupported_operation_simple("Empty IN predicate".to_string())
+                })
+            }
             ArrowPredicate::IsNull(column) => {
                 let col = batch.column_by_name(column).ok_or_else(|| {
                     error_helpers::schema_mismatch("evaluate_predicate", column, "column not found")
@@ -433,9 +538,6 @@ impl StreamingArrowReader {
                     TensorError::unsupported_operation_simple(format!("Failed to NOT: {}", e))
                 })?)
             }
-            _ => Err(TensorError::unsupported_operation_simple(
-                "Predicate type not yet implemented".to_string(),
-            )),
         }
     }
 
@@ -445,42 +547,7 @@ impl StreamingArrowReader {
         column: &str,
         value: &ArrowValue,
     ) -> Result<BooleanArray> {
-        let col = batch.column_by_name(column).ok_or_else(|| {
-            error_helpers::schema_mismatch("evaluate_equals", column, "column not found")
-        })?;
-
-        match value {
-            ArrowValue::Int32(v) => {
-                let arr = col.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = eq(arr, &Int32Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            ArrowValue::Int64(v) => {
-                let arr = col.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = eq(arr, &Int64Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            ArrowValue::Float64(v) => {
-                let arr = col.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = eq(arr, &Float64Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            _ => Err(TensorError::unsupported_operation_simple(
-                "Value type not yet implemented".to_string(),
-            )),
-        }
+        evaluate_comparison(batch, column, value, eq, "evaluate_equals")
     }
 
     fn evaluate_greater_than(
@@ -489,33 +556,7 @@ impl StreamingArrowReader {
         column: &str,
         value: &ArrowValue,
     ) -> Result<BooleanArray> {
-        let col = batch.column_by_name(column).ok_or_else(|| {
-            error_helpers::schema_mismatch("evaluate_greater_than", column, "column not found")
-        })?;
-
-        match value {
-            ArrowValue::Int32(v) => {
-                let arr = col.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = gt(arr, &Int32Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            ArrowValue::Float64(v) => {
-                let arr = col.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = gt(arr, &Float64Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            _ => Err(TensorError::unsupported_operation_simple(
-                "Value type not yet implemented".to_string(),
-            )),
-        }
+        evaluate_comparison(batch, column, value, gt, "evaluate_greater_than")
     }
 
     fn evaluate_less_than(
@@ -524,33 +565,7 @@ impl StreamingArrowReader {
         column: &str,
         value: &ArrowValue,
     ) -> Result<BooleanArray> {
-        let col = batch.column_by_name(column).ok_or_else(|| {
-            error_helpers::schema_mismatch("evaluate_less_than", column, "column not found")
-        })?;
-
-        match value {
-            ArrowValue::Int32(v) => {
-                let arr = col.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = lt(arr, &Int32Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            ArrowValue::Float64(v) => {
-                let arr = col.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple("Type mismatch".to_string())
-                })?;
-                let result = lt(arr, &Float64Array::from(vec![*v])).map_err(|e| {
-                    TensorError::unsupported_operation_simple(format!("Failed to compare: {}", e))
-                })?;
-                Ok(result)
-            }
-            _ => Err(TensorError::unsupported_operation_simple(
-                "Value type not yet implemented".to_string(),
-            )),
-        }
+        evaluate_comparison(batch, column, value, lt, "evaluate_less_than")
     }
 }
 
@@ -648,5 +663,339 @@ mod tests {
         assert_eq!(ArrowValue::Int32(42), ArrowValue::Int32(42));
         assert_ne!(ArrowValue::Int32(42), ArrowValue::Int32(43));
         assert_eq!(ArrowValue::Float64(2.5), ArrowValue::Float64(2.5));
+    }
+
+    // -----------------------------------------------------------------
+    // evaluate_comparison / evaluate_equals / evaluate_greater_than /
+    // evaluate_less_than / In-predicate coverage
+    //
+    // These use a genuinely multi-row (5-row) RecordBatch on purpose: a
+    // 1-row batch would not have caught the Scalar::new broadcast bug (see
+    // `evaluate_comparison`'s doc comment). Without the `Scalar::new`
+    // wrapper, arrow's cmp kernels reject two non-scalar operands of
+    // different lengths outright, so every one of these tests would fail
+    // at its `.expect(...)` call (not silently return a wrong-length
+    // result) against a 1-row-only regression check.
+    // -----------------------------------------------------------------
+
+    /// Build a 5-row RecordBatch with one column per `ArrowValue` variant.
+    fn build_predicate_test_batch() -> RecordBatch {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("int32_col", ArrowDataType::Int32, false),
+            Field::new("int64_col", ArrowDataType::Int64, false),
+            Field::new("float32_col", ArrowDataType::Float32, false),
+            Field::new("float64_col", ArrowDataType::Float64, false),
+            Field::new("string_col", ArrowDataType::Utf8, false),
+            Field::new("bool_col", ArrowDataType::Boolean, false),
+        ]));
+
+        let int32_col: ArrayRef = Arc::new(Int32Array::from(vec![10, 20, 20, 30, 40]));
+        let int64_col: ArrayRef = Arc::new(Int64Array::from(vec![100i64, 200, 300, 200, 500]));
+        let float32_col: ArrayRef = Arc::new(Float32Array::from(vec![1.5f32, 2.5, 3.5, 2.5, 5.5]));
+        let float64_col: ArrayRef = Arc::new(Float64Array::from(vec![1.5f64, 2.5, 3.5, 2.5, 5.5]));
+        let string_col: ArrayRef = Arc::new(StringArray::from(vec![
+            "apple".to_string(),
+            "banana".to_string(),
+            "cherry".to_string(),
+            "banana".to_string(),
+            "date".to_string(),
+        ]));
+        let bool_col: ArrayRef = Arc::new(BooleanArray::from(vec![true, false, true, false, true]));
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                int32_col,
+                int64_col,
+                float32_col,
+                float64_col,
+                string_col,
+                bool_col,
+            ],
+        )
+        .expect("test: RecordBatch construction should succeed")
+    }
+
+    /// Build a `StreamingArrowReader` without any file I/O. None of the
+    /// predicate-evaluation methods under test read `self`'s fields (they
+    /// operate purely on the `batch`/`column`/`value` arguments), so
+    /// placeholder field values are sufficient here.
+    fn dummy_reader() -> StreamingArrowReader {
+        StreamingArrowReader {
+            path: std::path::PathBuf::new(),
+            config: StreamingArrowConfig::default(),
+            current_batch: 0,
+            total_batches: 0,
+            schema: Arc::new(Schema::new(Vec::<Field>::new())),
+        }
+    }
+
+    /// Collect a `BooleanArray` into `Vec<Option<bool>>` for easy assertions.
+    fn mask_values(mask: &BooleanArray) -> Vec<Option<bool>> {
+        mask.iter().collect()
+    }
+
+    #[test]
+    fn test_evaluate_equals_int32_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(&batch, "int32_col", &ArrowValue::Int32(20))
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_int64_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(&batch, "int64_col", &ArrowValue::Int64(200))
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_float32_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(&batch, "float32_col", &ArrowValue::Float32(2.5))
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_float64_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(&batch, "float64_col", &ArrowValue::Float64(2.5))
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_string_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(
+                &batch,
+                "string_col",
+                &ArrowValue::String("banana".to_string()),
+            )
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_bool_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_equals(&batch, "bool_col", &ArrowValue::Bool(true))
+            .expect("test: evaluate_equals should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![Some(true), Some(false), Some(true), Some(false), Some(true)]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_greater_than_int32_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_greater_than(&batch, "int32_col", &ArrowValue::Int32(20))
+            .expect("test: evaluate_greater_than should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(false),
+                Some(false),
+                Some(true),
+                Some(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_greater_than_float64_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_greater_than(&batch, "float64_col", &ArrowValue::Float64(2.5))
+            .expect("test: evaluate_greater_than should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_less_than_int32_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_less_than(&batch, "int32_col", &ArrowValue::Int32(20))
+            .expect("test: evaluate_less_than should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_less_than_float64_multi_row() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let mask = reader
+            .evaluate_less_than(&batch, "float64_col", &ArrowValue::Float64(2.5))
+            .expect("test: evaluate_less_than should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_comparison_direct_call_matches_wrapper() {
+        // Exercises the shared `evaluate_comparison` function directly
+        // (bypassing the `evaluate_equals` wrapper method) to prove there
+        // is only one code path backing both.
+        let batch = build_predicate_test_batch();
+        let mask = evaluate_comparison(
+            &batch,
+            "int32_col",
+            &ArrowValue::Int32(20),
+            eq,
+            "test_evaluate_comparison_direct_call_matches_wrapper",
+        )
+        .expect("test: evaluate_comparison should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![
+                Some(false),
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_evaluate_equals_type_mismatch_errors() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        // ArrowValue::Int32 against a Utf8 column must fail cleanly.
+        let result = reader.evaluate_equals(&batch, "string_col", &ArrowValue::Int32(5));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_in_predicate_non_empty_ors_equals_masks() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let predicate = ArrowPredicate::is_in(
+            "int32_col",
+            vec![ArrowValue::Int32(20), ArrowValue::Int32(40)],
+        );
+        let mask = reader
+            .evaluate_predicate(&batch, &predicate)
+            .expect("test: In predicate should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(
+            mask_values(&mask),
+            vec![Some(false), Some(true), Some(true), Some(false), Some(true)]
+        );
+    }
+
+    #[test]
+    fn test_in_predicate_empty_list_matches_nothing() {
+        let reader = dummy_reader();
+        let batch = build_predicate_test_batch();
+        let predicate = ArrowPredicate::is_in("int32_col", vec![]);
+        let mask = reader
+            .evaluate_predicate(&batch, &predicate)
+            .expect("test: empty In predicate should succeed");
+        assert_eq!(mask.len(), batch.num_rows());
+        assert_eq!(mask_values(&mask), vec![Some(false); batch.num_rows()]);
     }
 }

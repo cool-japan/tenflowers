@@ -17,7 +17,7 @@ impl ActivationFunctions {
                 operation: "SIMD ReLU".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -54,7 +54,7 @@ impl ActivationFunctions {
                 operation: "SIMD Sigmoid".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -80,7 +80,7 @@ impl ActivationFunctions {
                 operation: "SIMD Tanh".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -131,7 +131,7 @@ impl ActivationFunctions {
                 operation: "SIMD Leaky ReLU".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -165,7 +165,7 @@ impl ActivationFunctions {
                 operation: "SIMD ELU".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -183,7 +183,7 @@ impl ActivationFunctions {
                 operation: "SIMD Swish".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -202,7 +202,7 @@ impl ActivationFunctions {
                 operation: "SIMD GELU".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -226,7 +226,7 @@ impl ActivationFunctions {
                 operation: "SIMD Mish".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -246,7 +246,7 @@ impl ActivationFunctions {
                 operation: "SIMD Softmax".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 

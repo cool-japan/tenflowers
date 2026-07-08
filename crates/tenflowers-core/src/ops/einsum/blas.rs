@@ -407,7 +407,7 @@ where
 ))]
 fn blas_transpose_2d<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let shape = tensor.shape().dims();
     if shape.len() != 2 {

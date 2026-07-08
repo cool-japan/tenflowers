@@ -31,7 +31,7 @@ use wgpu::util::DeviceExt;
 /// Returns error if the total size of the new shape doesn't match the original tensor size
 pub fn reshape<T>(tensor: &Tensor<T>, shape: &[usize]) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let total_size: usize = shape.iter().product();
     let tensor_size = tensor.shape().size();
@@ -73,7 +73,7 @@ where
 /// Returns error if axis is out of range for the tensor
 pub fn expand_dims<T>(tensor: &Tensor<T>, axis: usize) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let mut new_shape = tensor.shape().dims().to_vec();
 
@@ -95,11 +95,14 @@ where
             Ok(Tensor::from_array(expanded))
         }
         #[cfg(feature = "gpu")]
-        TensorStorage::Gpu(_) => {
-            // GPU operations require T: Pod + Zeroable which isn't guaranteed for generic T
-            Err(TensorError::unsupported_operation_simple(
-                "GPU expand_dims not implemented for this type. Only f32 is currently supported."
-                    .to_string(),
+        TensorStorage::Gpu(gpu_buffer) => {
+            // Inserting a size-1 axis is pure metadata: `GpuBuffer<T>` and
+            // `Shape` carry no strides, so no device round-trip is needed —
+            // just clone the buffer handle (an `Arc::clone`) and attach the
+            // new shape.
+            Ok(Tensor::from_gpu_buffer(
+                gpu_buffer.clone(),
+                crate::Shape::from_slice(&new_shape),
             ))
         }
     }
@@ -121,7 +124,7 @@ where
 /// Returns error if specified axes are out of range or don't have size 1
 pub fn squeeze<T>(tensor: &Tensor<T>, axes: Option<&[usize]>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let shape = tensor.shape().dims();
     let mut new_shape = Vec::new();
@@ -260,7 +263,7 @@ where
 /// Returns error if axes are out of range or contain duplicates
 pub fn unsqueeze<T>(tensor: &Tensor<T>, axes: &[usize]) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let original_shape = tensor.shape().dims();
     let new_rank = original_shape.len() + axes.len();
@@ -323,7 +326,7 @@ where
 /// ```
 pub fn flatten<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let total_size = tensor.shape().size();
     reshape(tensor, &[total_size])
@@ -336,7 +339,7 @@ fn gpu_reshape_dispatch<T>(
     shape: &[usize],
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     // Currently, we only support f32 for GPU operations
     let type_name = std::any::type_name::<T>();
@@ -583,5 +586,40 @@ where
         ))
     } else {
         Err(TensorError::device_mismatch("reshape", "GPU", "CPU"))
+    }
+}
+
+// GPU-resident correctness test for the readback-free fix in the public
+// `expand_dims()`'s GPU arm: inserting a size-1 axis is pure metadata (no
+// strides involved), so the fix is a plain `Arc::clone` of the GPU buffer
+// handle plus a new `Shape` - verify it actually produces the right shape
+// and preserves the data. Skips gracefully (without failing the suite) if
+// no GPU adapter is available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_expand_dims_matches_cpu_reference() {
+        let src = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+
+        let src_gpu = match src.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = expand_dims(&src_gpu, 0)
+            .expect("test: gpu expand_dims(axis=0) should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[1, 3]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![1.0, 2.0, 3.0]);
+
+        let result2 = expand_dims(&src_gpu, 1)
+            .expect("test: gpu expand_dims(axis=1) should succeed with a real adapter");
+        assert_eq!(result2.shape().dims(), &[3, 1]);
+        let data2 = result2.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data2, vec![1.0, 2.0, 3.0]);
     }
 }

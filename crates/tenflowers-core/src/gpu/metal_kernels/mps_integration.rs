@@ -170,104 +170,47 @@ impl MPSNeuralOps {
         layers: &[LayerConfig],
         input: &Tensor<f32>,
     ) -> Result<(Tensor<f32>, Vec<Tensor<f32>>)> {
-        // Execute forward pass with activation caching for backprop
-        let mut current_output = input.clone();
-        let mut activations = Vec::new();
-
-        // Store input activation for backpropagation
-        activations.push(input.clone());
-
-        let command_buffer = self.command_queue.new_command_buffer();
-
-        for (layer_idx, layer) in layers.iter().enumerate() {
-            match &layer.layer_type {
-                LayerType::Dense => {
-                    // Store pre-activation for gradient computation
-                    let pre_activation = current_output.clone();
-
-                    // Execute dense layer (simplified implementation)
-                    if let Some(weights) = layer.parameters.get("weights") {
-                        // Create output with appropriate shape
-                        let input_features =
-                            current_output.shape()[current_output.shape().len() - 1];
-                        let output_features = weights.len() / input_features;
-                        let mut output_shape = current_output.shape().to_vec();
-                        let last_idx = output_shape.len() - 1;
-                        output_shape[last_idx] = output_features;
-
-                        let output_data = vec![0.0f32; output_shape.iter().product()];
-                        current_output = Tensor::from_vec(output_data, &output_shape)?;
-                    }
-
-                    activations.push(current_output.clone());
-                }
-                LayerType::Convolution => {
-                    // Store pre-convolution activation
-                    let pre_conv = current_output.clone();
-
-                    // Execute convolution (simplified implementation)
-                    if let Some(weights) = layer.parameters.get("weights") {
-                        // Simplified output shape calculation
-                        let input_shape = current_output.shape();
-                        if input_shape.len() == 4 {
-                            // Assume output dimensions (simplified)
-                            let output_shape = vec![
-                                input_shape[0],
-                                weights.len() / (input_shape[1] * 9),
-                                input_shape[2],
-                                input_shape[3],
-                            ];
-                            let output_data = vec![0.0f32; output_shape.iter().product()];
-                            current_output = Tensor::from_vec(output_data, &output_shape)?;
-                        }
-                    }
-
-                    activations.push(current_output.clone());
-                }
-                LayerType::BatchNorm => {
-                    // Store pre-normalization state
-                    let pre_norm = current_output.clone();
-
-                    // Execute batch normalization (in-place for simplicity)
-                    // In a real implementation, this would compute running statistics
-
-                    activations.push(current_output.clone());
-                }
-                LayerType::LayerNorm => {
-                    // Store pre-normalization state
-                    let pre_norm = current_output.clone();
-
-                    // Execute layer normalization (in-place for simplicity)
-
-                    activations.push(current_output.clone());
-                }
+        // HONEST ERROR: none of the layer types below have a real Metal MPS
+        // training-forward kernel implemented yet. Previously each arm either
+        // filled a freshly shaped tensor with `vec![0.0f32; ...]` (Dense,
+        // Convolution) or silently passed `current_output` straight through
+        // while claiming to have normalized/activated it (BatchNorm, LayerNorm,
+        // Activation) -- both are fabrications, since callers receive a tensor
+        // labeled as that layer's output which no kernel ever touched. Every
+        // layer type fails the same way, so only the first configured layer
+        // needs inspecting to report a specific, honest error; an empty
+        // `layers` list has nothing to run and is a genuine (non-fabricated)
+        // identity result.
+        if let Some((layer_idx, layer)) = layers.iter().enumerate().next() {
+            return Err(match &layer.layer_type {
+                LayerType::Dense => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training forward: dense layer {} GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::Convolution => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training forward: convolution layer {} GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::BatchNorm => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training forward: batch norm layer {} GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::LayerNorm => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training forward: layer norm layer {} GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
                 LayerType::Activation(activation_type) => {
-                    // Store pre-activation for gradient computation
-                    let pre_activation = current_output.clone();
-
-                    // Execute activation function (simplified)
-                    match activation_type {
-                        ActivationType::ReLU => {
-                            // Simplified ReLU implementation
-                            // In practice, this would use the GPU kernel
-                        }
-                        ActivationType::GELU => {
-                            // Simplified GELU implementation
-                        }
-                        _ => {
-                            // Other activation types
-                        }
-                    }
-
-                    activations.push(current_output.clone());
+                    TensorError::unsupported_operation_simple(format!(
+                        "Metal MPS training forward: activation layer {} ({:?}) GPU kernel dispatch not implemented; result would be fabricated",
+                        layer_idx, activation_type
+                    ))
                 }
-            }
+            });
         }
 
-        command_buffer.commit();
-        command_buffer.wait_until_completed();
-
-        Ok((current_output, activations))
+        // No layers configured: the forward pass is trivially the input
+        // itself, a real (non-fabricated) result.
+        Ok((input.clone(), vec![input.clone()]))
     }
 
     /// Execute optimized training backward pass
@@ -277,235 +220,76 @@ impl MPSNeuralOps {
         gradients: &Tensor<f32>,
         activations: &[Tensor<f32>],
     ) -> Result<Vec<Tensor<f32>>> {
-        // Execute backward pass with gradient computation
-        let mut layer_gradients = Vec::new();
-        let mut current_gradient = gradients.clone();
+        // HONEST ERROR: none of the layer types below have a real Metal MPS
+        // training-backward (gradient) kernel implemented yet. Previously
+        // every gradient (weight/bias/input for Dense, weight/input for
+        // Convolution, scale/offset for BatchNorm, gamma/beta for LayerNorm,
+        // and the activation gradient for ReLU/GELU/other) was filled with
+        // `vec![0.0f32; ...]` (host zeros) instead of being computed from
+        // `prev_activation` / `current_gradient` -- a fabrication. Backprop
+        // visits layers in reverse, so only the last layer -- the first one
+        // backprop would touch, if any -- needs inspecting to report a
+        // specific, honest error; an empty `layers` list has no gradients to
+        // compute, which is a genuine (non-fabricated) empty result.
+        let _ = (gradients, activations);
 
-        let command_buffer = self.command_queue.new_command_buffer();
-
-        // Process layers in reverse order for backpropagation
-        for (layer_idx, layer) in layers.iter().enumerate().rev() {
-            let activation_idx = if layer_idx + 1 < activations.len() {
-                layer_idx + 1
-            } else {
-                activations.len() - 1
-            };
-            let prev_activation = if layer_idx > 0 {
-                &activations[layer_idx]
-            } else {
-                &activations[0]
-            };
-
-            match &layer.layer_type {
-                LayerType::Dense => {
-                    // Compute gradients for dense layer
-                    if let Some(weights) = layer.parameters.get("weights") {
-                        // Weight gradients: dW = activation^T @ grad_output
-                        let weight_grad_data = vec![0.0f32; weights.len()];
-                        let weight_gradient = Tensor::from_vec(
-                            weight_grad_data,
-                            &[
-                                weights.len()
-                                    / prev_activation.shape()[prev_activation.shape().len() - 1],
-                                prev_activation.shape()[prev_activation.shape().len() - 1],
-                            ],
-                        )
-                        .map_err(|e| {
-                            TensorError::invalid_operation_simple(format!(
-                                "Failed to create weight gradient: {}",
-                                e
-                            ))
-                        })?;
-
-                        // Bias gradients: db = sum(grad_output, axis=0)
-                        let bias_grad_data = vec![
-                            0.0f32;
-                            current_gradient.shape()
-                                [current_gradient.shape().len() - 1]
-                        ];
-                        let bias_gradient = Tensor::from_vec(
-                            bias_grad_data,
-                            &[current_gradient.shape()[current_gradient.shape().len() - 1]],
-                        )
-                        .map_err(|e| {
-                            TensorError::invalid_operation_simple(format!(
-                                "Failed to create bias gradient: {}",
-                                e
-                            ))
-                        })?;
-
-                        // Input gradients: dx = grad_output @ W
-                        let input_grad_data = vec![0.0f32; prev_activation.numel()];
-                        current_gradient =
-                            Tensor::from_vec(input_grad_data, prev_activation.shape().dims())
-                                .map_err(|e| {
-                                    TensorError::invalid_operation_simple(format!(
-                                        "Failed to create input gradient: {}",
-                                        e
-                                    ))
-                                })?;
-
-                        layer_gradients.push(weight_gradient);
-                        layer_gradients.push(bias_gradient);
-                    }
-                }
-                LayerType::Convolution => {
-                    // Compute gradients for convolution layer
-                    if let Some(weights) = layer.parameters.get("weights") {
-                        // Simplified gradient computation for convolution
-                        let weight_grad_data = vec![0.0f32; weights.len()];
-                        let weight_gradient = Tensor::from_vec(
-                            weight_grad_data,
-                            &[weights.len() / 64, 8, 8], // Simplified shape
-                        )
-                        .map_err(|e| {
-                            TensorError::invalid_operation_simple(format!(
-                                "Failed to create conv weight gradient: {}",
-                                e
-                            ))
-                        })?;
-
-                        // Input gradients through deconvolution
-                        let input_grad_data = vec![0.0f32; prev_activation.numel()];
-                        current_gradient =
-                            Tensor::from_vec(input_grad_data, prev_activation.shape().dims())
-                                .map_err(|e| {
-                                    TensorError::invalid_operation_simple(format!(
-                                        "Failed to create conv input gradient: {}",
-                                        e
-                                    ))
-                                })?;
-
-                        layer_gradients.push(weight_gradient);
-                    }
-                }
-                LayerType::BatchNorm => {
-                    // Compute gradients for batch normalization
-                    if let (Some(scale), Some(_offset)) = (
-                        layer.parameters.get("scale"),
-                        layer.parameters.get("offset"),
-                    ) {
-                        // Scale gradients
-                        let scale_grad_data = vec![0.0f32; scale.len()];
-                        let scale_gradient = Tensor::from_vec(scale_grad_data, &[scale.len()])
-                            .map_err(|e| {
-                                TensorError::invalid_operation_simple(format!(
-                                    "Failed to create scale gradient: {}",
-                                    e
-                                ))
-                            })?;
-
-                        // Offset gradients
-                        let offset_grad_data = vec![0.0f32; scale.len()];
-                        let offset_gradient = Tensor::from_vec(offset_grad_data, &[scale.len()])
-                            .map_err(|e| {
-                                TensorError::invalid_operation_simple(format!(
-                                    "Failed to create offset gradient: {}",
-                                    e
-                                ))
-                            })?;
-
-                        layer_gradients.push(scale_gradient);
-                        layer_gradients.push(offset_gradient);
-                    }
-                }
-                LayerType::LayerNorm => {
-                    // Compute gradients for layer normalization
-                    if let (Some(gamma), Some(_beta)) =
-                        (layer.parameters.get("gamma"), layer.parameters.get("beta"))
-                    {
-                        // Gamma gradients
-                        let gamma_grad_data = vec![0.0f32; gamma.len()];
-                        let gamma_gradient = Tensor::from_vec(gamma_grad_data, &[gamma.len()])
-                            .map_err(|e| {
-                                TensorError::invalid_operation_simple(format!(
-                                    "Failed to create gamma gradient: {}",
-                                    e
-                                ))
-                            })?;
-
-                        // Beta gradients
-                        let beta_grad_data = vec![0.0f32; gamma.len()];
-                        let beta_gradient = Tensor::from_vec(beta_grad_data, &[gamma.len()])
-                            .map_err(|e| {
-                                TensorError::invalid_operation_simple(format!(
-                                    "Failed to create beta gradient: {}",
-                                    e
-                                ))
-                            })?;
-
-                        layer_gradients.push(gamma_gradient);
-                        layer_gradients.push(beta_gradient);
-                    }
-                }
+        if let Some((layer_idx, layer)) = layers.iter().enumerate().next_back() {
+            return Err(match &layer.layer_type {
+                LayerType::Dense => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training backward: dense layer {} weight/bias/input gradient GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::Convolution => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training backward: convolution layer {} weight/input gradient GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::BatchNorm => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training backward: batch norm layer {} scale/offset gradient GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
+                LayerType::LayerNorm => TensorError::unsupported_operation_simple(format!(
+                    "Metal MPS training backward: layer norm layer {} gamma/beta gradient GPU kernel dispatch not implemented; result would be fabricated",
+                    layer_idx
+                )),
                 LayerType::Activation(activation_type) => {
-                    // Compute activation gradients
-                    match activation_type {
-                        ActivationType::ReLU => {
-                            // ReLU gradient: grad_input = grad_output * (input > 0)
-                            // Simplified implementation
-                            let grad_data = vec![0.0f32; current_gradient.numel()];
-                            current_gradient =
-                                Tensor::from_vec(grad_data, current_gradient.shape().dims())
-                                    .map_err(|e| {
-                                        TensorError::invalid_operation_simple(format!(
-                                            "Failed to create ReLU gradient: {}",
-                                            e
-                                        ))
-                                    })?;
-                        }
-                        ActivationType::GELU => {
-                            // GELU gradient computation (simplified)
-                            let grad_data = vec![0.0f32; current_gradient.numel()];
-                            current_gradient =
-                                Tensor::from_vec(grad_data, current_gradient.shape().dims())
-                                    .map_err(|e| {
-                                        TensorError::invalid_operation_simple(format!(
-                                            "Failed to create GELU gradient: {}",
-                                            e
-                                        ))
-                                    })?;
-                        }
-                        _ => {
-                            // Other activation gradients
-                            let grad_data = vec![0.0f32; current_gradient.numel()];
-                            current_gradient =
-                                Tensor::from_vec(grad_data, current_gradient.shape().dims())
-                                    .map_err(|e| {
-                                        TensorError::invalid_operation_simple(format!(
-                                            "Failed to create activation gradient: {}",
-                                            e
-                                        ))
-                                    })?;
-                        }
-                    }
+                    TensorError::unsupported_operation_simple(format!(
+                        "Metal MPS training backward: activation layer {} ({:?}) gradient GPU kernel dispatch not implemented; result would be fabricated",
+                        layer_idx, activation_type
+                    ))
                 }
-            }
+            });
         }
 
-        command_buffer.commit();
-        command_buffer.wait_until_completed();
-
-        // Return gradients in reverse order to match forward pass layer order
-        layer_gradients.reverse();
-        Ok(layer_gradients)
+        // No layers configured: there are no gradients to compute, which is a
+        // real (non-fabricated) empty result.
+        Ok(Vec::new())
     }
 
     // Helper methods for MPS operations
 
     fn execute_matrix_multiply(&mut self, a: &Tensor<f32>, b: &Tensor<f32>) -> Result<Tensor<f32>> {
-        // Simplified matrix multiply implementation
-        let a_shape = a.shape();
-        let b_shape = b.shape();
-        let output_shape = vec![a_shape[0], b_shape[1]];
-        let output_data = vec![0.0f32; output_shape.iter().product()];
-        Tensor::from_vec(output_data, &output_shape)
+        // HONEST ERROR: this never dispatched a GPU kernel -- it only computed
+        // `output_shape` from `a`/`b` and filled it with `vec![0.0f32; ...]`
+        // (host zeros), which `execute_inference`'s Dense arm would then hand
+        // back to callers as if it were the real `a @ b` result. Fail loudly
+        // instead of faking a matmul.
+        let _ = (a, b);
+        Err(TensorError::unsupported_operation_simple(
+            "Metal MPS matrix multiply: GPU kernel dispatch + host readback not implemented; result would be fabricated"
+                .to_string(),
+        ))
     }
 
     fn add_bias(&mut self, tensor: &Tensor<f32>, bias: &[f32]) -> Result<Tensor<f32>> {
-        // Simplified bias addition implementation
-        let output_data = vec![0.0f32; tensor.numel()];
-        Tensor::from_vec(output_data, tensor.shape().dims())
+        // HONEST ERROR: this discarded `tensor`'s real values entirely and
+        // returned `vec![0.0f32; tensor.numel()]` -- not even `tensor + bias`,
+        // just zeros. Fail loudly instead of silently dropping the matmul
+        // output this is meant to add a bias to.
+        let _ = (tensor, bias);
+        Err(TensorError::unsupported_operation_simple(
+            "Metal MPS bias addition: GPU kernel dispatch + host readback not implemented; result would be fabricated"
+                .to_string(),
+        ))
     }
 
     fn infer_conv_weight_shape(
@@ -533,17 +317,15 @@ impl MPSNeuralOps {
         stride: [usize; 2],
         padding: [usize; 2],
     ) -> Result<Tensor<f32>> {
-        // Simplified convolution implementation
-        let input_shape = input.shape();
-        let weight_shape = weights.shape();
-        let output_shape = vec![
-            input_shape[0],
-            weight_shape[0],
-            input_shape[2],
-            input_shape[3],
-        ];
-        let output_data = vec![0.0f32; output_shape.iter().product()];
-        Tensor::from_vec(output_data, &output_shape)
+        // HONEST ERROR: no kernel was ever dispatched here -- this only
+        // derived an output shape from `input`/`weights` and filled it with
+        // host zeros, silently ignoring `bias`, `stride`, and `padding`
+        // entirely.
+        let _ = (input, weights, bias, stride, padding);
+        Err(TensorError::unsupported_operation_simple(
+            "Metal MPS convolution: GPU kernel dispatch + host readback not implemented; result would be fabricated"
+                .to_string(),
+        ))
     }
 
     fn execute_batch_norm(
@@ -554,9 +336,14 @@ impl MPSNeuralOps {
         mean: &[f32],
         variance: &[f32],
     ) -> Result<Tensor<f32>> {
-        // Simplified batch norm implementation
-        let output_data = vec![0.0f32; input.numel()];
-        Tensor::from_vec(output_data, input.shape().dims())
+        // HONEST ERROR: `scale`, `offset`, `mean`, and `variance` were
+        // accepted but never read -- this just zero-filled a tensor shaped
+        // like `input`.
+        let _ = (input, scale, offset, mean, variance);
+        Err(TensorError::unsupported_operation_simple(
+            "Metal MPS batch norm: GPU kernel dispatch + host readback not implemented; result would be fabricated"
+                .to_string(),
+        ))
     }
 
     fn execute_layer_norm(
@@ -566,9 +353,13 @@ impl MPSNeuralOps {
         beta: &[f32],
         eps: f32,
     ) -> Result<Tensor<f32>> {
-        // Simplified layer norm implementation
-        let output_data = vec![0.0f32; input.numel()];
-        Tensor::from_vec(output_data, input.shape().dims())
+        // HONEST ERROR: `gamma`, `beta`, and `eps` were accepted but never
+        // read -- this just zero-filled a tensor shaped like `input`.
+        let _ = (input, gamma, beta, eps);
+        Err(TensorError::unsupported_operation_simple(
+            "Metal MPS layer norm: GPU kernel dispatch + host readback not implemented; result would be fabricated"
+                .to_string(),
+        ))
     }
 
     fn execute_activation(
@@ -576,9 +367,13 @@ impl MPSNeuralOps {
         input: &Tensor<f32>,
         activation_type: ActivationType,
     ) -> Result<Tensor<f32>> {
-        // Simplified activation implementation
-        let output_data = vec![0.0f32; input.numel()];
-        Tensor::from_vec(output_data, input.shape().dims())
+        // HONEST ERROR: `activation_type` was accepted but never applied --
+        // this just zero-filled a tensor shaped like `input`.
+        let _ = input;
+        Err(TensorError::unsupported_operation_simple(format!(
+            "Metal MPS activation ({:?}): GPU kernel dispatch + host readback not implemented; result would be fabricated",
+            activation_type
+        )))
     }
 }
 
@@ -698,5 +493,408 @@ mod tests {
         // On non-macOS platforms, MPS integration is not available
         // This test ensures the module compiles correctly on all platforms
         assert!(true);
+    }
+
+    // ---------------------------------------------------------------------
+    // Honest-error regression tests.
+    //
+    // Every method below used to silently return a fabricated all-zero
+    // `Ok(Tensor)` (or, for BatchNorm/LayerNorm/Activation in the forward
+    // pass, silently pass the input through unchanged while claiming to have
+    // normalized/activated it). Each test here asserts the method now
+    // returns a specific, honest `Err` instead -- never a fabricated `Ok`.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_matrix_multiply_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let a = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+                .expect("test: 2x2 tensor construction should succeed");
+            let b = Tensor::from_vec(vec![1.0f32, 0.0, 0.0, 1.0], &[2, 2])
+                .expect("test: 2x2 tensor construction should succeed");
+            let err = ops.execute_matrix_multiply(&a, &b).expect_err(
+                "matrix multiply has no GPU readback; it must honestly error, not fabricate zeros",
+            );
+            let msg = err.to_string();
+            assert!(msg.contains("matrix multiply"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_add_bias_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let tensor = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+                .expect("test: 1D tensor construction should succeed");
+            let bias = vec![0.5f32, 0.5, 0.5];
+            let err = ops
+                .add_bias(&tensor, &bias)
+                .expect_err("add_bias must honestly error, not silently zero the matmul output");
+            let msg = err.to_string();
+            assert!(msg.contains("bias"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_convolution_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![0.0f32; 3 * 8 * 8], &[1, 3, 8, 8])
+                .expect("test: NCHW input construction should succeed");
+            let weights = Tensor::from_vec(vec![0.0f32; 4 * 3 * 3 * 3], &[4, 3, 3, 3])
+                .expect("test: conv weight construction should succeed");
+            let err = ops
+                .execute_convolution(&input, &weights, None, [1, 1], [0, 0])
+                .expect_err("convolution must honestly error, not fabricate zeros");
+            let msg = err.to_string();
+            assert!(msg.contains("convolution"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_batch_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+                .expect("test: 1D tensor construction should succeed");
+            let scale = vec![1.0f32; 4];
+            let offset = vec![0.0f32; 4];
+            let mean = vec![0.0f32; 4];
+            let variance = vec![1.0f32; 4];
+            let err = ops
+                .execute_batch_norm(&input, &scale, &offset, &mean, &variance)
+                .expect_err("batch norm must honestly error, not fabricate zeros");
+            let msg = err.to_string();
+            assert!(msg.contains("batch norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_layer_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[4])
+                .expect("test: 1D tensor construction should succeed");
+            let gamma = vec![1.0f32; 4];
+            let beta = vec![0.0f32; 4];
+            let err = ops
+                .execute_layer_norm(&input, &gamma, &beta, 1e-5)
+                .expect_err("layer norm must honestly error, not fabricate zeros");
+            let msg = err.to_string();
+            assert!(msg.contains("layer norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_activation_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, -1.0, 2.0, -2.0], &[4])
+                .expect("test: 1D tensor construction should succeed");
+            let err = ops
+                .execute_activation(&input, ActivationType::ReLU)
+                .expect_err("activation must honestly error, not fabricate zeros");
+            let msg = err.to_string();
+            assert!(msg.contains("activation"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_dense_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::dense(2, 3)];
+            let err = ops.execute_training_forward(&layers, &input).expect_err(
+                "training forward must honestly error for dense layers, not fabricate zeros",
+            );
+            let msg = err.to_string();
+            assert!(msg.contains("dense"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_convolution_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![0.0f32; 3 * 8 * 8], &[1, 3, 8, 8])
+                .expect("test: NCHW input construction should succeed");
+            let layers = vec![LayerConfig::conv2d(3, 4, (3, 3), (8, 8))];
+            let err = ops
+                .execute_training_forward(&layers, &input)
+                .expect_err("training forward must honestly error for convolution layers");
+            let msg = err.to_string();
+            assert!(msg.contains("convolution"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_batch_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::batch_norm(4)];
+            let err = ops
+                .execute_training_forward(&layers, &input)
+                .expect_err("training forward must honestly error for batch norm layers");
+            let msg = err.to_string();
+            assert!(msg.contains("batch norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_layer_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::layer_norm(vec![4])];
+            let err = ops
+                .execute_training_forward(&layers, &input)
+                .expect_err("training forward must honestly error for layer norm layers");
+            let msg = err.to_string();
+            assert!(msg.contains("layer norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_activation_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, -1.0], &[2])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::activation(ActivationType::GELU, vec![2])];
+            let err = ops
+                .execute_training_forward(&layers, &input)
+                .expect_err("training forward must honestly error for activation layers");
+            let msg = err.to_string();
+            assert!(msg.contains("activation"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_forward_empty_layers_is_identity() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+                .expect("test: input tensor construction should succeed");
+            let (output, activations) = ops.execute_training_forward(&[], &input).expect(
+                "an empty layer list is a genuine identity pass-through, not a fabrication",
+            );
+            assert_eq!(output.shape().dims(), input.shape().dims());
+            assert_eq!(activations.len(), 1);
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_dense_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![1.0f32, 1.0, 1.0], &[1, 3])
+                .expect("test: gradient tensor construction should succeed");
+            let activation = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2])
+                .expect("test: activation tensor construction should succeed");
+            let layers = vec![LayerConfig::dense(2, 3)];
+            let activations = vec![activation.clone(), activation];
+            let err = ops
+                .execute_training_backward(&layers, &gradients, &activations)
+                .expect_err("training backward must honestly error for dense layers");
+            let msg = err.to_string();
+            assert!(msg.contains("dense"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_convolution_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![0.0f32; 4 * 8 * 8], &[1, 4, 8, 8])
+                .expect("test: gradient tensor construction should succeed");
+            let activation = Tensor::from_vec(vec![0.0f32; 3 * 8 * 8], &[1, 3, 8, 8])
+                .expect("test: activation tensor construction should succeed");
+            let layers = vec![LayerConfig::conv2d(3, 4, (3, 3), (8, 8))];
+            let activations = vec![activation.clone(), activation];
+            let err = ops
+                .execute_training_backward(&layers, &gradients, &activations)
+                .expect_err("training backward must honestly error for convolution layers");
+            let msg = err.to_string();
+            assert!(msg.contains("convolution"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_batch_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: gradient tensor construction should succeed");
+            let activation = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: activation tensor construction should succeed");
+            let layers = vec![LayerConfig::batch_norm(4)];
+            let activations = vec![activation.clone(), activation];
+            let err = ops
+                .execute_training_backward(&layers, &gradients, &activations)
+                .expect_err("training backward must honestly error for batch norm layers");
+            let msg = err.to_string();
+            assert!(msg.contains("batch norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_layer_norm_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: gradient tensor construction should succeed");
+            let activation = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: activation tensor construction should succeed");
+            let layers = vec![LayerConfig::layer_norm(vec![4])];
+            let activations = vec![activation.clone(), activation];
+            let err = ops
+                .execute_training_backward(&layers, &gradients, &activations)
+                .expect_err("training backward must honestly error for layer norm layers");
+            let msg = err.to_string();
+            assert!(msg.contains("layer norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_activation_errors_honestly() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![1.0f32, -1.0], &[2])
+                .expect("test: gradient tensor construction should succeed");
+            let activation = Tensor::from_vec(vec![1.0f32, -1.0], &[2])
+                .expect("test: activation tensor construction should succeed");
+            let layers = vec![LayerConfig::activation(ActivationType::ReLU, vec![2])];
+            let activations = vec![activation.clone(), activation];
+            let err = ops
+                .execute_training_backward(&layers, &gradients, &activations)
+                .expect_err("training backward must honestly error for activation layers");
+            let msg = err.to_string();
+            assert!(msg.contains("activation"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_training_backward_empty_layers_is_empty_ok() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let gradients = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+                .expect("test: gradient tensor construction should succeed");
+            let activations: Vec<Tensor<f32>> = Vec::new();
+            let result = ops
+                .execute_training_backward(&[], &gradients, &activations)
+                .expect("an empty layer list has no gradients to compute, a real empty result");
+            assert!(result.is_empty());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // `execute_inference` propagation regression tests.
+    //
+    // `execute_inference` itself performs no fabrication -- it dispatches to
+    // the helper methods above via `?`. These tests confirm that dispatch
+    // still propagates the helpers' honest errors instead of swallowing them
+    // (e.g. via `.ok()` / `.unwrap_or(...)`) into a fabricated default.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_inference_propagates_dense_layer_error() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, 2.0], &[1, 2])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::dense(2, 3)];
+            let err = ops
+                .execute_inference(&layers, &input)
+                .expect_err("execute_inference must propagate the dense layer's honest error");
+            let msg = err.to_string();
+            assert!(msg.contains("matrix multiply"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_inference_propagates_convolution_layer_error() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![0.0f32; 3 * 8 * 8], &[1, 3, 8, 8])
+                .expect("test: NCHW input construction should succeed");
+            let layers = vec![LayerConfig::conv2d(3, 4, (3, 3), (8, 8))];
+            let err = ops.execute_inference(&layers, &input).expect_err(
+                "execute_inference must propagate the convolution layer's honest error",
+            );
+            let msg = err.to_string();
+            assert!(msg.contains("convolution"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_inference_propagates_batch_norm_layer_error() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::batch_norm(4)];
+            let err = ops
+                .execute_inference(&layers, &input)
+                .expect_err("execute_inference must propagate the batch norm layer's honest error");
+            let msg = err.to_string();
+            assert!(msg.contains("batch norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_inference_propagates_layer_norm_layer_error() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32; 4], &[4])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::layer_norm(vec![4])];
+            let err = ops
+                .execute_inference(&layers, &input)
+                .expect_err("execute_inference must propagate the layer norm layer's honest error");
+            let msg = err.to_string();
+            assert!(msg.contains("layer norm"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    fn test_execute_inference_propagates_activation_layer_error() {
+        if let Ok(mut ops) = MPSNeuralOps::new() {
+            let input = Tensor::from_vec(vec![1.0f32, -1.0], &[2])
+                .expect("test: input tensor construction should succeed");
+            let layers = vec![LayerConfig::activation(ActivationType::ReLU, vec![2])];
+            let err = ops
+                .execute_inference(&layers, &input)
+                .expect_err("execute_inference must propagate the activation layer's honest error");
+            let msg = err.to_string();
+            assert!(msg.contains("activation"), "unexpected message: {msg}");
+            assert!(msg.contains("fabricated"), "unexpected message: {msg}");
+        }
     }
 }

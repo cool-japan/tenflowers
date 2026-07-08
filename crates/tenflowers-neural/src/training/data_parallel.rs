@@ -359,78 +359,320 @@ where
         let mut total_loss = T::zero();
         let batch_size = inputs.len();
 
-        // Forward pass and loss computation
+        // Forward pass and loss computation (for reporting the average loss).
         for (input, target) in inputs.iter().zip(targets.iter()) {
             let output = self.model.forward(input)?;
-
-            // Compute loss (simplified - in practice would use specific loss function)
             let loss = self.compute_loss(&output, target)?;
             total_loss = total_loss + loss;
         }
 
-        // Backward pass would go here in a full implementation
-        // For now, we simulate gradient computation
-        self.simulate_backward_pass()?;
+        // Real backward pass: compute genuine per-parameter gradients for this
+        // replica's local mini-batch and store them on the parameters.
+        self.compute_replica_gradients(inputs, targets)?;
 
-        // All-reduce gradients across workers
-        self.all_reduce_gradients()?;
+        // Average the local gradients across the data-parallel workers via the
+        // all-reduce backend (this divides by `world_size`, matching standard
+        // synchronous data-parallel SGD where each worker contributes 1/N).
+        self.all_reduce_parameter_gradients()?;
 
-        // Update model parameters manually since we're working with trait objects
-        // In a full implementation, this would call the optimizer's step method
-        // on the distributed gradients. For now, we'll zero gradients as a placeholder
-        self.model.zero_grad();
+        // Snapshot the averaged gradients before the optimizer step. The
+        // optimizer replaces each parameter tensor with a freshly-computed one
+        // (which carries no gradient), so we re-attach the gradients afterwards
+        // to keep them observable until the next `zero_grad`, matching the usual
+        // train-loop contract where `.grad` survives `.step()`.
+        let averaged_grads: Vec<Option<Tensor<T>>> = self
+            .model
+            .parameters()
+            .iter()
+            .map(|p| p.grad().cloned())
+            .collect();
 
-        // Average loss across batch
+        // Apply the averaged gradients with the optimizer (real parameter
+        // update).
+        self.optimizer.step(self.model.as_mut())?;
+
+        // Re-attach the applied gradients so the learning signal is observable.
+        {
+            let mut params = self.model.parameters_mut();
+            for (param, grad) in params.iter_mut().zip(averaged_grads) {
+                if let Some(g) = grad {
+                    param.set_requires_grad(true);
+                    param.set_grad(Some(g));
+                }
+            }
+        }
+
+        // Average loss across the local mini-batch.
         let avg_loss = total_loss / T::from(batch_size).unwrap_or(T::one());
         Ok(avg_loss)
     }
 
-    /// Simulate backward pass (in practice, this would compute actual gradients)
-    fn simulate_backward_pass(&mut self) -> Result<()> {
-        // In a real implementation, this would:
-        // 1. Compute gradients for all parameters
-        // 2. Bucket gradients for efficient communication
-        // 3. Trigger all-reduce operations when buckets are full
+    /// Compute real per-parameter gradients for the local mini-batch.
+    ///
+    /// The model is a `dyn Model<T>` trait object whose `forward` returns a
+    /// detached tensor, so there is no autograd tape spanning the trait
+    /// boundary to differentiate through. We therefore compute exact gradients
+    /// of the mean mini-batch loss with respect to every parameter element
+    /// using a central finite-difference estimator:
+    ///
+    /// ```text
+    ///   g_i = ( L(theta_i + eps) - L(theta_i - eps) ) / (2 * eps)
+    /// ```
+    ///
+    /// This is a genuine gradient (second-order accurate in `eps`), produces a
+    /// real learning signal, and is averaged over the local replica's samples.
+    /// It is intentionally simple and correct rather than fast; large models
+    /// should use the autograd-tape training path instead.
+    fn compute_replica_gradients(
+        &mut self,
+        inputs: &[&Tensor<T>],
+        targets: &[&Tensor<T>],
+    ) -> Result<()> {
+        let num_params = self.model.parameters().len();
+        if num_params == 0 {
+            return Ok(());
+        }
 
-        // For now, we'll just mark that gradients are ready
-        for bucket in &mut self.gradient_buckets {
-            bucket.mark_ready();
+        // Finite-difference step. Kept in `f64` for accuracy, converted to `T`.
+        let eps_f64 = 1e-3_f64;
+        let eps = T::from(eps_f64).unwrap_or_else(|| T::one());
+        let two_eps = eps + eps;
+
+        // Number of elements in each parameter, captured up front to avoid
+        // borrow conflicts while mutating parameters in place.
+        let param_lens: Vec<usize> = self
+            .model
+            .parameters()
+            .iter()
+            .map(|p| p.shape().elements())
+            .collect();
+        let param_shapes: Vec<Vec<usize>> = self
+            .model
+            .parameters()
+            .iter()
+            .map(|p| p.shape().dims().to_vec())
+            .collect();
+
+        // Accumulated gradient values per parameter (flattened).
+        let mut grad_accum: Vec<Vec<T>> =
+            param_lens.iter().map(|&len| vec![T::zero(); len]).collect();
+
+        let sample_count = inputs.len();
+        let inv_samples = T::from(sample_count.max(1)).unwrap_or_else(T::one);
+
+        for param_idx in 0..num_params {
+            for elem_idx in 0..param_lens[param_idx] {
+                // Read the original value of this element.
+                let original = self.parameter_element(param_idx, elem_idx)?;
+
+                // L(theta + eps)
+                self.set_parameter_element(param_idx, elem_idx, original + eps)?;
+                let loss_plus = self.mini_batch_loss(inputs, targets)?;
+
+                // L(theta - eps)
+                self.set_parameter_element(param_idx, elem_idx, original - eps)?;
+                let loss_minus = self.mini_batch_loss(inputs, targets)?;
+
+                // Restore the original parameter value.
+                self.set_parameter_element(param_idx, elem_idx, original)?;
+
+                // Central difference of the *mean* loss already averaged over
+                // samples inside `mini_batch_loss`.
+                let grad = (loss_plus - loss_minus) / two_eps;
+                grad_accum[param_idx][elem_idx] = grad;
+            }
+        }
+
+        // Store the computed gradients on each parameter so the optimizer and
+        // all-reduce can consume them. The per-sample averaging is handled in
+        // `mini_batch_loss`, so `grad_accum` already holds the mini-batch mean
+        // gradient; multiplying by `inv_samples` here would double-average, so
+        // we only normalise when more than one independent accumulation occurs.
+        let _ = inv_samples; // retained for clarity; averaging done in loss.
+
+        let mut params = self.model.parameters_mut();
+        for (param_idx, param) in params.iter_mut().enumerate() {
+            let grad_tensor =
+                Tensor::from_vec(grad_accum[param_idx].clone(), &param_shapes[param_idx])?;
+            param.set_requires_grad(true);
+            param.set_grad(Some(grad_tensor));
         }
 
         Ok(())
     }
 
-    /// Perform all-reduce on gradients across workers
+    /// Read a single (flattened) element of parameter `param_idx`.
+    fn parameter_element(&self, param_idx: usize, elem_idx: usize) -> Result<T> {
+        let params = self.model.parameters();
+        let param = params.get(param_idx).ok_or_else(|| {
+            TensorError::invalid_argument("Parameter index out of range".to_string())
+        })?;
+        let values = param.to_vec()?;
+        values.get(elem_idx).copied().ok_or_else(|| {
+            TensorError::invalid_argument("Parameter element index out of range".to_string())
+        })
+    }
+
+    /// Overwrite a single (flattened) element of parameter `param_idx`.
+    fn set_parameter_element(&mut self, param_idx: usize, elem_idx: usize, value: T) -> Result<()> {
+        let mut params = self.model.parameters_mut();
+        let param = params.get_mut(param_idx).ok_or_else(|| {
+            TensorError::invalid_argument("Parameter index out of range".to_string())
+        })?;
+        let shape = param.shape().dims().to_vec();
+        let mut values = param.to_vec()?;
+        if elem_idx >= values.len() {
+            return Err(TensorError::invalid_argument(
+                "Parameter element index out of range".to_string(),
+            ));
+        }
+        values[elem_idx] = value;
+        **param = Tensor::from_vec(values, &shape)?;
+        Ok(())
+    }
+
+    /// Mean loss of the local mini-batch under the current parameters.
+    fn mini_batch_loss(&self, inputs: &[&Tensor<T>], targets: &[&Tensor<T>]) -> Result<T> {
+        let mut total = T::zero();
+        for (input, target) in inputs.iter().zip(targets.iter()) {
+            let output = self.model.forward(input)?;
+            total = total + self.compute_loss(&output, target)?;
+        }
+        let count = T::from(inputs.len().max(1)).unwrap_or_else(T::one);
+        Ok(total / count)
+    }
+
+    /// All-reduce the gradients currently stored on the model parameters across
+    /// data-parallel workers, writing the averaged gradient back onto each
+    /// parameter.
+    ///
+    /// When gradient compression is enabled the real gradients are routed
+    /// through the bucketed, top-k compressed all-reduce path
+    /// ([`Self::all_reduce_gradients`]); otherwise each parameter gradient is
+    /// reduced directly.
+    fn all_reduce_parameter_gradients(&mut self) -> Result<()> {
+        if self.compressor.is_some() {
+            return self.all_reduce_gradients();
+        }
+
+        // Collect the current gradients (clone to drop the immutable borrow).
+        let grads: Vec<Option<Tensor<T>>> = self
+            .model
+            .parameters()
+            .iter()
+            .map(|p| p.grad().cloned())
+            .collect();
+
+        // Reduce each present gradient.
+        let mut reduced: Vec<Option<Tensor<T>>> = Vec::with_capacity(grads.len());
+        for grad in &grads {
+            match grad {
+                Some(g) => reduced.push(Some(self.all_reduce.all_reduce(g)?)),
+                None => reduced.push(None),
+            }
+        }
+
+        // Write the reduced gradients back onto the parameters.
+        let mut params = self.model.parameters_mut();
+        for (param, reduced_grad) in params.iter_mut().zip(reduced) {
+            if let Some(g) = reduced_grad {
+                param.set_grad(Some(g));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Bucketed, optionally-compressed all-reduce of the gradients currently
+    /// stored on the model parameters.
+    ///
+    /// Real parameter gradients are packed into [`GradientBucket`]s (sized by
+    /// `config.bucket_size`), top-k compressed when a compressor is configured,
+    /// all-reduced across workers, decompressed, and written back onto the
+    /// parameters in their original order. This exercises the gradient
+    /// compression / bucketing infrastructure on genuine gradients rather than
+    /// on empty placeholders.
     fn all_reduce_gradients(&mut self) -> Result<()> {
+        // Reset buckets for this step.
         for bucket in &mut self.gradient_buckets {
-            if bucket.ready_for_reduce {
-                // Compress gradients if compression is enabled
-                let gradients_to_reduce = if let Some(ref compressor) = self.compressor {
-                    // Compress each gradient
-                    let mut compressed_gradients = Vec::new();
-                    for gradient in &bucket.gradients {
-                        let compressed = compressor.compress(gradient)?;
-                        compressed_gradients.push(compressed);
-                    }
+            *bucket = GradientBucket::new();
+        }
+        self.current_bucket_idx = 0;
 
-                    // Decompress after all-reduce (simplified)
-                    let mut decompressed = Vec::new();
-                    for compressed in &compressed_gradients {
-                        let decompressed_grad = compressor.decompress(compressed)?;
-                        decompressed.push(decompressed_grad);
-                    }
-                    decompressed
-                } else {
-                    bucket.gradients.clone()
-                };
+        // Snapshot the parameter gradients and the index of every parameter
+        // that actually carries a gradient (so we can restore order later).
+        let param_grads: Vec<(usize, Tensor<T>)> = self
+            .model
+            .parameters()
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, p)| p.grad().cloned().map(|g| (idx, g)))
+            .collect();
 
-                // Perform all-reduce
-                let gradient_refs: Vec<&Tensor<T>> = gradients_to_reduce.iter().collect();
-                let reduced_gradients = self.all_reduce.all_reduce_batch(&gradient_refs)?;
+        if param_grads.is_empty() {
+            return Ok(());
+        }
 
-                // Update bucket with reduced gradients
-                bucket.gradients = reduced_gradients;
-                bucket.ready_for_reduce = false;
+        // Distribute gradients into buckets, advancing to the next bucket once
+        // the current one is full.
+        let bucket_size = self.config.bucket_size;
+        let num_buckets = self.gradient_buckets.len().max(1);
+        let element_bytes = std::mem::size_of::<T>();
+        for (idx, grad) in &param_grads {
+            let size_bytes = grad.shape().elements() * element_bytes;
+            {
+                let bucket = &mut self.gradient_buckets[self.current_bucket_idx];
+                bucket.add_gradient(grad.clone(), idx.to_string(), size_bytes);
+            }
+            if self.gradient_buckets[self.current_bucket_idx].is_full(bucket_size)
+                && self.current_bucket_idx + 1 < num_buckets
+            {
+                self.current_bucket_idx += 1;
+            }
+        }
+        for bucket in &mut self.gradient_buckets {
+            if !bucket.gradients.is_empty() {
+                bucket.mark_ready();
+            }
+        }
+
+        // Reduce each ready bucket (with optional compression) and collect the
+        // reduced gradients keyed by their original parameter index.
+        let mut reduced_by_index: HashMap<usize, Tensor<T>> = HashMap::new();
+        for bucket in &mut self.gradient_buckets {
+            if !bucket.ready_for_reduce {
+                continue;
+            }
+
+            let gradients_to_reduce = if let Some(ref compressor) = self.compressor {
+                let mut decompressed = Vec::with_capacity(bucket.gradients.len());
+                for gradient in &bucket.gradients {
+                    let compressed = compressor.compress(gradient)?;
+                    decompressed.push(compressor.decompress(&compressed)?);
+                }
+                decompressed
+            } else {
+                bucket.gradients.clone()
+            };
+
+            let gradient_refs: Vec<&Tensor<T>> = gradients_to_reduce.iter().collect();
+            let reduced_gradients = self.all_reduce.all_reduce_batch(&gradient_refs)?;
+
+            for (param_name, reduced) in bucket.param_names.iter().zip(reduced_gradients.iter()) {
+                if let Ok(param_idx) = param_name.parse::<usize>() {
+                    reduced_by_index.insert(param_idx, reduced.clone());
+                }
+            }
+
+            bucket.gradients = reduced_gradients;
+            bucket.ready_for_reduce = false;
+        }
+
+        // Write the reduced gradients back onto the parameters.
+        let mut params = self.model.parameters_mut();
+        for (param_idx, param) in params.iter_mut().enumerate() {
+            if let Some(reduced) = reduced_by_index.remove(&param_idx) {
+                param.set_grad(Some(reduced));
             }
         }
 
@@ -646,6 +888,7 @@ where
 mod tests {
     use super::*;
     use crate::layers::Dense;
+    use crate::model::Sequential;
     use crate::optimizers::SGD;
     use tenflowers_core::Tensor;
 
@@ -716,5 +959,92 @@ mod tests {
         assert_eq!(builder.config.rank, 1);
         assert!(builder.config.gradient_compression);
         assert_eq!(builder.config.compression_ratio, 0.3);
+    }
+
+    /// A `train_step` must compute a REAL learning signal: after the step, at
+    /// least one parameter must carry a non-zero gradient. Previously the step
+    /// only "simulated" the backward pass and learned nothing.
+    #[test]
+    fn test_train_step_produces_nonzero_gradients() {
+        // Tiny single-layer model with real (non-zero) weights.
+        let model: Box<dyn Model<f32>> = Box::new(Sequential::new(vec![Box::new(
+            Dense::<f32>::new_xavier(3, 2, true),
+        )]));
+
+        let trainer = DataParallelTrainerBuilder::<f32, SGD<f32>>::new()
+            .with_model(model)
+            .with_optimizer(SGD::new(0.01))
+            .with_world_size(1)
+            .with_rank(0)
+            .build();
+        let mut trainer = trainer.expect("test: trainer build should succeed");
+
+        // Non-trivial input and target so the loss genuinely varies with the
+        // parameters.
+        let input =
+            Tensor::from_vec(vec![0.5f32, -0.25, 1.0], &[1, 3]).expect("test: input creation");
+        let target = Tensor::from_vec(vec![1.0f32, -1.0], &[1, 2]).expect("test: target creation");
+
+        let loss = trainer
+            .train_step(&[&input], &[&target])
+            .expect("test: train_step should succeed");
+        assert!(loss.is_finite(), "loss must be finite");
+
+        // After the step the gradients are left populated; at least one must be
+        // a real (non-zero) learning signal.
+        let mut any_nonzero_grad = false;
+        for param in trainer.model().parameters() {
+            if let Some(grad) = param.grad() {
+                let values = grad.to_vec().expect("test: grad to_vec");
+                if values.iter().any(|v| v.abs() > 1e-7) {
+                    any_nonzero_grad = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            any_nonzero_grad,
+            "train_step must compute at least one non-zero gradient (real learning signal)"
+        );
+    }
+
+    /// The same path with gradient compression enabled must also produce a real
+    /// non-zero gradient (exercises the bucketed/compressed all-reduce path).
+    #[test]
+    fn test_train_step_with_compression_produces_nonzero_gradients() {
+        let model: Box<dyn Model<f32>> = Box::new(Sequential::new(vec![Box::new(
+            Dense::<f32>::new_xavier(3, 2, true),
+        )]));
+
+        let mut trainer = DataParallelTrainerBuilder::<f32, SGD<f32>>::new()
+            .with_model(model)
+            .with_optimizer(SGD::new(0.01))
+            .with_world_size(2)
+            .with_rank(0)
+            .with_gradient_compression(0.8)
+            .build()
+            .expect("test: trainer build should succeed");
+
+        let input =
+            Tensor::from_vec(vec![0.5f32, -0.25, 1.0], &[1, 3]).expect("test: input creation");
+        let target = Tensor::from_vec(vec![1.0f32, -1.0], &[1, 2]).expect("test: target creation");
+
+        trainer
+            .train_step(&[&input], &[&target])
+            .expect("test: train_step should succeed");
+
+        let any_nonzero_grad = trainer.model().parameters().iter().any(|p| {
+            p.grad()
+                .map(|g| {
+                    g.to_vec()
+                        .map(|v| v.iter().any(|x| x.abs() > 1e-7))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            any_nonzero_grad,
+            "compressed train_step must still produce a non-zero gradient"
+        );
     }
 }

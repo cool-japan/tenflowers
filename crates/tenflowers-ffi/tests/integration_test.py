@@ -420,8 +420,8 @@ def test_dtype_system():
     # result_dtype should be float64 (higher precision)
 
     # Test safe casting
-    assert tf.is_safe_cast_py(tf.float32, tf.float64) == True, "float32 to float64 should be safe"
-    assert tf.is_safe_cast_py(tf.float64, tf.float32) == False, "float64 to float32 should not be safe"
+    assert tf.is_safe_cast(tf.float32, tf.float64) == True, "float32 to float64 should be safe"
+    assert tf.is_safe_cast(tf.float64, tf.float32) == False, "float64 to float32 should not be safe"
 
     print("✓ DType system works correctly")
 

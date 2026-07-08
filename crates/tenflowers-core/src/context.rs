@@ -1,4 +1,5 @@
 use crate::device::context::{DeviceContext, DEVICE_MANAGER};
+use crate::error::TensorError;
 use crate::{Device, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -65,10 +66,11 @@ impl Context {
     pub fn get_device_context(&self, device: &Device) -> Result<Arc<dyn DeviceContext>> {
         // Check cache first
         {
-            let contexts = self
-                .device_contexts
-                .read()
-                .expect("read lock should not be poisoned");
+            let contexts = self.device_contexts.read().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "device_contexts read lock poisoned".to_string(),
+                )
+            })?;
             if let Some(ctx) = contexts.get(device) {
                 return Ok(Arc::clone(ctx));
             }
@@ -79,10 +81,11 @@ impl Context {
 
         // Cache it
         {
-            let mut contexts = self
-                .device_contexts
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut contexts = self.device_contexts.write().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "device_contexts write lock poisoned".to_string(),
+                )
+            })?;
             contexts.insert(*device, Arc::clone(&ctx));
         }
 
@@ -90,21 +93,20 @@ impl Context {
     }
 
     /// Set a context attribute
-    pub fn set_attribute(&self, key: String, value: String) {
-        let mut attrs = self
-            .attributes
-            .write()
-            .expect("write lock should not be poisoned");
+    pub fn set_attribute(&self, key: String, value: String) -> Result<()> {
+        let mut attrs = self.attributes.write().map_err(|_| {
+            TensorError::invalid_operation_simple("attributes write lock poisoned".to_string())
+        })?;
         attrs.insert(key, value);
+        Ok(())
     }
 
     /// Get a context attribute
-    pub fn get_attribute(&self, key: &str) -> Option<String> {
-        let attrs = self
-            .attributes
-            .read()
-            .expect("read lock should not be poisoned");
-        attrs.get(key).cloned()
+    pub fn get_attribute(&self, key: &str) -> Result<Option<String>> {
+        let attrs = self.attributes.read().map_err(|_| {
+            TensorError::invalid_operation_simple("attributes read lock poisoned".to_string())
+        })?;
+        Ok(attrs.get(key).cloned())
     }
 }
 
@@ -115,9 +117,9 @@ lazy_static::lazy_static! {
 
 /// Get the current global context
 pub fn get_context() -> Result<Arc<Context>> {
-    let ctx_opt = GLOBAL_CONTEXT
-        .read()
-        .expect("read lock should not be poisoned");
+    let ctx_opt = GLOBAL_CONTEXT.read().map_err(|_| {
+        TensorError::invalid_operation_simple("GLOBAL_CONTEXT read lock poisoned".to_string())
+    })?;
     if let Some(ctx) = ctx_opt.as_ref() {
         Ok(Arc::clone(ctx))
     } else {
@@ -125,20 +127,21 @@ pub fn get_context() -> Result<Arc<Context>> {
 
         // Create new context
         let ctx = Arc::new(Context::new()?);
-        let mut ctx_opt = GLOBAL_CONTEXT
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut ctx_opt = GLOBAL_CONTEXT.write().map_err(|_| {
+            TensorError::invalid_operation_simple("GLOBAL_CONTEXT write lock poisoned".to_string())
+        })?;
         *ctx_opt = Some(Arc::clone(&ctx));
         Ok(ctx)
     }
 }
 
 /// Set the global context
-pub fn set_context(ctx: Arc<Context>) {
-    let mut ctx_opt = GLOBAL_CONTEXT
-        .write()
-        .expect("write lock should not be poisoned");
+pub fn set_context(ctx: Arc<Context>) -> Result<()> {
+    let mut ctx_opt = GLOBAL_CONTEXT.write().map_err(|_| {
+        TensorError::invalid_operation_simple("GLOBAL_CONTEXT write lock poisoned".to_string())
+    })?;
     *ctx_opt = Some(ctx);
+    Ok(())
 }
 
 /// Context scope for temporary device placement
@@ -156,7 +159,7 @@ impl DeviceScope {
         // Clone context and modify
         let mut new_ctx = (*ctx).clone();
         new_ctx.set_default_device(device);
-        set_context(Arc::new(new_ctx));
+        set_context(Arc::new(new_ctx))?;
 
         Ok(Self {
             previous_device: previous,
@@ -167,10 +170,12 @@ impl DeviceScope {
 
 impl Drop for DeviceScope {
     fn drop(&mut self) {
-        // Restore previous context
+        // Restore previous context; silently ignore poisoned lock in Drop
         let mut restored_ctx = (*self.context).clone();
         restored_ctx.set_default_device(self.previous_device);
-        set_context(Arc::new(restored_ctx));
+        if let Ok(mut ctx_opt) = GLOBAL_CONTEXT.write() {
+            *ctx_opt = Some(Arc::new(restored_ctx));
+        }
     }
 }
 
@@ -181,10 +186,11 @@ impl Clone for Context {
             default_device: self.default_device,
             device_contexts: RwLock::new(HashMap::new()), // Don't clone cache
             attributes: RwLock::new(
+                // In Clone we can't propagate errors; recover gracefully from a poisoned lock
                 self.attributes
                     .read()
-                    .expect("read lock should not be poisoned")
-                    .clone(),
+                    .map(|g| g.clone())
+                    .unwrap_or_default(),
             ),
             eager_mode: self.eager_mode,
             profiling_enabled: self.profiling_enabled,

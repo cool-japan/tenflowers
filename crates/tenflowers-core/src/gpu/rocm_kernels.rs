@@ -5,22 +5,25 @@
 //! for maximum performance on RDNA and CDNA GPU architectures.
 
 #[cfg(feature = "rocm")]
-use crate::{DType, Device, Result, Tensor, TensorError};
+use crate::{Result, Tensor, TensorError};
+#[cfg(feature = "rocm")]
 use std::collections::HashMap;
-use std::sync::Arc;
 
-/// ROCm device wrapper for managing HIP context
+/// ROCm device wrapper for managing HIP context.
+///
+/// Note: construction always fails (see `RocmDevice::new`) because no HIP
+/// runtime is linked. Fields are preserved for documentation purposes.
 #[cfg(feature = "rocm")]
 #[derive(Debug)]
 pub struct RocmDevice {
     /// HIP device ID
-    device_id: i32,
+    _device_id: i32,
     /// HIP context handle
-    context: RocmContext,
+    _context: RocmContext,
     /// Stream for asynchronous operations
-    stream: RocmStream,
+    _stream: RocmStream,
     /// Cache of compiled kernels
-    kernel_cache: HashMap<String, RocmKernel>,
+    _kernel_cache: HashMap<String, RocmKernel>,
 }
 
 /// ROCm kernel execution configuration
@@ -38,37 +41,30 @@ pub struct RocmKernelConfig {
 /// High-performance tensor operation kernels using ROCm/HIP
 #[cfg(feature = "rocm")]
 impl RocmDevice {
-    /// Create a new ROCm device instance
-    pub fn new(device_id: i32) -> Result<Self> {
-        // Initialize HIP runtime
-        unsafe {
-            hip_init()?;
-        }
-
-        // Set device
-        unsafe {
-            hip_set_device(device_id)?;
-        }
-
-        // Create context
-        let context = RocmContext::new(device_id)?;
-
-        // Create stream for asynchronous operations
-        let stream = RocmStream::new()?;
-
-        Ok(RocmDevice {
-            device_id,
-            context,
-            stream,
-            kernel_cache: HashMap::new(),
-        })
+    /// Create a new ROCm device instance.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err` because no HIP runtime is linked. Add `hip-sys`
+    /// as a dependency and link against the ROCm toolkit to enable real support.
+    pub fn new(_device_id: i32) -> Result<Self> {
+        // Delegate entirely to hip_init which always returns Err when no
+        // HIP runtime (libamdhip64.so) is linked.
+        unsafe { hip_init() }?;
+        // If hip_init ever succeeds (i.e., real SDK is linked), return a
+        // meaningful error directing the developer to complete the impl.
+        Err(TensorError::not_implemented_simple(
+            "RocmDevice construction not fully implemented; \
+             complete the hip_init / hipSetDevice / context binding"
+                .to_string(),
+        ))
     }
 
     /// Get device properties and capabilities
     pub fn get_device_properties(&self) -> Result<RocmDeviceProperties> {
         unsafe {
             let mut props = std::mem::zeroed();
-            hip_get_device_properties(&mut props, self.device_id)?;
+            hip_get_device_properties(&mut props, self._device_id)?;
             Ok(RocmDeviceProperties::from_hip_props(props))
         }
     }
@@ -713,14 +709,14 @@ impl RocmDevice {
     }
 
     fn get_or_compile_kernel(&mut self, kernel_name: &str) -> Result<RocmKernel> {
-        if !self.kernel_cache.contains_key(kernel_name) {
+        if !self._kernel_cache.contains_key(kernel_name) {
             // Compile kernel from HIP source
             let kernel_source = self.get_kernel_source(kernel_name)?;
             let kernel = RocmKernel::compile(&kernel_source, kernel_name)?;
-            self.kernel_cache.insert(kernel_name.to_string(), kernel);
+            self._kernel_cache.insert(kernel_name.to_string(), kernel);
         }
 
-        self.kernel_cache
+        self._kernel_cache
             .get(kernel_name)
             .copied()
             .ok_or_else(|| TensorError::ComputeError {
@@ -752,85 +748,101 @@ impl RocmDevice {
 
     unsafe fn launch_gemm_kernel(
         &self,
-        a: *mut std::ffi::c_void,
-        b: *mut std::ffi::c_void,
-        c: *mut std::ffi::c_void,
-        m: u32,
-        n: u32,
-        k: u32,
+        _a: *mut std::ffi::c_void,
+        _b: *mut std::ffi::c_void,
+        _c: *mut std::ffi::c_void,
+        _m: u32,
+        _n: u32,
+        _k: u32,
     ) -> Result<()> {
-        // Launch optimized GEMM kernel for RDNA/CDNA
-        // This would use actual HIP kernel launch in practice
-        Ok(())
+        Err(TensorError::not_implemented_simple(
+            "HIP GEMM kernel launch requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 
     fn launch_conv2d_kernel<T>(
         &self,
-        input: &Tensor<T>,
-        weights: &Tensor<T>,
-        output_shape: &[usize],
-        stride: [usize; 2],
-        padding: [usize; 2],
+        _input: &Tensor<T>,
+        _weights: &Tensor<T>,
+        _output_shape: &[usize],
+        _stride: [usize; 2],
+        _padding: [usize; 2],
     ) -> Result<Tensor<T>>
     where
         T: Clone + Default + Send + Sync + 'static,
     {
-        // Launch optimized convolution kernel
-        let output_data = vec![T::default(); output_shape.iter().product()];
-        Tensor::from_vec(output_data, output_shape)
+        // No HIP runtime — returning zeroed output would silently produce
+        // wrong results. Fail loudly.
+        Err(TensorError::not_implemented_simple(
+            "HIP conv2d kernel launch requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 
     unsafe fn launch_kernel(
         &self,
-        kernel: &RocmKernel,
-        grid_dim: (u32, u32, u32),
-        block_dim: (u32, u32, u32),
-        shared_memory: u32,
-        args: &[*mut std::ffi::c_void],
+        _kernel: &RocmKernel,
+        _grid_dim: (u32, u32, u32),
+        _block_dim: (u32, u32, u32),
+        _shared_memory: u32,
+        _args: &[*mut std::ffi::c_void],
     ) -> Result<()> {
-        // Launch HIP kernel with specified configuration
-        // This would use hipLaunchKernel in practice
-        Ok(())
+        Err(TensorError::not_implemented_simple(
+            "hipLaunchKernel requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 
     // Additional helper methods for missing implementations
 
     fn execute_rocm_layer_norm_kernel<T>(
         &mut self,
-        input: &Tensor<T>,
-        gamma: &Tensor<T>,
-        beta: &Tensor<T>,
-        eps: f32,
-        batch_size: usize,
-        feature_size: usize,
-        output_shape: Vec<usize>,
+        _input: &Tensor<T>,
+        _gamma: &Tensor<T>,
+        _beta: &Tensor<T>,
+        _eps: f32,
+        _batch_size: usize,
+        _feature_size: usize,
+        _output_shape: Vec<usize>,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Default + Send + Sync + 'static,
     {
-        // Simplified layer norm implementation for ROCm
-        let output_data = vec![T::default(); output_shape.iter().product()];
-        Tensor::from_vec(output_data, &output_shape)
+        // No HIP runtime is linked — returning zeroed output would silently
+        // produce wrong results. Fail loudly so the caller uses the CPU path.
+        Err(TensorError::not_implemented_simple(
+            "ROCm layer_norm kernel requires HIP runtime (libamdhip64.so); \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 
     fn execute_rocm_flash_attention_kernel<T>(
         &mut self,
-        query: &Tensor<T>,
-        key: &Tensor<T>,
-        value: &Tensor<T>,
-        scale: f32,
-        batch_size: usize,
-        num_heads: usize,
-        seq_len: usize,
-        head_dim: usize,
-        output_shape: Vec<usize>,
+        _query: &Tensor<T>,
+        _key: &Tensor<T>,
+        _value: &Tensor<T>,
+        _scale: f32,
+        _batch_size: usize,
+        _num_heads: usize,
+        _seq_len: usize,
+        _head_dim: usize,
+        _output_shape: Vec<usize>,
     ) -> Result<Tensor<T>>
     where
         T: Clone + Default + Send + Sync + 'static,
     {
-        // Simplified flash attention implementation for ROCm/AMD GPUs
-        let output_data = vec![T::default(); output_shape.iter().product()];
-        Tensor::from_vec(output_data, &output_shape)
+        // No HIP runtime is linked — returning zeroed output would silently
+        // produce wrong results. Fail loudly so the caller uses the CPU path.
+        Err(TensorError::not_implemented_simple(
+            "ROCm flash_attention kernel requires HIP runtime (libamdhip64.so); \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 }
 
@@ -922,113 +934,152 @@ struct HipDeviceProp {
 #[derive(Debug)]
 #[cfg(feature = "rocm")]
 struct RocmContext {
-    device_id: i32,
+    _device_id: i32,
 }
 
 #[cfg(feature = "rocm")]
 impl RocmContext {
-    fn new(device_id: i32) -> Result<Self> {
-        Ok(Self { device_id })
+    fn new(_device_id: i32) -> Result<Self> {
+        Err(TensorError::not_implemented_simple(
+            "ROCm context creation requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 }
 
 #[derive(Debug)]
 #[cfg(feature = "rocm")]
 struct RocmStream {
-    handle: *mut std::ffi::c_void,
+    _handle: *mut std::ffi::c_void,
 }
 
 #[cfg(feature = "rocm")]
 impl RocmStream {
     fn new() -> Result<Self> {
-        Ok(Self {
-            handle: std::ptr::null_mut(),
-        })
+        Err(TensorError::not_implemented_simple(
+            "HIP stream creation requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[cfg(feature = "rocm")]
 struct RocmKernel {
-    function: *mut std::ffi::c_void,
+    _function: *mut std::ffi::c_void,
 }
 
 #[cfg(feature = "rocm")]
 impl RocmKernel {
-    fn compile(source: &str, kernel_name: &str) -> Result<Self> {
-        // Compile HIP kernel from source
-        Ok(Self {
-            function: std::ptr::null_mut(),
-        })
+    fn compile(_source: &str, _kernel_name: &str) -> Result<Self> {
+        Err(TensorError::not_implemented_simple(
+            "HIP kernel compilation requires libamdhip64.so; \
+             add hip-sys as a dependency and link against the ROCm toolkit"
+                .to_string(),
+        ))
     }
 }
 
-// Simplified HIP FFI functions (in practice these would be proper extern "C" bindings)
+// HIP FFI stub functions.
+//
+// No hip-sys crate is listed as a dependency, so none of these functions link
+// against libamdhip64.so. They all return an honest error so callers fail
+// loudly at runtime rather than silently producing zeroed/garbage output.
+
 #[cfg(feature = "rocm")]
 unsafe fn hip_init() -> Result<()> {
-    // hipInit(0)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "HIP runtime initialization requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
-unsafe fn hip_set_device(device_id: i32) -> Result<()> {
-    // hipSetDevice(device_id)
-    Ok(())
+unsafe fn hip_set_device(_device_id: i32) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "hipSetDevice requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
-unsafe fn hip_get_device_properties(props: *mut HipDeviceProp, device: i32) -> Result<()> {
-    // hipGetDeviceProperties(props, device)
-    Ok(())
+unsafe fn hip_get_device_properties(_props: *mut HipDeviceProp, _device: i32) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "hipGetDeviceProperties requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
-unsafe fn hip_malloc(ptr: *mut *mut std::ffi::c_void, size: usize) -> Result<()> {
-    // hipMalloc(ptr, size)
-    Ok(())
+unsafe fn hip_malloc(_ptr: *mut *mut std::ffi::c_void, _size: usize) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "hipMalloc requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
-unsafe fn hip_free(ptr: *mut std::ffi::c_void) -> Result<()> {
-    // hipFree(ptr)
-    Ok(())
+unsafe fn hip_free(_ptr: *mut std::ffi::c_void) -> Result<()> {
+    Err(TensorError::not_implemented_simple(
+        "hipFree requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
 unsafe fn hip_memcpy_htod(
-    dst: *mut std::ffi::c_void,
-    src: *const std::ffi::c_void,
-    size: usize,
+    _dst: *mut std::ffi::c_void,
+    _src: *const std::ffi::c_void,
+    _size: usize,
 ) -> Result<()> {
-    // hipMemcpy(dst, src, size, hipMemcpyHostToDevice)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "hipMemcpy (host-to-device) requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
 unsafe fn hip_memcpy_dtoh(
-    dst: *mut std::ffi::c_void,
-    src: *const std::ffi::c_void,
-    size: usize,
+    _dst: *mut std::ffi::c_void,
+    _src: *const std::ffi::c_void,
+    _size: usize,
 ) -> Result<()> {
-    // hipMemcpy(dst, src, size, hipMemcpyDeviceToHost)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "hipMemcpy (device-to-host) requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
 unsafe fn hip_memory_copy(
-    dst: *mut std::ffi::c_void,
-    src: *const std::ffi::c_void,
-    size: usize,
-    kind: u32,
+    _dst: *mut std::ffi::c_void,
+    _src: *const std::ffi::c_void,
+    _size: usize,
+    _kind: u32,
 ) -> Result<()> {
-    // hipMemcpy(dst, src, size, kind)
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "hipMemcpy requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 #[cfg(feature = "rocm")]
 unsafe fn hip_device_synchronize() -> Result<()> {
-    // hipDeviceSynchronize()
-    Ok(())
+    Err(TensorError::not_implemented_simple(
+        "hipDeviceSynchronize requires libamdhip64.so; \
+         add hip-sys as a dependency and link against the ROCm toolkit"
+            .to_string(),
+    ))
 }
 
 // HIP memory copy constants
@@ -1136,9 +1187,18 @@ mod tests {
     #[test]
     #[cfg(feature = "rocm")]
     fn test_rocm_device_creation() {
+        // Must fail loudly: no libamdhip64.so is linked in this build
         let result = RocmDevice::new(0);
-        // Test should pass on systems with ROCm support
-        assert!(result.is_ok() || result.unwrap_err().to_string().contains("ROCm"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("ROCm")
+                || err.contains("HIP")
+                || err.contains("hip")
+                || err.contains("libamdhip64"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

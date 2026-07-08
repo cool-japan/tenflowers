@@ -156,8 +156,9 @@ pub use implementations::{
 };
 
 /// Module-level documentation and feature summary
-pub fn activation_module_info() -> &'static str {
-    "TenfloweRS Activation Module v0.1.1
+pub fn activation_module_info() -> String {
+    format!(
+        "TenfloweRS Activation Module v{}
 
 Features:
 - 15+ activation functions with ultra-performance optimizations
@@ -181,12 +182,14 @@ Supported Architectures:
 - aarch64 with NEON SIMD
 - GPU acceleration via WGPU
 - Fallback scalar implementations
-"
+",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// Get current module version
 pub fn version() -> &'static str {
-    "0.1.1"
+    env!("CARGO_PKG_VERSION")
 }
 
 /// Get supported activation function count
@@ -230,7 +233,7 @@ mod module_tests {
     #[test]
     fn test_version() {
         let ver = version();
-        assert!(ver.contains("0.1.1"));
+        assert!(ver.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]

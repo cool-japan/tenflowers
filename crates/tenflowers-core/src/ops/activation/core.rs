@@ -41,7 +41,7 @@ impl ActivationRegistry {
             let mut counters = self
                 .function_counters
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             counters
                 .entry(name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
@@ -70,11 +70,22 @@ impl ActivationRegistry {
         let counters = self
             .function_counters
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let function_counts: std::collections::HashMap<String, u64> = counters
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))
             .collect();
+
+        // Derive average throughput from the histogram accumulated by record_function().
+        // Returns 0.0 when no activations have been recorded yet so callers can
+        // detect the "no data" case without a separate API.
+        let hist_stats = self.throughput_histogram.get_stats();
+        let avg_throughput_meps = if hist_stats.count > 0 {
+            hist_stats.sum / hist_stats.count as f64
+        } else {
+            // throughput tracking not implemented (no activations recorded)
+            0.0
+        };
 
         ActivationAnalytics {
             function_counts,
@@ -82,7 +93,7 @@ impl ActivationRegistry {
             parallel_executions: self.parallel_usage.load(Ordering::Relaxed),
             gpu_executions: self.gpu_usage.load(Ordering::Relaxed),
             approximation_usages: self.approximation_usage.load(Ordering::Relaxed),
-            avg_throughput_meps: 150.0, // Placeholder - real implementation would calculate from histogram
+            avg_throughput_meps,
         }
     }
 }

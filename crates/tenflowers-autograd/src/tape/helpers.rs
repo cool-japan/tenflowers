@@ -204,9 +204,6 @@ where
         ));
     }
 
-    let mut max_error = T::zero();
-    let mut max_relative_error = T::zero();
-
     for (i, (analytical_val, numerical_val)) in analytical_data
         .iter()
         .zip(numerical_data.iter())
@@ -219,10 +216,9 @@ where
             absolute_error
         };
 
-        max_error = max_error.max(absolute_error);
-        max_relative_error = max_relative_error.max(relative_error);
-
-        // Check if this element exceeds tolerances
+        // Check if this element exceeds tolerances. On failure we return a
+        // descriptive error; on overall success the `Ok(())` below is the
+        // honest signal (no side-effecting console output from library code).
         if absolute_error > absolute_tolerance && relative_error > relative_tolerance {
             return Err(TensorError::other(format!(
                 "Gradient check failed for input {} element {}: analytical={}, numerical={}, abs_err={}, rel_err={}, abs_tol={}, rel_tol={}",
@@ -235,13 +231,6 @@ where
             )));
         }
     }
-
-    println!(
-        "✅ Gradient check passed for input {}: max_abs_err={:.2e}, max_rel_err={:.2e}",
-        input_index,
-        max_error.to_f64().unwrap_or(0.0),
-        max_relative_error.to_f64().unwrap_or(0.0)
-    );
 
     Ok(())
 }

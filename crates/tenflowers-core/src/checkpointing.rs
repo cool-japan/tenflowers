@@ -28,7 +28,7 @@
 //! let config = CheckpointingConfig {
 //!     policy: CheckpointPolicy::EveryNLayers(2), // Checkpoint every 2 layers
 //!     recompute_on_backward: true,
-//!     save_rng_state: true, // Important for dropout consistency
+//!     save_rng_state: false, // RNG state capture is not supported by the current backend
 //!     enable_statistics: false,
 //!     max_checkpoints: None,
 //! };
@@ -71,7 +71,13 @@ pub struct CheckpointingConfig {
     pub policy: CheckpointPolicy,
     /// Whether to recompute activations during backward pass
     pub recompute_on_backward: bool,
-    /// Save and restore RNG state for deterministic dropout
+    /// Save and restore RNG state for deterministic dropout.
+    ///
+    /// Note: the current `scirs2_core` RNG (a `rand` 0.10 ChaCha-backed
+    /// generator) does not expose serializable PRNG state. Enabling this makes
+    /// [`CheckpointManager::save_checkpoint`] return an honest
+    /// `UnsupportedOperation` error instead of fabricating state, so it is
+    /// disabled by default.
     pub save_rng_state: bool,
     /// Enable gradient checkpointing statistics tracking
     pub enable_statistics: bool,
@@ -84,7 +90,9 @@ impl Default for CheckpointingConfig {
         Self {
             policy: CheckpointPolicy::default(),
             recompute_on_backward: true,
-            save_rng_state: true,
+            // Disabled by default: the current RNG backend exposes no
+            // serializable state, so honoring this would error on every save.
+            save_rng_state: false,
             enable_statistics: false,
             max_checkpoints: None,
         }
@@ -241,9 +249,11 @@ where
     pub fn save_checkpoint(&self, layer_index: usize, activations: Vec<Tensor<T>>) -> Result<()> {
         let mut checkpoint = Checkpoint::new(layer_index, activations);
 
-        // Save RNG state if configured
+        // Save RNG state if configured. Capture returns an honest error when the
+        // backend cannot serialize RNG state, rather than storing fake bytes, so
+        // the failure surfaces here instead of silently corrupting determinism.
         if self.config.save_rng_state {
-            checkpoint = checkpoint.with_rng_state(self.capture_rng_state());
+            checkpoint = checkpoint.with_rng_state(self.capture_rng_state()?);
         }
 
         let memory_bytes = checkpoint.memory_bytes;
@@ -293,21 +303,33 @@ where
         Ok(checkpoints.get(&layer_index).cloned())
     }
 
-    /// Restore RNG state from checkpoint
-    pub fn restore_rng_state(&self, rng_state: &[u8]) -> Result<()> {
-        // This would integrate with the actual RNG implementation
-        // For now, we just acknowledge the state
-        if rng_state.is_empty() {
-            return Err(TensorError::invalid_argument("Empty RNG state".to_string()));
-        }
-        Ok(())
+    /// Restore RNG state previously captured by `capture_rng_state`.
+    ///
+    /// The current `scirs2_core` RNG (a `rand` 0.10 ChaCha-backed generator)
+    /// does not expose serializable PRNG state, so there is nothing that can be
+    /// faithfully restored. This returns an honest `UnsupportedOperation` error
+    /// instead of silently pretending the state was restored.
+    pub fn restore_rng_state(&self, _rng_state: &[u8]) -> Result<()> {
+        Err(TensorError::unsupported_operation_simple(
+            "RNG state restore is not supported: the current scirs2_core RNG \
+             does not expose serializable PRNG state"
+                .to_string(),
+        ))
     }
 
-    /// Capture current RNG state
-    fn capture_rng_state(&self) -> Vec<u8> {
-        // This would integrate with the actual RNG implementation
-        // For now, return a placeholder
-        vec![0u8; 32]
+    /// Capture the current RNG state for deterministic recomputation.
+    ///
+    /// The current `scirs2_core` RNG (a `rand` 0.10 ChaCha-backed generator)
+    /// only supports seeding at construction; it provides no way to read back the
+    /// live internal state. Rather than fabricating a zero buffer that would make
+    /// "deterministic" recomputation silently wrong, this returns an honest
+    /// `UnsupportedOperation` error.
+    fn capture_rng_state(&self) -> Result<Vec<u8>> {
+        Err(TensorError::unsupported_operation_simple(
+            "RNG state capture is not supported: the current scirs2_core RNG \
+             does not expose serializable PRNG state"
+                .to_string(),
+        ))
     }
 
     /// Record a recomputation event
@@ -513,6 +535,61 @@ mod tests {
         assert!(manager.should_checkpoint(10, 50));
         assert!(!manager.should_checkpoint(1, 50));
         assert!(!manager.should_checkpoint(7, 50));
+    }
+
+    #[test]
+    fn test_rng_state_capture_is_honest_error() {
+        // Capture must report that the operation is unsupported rather than
+        // returning a fabricated zero buffer.
+        let manager = CheckpointManager::<f32>::new(CheckpointingConfig::default());
+        let err = manager
+            .capture_rng_state()
+            .expect_err("test: capture must report unsupported, not fabricate bytes");
+        assert!(matches!(err, TensorError::UnsupportedOperation { .. }));
+    }
+
+    #[test]
+    fn test_rng_state_restore_is_honest_error() {
+        // Restore is consistent with capture: it honestly reports unsupported.
+        let manager = CheckpointManager::<f32>::new(CheckpointingConfig::default());
+        let err = manager
+            .restore_rng_state(&[1, 2, 3, 4])
+            .expect_err("test: restore must report unsupported");
+        assert!(matches!(err, TensorError::UnsupportedOperation { .. }));
+    }
+
+    #[test]
+    fn test_save_checkpoint_requesting_rng_state_fails_loudly() {
+        // Explicitly opting into RNG-state saving must fail loudly (because it is
+        // unsupported) instead of storing fake state, and must not insert a
+        // partial checkpoint.
+        let manager = CheckpointManager::<f32>::new(CheckpointingConfig {
+            save_rng_state: true,
+            ..Default::default()
+        });
+        let tensor = Tensor::from_array(array![1.0, 2.0].into_dyn());
+
+        assert!(manager.save_checkpoint(0, vec![tensor]).is_err());
+        assert_eq!(manager.checkpoint_count(), 0);
+    }
+
+    #[test]
+    fn test_default_checkpointing_omits_unsupported_rng_state() {
+        // Default config disables RNG-state saving, so a checkpoint stores no RNG
+        // state and saving succeeds without fabricating anything.
+        let manager = CheckpointManager::<f32>::new(CheckpointingConfig::default());
+        assert!(!manager.config.save_rng_state);
+
+        let tensor = Tensor::from_array(array![1.0, 2.0, 3.0].into_dyn());
+        manager
+            .save_checkpoint(0, vec![tensor])
+            .expect("test: default save should succeed");
+
+        let cp = manager
+            .get_checkpoint(0)
+            .expect("test: get_checkpoint should succeed")
+            .expect("test: checkpoint should exist");
+        assert!(cp.rng_state.is_none());
     }
 
     #[test]

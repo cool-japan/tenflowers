@@ -157,7 +157,7 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable
         + oxifft::Float,
-    Complex<T>: Default,
+    Complex<T>: Default + bytemuck::Pod + bytemuck::Zeroable,
 {
     match &input.storage {
         TensorStorage::Cpu(arr) => {
@@ -240,10 +240,8 @@ where
         }
         #[cfg(feature = "gpu")]
         TensorStorage::Gpu(_gpu_buffer) => {
-            // GPU IFFT not yet implemented
-            Err(TensorError::unsupported_operation_simple(
-                "GPU IFFT not yet implemented".to_string(),
-            ))
+            let cpu_tensor = input.to_cpu()?;
+            ifft(&cpu_tensor)
         }
     }
 }
@@ -351,6 +349,48 @@ where
             // GPU RFFT not yet implemented, fallback to CPU
             let cpu_tensor = input.to_cpu()?;
             rfft(&cpu_tensor)
+        }
+    }
+}
+
+// End-to-end test for the GPU-resident code path of `ifft`. The underlying GPU
+// IFFT kernel is not implemented, so `ifft`'s GPU arm reads the operand back to
+// the host (a real device->host transfer) and delegates to the CPU `ifft`
+// implementation, which is known-correct. This builds a real GPU-resident
+// tensor and calls the actual `ifft` function, verifying the readback +
+// CPU-delegate path produces numerically correct results.
+//
+// A GPU adapter is not guaranteed to be present in every environment that
+// builds with `--features gpu` (e.g. a headless CI runner). `Tensor::to(Device::Gpu(0))`
+// surfaces adapter/device creation failures as an honest `Err` rather than
+// panicking, so this test attempts the transfer and skips its assertions -
+// without failing the suite - if no adapter is available. This mirrors the
+// convention used by `ops::einsum::gpu::gpu_delegate_tests`.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_ifft_matches_cpu_reference() {
+        let input_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+        let freq_cpu = fft(&input_cpu).expect("test: CPU fft should succeed");
+
+        let freq_gpu = match freq_cpu.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let expected = ifft(&freq_cpu).expect("test: CPU ifft should succeed");
+        let actual = ifft(&freq_gpu).expect("test: GPU ifft should succeed with a real adapter");
+
+        assert_eq!(actual.shape().dims(), expected.shape().dims());
+        let actual_data = actual.to_vec().expect("test: to_vec should succeed");
+        let expected_data = expected.to_vec().expect("test: to_vec should succeed");
+        for (a, e) in actual_data.iter().zip(expected_data.iter()) {
+            assert!((a.re - e.re).abs() < 1e-5, "re mismatch: {a:?} vs {e:?}");
+            assert!((a.im - e.im).abs() < 1e-5, "im mismatch: {a:?} vs {e:?}");
         }
     }
 }

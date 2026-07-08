@@ -289,7 +289,9 @@ where
                 };
 
                 {
-                    let mut results_map = results.lock().expect("lock should not be poisoned");
+                    let mut results_map = results
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     results_map.insert(task.task_id, work_result);
                 }
 
@@ -360,11 +362,17 @@ where
 
         loop {
             {
-                let mut results_map = self.results.lock().expect("lock should not be poisoned");
+                let mut results_map = self
+                    .results
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(result) = results_map.remove(&current_id) {
                     // Update statistics
                     {
-                        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+                        let mut stats = self
+                            .stats
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
                         stats.batches_processed += 1;
                         stats.total_processing_time += result.processing_time;
                         stats.average_batch_time =
@@ -407,7 +415,7 @@ where
     pub fn get_stats(&self) -> LoaderStats {
         self.stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 

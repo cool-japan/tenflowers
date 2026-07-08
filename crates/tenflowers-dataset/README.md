@@ -2,7 +2,7 @@
 
 Data loading and preprocessing utilities for TenfloweRS, providing efficient dataset management, transformations, and data pipelines for machine learning workflows.
 
-> Stable (v0.1.1 -- 2026-04-24) | 504 tests passing | 0 clippy warnings
+> Stable (v0.1.2 -- 2026-07-08) | 660 tests passing | 0 clippy warnings
 
 ## Overview
 
@@ -10,7 +10,7 @@ Data loading and preprocessing utilities for TenfloweRS, providing efficient dat
 - **Dataset Abstractions**: Flexible trait-based dataset interface
 - **Data Transformations**: Preprocessing and augmentation pipelines
 - **Batch Processing**: Efficient batching with automatic tensor stacking
-- **Data Loading**: Support for CSV, Parquet, HDF5, TFRecord, images, and audio formats
+- **Data Loading**: Support for CSV, Parquet, HDF5, TFRecord, Zarr, images, and audio formats
 - **Parallel Processing**: Multi-threaded data loading and preprocessing
 - **Memory Efficiency**: Lazy loading, memory mapping, and caching strategies
 - **Distributed Streaming**: Sharded streaming for large-scale training
@@ -23,11 +23,15 @@ Data loading and preprocessing utilities for TenfloweRS, providing efficient dat
 - **Flexible Dataset Trait**: Define custom datasets for any data source
 - **Composable Transforms**: Chain preprocessing operations with a pipeline API
 - **Automatic Batching**: Convert individual samples to batched tensors
-- **Data Augmentation**: Augmentation techniques for images, text, and audio including noise injection
+- **Data Augmentation**: Augmentation techniques for images, text, and audio, including real Box-Muller Gaussian noise injection
 - **Prefetching**: Overlap data loading with model computation
 - **Distributed Support**: Sharding for multi-GPU training
 - **Caching with Telemetry**: LRU caching with hit-rate monitoring
-- **Vision Transforms**: Resize, crop, flip, color jitter, and normalization
+- **Vision Transforms**: Resize, crop, flip, color jitter, normalization, plus GPU-accelerated affine, perspective, elastic distortion, and histogram equalization
+- **SIMD Preprocessing**: Auto-vectorized functional transforms (normalize, standardize, CHW/HWC conversion, grayscale, mean/variance)
+- **Transform Arena**: Reusable-buffer arena for allocation-free transform pipelines
+- **Zarr Blosc Decoding**: Pure-Rust Blosc-chunk decoder (BloscLZ, LZ4, Snappy, Zlib, Zstd inner codecs with byte/bit-shuffle filters)
+- **TFRecord SequenceExample**: Reader for sequence-shaped TFRecord data with masked-CRC integrity checks
 
 ## Usage
 
@@ -159,9 +163,10 @@ for batch in loader {
 
 - **In-Memory**: Tensor datasets, array datasets
 - **Files**: Images (PNG, JPEG), CSV, JSON, Parquet
-- **Binary**: TFRecord, MessagePack
+- **Binary**: TFRecord (including `SequenceExample`), MessagePack
+- **Scientific Arrays**: Zarr, with a pure-Rust Blosc chunk decoder (BloscLZ, LZ4, Snappy, Zlib, Zstd)
 - **Text**: Plain text, tokenized sequences
-- **Audio**: WAV, MP3, FLAC with on-the-fly processing
+- **Audio**: WAV, MP3, FLAC with on-the-fly Symphonia-based decoding and probing
 
 ### Performance Features
 
@@ -170,6 +175,7 @@ for batch in loader {
 - **Prefetching**: Overlap I/O with computation
 - **Parallel Loading**: Multi-threaded data loading
 - **NUMA-aware**: Optional NUMA memory placement
+- **Transform Arena**: Reusable buffer arena for allocation-free transform chains
 
 ## Feature Flags
 

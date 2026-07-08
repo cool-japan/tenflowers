@@ -426,7 +426,9 @@ where
         })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().map_err(|e| {
+        TensorError::invalid_argument(format!("Buffer get_mapped_range failed: {:?}", e))
+    })?;
     let i32_data: &[i32] = bytemuck::cast_slice(&data);
     let i8_data: Vec<i8> = i32_data.iter().map(|&x| x as i8).collect();
 
@@ -571,7 +573,9 @@ fn gpu_dequantize(gpu_buffer: &GpuBuffer<i8>, params: &QuantizationParams) -> Re
         })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().map_err(|e| {
+        TensorError::invalid_argument(format!("Buffer get_mapped_range failed: {:?}", e))
+    })?;
     let f32_data: &[f32] = bytemuck::cast_slice(&data);
     let result_vec: Vec<f32> = f32_data.to_vec();
 
@@ -750,7 +754,9 @@ where
         })?
         .map_err(|e| TensorError::invalid_argument(format!("Buffer mapping failed: {:?}", e)))?;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().map_err(|e| {
+        TensorError::invalid_argument(format!("Buffer get_mapped_range failed: {:?}", e))
+    })?;
     let result_data: &[T] = bytemuck::cast_slice(&data);
     let result_vec: Vec<T> = result_data.to_vec();
 

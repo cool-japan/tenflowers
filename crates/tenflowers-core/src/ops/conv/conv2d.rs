@@ -579,7 +579,15 @@ where
         let gemm_entry_point = match kernel_type {
             ConvKernelType::Im2Col => "im2col_gemm",
             ConvKernelType::Im2ColTiled => "im2col_tiled_gemm",
-            _ => unreachable!(),
+            ConvKernelType::Standard
+            | ConvKernelType::Winograd
+            | ConvKernelType::FFT
+            | ConvKernelType::Tiled => {
+                return Err(crate::TensorError::unsupported_operation_simple(format!(
+                    "execute_im2col_convolution only supports Im2Col/Im2ColTiled kernels, got {:?}",
+                    kernel_type
+                )));
+            }
         };
 
         let gemm_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

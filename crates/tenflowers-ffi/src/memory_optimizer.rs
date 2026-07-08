@@ -216,7 +216,9 @@ impl PyMemoryOptimizer {
     /// Perform comprehensive memory optimization
     pub fn optimize_memory(&mut self, py: Python) -> PyResult<Py<PyAny>> {
         let start_time = Instant::now();
-        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let mut optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
 
         let initial_memory = optimizer.allocation_tracker.total_allocated;
         let mut optimization_results = HashMap::new();
@@ -343,7 +345,9 @@ impl PyMemoryOptimizer {
 
     /// Get comprehensive memory statistics
     pub fn get_memory_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
         let py_dict = PyDict::new(py);
 
         // Current memory usage
@@ -421,7 +425,9 @@ impl PyMemoryOptimizer {
 
     /// Generate memory optimization recommendations
     pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
         let mut recommendations = Vec::new();
 
         // Analyze current memory patterns
@@ -484,7 +490,9 @@ impl PyMemoryOptimizer {
         operation_name: &str,
         operation: Py<PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let mut optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
 
         // Take snapshot before operation
         let before_memory = optimizer.allocation_tracker.total_allocated;
@@ -498,7 +506,9 @@ impl PyMemoryOptimizer {
         std::thread::sleep(Duration::from_millis(10));
 
         let execution_time = start_time.elapsed();
-        let mut optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let mut optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
         let after_memory = optimizer.allocation_tracker.total_allocated;
 
         // Calculate memory impact
@@ -557,7 +567,9 @@ impl PyMemoryOptimizer {
 
     /// Get detailed memory fragmentation analysis
     pub fn analyze_fragmentation(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let optimizer = self.inner.lock().expect("lock should not be poisoned");
+        let optimizer = self.inner.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("memory optimizer lock poisoned")
+        })?;
         let fragmentation_ratio = optimizer.allocation_tracker.fragmentation_ratio;
 
         let analysis = PyDict::new(py);
@@ -769,6 +781,7 @@ impl MemoryCompactor {
 
 /// Convenience function for quick memory optimization
 #[pyfunction]
+#[pyo3(signature = (tensorflow_baseline_mb=None))]
 pub fn quick_memory_optimize(
     py: Python,
     tensorflow_baseline_mb: Option<f64>,

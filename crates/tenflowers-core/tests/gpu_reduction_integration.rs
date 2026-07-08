@@ -7,20 +7,16 @@
 mod gpu_tests {
     use tenflowers_core::{Device, Tensor};
 
-    /// Helper to check if GPU is available
+    /// Helper to check if a *usable* GPU device is available.
+    ///
+    /// This must probe real device creation, not just adapter enumeration.
+    /// `request_adapter` succeeds even in headless / sandboxed environments that
+    /// list an adapter (e.g. via GL/EGL) but cannot create a device
+    /// (`request_device` fails with "Parent device is lost"). Gating on adapter
+    /// enumeration alone would let these tests proceed and panic on the first
+    /// `to_device`; gating on a real device makes them skip honestly.
     fn gpu_available() -> bool {
-        pollster::block_on(async {
-            let instance =
-                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-            instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: None,
-                    force_fallback_adapter: false,
-                })
-                .await
-        })
-        .is_ok()
+        tenflowers_core::gpu::gpu_device_available()
     }
 
     #[test]

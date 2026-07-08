@@ -11,7 +11,13 @@ use super::super::helpers::get_tensor_value;
 use super::super::structures::GradientTapeInner;
 use super::super::{GradientTape, TensorId};
 
-/// Process backward pass for 2D convolution operation
+/// Process backward pass for 2D convolution operation.
+///
+/// Delegates to the real `conv2d_backward` kernel, which computes:
+/// 1. Input gradient: the transpose of the forward cross-correlation.
+/// 2. Weight gradient: correlation of the input with `grad_output`.
+/// 3. Bias gradient: sum of `grad_output` over batch and spatial dimensions.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_conv2d_backward<T>(
     _tape: &GradientTape,
     inner: &GradientTapeInner,
@@ -19,6 +25,8 @@ pub(super) fn process_conv2d_backward<T>(
     input: TensorId,
     weight: TensorId,
     bias: Option<TensorId>,
+    stride: (usize, usize),
+    padding: &str,
     gradients: &mut HashMap<TensorId, Tensor<T>>,
 ) -> Result<()>
 where
@@ -40,34 +48,42 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    // Conv2D gradients are complex - simplified implementation for now
-    // Full implementation requires:
-    // 1. Input gradient: convolution of grad_output with rotated weight
-    // 2. Weight gradient: convolution of input with grad_output
-    // 3. Bias gradient: sum of grad_output across spatial dimensions
+    let input_tensor = get_tensor_value::<T>(inner, input).ok_or_else(|| {
+        tenflowers_core::TensorError::invalid_operation_simple(
+            "Conv2D backward: input tensor value not recorded on the tape".to_string(),
+        )
+    })?;
+    let weight_tensor = get_tensor_value::<T>(inner, weight).ok_or_else(|| {
+        tenflowers_core::TensorError::invalid_operation_simple(
+            "Conv2D backward: weight tensor value not recorded on the tape".to_string(),
+        )
+    })?;
 
-    if let Some(_input_tensor) = get_tensor_value::<T>(inner, input) {
-        if let Some(weight_tensor) = get_tensor_value::<T>(inner, weight) {
-            // Simplified gradient computation
-            // For proper conv2d gradients, we'd need specialized convolution backward operations
+    let bias_tensor = match bias {
+        Some(bias_id) => Some(get_tensor_value::<T>(inner, bias_id).ok_or_else(|| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "Conv2D backward: bias tensor value not recorded on the tape".to_string(),
+            )
+        })?),
+        None => None,
+    };
 
-            // Input gradient: simplified as identity for now
-            let input_grad = grad_output.clone();
-            super::super::utils::accumulate_gradient(gradients, input, input_grad)?;
+    let (grad_input, grad_weight, grad_bias) = crate::ops::convolution_ops::conv2d_backward(
+        grad_output,
+        &input_tensor,
+        &weight_tensor,
+        bias_tensor.as_ref(),
+        stride,
+        padding,
+    )?;
 
-            // Weight gradient: simplified as zeros
-            let weight_grad = Tensor::zeros(weight_tensor.shape().dims());
-            super::super::utils::accumulate_gradient(gradients, weight, weight_grad)?;
+    super::super::utils::accumulate_gradient(gradients, input, grad_input)?;
+    super::super::utils::accumulate_gradient(gradients, weight, grad_weight)?;
 
-            // Bias gradient if present
-            if let Some(bias_id) = bias {
-                if let Some(bias_tensor) = get_tensor_value::<T>(inner, bias_id) {
-                    let bias_grad = Tensor::zeros(bias_tensor.shape().dims());
-                    super::super::utils::accumulate_gradient(gradients, bias_id, bias_grad)?;
-                }
-            }
-        }
+    if let (Some(bias_id), Some(grad_bias)) = (bias, grad_bias) {
+        super::super::utils::accumulate_gradient(gradients, bias_id, grad_bias)?;
     }
+
     Ok(())
 }
 

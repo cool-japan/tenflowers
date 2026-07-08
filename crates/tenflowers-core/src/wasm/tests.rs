@@ -70,6 +70,33 @@ mod tests {
             .execute("sub", &a, &b)
             .expect("test: execute should succeed");
         assert_eq!(result, vec![-3.0, -3.0, -3.0]);
+
+        // "div" should match plain elementwise a[i] / b[i].
+        let result = registry
+            .execute("div", &a, &b)
+            .expect("test: execute should succeed");
+        let expected_div: Vec<f32> = a.iter().zip(b.iter()).map(|(x, y)| x / y).collect();
+        assert_eq!(result, expected_div);
+
+        // Division by zero should follow standard IEEE-754 semantics (as
+        // documented on `WasmTensorOps::div_simd`), not be treated as an error.
+        let result = registry
+            .execute("div", &[1.0f32], &[0.0f32])
+            .expect("test: execute should succeed");
+        assert_eq!(result, vec![f32::INFINITY]);
+
+        // "relu" is unary; the second argument is ignored, so reuse `a`. The
+        // registry dispatch must match calling `relu_simd` directly, and (since
+        // every element of `a` is already >= 0) also matches `a` unchanged.
+        let mut expected_relu = vec![0.0; a.len()];
+        WasmTensorOps::new()
+            .relu_simd(&a, &mut expected_relu)
+            .expect("test: relu_simd should succeed");
+        let result = registry
+            .execute("relu", &a, &a)
+            .expect("test: execute should succeed");
+        assert_eq!(result, expected_relu);
+        assert_eq!(result, a);
     }
 
     #[cfg(target_arch = "wasm32")]

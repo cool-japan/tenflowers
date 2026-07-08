@@ -1,13 +1,64 @@
-# TenfloweRS FFI TODO & Roadmap (v0.1.1)
+# TenfloweRS FFI TODO & Roadmap (v0.1.2)
 
 Initial release capabilities and forward development plan.
 
-Last updated: 2026-04-24
+Last updated: 2026-07-08
+
+## v0.1.2 — Eager Autograd & Masking/Recurrent Correctness (2026-07-07)
+
+- [x] **Eager Autograd**: new `implicit_autograd` module — a thread-local,
+  auto-activating `GradientTape` plus allocation-address-keyed side-tables
+  (`TRACKED_REGISTRY`/`LEAVES`/`GRAD_STORE`/`IDENTITY_ANCHORS`) layered on the
+  existing explicit `GradientTape` engine. New `PyTensor` methods
+  `set_requires_grad`/`backward()`/`grad()` give the Python API a PyTorch-style
+  `x.backward(); x.grad()` workflow without requiring an explicit tape object.
+  `add`/`sub`/`mul`/`div`/`matmul`/`sum`/`mean`/`relu`/`sigmoid`/`tanh` now
+  record onto the implicit tape automatically.
+- [x] **Attention masking fix**: `key_padding_mask` previously reached
+  shape validation in `PyMultiheadAttention`/transformer encoder-decoder layers
+  but was silently dropped before softmax; masks are now genuinely combined
+  into one additive bias before scoring (regression-tested with
+  hand-computed attention-weight assertions).
+- [x] **Recurrent-layer correctness**: GRU forward now threads a
+  caller-supplied initial hidden state through every layer instead of
+  ignoring it; RNN forward now honors its `nonlinearity` (`"tanh"`/`"relu"`)
+  parameter for real; `MaxPool2D`/`AvgPool2D` gained a real `ceil_mode`
+  implementation with PyTorch-matching boundary-divisor correction, and
+  dilated max-pooling now genuinely dilates the sampling window.
+- [x] **46 `#[pyo3(signature = (...))]` fixes** across `math_ops.rs`,
+  `neural/functions.rs`, `neural/layers.rs`, `neural/recurrent.rs`,
+  `neural/transformer.rs`, `neural/embedding.rs`, `neural/conv_layers.rs`,
+  `visualization/mod.rs`, `profiling.rs`, `memory_optimizer.rs` — functions
+  whose `Option<T>` parameters had Rust-side defaults but no pyo3 default
+  previously forced callers to pass every argument explicitly.
+- [x] `arange()`/`linspace()` (`utils.rs`) now return a real `PyTensor`
+  instead of a plain Python list, matching `zeros`/`ones`/`rand`.
+- Added `gradient_parity` module (standalone finite-difference gradient
+  checker), `profiling` module (`PyProfiler` session-based op timing),
+  `stable_api` module (stable C/Python API surface catalogue), a Criterion
+  benchmark harness (`benches/bindings_bench.rs`), and 3 new examples
+  (`examples/basic_ops.rs`, `examples/gradient_example.rs`,
+  `examples/optimizer_example.rs`).
+
+## v0.1.2 — Honesty Hardening (2026-06-22)
+
+- Removed production lock-poison panics via signature-preserving recovery; a
+  poisoned lock no longer aborts the process.
+- 21 Python neural-layer `forward` methods that silently returned
+  `Tensor::zeros` now compute real results, wired to `tenflowers_core::ops` /
+  `tenflowers_neural`: Conv1D/2D, Max/AvgPool2D, Batch/Layer/Group/InstanceNorm,
+  Embedding/EmbeddingBag, LSTM/GRU/RNN (+ cells), MultiheadAttention/SDPA,
+  Transformer encoder/decoder, PositionalEncoding, Dropout/Dropout2D.
+- AlphaDropout/FeatureAlphaDropout now implement the real SELU-preserving
+  formula (were no-ops/zeros).
 
 ## 1. Current Capabilities
 
 ### Python Bindings (PyO3)
 - **Core Tensor Operations**: Comprehensive tensor creation, manipulation, and computation
+- **Eager Autograd**: PyTorch-style `x.backward()` / `x.grad()` via the implicit,
+  auto-activating `implicit_autograd` tape, in addition to the explicit
+  `GradientTape` API
 - **Gradient Tape Integration**: Full autograd support with PyTorch-style gradient tape
 - **Neural Network Layers**: Dense and Sequential layer implementations with training support
 - **Numpy Interoperability**: Seamless tensor <-> ndarray conversion for f32 data types
@@ -58,10 +109,19 @@ Last updated: 2026-04-24
 - **Versioning**: No stable ABI or versioning policy established
 
 ### Testing & Validation
-- **Gradient Parity**: Incomplete gradient parity testing vs Rust implementation
 - **Python Test Coverage**: Limited Python-side test coverage and validation
 - **Performance Validation**: Missing comprehensive performance regression testing
 - **Cross-Platform Testing**: Limited testing across different platforms and Python versions
+
+### Honest-error deferrals inherited from core/neural (post-2026-06-22 sweep)
+The Python `forward` paths now compute real results on CPU. Capabilities that
+surface through these bindings but rely on unfinished backends fail loudly
+(no longer faked):
+- **GPU compute kernels**: Metal MPS GPU→host readback, GPU einsum correctness,
+  and real device-capability queries return honest errors (CPU paths are real).
+- **NCCL collective ops**: require the `libnccl` runtime → honest error.
+- **TensorFlow / ONNX protobuf import-export**: no protobuf parser wired →
+  honest error.
 
 ## 3. Near-Term Roadmap
 
@@ -112,30 +172,30 @@ Last updated: 2026-04-24
 ## 5. Active TODO Items
 
 ### Immediate Development Tasks
-- [ ] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building
+- [x] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building (COMPLETED 2026-06-10 — .github/workflows/build-wheels.yml enabled; Linux x86_64/aarch64 + macOS Intel/ARM/universal2 + Windows x86_64 + sdist + PyPI publish)
 - [x] **Error Mapping Spec**: Design Rust -> Python exception mapping system (done 2026-04-19: see docs/FFI_ERROR_MAPPING.md and error_mapping.rs)
-- [ ] **Gradient Parity Harness**: Python vs Rust gradient validation framework
-- [ ] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure
-- [ ] **Layer Export List**: Normalization + SSM Python API implementation
+- [x] **Gradient Parity Harness**: Python vs Rust gradient validation framework (COMPLETED 2026-06-10 — gradient_parity.rs: GradientParityChecker, check_scalar_function, numeric_jacobian, gradients_are_close, 12 tests passing)
+- [x] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure (COMPLETED 2026-06-10 — neural/extended_optimizers.rs: PyAdamW, PySGD, PyRMSprop, PyAdagrad, PyLion)
+- [x] **Layer Export List**: Normalization + SSM Python API implementation (COMPLETED 2026-06-10 — neural/normalization.rs + neural/ssm.rs exposed in Python module)
 
 ### Packaging & Distribution
 - [x] **Dtype/Device Abstraction**: PyDevice class with Device.cpu()/gpu(id)/rocm(id) and PyDeviceKind (done 2026-04-20: device.rs)
 - [x] **C Header Generator**: Automated header generation script (done 2026-04-19: build.rs with TENFLOWERS_REGENERATE_C_HEADER=1 env-var opt-in, c-header-generate feature)
-- [x] **Package Metadata**: PyPI package metadata and documentation (done 2026-04-19: added Python 3.13 classifier, MIT OR Apache-2.0, OS Independent, Changelog URL, updated dev deps)
-- [ ] **Installation Testing**: Cross-platform installation validation
-- [ ] **Version Management**: Automated version bumping and release management
+- [x] **Package Metadata**: PyPI package metadata and documentation (done 2026-04-19: added Python 3.13 classifier, Apache-2.0, OS Independent, Changelog URL, updated dev deps)
+- [x] **Installation Testing**: Cross-platform installation validation (COMPLETED 2026-06-10 — scripts/check_install.sh: maturin build + venv install + smoke test)
+- [x] **Version Management**: Automated version bumping and release management (COMPLETED prior — scripts/bump_version.sh; workspace semver bump + doc-version strings)
 
 ### API & Testing Enhancement
 - [x] **Python Test Suite**: Comprehensive Python-side testing framework (done 2026-04-19: tests/conftest.py with shared fixtures, markers registered, duplicate test deduped)
-- [ ] **Performance Benchmarks**: Python binding performance regression testing
-- [ ] **Documentation**: Complete Python API documentation and tutorials
-- [ ] **Example Gallery**: Comprehensive example gallery and tutorials
-- [ ] **API Stabilization**: Prepare FFI APIs for stable release
+- [x] **Performance Benchmarks**: Python binding performance regression testing (COMPLETED 2026-06-10 — benches/bindings_bench.rs: Criterion benchmarks for gradient_parity, tensor_creation, arithmetic, diff_methods)
+- [x] **Documentation**: Complete Python API documentation and tutorials (COMPLETED 2026-06-10 — comprehensive `///` and `//!` doc comments added to lib.rs, tensor_ops.rs, neural/mod.rs, neural/layers.rs, neural/gradient_tape.rs; lib.rs //! expanded with full Python tutorial covering all major APIs)
+- [x] **Example Gallery**: Comprehensive example gallery and tutorials (COMPLETED 2026-06-10 — examples/basic_ops.rs, gradient_example.rs, optimizer_example.rs)
+- [x] **API Stabilization**: Prepare FFI APIs for stable release (COMPLETED 2026-06-10 — stable_api.rs: StableApiVersion, ApiStability, ApiEntry, ApiSurface, stable_api_surface(), 70+ entries catalogued)
 
 ### Infrastructure & Quality
 - [x] **Memory Safety**: Enhanced memory safety validation and testing (done 2026-04-19: scripts/run_miri.sh + docs/MEMORY_SAFETY.md created)
 - [x] **Error Handling**: Exhaustive TensorError → TenflowersError mapping, 23+ variants, 23+ tests (done 2026-04-20: error_mapping.rs)
-- [ ] **Profiling Integration**: Advanced profiling tool integration
+- [x] **Profiling Integration**: Advanced profiling tool integration (COMPLETED 2026-06-10 — profiling.rs: PyProfiler, PyProfileRecord, PyProfileReport with session lifecycle, record(), top_ops(), 22 unit tests)
 - [x] **Debug Support**: PyTensor.__repr__ shows actual dtype; __len__, .ndim, .numel() properties added (done 2026-04-20)
 
 ## 6. Advanced Research Areas

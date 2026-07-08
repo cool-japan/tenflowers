@@ -115,7 +115,25 @@ where
         ));
     }
 
-    matmul_batch(&a.storage, &b.storage, &result_shape)
+    match (&a.storage, &b.storage) {
+        (TensorStorage::Cpu(_), TensorStorage::Cpu(_)) => {
+            matmul_batch(&a.storage, &b.storage, &result_shape)
+        }
+        #[cfg(feature = "gpu")]
+        (TensorStorage::Gpu(_), TensorStorage::Gpu(_)) => {
+            // The raw-buffer-level `matmul_batch_gpu` cannot correctly
+            // implement batch matmul yet: it only receives `TensorStorage`/
+            // output shape, not the full `&Tensor` with real per-batch shape
+            // context. Read both operands back to the host here (where the
+            // full `&Tensor<T>` is still available) and delegate to the
+            // already-correct CPU implementation.
+            let cpu_a = a.to_cpu()?;
+            let cpu_b = b.to_cpu()?;
+            matmul_batch(&cpu_a.storage, &cpu_b.storage, &result_shape)
+        }
+        #[cfg(feature = "gpu")]
+        _ => matmul_batch(&a.storage, &b.storage, &result_shape),
+    }
 }
 
 /// Dot product for 1D tensors or inner product for higher dimensions
@@ -166,10 +184,13 @@ where
             }
             #[cfg(feature = "gpu")]
             (TensorStorage::Gpu(_), TensorStorage::Gpu(_)) => {
-                // GPU dot product implementation using element-wise multiplication followed by sum reduction
-                Err(TensorError::unsupported_operation_simple(
-                    "GPU dot product not yet implemented".to_string(),
-                ))
+                // No native GPU dot-product kernel exists yet. Read both
+                // operands back to the host (a real device->host transfer)
+                // and delegate to the CPU implementation above, which is
+                // known-correct.
+                let cpu_a = a.to_cpu()?;
+                let cpu_b = b.to_cpu()?;
+                dot(&cpu_a, &cpu_b)
             }
             #[cfg(feature = "gpu")]
             _ => Err(TensorError::invalid_operation_simple(
@@ -310,4 +331,57 @@ where
     }
 
     Tensor::from_vec(result_data, &[m])
+}
+
+// GPU-resident correctness tests for the readback+delegate fixes in this
+// file: `dot()`'s (Gpu,Gpu) arm and `batch_matmul()`'s GPU branch. A GPU
+// adapter is not guaranteed to be present in every environment that builds
+// with `--features gpu`; each test attempts the host->device transfer and
+// skips its assertions (without failing the suite) if no adapter is
+// available, mirroring the convention in `ops/einsum/gpu.rs`.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_dot_matches_cpu_reference() {
+        let a_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b_cpu = Tensor::<f32>::from_vec(vec![4.0, 5.0, 6.0], &[3])
+            .expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu) = match (a_cpu.to(Device::Gpu(0)), b_cpu.to(Device::Gpu(0))) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = dot(&a_gpu, &b_gpu).expect("test: gpu dot should succeed with a real adapter");
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        // 1*4 + 2*5 + 3*6 = 32
+        assert_eq!(data, vec![32.0]);
+    }
+
+    #[test]
+    fn gpu_batch_matmul_matches_cpu_reference() {
+        // batch 0: [[1,2],[3,4]] @ [[5,6],[7,8]]    = [[19,22],[43,50]]
+        // batch 1: [[1,0],[0,1]] @ [[9,10],[11,12]] = [[9,10],[11,12]]
+        let a_cpu =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 1.0, 0.0, 0.0, 1.0], &[2, 2, 2])
+                .expect("test: from_vec should succeed");
+        let b_cpu =
+            Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 2, 2])
+                .expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu) = match (a_cpu.to(Device::Gpu(0)), b_cpu.to(Device::Gpu(0))) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = batch_matmul(&a_gpu, &b_gpu)
+            .expect("test: gpu batch_matmul should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[2, 2, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![19.0, 22.0, 43.0, 50.0, 9.0, 10.0, 11.0, 12.0]);
+    }
 }

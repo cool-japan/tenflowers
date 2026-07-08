@@ -258,7 +258,9 @@ impl EnhancedDistributedSampler {
 
         // Initialize RDMA if enabled
         if let Some(rdma_context) = &self.rdma_context {
-            let mut ctx = rdma_context.lock().expect("lock should not be poisoned");
+            let mut ctx = rdma_context.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("rdma context lock poisoned".to_string())
+            })?;
             ctx.initialize()?;
         }
 
@@ -339,10 +341,9 @@ impl EnhancedDistributedSampler {
 
         // Update statistics
         {
-            let mut stats = self
-                .stats
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut stats = self.stats.write().map_err(|_| {
+                TensorError::invalid_operation_simple("stats lock poisoned".to_string())
+            })?;
             stats.local_samples_loaded += local_indices.len() as u64;
             stats.remote_samples_loaded += (indices.len() - local_indices.len()) as u64;
         }
@@ -364,10 +365,9 @@ impl EnhancedDistributedSampler {
         };
 
         // Broadcast to all nodes
-        let comm_manager = self
-            .comm_manager
-            .lock()
-            .expect("lock should not be poisoned");
+        let comm_manager = self.comm_manager.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("comm manager lock poisoned".to_string())
+        })?;
         let results = comm_manager.broadcast_message(&message)?;
 
         // Process collective operation
@@ -411,7 +411,7 @@ impl EnhancedDistributedSampler {
     pub fn get_statistics(&self) -> DistributedLoadingStats {
         self.stats
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -419,25 +419,25 @@ impl EnhancedDistributedSampler {
     pub fn shutdown(&mut self) -> Result<()> {
         // Close network connections
         {
-            let mut comm_manager = self
-                .comm_manager
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut comm_manager = self.comm_manager.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("comm manager lock poisoned".to_string())
+            })?;
             comm_manager.shutdown()?;
         }
 
         // Cleanup RDMA resources
         if let Some(rdma_context) = &self.rdma_context {
-            let mut ctx = rdma_context.lock().expect("lock should not be poisoned");
+            let mut ctx = rdma_context.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("rdma context lock poisoned".to_string())
+            })?;
             ctx.cleanup()?;
         }
 
         // Clear caches
         {
-            let mut cache = self
-                .sample_cache
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut cache = self.sample_cache.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("sample cache lock poisoned".to_string())
+            })?;
             cache.clear();
         }
 
@@ -524,10 +524,9 @@ impl EnhancedDistributedSampler {
 
             // Send request to master (rank 0) for shuffle seed
             let res = {
-                let comm_manager = self
-                    .comm_manager
-                    .lock()
-                    .expect("lock should not be poisoned");
+                let comm_manager = self.comm_manager.lock().map_err(|_| {
+                    TensorError::invalid_operation_simple("comm manager lock poisoned".to_string())
+                })?;
                 comm_manager.send_request(0, &collective_msg)
             };
             match res {
@@ -629,10 +628,9 @@ impl EnhancedDistributedSampler {
             request_id,
         };
 
-        let comm_manager = self
-            .comm_manager
-            .lock()
-            .expect("lock should not be poisoned");
+        let comm_manager = self.comm_manager.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("comm manager lock poisoned".to_string())
+        })?;
         let response = comm_manager.send_request(remote_rank, &request)?;
 
         match response {
@@ -705,10 +703,9 @@ impl EnhancedDistributedSampler {
 
                 // Update network statistics
                 {
-                    let mut stats = self
-                        .stats
-                        .write()
-                        .expect("write lock should not be poisoned");
+                    let mut stats = self.stats.write().map_err(|_| {
+                        TensorError::invalid_operation_simple("stats lock poisoned".to_string())
+                    })?;
                     stats.network_bytes_received += data_len as u64;
                 }
 
@@ -733,7 +730,7 @@ impl EnhancedDistributedSampler {
         let mut cache = self
             .sample_cache
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let timestamp = Instant::now();
 
         for &index in indices {
@@ -802,10 +799,11 @@ impl EnhancedDistributedSampler {
             // Send seed to all other nodes
             for rank in 1..self.config.world_size {
                 if let Err(e) = {
-                    let comm_manager = self
-                        .comm_manager
-                        .lock()
-                        .expect("lock should not be poisoned");
+                    let comm_manager = self.comm_manager.lock().map_err(|_| {
+                        TensorError::invalid_operation_simple(
+                            "comm manager lock poisoned".to_string(),
+                        )
+                    })?;
                     comm_manager.send_request(rank, &broadcast_msg)
                 } {
                     return Err(TensorError::invalid_operation_simple(format!(

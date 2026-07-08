@@ -4,7 +4,7 @@
 //! BatchNorm, LayerNorm, GroupNorm, and InstanceNorm for neural network training.
 
 use crate::tensor_ops::PyTensor;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::Arc;
@@ -128,15 +128,62 @@ impl PyBatchNorm1d {
             )));
         }
 
-        // For now, return a placeholder that matches the input shape
-        // Full implementation would compute batch statistics and normalize
-        let shape_vec: Vec<usize> = input_shape.iter().copied().collect();
-        let output = Tensor::zeros(&shape_vec);
+        // The batch_norm op normalises 4D NCHW tensors. Reshape (N, C) -> (N, C, 1, 1)
+        // and (N, C, L) -> (N, C, L, 1); both keep per-channel statistics intact.
+        let orig_dims: Vec<usize> = input_shape.dims().to_vec();
+        let mut shape_4d = orig_dims.clone();
+        while shape_4d.len() < 4 {
+            shape_4d.push(1);
+        }
+
+        let input_4d = tenflowers_core::ops::reshape(input.tensor.as_ref(), &shape_4d)
+            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d reshape failed: {e}")))?;
+
+        // gamma/beta default to the identity affine when not learned; running stats
+        // default to the standard-normal prior when not tracked.
+        let gamma = match &self.weight {
+            Some(w) => w.clone(),
+            None => Tensor::ones(&[self.num_features]),
+        };
+        let beta = match &self.bias {
+            Some(b) => b.clone(),
+            None => Tensor::zeros(&[self.num_features]),
+        };
+        let running_mean = match &self.running_mean {
+            Some(m) => m.clone(),
+            None => Tensor::zeros(&[self.num_features]),
+        };
+        let running_var = match &self.running_var {
+            Some(v) => v.clone(),
+            None => Tensor::ones(&[self.num_features]),
+        };
+
+        // Without tracked running stats, normalisation always uses batch statistics
+        // (the training path), matching standard BatchNorm semantics.
+        let use_batch_stats = self.training || !self.track_running_stats;
+
+        let normalized = tenflowers_core::ops::batch_norm(
+            &input_4d,
+            &gamma,
+            &beta,
+            &running_mean,
+            &running_var,
+            self.eps,
+            use_batch_stats,
+        )
+        .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d forward failed: {e}")))?;
+
+        if use_batch_stats && self.track_running_stats {
+            self.num_batches_tracked += 1;
+        }
+
+        let output = tenflowers_core::ops::reshape(&normalized, &orig_dims)
+            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d reshape failed: {e}")))?;
 
         Ok(PyTensor {
             tensor: Arc::new(output),
-            requires_grad: false,
-            is_pinned: false,
+            requires_grad: input.requires_grad,
+            is_pinned: input.is_pinned,
         })
     }
 
@@ -340,15 +387,32 @@ impl PyLayerNorm {
             )));
         }
 
-        // For now, return a placeholder that matches the input shape
-        // Full implementation would compute layer statistics and normalize
-        let output = Tensor::zeros(&shape_vec);
+        // gamma/beta default to the identity affine when not learned.
+        let gamma = match &self.weight {
+            Some(w) => w.clone(),
+            None => Tensor::ones(&self.normalized_shape),
+        };
+        let beta = match &self.bias {
+            Some(b) => b.clone(),
+            None => Tensor::zeros(&self.normalized_shape),
+        };
 
-        Ok(PyTensor {
-            tensor: Arc::new(output),
-            requires_grad: false,
-            is_pinned: false,
-        })
+        match tenflowers_core::ops::layer_norm(
+            input.tensor.as_ref(),
+            &gamma,
+            &beta,
+            &self.normalized_shape,
+            self.eps,
+        ) {
+            Ok(output) => Ok(PyTensor {
+                tensor: Arc::new(output),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            }),
+            Err(e) => Err(PyRuntimeError::new_err(format!(
+                "LayerNorm forward failed: {e}"
+            ))),
+        }
     }
 
     /// Reset parameters
@@ -507,15 +571,32 @@ impl PyGroupNorm {
             )));
         }
 
-        // For now, return a placeholder that matches the input shape
-        let shape_vec: Vec<usize> = input_shape.iter().copied().collect();
-        let output = Tensor::zeros(&shape_vec);
+        // gamma/beta default to the identity affine when not learned.
+        let gamma = match &self.weight {
+            Some(w) => w.clone(),
+            None => Tensor::ones(&[self.num_channels]),
+        };
+        let beta = match &self.bias {
+            Some(b) => b.clone(),
+            None => Tensor::zeros(&[self.num_channels]),
+        };
 
-        Ok(PyTensor {
-            tensor: Arc::new(output),
-            requires_grad: false,
-            is_pinned: false,
-        })
+        match tenflowers_core::ops::group_norm(
+            input.tensor.as_ref(),
+            &gamma,
+            &beta,
+            self.num_groups,
+            self.eps,
+        ) {
+            Ok(output) => Ok(PyTensor {
+                tensor: Arc::new(output),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            }),
+            Err(e) => Err(PyRuntimeError::new_err(format!(
+                "GroupNorm forward failed: {e}"
+            ))),
+        }
     }
 
     /// Reset parameters
@@ -688,15 +769,33 @@ impl PyInstanceNorm1d {
             )));
         }
 
-        // For now, return a placeholder that matches the input shape
-        let shape_vec: Vec<usize> = input_shape.iter().copied().collect();
-        let output = Tensor::zeros(&shape_vec);
+        // Instance norm is exactly group norm with one group per channel, so the
+        // group_norm op is reused with num_groups == num_channels.
+        let gamma = match &self.weight {
+            Some(w) => w.clone(),
+            None => Tensor::ones(&[self.num_features]),
+        };
+        let beta = match &self.bias {
+            Some(b) => b.clone(),
+            None => Tensor::zeros(&[self.num_features]),
+        };
 
-        Ok(PyTensor {
-            tensor: Arc::new(output),
-            requires_grad: false,
-            is_pinned: false,
-        })
+        match tenflowers_core::ops::group_norm(
+            input.tensor.as_ref(),
+            &gamma,
+            &beta,
+            self.num_features,
+            self.eps,
+        ) {
+            Ok(output) => Ok(PyTensor {
+                tensor: Arc::new(output),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            }),
+            Err(e) => Err(PyRuntimeError::new_err(format!(
+                "InstanceNorm1d forward failed: {e}"
+            ))),
+        }
     }
 
     /// Reset parameters
@@ -755,5 +854,93 @@ impl PyInstanceNorm1d {
             "InstanceNorm1d(num_features={}, eps={}, momentum={}, affine={}, track_running_stats={})",
             self.num_features, self.eps, self.momentum, self.affine, self.track_running_stats
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
+        let tensor = Tensor::from_vec(data, shape).expect("tensor construction");
+        PyTensor {
+            tensor: Arc::new(tensor),
+            requires_grad: false,
+            is_pinned: false,
+        }
+    }
+
+    fn approx_zero(values: &[f32], tol: f32) -> bool {
+        let sum: f32 = values.iter().sum();
+        sum.abs() < tol
+    }
+
+    #[test]
+    fn batch_norm_normalizes_per_channel() {
+        let mut bn = PyBatchNorm1d::new(3, None, None, None, None).expect("bn construction");
+        // (N=4, C=3) with non-constant columns.
+        let data: Vec<f32> = (1..=12).map(|v| v as f32).collect();
+        let input = make_tensor(data, &[4, 3]);
+        let out = bn.forward(&input).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![4, 3]);
+        let out_vec = out.tensor.to_vec().expect("out vec");
+        assert!(out_vec.iter().any(|&v| v != 0.0), "must not be all zeros");
+        assert!(out_vec.iter().all(|v| v.is_finite()));
+        // Each channel (column) is mean-centred after training-mode BatchNorm.
+        for c in 0..3 {
+            let col: Vec<f32> = (0..4).map(|n| out_vec[n * 3 + c]).collect();
+            assert!(approx_zero(&col, 1e-3), "channel {c} should have mean 0");
+        }
+    }
+
+    #[test]
+    fn batch_norm_rejects_4d_input() {
+        let mut bn = PyBatchNorm1d::new(2, None, None, None, None).expect("bn construction");
+        let input = make_tensor(vec![0.0; 16], &[2, 2, 2, 2]);
+        assert!(bn.forward(&input).is_err());
+    }
+
+    #[test]
+    fn layer_norm_centres_last_dim() {
+        let ln = PyLayerNorm::new(vec![3], None, None).expect("ln construction");
+        let input = make_tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        let out = ln.forward(&input).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![2, 3]);
+        let out_vec = out.tensor.to_vec().expect("out vec");
+        assert!(out_vec.iter().any(|&v| v != 0.0), "must not be all zeros");
+        assert!(out_vec.iter().all(|v| v.is_finite()));
+        for row in 0..2 {
+            let r: Vec<f32> = (0..3).map(|i| out_vec[row * 3 + i]).collect();
+            assert!(approx_zero(&r, 1e-3), "row {row} should have mean 0");
+        }
+    }
+
+    #[test]
+    fn group_norm_forward_real_output() {
+        let gn = PyGroupNorm::new(2, 4, None, None).expect("gn construction");
+        // (N=1, C=4, L=2)
+        let data: Vec<f32> = (1..=8).map(|v| v as f32).collect();
+        let input = make_tensor(data, &[1, 4, 2]);
+        let out = gn.forward(&input).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![1, 4, 2]);
+        let out_vec = out.tensor.to_vec().expect("out vec");
+        assert!(out_vec.iter().any(|&v| v != 0.0), "must not be all zeros");
+        assert!(out_vec.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn instance_norm_centres_each_channel() {
+        let inorm = PyInstanceNorm1d::new(2, None, None, None, None).expect("in construction");
+        // (N=1, C=2, L=4)
+        let data = vec![1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0];
+        let input = make_tensor(data, &[1, 2, 4]);
+        let out = inorm.forward(&input).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![1, 2, 4]);
+        let out_vec = out.tensor.to_vec().expect("out vec");
+        assert!(out_vec.iter().any(|&v| v != 0.0), "must not be all zeros");
+        assert!(out_vec.iter().all(|v| v.is_finite()));
+        // Each channel is normalised over its own L dimension -> mean 0.
+        assert!(approx_zero(&out_vec[0..4], 1e-3));
+        assert!(approx_zero(&out_vec[4..8], 1e-3));
     }
 }

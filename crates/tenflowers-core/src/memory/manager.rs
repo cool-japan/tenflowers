@@ -18,8 +18,8 @@ use std::sync::{Arc, RwLock};
 
 /// Central memory manager that coordinates all memory subsystems
 pub struct MemoryManager {
-    pools: Arc<RwLock<HashMap<Device, MemoryPool>>>,
-    multi_stream_managers: Arc<RwLock<HashMap<usize, MultiStreamMemoryManager>>>,
+    pools: Arc<RwLock<HashMap<Device, Arc<MemoryPool>>>>,
+    multi_stream_managers: Arc<RwLock<HashMap<usize, Arc<MultiStreamMemoryManager>>>>,
     alias_detector: Arc<MemoryAliasDetector>,
     cache_optimizer: Arc<CacheOptimizer>,
     performance_monitor: Arc<PerformanceMonitor>,
@@ -49,14 +49,12 @@ impl MemoryManager {
     /// Get or create a memory pool for a specific device
     #[cfg(feature = "gpu")]
     pub fn get_pool(&self, device: Device) -> crate::Result<Arc<MemoryPool>> {
-        let pools = self.pools.read().expect("read lock should not be poisoned");
+        let pools = self.pools.read().map_err(|_| {
+            TensorError::invalid_operation_simple("manager read lock poisoned".to_string())
+        })?;
 
         if let Some(pool) = pools.get(&device) {
-            // For now, return a simple wrapper since we can't clone MemoryPool directly
-            // In a real implementation, this would return a proper Arc<MemoryPool>
-            return Err(TensorError::unsupported_operation_simple(
-                "Memory pool sharing not yet implemented".to_string(),
-            ));
+            return Ok(Arc::clone(pool));
         }
 
         drop(pools);
@@ -76,17 +74,14 @@ impl MemoryManager {
                 ))
             }
         };
+        let pool = Arc::new(pool);
 
-        let mut pools = self
-            .pools
-            .write()
-            .expect("write lock should not be poisoned");
-        pools.insert(device, pool);
+        let mut pools = self.pools.write().map_err(|_| {
+            TensorError::invalid_operation_simple("manager write lock poisoned".to_string())
+        })?;
+        pools.insert(device, Arc::clone(&pool));
 
-        // Return reference (in real implementation this would be Arc<MemoryPool>)
-        Err(TensorError::unsupported_operation_simple(
-            "Memory pool sharing not yet implemented".to_string(),
-        ))
+        Ok(pool)
     }
 
     /// Get or create a multi-stream memory manager for a device
@@ -96,15 +91,12 @@ impl MemoryManager {
         device_id: usize,
         num_streams: usize,
     ) -> crate::Result<Arc<MultiStreamMemoryManager>> {
-        let managers = self
-            .multi_stream_managers
-            .read()
-            .expect("read lock should not be poisoned");
+        let managers = self.multi_stream_managers.read().map_err(|_| {
+            TensorError::invalid_operation_simple("manager read lock poisoned".to_string())
+        })?;
 
-        if managers.contains_key(&device_id) {
-            return Err(TensorError::unsupported_operation_simple(
-                "Multi-stream manager sharing not yet implemented".to_string(),
-            ));
+        if let Some(manager) = managers.get(&device_id) {
+            return Ok(Arc::clone(manager));
         }
 
         drop(managers);
@@ -112,16 +104,14 @@ impl MemoryManager {
         // Create new multi-stream manager
         let stream_pool_size = self.default_pool_size / num_streams;
         let manager = MultiStreamMemoryManager::new(device_id, num_streams, stream_pool_size)?;
+        let manager = Arc::new(manager);
 
-        let mut managers = self
-            .multi_stream_managers
-            .write()
-            .expect("write lock should not be poisoned");
-        managers.insert(device_id, manager);
+        let mut managers = self.multi_stream_managers.write().map_err(|_| {
+            TensorError::invalid_operation_simple("manager write lock poisoned".to_string())
+        })?;
+        managers.insert(device_id, Arc::clone(&manager));
 
-        Err(TensorError::unsupported_operation_simple(
-            "Multi-stream manager sharing not yet implemented".to_string(),
-        ))
+        Ok(manager)
     }
 
     /// Check for memory aliasing between tensor views
@@ -160,7 +150,10 @@ impl MemoryManager {
         let mut stats = MemoryStatistics::new();
 
         // Aggregate pool statistics
-        let pools = self.pools.read().expect("read lock should not be poisoned");
+        let pools = self
+            .pools
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for (device, pool) in pools.iter() {
             let pool_stats = pool.stats();
             stats.add_device_stats(*device, pool_stats);
@@ -193,7 +186,10 @@ impl MemoryManager {
 
         // Memory pools
         report.push_str("Memory Pools:\n");
-        let pools = self.pools.read().expect("read lock should not be poisoned");
+        let pools = self
+            .pools
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for (device, pool) in pools.iter() {
             let stats = pool.stats();
             report.push_str(&format!("  Device {:?}:\n", device));
@@ -215,7 +211,7 @@ impl MemoryManager {
         let managers = self
             .multi_stream_managers
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for (device_id, manager) in managers.iter() {
             report.push_str(&format!("  Device {}:\n", device_id));
             report.push_str(&format!("    Streams: {}\n", manager.num_streams()));
@@ -283,13 +279,13 @@ impl MemoryManager {
         let mut pools = self
             .pools
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         pools.clear();
 
         let mut managers = self
             .multi_stream_managers
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         managers.clear();
 
         self.performance_monitor.clear();
@@ -594,5 +590,68 @@ mod tests {
         manager.set_default_pool_size(1024 * 1024);
         assert_eq!(manager.default_pool_size(), 1024 * 1024);
         assert_ne!(manager.default_pool_size(), original_size);
+    }
+
+    // Verifies that `get_pool` / `get_multi_stream_manager` return shared
+    // `Arc` handles to the SAME underlying object on a cache hit, instead of
+    // the former "sharing not yet implemented" placeholder error. A real GPU
+    // adapter is not guaranteed to be present in every environment that
+    // builds with `--features gpu` (e.g. a headless CI runner); `MemoryPool`
+    // and `MultiStreamMemoryManager` construction surface adapter/device
+    // creation failures as an honest `Err` rather than panicking, so each
+    // test attempts the GPU operation and skips its assertions - without
+    // failing the suite - if no adapter is available. This mirrors the
+    // convention used by `ops::einsum::gpu::gpu_delegate_tests`.
+    //
+    // These tests use a small custom pool size (rather than
+    // `MemoryManager`'s 512MB default) because `MemoryPool::new` eagerly
+    // allocates a single `wgpu::Buffer` of the exact requested pool size,
+    // and some adapters cap `max_buffer_size` well below 512MB (e.g. the
+    // wgpu downlevel default of 256MB); a too-large request surfaces as a
+    // hard wgpu validation panic rather than a catchable `Result::Err`, so
+    // it isn't covered by the skip-guard above. A few MB is comfortably
+    // within limits on any real adapter these tests may find.
+    #[cfg(feature = "gpu")]
+    mod gpu_tests {
+        use super::*;
+
+        /// Small enough to stay under every real adapter's `max_buffer_size`.
+        const TEST_POOL_SIZE: usize = 4 * 1024 * 1024;
+
+        #[test]
+        fn get_pool_returns_same_arc_on_cache_hit() {
+            let manager = MemoryManager::with_pool_size(TEST_POOL_SIZE);
+
+            let pool1 = match manager.get_pool(Device::Gpu(0)) {
+                Ok(pool) => pool,
+                Err(_) => return, // No GPU adapter available in this environment; skip.
+            };
+            let pool2 = manager
+                .get_pool(Device::Gpu(0))
+                .expect("test: second get_pool call should hit the cache and succeed");
+
+            assert!(
+                Arc::ptr_eq(&pool1, &pool2),
+                "get_pool should return a handle to the same pool on a cache hit"
+            );
+        }
+
+        #[test]
+        fn get_multi_stream_manager_returns_same_arc_on_cache_hit() {
+            let manager = MemoryManager::with_pool_size(TEST_POOL_SIZE);
+
+            let stream_manager1 = match manager.get_multi_stream_manager(0, 2) {
+                Ok(stream_manager) => stream_manager,
+                Err(_) => return, // No GPU adapter available in this environment; skip.
+            };
+            let stream_manager2 = manager.get_multi_stream_manager(0, 2).expect(
+                "test: second get_multi_stream_manager call should hit the cache and succeed",
+            );
+
+            assert!(
+                Arc::ptr_eq(&stream_manager1, &stream_manager2),
+                "get_multi_stream_manager should return a handle to the same manager on a cache hit"
+            );
+        }
     }
 }

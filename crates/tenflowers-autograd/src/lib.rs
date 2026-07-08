@@ -194,6 +194,9 @@ pub mod custom_gradients;
 pub mod debug;
 pub mod deterministic;
 pub mod device_placement;
+#[cfg(feature = "distributed")]
+#[path = "cross_datacenter_replication/mod.rs"]
+pub mod distributed_replication;
 pub mod efficient_memory;
 pub mod ellipsis_newaxis;
 pub mod error_taxonomy;
@@ -207,6 +210,7 @@ pub mod gradient_analyzer;
 pub mod gradient_buffer_manager_simple;
 pub mod gradient_compression;
 pub mod gradient_compression_advanced;
+mod gradient_executor;
 pub mod gradient_ops;
 pub mod gradient_utils;
 // NOTE(v0.2): gradient_validation module planned but not yet implemented
@@ -408,3 +412,24 @@ pub trait Differentiable<T> {
     fn backward(&self, grad_output: &Tensor<T>) -> Result<Vec<Tensor<T>>>;
     fn grad(&self) -> Option<&Tensor<T>>;
 }
+
+/// Initialize `tenflowers-autograd` global integrations.
+///
+/// Currently this registers this crate's [`GradientTape`]-backed
+/// [`tenflowers_core::gradient_executor::GradientExecutor`] with
+/// `tenflowers-core`, so that
+/// `tenflowers_core::gradient_validation_framework`'s `Finiteness`,
+/// `ZeroForConstants`, `Linearity`, and `ChainRule` checks can compute and
+/// inspect real gradients instead of reporting an honest "unverified" status.
+/// Idempotent and safe to call multiple times (and from multiple
+/// threads/tests): only the first call takes effect.
+///
+/// Call this once, early in application or test startup, before invoking
+/// `tenflowers_core::gradient_validation_framework::get_validator()` if you need
+/// those four properties to be genuinely checked rather than honestly reported
+/// as unverified.
+pub fn init() {
+    gradient_executor::install_gradient_executor();
+}
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

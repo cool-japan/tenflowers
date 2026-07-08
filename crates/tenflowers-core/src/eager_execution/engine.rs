@@ -117,7 +117,9 @@ impl EagerExecutionEngine {
 
         self.metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .map_err(|_| {
+                crate::TensorError::invalid_operation_simple("metrics lock poisoned".to_string())
+            })?
             .push(metrics.clone());
 
         // Check for fusion opportunities
@@ -158,7 +160,7 @@ impl EagerExecutionEngine {
         let cache = self
             .op_cache
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache.contains_key(signature)
     }
 
@@ -169,10 +171,9 @@ impl EagerExecutionEngine {
         result: &Tensor<T>,
         execution_time: Duration,
     ) -> Result<()> {
-        let mut cache = self
-            .op_cache
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut cache = self.op_cache.write().map_err(|_| {
+            crate::TensorError::invalid_operation_simple("op cache lock poisoned".to_string())
+        })?;
 
         // Check cache size limit
         if cache.len() >= self.config.max_cache_size {
@@ -402,10 +403,11 @@ impl EagerExecutionEngine {
 
         // Cache active context to avoid repeated lookups
         {
-            let mut contexts = self
-                .active_contexts
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut contexts = self.active_contexts.write().map_err(|_| {
+                crate::TensorError::invalid_operation_simple(
+                    "active contexts lock poisoned".to_string(),
+                )
+            })?;
             if let std::collections::hash_map::Entry::Vacant(e) = contexts.entry(device) {
                 let context = DEVICE_MANAGER.get_context(&device)?;
                 e.insert(context);
@@ -427,7 +429,7 @@ impl EagerExecutionEngine {
         let mut opportunities = self
             .fusion_opportunities
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Advanced fusion analysis based on operation patterns
         let fusion_speedup = match operation {
@@ -635,7 +637,7 @@ impl EagerExecutionEngine {
     pub fn get_metrics(&self) -> Vec<ExecutionMetrics> {
         self.metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -644,7 +646,7 @@ impl EagerExecutionEngine {
         let cache = self
             .op_cache
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let total_entries = cache.len();
         let total_hits = cache.values().map(|op| op.use_count).sum();
@@ -775,7 +777,7 @@ impl EagerExecutionEngine {
         let mut cache = self
             .op_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache.retain(|_, cached_op| now.duration_since(cached_op.last_used) <= threshold);
     }
 }

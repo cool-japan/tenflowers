@@ -472,9 +472,9 @@ static COLLECTIVE_MANAGER: Mutex<Option<CollectiveManager>> = Mutex::new(None);
 
 /// Initialize collective communication
 pub fn init_collective() -> Result<()> {
-    let mut manager = COLLECTIVE_MANAGER
-        .lock()
-        .expect("lock should not be poisoned");
+    let mut manager = COLLECTIVE_MANAGER.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     if manager.is_none() {
         *manager = Some(CollectiveManager::new());
     }
@@ -483,9 +483,9 @@ pub fn init_collective() -> Result<()> {
 
 /// Get the global collective manager
 pub fn get_collective_manager() -> Result<Arc<Mutex<CollectiveManager>>> {
-    let manager = COLLECTIVE_MANAGER
-        .lock()
-        .expect("lock should not be poisoned");
+    let manager = COLLECTIVE_MANAGER.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     if manager.is_none() {
         return Err(TensorError::invalid_argument(
             "Collective not initialized. Call init_collective() first".to_string(),
@@ -501,7 +501,9 @@ pub fn get_collective_manager() -> Result<Arc<Mutex<CollectiveManager>>> {
 pub fn create_process_group(name: String, devices: Vec<Device>) -> Result<()> {
     init_collective()?;
     let manager = get_collective_manager()?;
-    let mut mgr = manager.lock().expect("lock should not be poisoned");
+    let mut mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.create_group(name, devices)
 }
 
@@ -526,7 +528,9 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.all_reduce(tensor, op, group_name)
 }
 
@@ -547,7 +551,9 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.broadcast(tensor, src_device, group_name)
 }
 
@@ -564,7 +570,9 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.all_gather(tensor, group_name)
 }
 
@@ -588,7 +596,9 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.all_reduce_gradients(gradients, group_name)
 }
 
@@ -609,7 +619,9 @@ where
         + scirs2_core::num_traits::One,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.sync_parameters(parameters, src_device, group_name)
 }
 
@@ -630,7 +642,9 @@ where
         + scirs2_core::num_traits::Float,
 {
     let manager = get_collective_manager()?;
-    let mgr = manager.lock().expect("lock should not be poisoned");
+    let mgr = manager.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("collective manager lock poisoned".to_string())
+    })?;
     mgr.ring_all_reduce(tensor, group_name)
 }
 

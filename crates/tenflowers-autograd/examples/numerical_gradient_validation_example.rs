@@ -147,15 +147,16 @@ fn example_3_property_testing() -> Result<()> {
     // Test at multiple random points
     let x = Tensor::from_array(array![1.0f32, 2.0, 3.0].into_dyn());
 
-    // Function: f(x) = sin(x) * x
-    let f = |tensor: &Tensor<f32>| -> Result<Tensor<f32>> {
-        // Simple approximation for demonstration
-        // In practice, you would use actual sin function
-        tenflowers_core::ops::mul(tensor, tensor)
-    };
+    // Forward function: f(x) = x * x (element-wise square).
+    let f =
+        |tensor: &Tensor<f32>| -> Result<Tensor<f32>> { tenflowers_core::ops::mul(tensor, tensor) };
+
+    // Analytical gradient: ∂(x²)/∂x = 2x. The property test validates this against
+    // the finite-difference gradient of `f` at each sampled point.
+    let f_grad = |tensor: &Tensor<f32>| -> Result<Tensor<f32>> { tensor.mul_scalar(2.0) };
 
     println!("Testing gradient at {} random points", num_samples);
-    let results = checker.property_test(&x, f)?;
+    let results = checker.property_test(&x, f, f_grad)?;
 
     for (i, result) in results.iter().enumerate() {
         println!(

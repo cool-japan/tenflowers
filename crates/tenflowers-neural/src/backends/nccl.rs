@@ -109,17 +109,59 @@ impl NcclBackend {
         Ok(())
     }
 
+    /// Query the number of CUDA-visible GPU devices.
+    ///
+    /// A real implementation would call `cudaGetDeviceCount`. Since the CUDA runtime
+    /// is not linked here, we honestly report the count we can actually establish.
+    /// We honour `CUDA_VISIBLE_DEVICES` when it is set (the standard mechanism for
+    /// constraining device visibility) and otherwise return `None` to signal that the
+    /// count is unknown rather than fabricating a value such as `4`.
+    fn query_gpu_count() -> Option<usize> {
+        let visible = std::env::var("CUDA_VISIBLE_DEVICES").ok()?;
+        let trimmed = visible.trim();
+        if trimmed.is_empty() {
+            // Explicitly set to empty => no devices visible.
+            return Some(0);
+        }
+        // Count the comma-separated device identifiers that are actually parseable
+        // as device indices; ignore blank entries from trailing/double commas.
+        let count = trimmed
+            .split(',')
+            .filter(|entry| {
+                let entry = entry.trim();
+                !entry.is_empty() && entry.parse::<usize>().is_ok()
+            })
+            .count();
+        Some(count)
+    }
+
     /// Initialize GPU device contexts
     fn init_gpu_devices(&mut self) -> Result<()> {
-        // Detect available GPU devices
-        // In real implementation, this would use CUDA API
-        let num_gpus = 4; // Placeholder - would query actual GPU count
+        // Determine the real device count instead of fabricating one. If we cannot
+        // establish the count (no CUDA runtime and no CUDA_VISIBLE_DEVICES hint), we
+        // surface an honest error rather than inventing a device topology.
+        let num_gpus = Self::query_gpu_count().ok_or_else(|| {
+            TensorError::not_implemented_simple(
+                "NCCL device initialization requires a real CUDA device count, but the \
+                 CUDA runtime is not linked and CUDA_VISIBLE_DEVICES is not set. The GPU \
+                 count cannot be determined."
+                    .to_string(),
+            )
+        })?;
+
+        if num_gpus == 0 {
+            return Err(TensorError::not_implemented_simple(
+                "NCCL device initialization found zero visible CUDA devices \
+                 (CUDA_VISIBLE_DEVICES is empty)."
+                    .to_string(),
+            ));
+        }
 
         for gpu_id in 0..num_gpus {
             let device = Device::Gpu(gpu_id);
             let context = NcclDeviceContext {
                 device_id: gpu_id,
-                stream: gpu_id, // Placeholder stream ID
+                stream: gpu_id, // Stream handle placeholder; real init needs libnccl.
             };
             self.device_contexts.insert(device, context);
         }
@@ -159,33 +201,37 @@ impl NcclBackend {
     }
 
     /// Perform NCCL all-reduce operation
+    ///
+    /// A real all-reduce requires the NCCL C library (`libnccl`) to be linked and
+    /// at least one CUDA-capable device. This crate does not link the NCCL runtime,
+    /// so we cannot perform the actual collective. Returning a clone of the input
+    /// would silently fabricate a successful reduction across ranks, so instead we
+    /// surface an honest error. The reduction op is validated first so callers still
+    /// get the usual argument diagnostics.
     fn nccl_all_reduce(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         group: &CommunicationGroup,
         op: ReductionOp,
     ) -> Result<Tensor<f32>> {
-        let comm = self.communicators.get(&group.group_id).ok_or_else(|| {
+        // Validate that a communicator exists for the requested group so the caller
+        // gets the same argument-level diagnostics as a real implementation.
+        let _comm = self.communicators.get(&group.group_id).ok_or_else(|| {
             TensorError::invalid_argument(format!(
                 "No NCCL communicator for group {}",
                 group.group_id
             ))
         })?;
 
-        // Placeholder for actual NCCL all-reduce call
-        // Real implementation would:
-        // 1. Get tensor data pointer
-        // 2. Call ncclAllReduce with appropriate parameters
-        // 3. Synchronize CUDA streams
-        // 4. Return result tensor
+        // Validate the reduction op maps to a known NCCL op (still surfaces bad ops).
+        let _nccl_op = self.to_nccl_reduce_op(op)?;
 
-        println!(
-            "NCCL AllReduce: group={}, rank={}, op={:?}",
-            group.group_id, comm.rank, op
-        );
-
-        // For now, return a copy of the input tensor
-        Ok(tensor.clone())
+        Err(TensorError::not_implemented_simple(format!(
+            "NCCL all-reduce (op={op:?}, group={}) is not available: the NCCL runtime \
+             (libnccl) is not linked and no CUDA collective can be performed. Returning \
+             the unmodified input would silently fabricate a cross-rank reduction.",
+            group.group_id
+        )))
     }
 }
 
@@ -255,26 +301,31 @@ impl CommunicationBackendImpl for NcclBackend {
 
     fn all_gather_f32(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         group: &CommunicationGroup,
     ) -> Result<Vec<Tensor<f32>>> {
-        // Placeholder for NCCL all-gather
-        println!("NCCL AllGather: group={}", group.group_id);
-        Ok(vec![tensor.clone(); group.world_size])
+        // Cloning the local tensor for every rank would fabricate the contributions
+        // of all other ranks; without the NCCL runtime we cannot gather them.
+        Err(TensorError::not_implemented_simple(format!(
+            "NCCL all-gather (group={}) is not available: the NCCL runtime is not \
+             linked, so the per-rank contributions cannot be collected.",
+            group.group_id
+        )))
     }
 
     fn broadcast_f32(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         root_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<Tensor<f32>> {
-        // Placeholder for NCCL broadcast
-        println!(
-            "NCCL Broadcast: group={}, root={}",
-            group.group_id, root_rank
-        );
-        Ok(tensor.clone())
+        // On non-root ranks the input does not hold the root's data, so echoing it
+        // back would fabricate the broadcast result.
+        Err(TensorError::not_implemented_simple(format!(
+            "NCCL broadcast (group={}, root={root_rank}) is not available: the NCCL \
+             runtime is not linked, so data cannot be received from the root rank.",
+            group.group_id
+        )))
     }
 
     fn send_f32(
@@ -283,20 +334,27 @@ impl CommunicationBackendImpl for NcclBackend {
         dest_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<()> {
-        // Placeholder for NCCL send
-        println!("NCCL Send: group={}, dest={}", group.group_id, dest_rank);
-        Ok(())
+        // Returning Ok without transmitting anything would falsely report a delivered
+        // message to the destination rank.
+        Err(TensorError::not_implemented_simple(format!(
+            "NCCL point-to-point send (group={}, dest={dest_rank}) is not available: \
+             the NCCL runtime is not linked, so no data can be transmitted.",
+            group.group_id
+        )))
     }
 
     fn recv_f32(
         &self,
-        shape: &[usize],
+        _shape: &[usize],
         src_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<Tensor<f32>> {
-        // Placeholder for NCCL recv
-        println!("NCCL Recv: group={}, src={}", group.group_id, src_rank);
-        Ok(Tensor::zeros(shape))
+        // Returning a zero tensor would fabricate a received payload.
+        Err(TensorError::not_implemented_simple(format!(
+            "NCCL point-to-point recv (group={}, src={src_rank}) is not available: the \
+             NCCL runtime is not linked, so no data can be received.",
+            group.group_id
+        )))
     }
 
     fn finalize(&mut self) -> Result<()> {
@@ -327,15 +385,15 @@ impl CommunicationBackendImpl for NcclBackend {
 pub mod nccl_utils {
     use super::*;
 
-    /// Check if NCCL is available
+    /// Check whether a usable NCCL runtime is available.
+    ///
+    /// The `nccl` cargo feature only enables this Rust-side backend scaffolding; it
+    /// does NOT link the actual NCCL C library (`libnccl`) or the CUDA runtime.
+    /// Because no real collective can be performed, this reports `false` rather than
+    /// claiming availability. It will only be able to report `true` once a real NCCL
+    /// runtime binding is integrated.
     pub fn is_nccl_available() -> bool {
-        // In real implementation, this would check:
-        // 1. NCCL library is installed
-        // 2. NVIDIA GPUs are available
-        // 3. CUDA is properly configured
-
-        // For now, assume it's available if the feature is enabled
-        true
+        false
     }
 
     /// Get recommended NCCL settings for given configuration
@@ -398,6 +456,7 @@ pub mod nccl_utils {
 #[cfg(feature = "nccl")]
 mod tests {
     use super::*;
+    use crate::distributed::CommunicationBackend;
 
     #[test]
     fn test_nccl_backend_creation() {
@@ -407,9 +466,10 @@ mod tests {
     }
 
     #[test]
-    fn test_nccl_availability() {
-        // This test assumes NCCL feature is enabled
-        assert!(nccl_utils::is_nccl_available());
+    fn test_nccl_availability_honest() {
+        // The NCCL C runtime is not linked, so availability must be reported as false
+        // rather than fabricating a positive answer just because the feature compiled.
+        assert!(!nccl_utils::is_nccl_available());
     }
 
     #[test]
@@ -417,5 +477,68 @@ mod tests {
         let config = nccl_utils::get_recommended_config(16, 8);
         assert!(config.options.contains_key("nccl_buffsize"));
         assert!(config.options.contains_key("nccl_algo"));
+    }
+
+    #[test]
+    fn test_all_reduce_returns_honest_error() {
+        // Without a registered communicator, an argument error is expected.
+        let backend = NcclBackend::new();
+        let group = CommunicationGroup {
+            group_id: "missing_group".to_string(),
+            rank: 0,
+            world_size: 2,
+            devices: vec![Device::Gpu(0), Device::Gpu(1)],
+            backend: CommunicationBackend::Nccl,
+        };
+        let tensor = Tensor::<f32>::ones(&[4]);
+        let result = backend.nccl_all_reduce(&tensor, &group, ReductionOp::Sum);
+        assert!(
+            result.is_err(),
+            "all-reduce must never silently return a cloned tensor"
+        );
+    }
+
+    #[test]
+    fn test_collectives_do_not_fabricate() {
+        let backend = NcclBackend::new();
+        let group = CommunicationGroup {
+            group_id: "g".to_string(),
+            rank: 0,
+            world_size: 2,
+            devices: vec![Device::Gpu(0), Device::Gpu(1)],
+            backend: CommunicationBackend::Nccl,
+        };
+        let tensor = Tensor::<f32>::ones(&[2]);
+
+        // Every collective must surface an honest error instead of fabricating data.
+        assert!(backend.all_gather_f32(&tensor, &group).is_err());
+        assert!(backend.broadcast_f32(&tensor, 0, &group).is_err());
+        assert!(backend.send_f32(&tensor, 1, &group).is_err());
+        assert!(backend.recv_f32(&[2], 1, &group).is_err());
+    }
+
+    #[test]
+    fn test_query_gpu_count_honours_visible_devices() {
+        // This test mutates a process-global env var; it is isolated to a single
+        // assertion path and restores the previous value to avoid cross-test leakage.
+        let previous = std::env::var("CUDA_VISIBLE_DEVICES").ok();
+
+        std::env::set_var("CUDA_VISIBLE_DEVICES", "0,1,2");
+        assert_eq!(NcclBackend::query_gpu_count(), Some(3));
+
+        std::env::set_var("CUDA_VISIBLE_DEVICES", "");
+        assert_eq!(NcclBackend::query_gpu_count(), Some(0));
+
+        std::env::remove_var("CUDA_VISIBLE_DEVICES");
+        assert_eq!(
+            NcclBackend::query_gpu_count(),
+            None,
+            "unknown count must be None, never a fabricated constant"
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("CUDA_VISIBLE_DEVICES", value),
+            None => std::env::remove_var("CUDA_VISIBLE_DEVICES"),
+        }
     }
 }

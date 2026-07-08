@@ -112,15 +112,19 @@ impl PyEmbedding {
     ///
     /// Embedded tensor of shape (*, embedding_dim)
     pub fn forward(&self, input: &PyTensor) -> PyResult<PyTensor> {
-        let input_shape = input.tensor.shape();
+        // A real weight table is required - never fabricate a zero output.
+        let weight = self.weight.as_ref().ok_or_else(|| {
+            PyRuntimeError::new_err(
+                "Embedding: weight not initialized; call reset_parameters first",
+            )
+        })?;
 
-        // Get input data as indices
+        // Get input data as indices and validate bounds up front for clear errors.
         let input_data = input
             .tensor
             .to_vec()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get input data: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get input data: {e}")))?;
 
-        // Verify all indices are valid
         for &idx_f32 in &input_data {
             let idx = idx_f32 as usize;
             if idx >= self.num_embeddings {
@@ -131,19 +135,22 @@ impl PyEmbedding {
             }
         }
 
-        // Calculate output shape: input_shape + [embedding_dim]
-        let mut output_shape = input_shape.iter().copied().collect::<Vec<_>>();
-        output_shape.push(self.embedding_dim);
-
-        // For now, create placeholder output
-        // In a real implementation, this would lookup embeddings from weight matrix
-        let output = Tensor::zeros(&output_shape);
-
-        Ok(PyTensor {
-            tensor: Arc::new(output),
-            requires_grad: input.requires_grad,
-            is_pinned: false,
-        })
+        // Gather embedding rows via the real neural embedding lookup. The core
+        // `gather` op mishandles whole-row gathering when embedding_dim > 1, so the
+        // dedicated embedding layer is used instead of returning a placeholder.
+        use tenflowers_neural::layers::Layer;
+        let layer = tenflowers_neural::layers::Embedding::from_pretrained(weight.clone())
+            .map_err(|e| PyRuntimeError::new_err(format!("Embedding init failed: {e}")))?;
+        match layer.forward(input.tensor.as_ref()) {
+            Ok(output) => Ok(PyTensor {
+                tensor: Arc::new(output),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            }),
+            Err(e) => Err(PyRuntimeError::new_err(format!(
+                "Embedding forward failed: {e}"
+            ))),
+        }
     }
 
     /// Load embeddings from a 2D tensor
@@ -349,48 +356,171 @@ impl PyEmbeddingBag {
     /// # Returns
     ///
     /// Tensor of shape (num_bags, embedding_dim) containing aggregated embeddings
+    #[pyo3(signature = (input, offsets=None, per_sample_weights=None))]
     pub fn forward(
         &self,
         input: &PyTensor,
         offsets: Option<&PyTensor>,
         per_sample_weights: Option<&PyTensor>,
     ) -> PyResult<PyTensor> {
+        // A real weight table is required - never fabricate a zero output.
+        let weight = self.weight.as_ref().ok_or_else(|| {
+            PyRuntimeError::new_err(
+                "EmbeddingBag: weight not initialized; call reset_parameters first",
+            )
+        })?;
+
         let input_shape = input.tensor.shape();
 
-        // Calculate number of bags based on offsets or input shape
-        let num_bags = if let Some(offsets_tensor) = offsets {
-            let offsets_shape = offsets_tensor.tensor.shape();
-            offsets_shape[0]
+        // Index values, validated to be in range.
+        let idx_data = input
+            .tensor
+            .to_vec()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get input data: {e}")))?;
+        let total = idx_data.len();
+        let mut indices = Vec::with_capacity(total);
+        for &idx_f32 in &idx_data {
+            let idx = idx_f32 as usize;
+            if idx >= self.num_embeddings {
+                return Err(PyValueError::new_err(format!(
+                    "Index {} is out of bounds for embedding with {} entries",
+                    idx, self.num_embeddings
+                )));
+            }
+            indices.push(idx);
+        }
+
+        // Determine the [start, end) span of each bag from offsets or 2D input shape.
+        let bags: Vec<(usize, usize)> = if let Some(offsets_tensor) = offsets {
+            let offsets_data = offsets_tensor
+                .tensor
+                .to_vec()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get offsets: {e}")))?;
+            let offs: Vec<usize> = offsets_data.iter().map(|&v| v as usize).collect();
+            if offs.is_empty() {
+                return Err(PyValueError::new_err("offsets must not be empty"));
+            }
+            if self.include_last_offset {
+                if offs.len() < 2 {
+                    return Err(PyValueError::new_err(
+                        "offsets must contain at least 2 entries when include_last_offset is set",
+                    ));
+                }
+                (0..offs.len() - 1)
+                    .map(|i| (offs[i], offs[i + 1]))
+                    .collect()
+            } else {
+                (0..offs.len())
+                    .map(|i| {
+                        let start = offs[i];
+                        let end = if i + 1 < offs.len() {
+                            offs[i + 1]
+                        } else {
+                            total
+                        };
+                        (start, end)
+                    })
+                    .collect()
+            }
         } else if input_shape.len() == 2 {
-            input_shape[0]
+            let num_bags = input_shape[0];
+            let bag_size = input_shape[1];
+            (0..num_bags)
+                .map(|i| (i * bag_size, (i + 1) * bag_size))
+                .collect()
         } else {
             return Err(PyValueError::new_err(
                 "Either offsets must be provided or input must be 2D",
             ));
         };
 
-        // Verify per_sample_weights shape if provided
-        if let Some(weights) = per_sample_weights {
-            let weights_shape = weights.tensor.shape();
-            let total_elements: usize = input_shape.iter().product();
-            let weight_elements: usize = weights_shape.iter().product();
-
-            if weight_elements != total_elements {
+        // Optional per-sample weights (only valid for sum mode, matching PyTorch).
+        let sample_weights: Option<Vec<f32>> = if let Some(weights) = per_sample_weights {
+            if self.mode != "sum" {
+                return Err(PyValueError::new_err(
+                    "per_sample_weights is only supported for mode='sum'",
+                ));
+            }
+            let weights_data = weights.tensor.to_vec().map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to get per_sample_weights: {e}"))
+            })?;
+            if weights_data.len() != total {
                 return Err(PyValueError::new_err(format!(
                     "per_sample_weights size {} must match input size {}",
-                    weight_elements, total_elements
+                    weights_data.len(),
+                    total
                 )));
+            }
+            Some(weights_data)
+        } else {
+            None
+        };
+
+        // Real embedding table data, used to gather rows for each bag.
+        let weight_data = weight
+            .to_vec()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get weight: {e}")))?;
+        let dim = self.embedding_dim;
+
+        let num_bags = bags.len();
+        let mut output_data = vec![0f32; num_bags * dim];
+
+        for (bag_idx, &(start, end)) in bags.iter().enumerate() {
+            if start > end || end > total {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid bag span [{start}, {end}) for input of length {total}"
+                )));
+            }
+            let out_base = bag_idx * dim;
+            let bag_len = end - start;
+
+            match self.mode.as_str() {
+                "sum" | "mean" => {
+                    for e in start..end {
+                        let row = indices[e] * dim;
+                        let scale = sample_weights.as_ref().map_or(1.0, |w| w[e]);
+                        for k in 0..dim {
+                            output_data[out_base + k] += weight_data[row + k] * scale;
+                        }
+                    }
+                    if self.mode == "mean" && bag_len > 0 {
+                        let denom = bag_len as f32;
+                        for k in 0..dim {
+                            output_data[out_base + k] /= denom;
+                        }
+                    }
+                }
+                "max" => {
+                    if bag_len > 0 {
+                        for k in 0..dim {
+                            output_data[out_base + k] = f32::NEG_INFINITY;
+                        }
+                        for &index in &indices[start..end] {
+                            let row = index * dim;
+                            for k in 0..dim {
+                                let val = weight_data[row + k];
+                                if val > output_data[out_base + k] {
+                                    output_data[out_base + k] = val;
+                                }
+                            }
+                        }
+                    }
+                }
+                other => {
+                    return Err(PyValueError::new_err(format!(
+                        "Unsupported EmbeddingBag mode '{other}'"
+                    )));
+                }
             }
         }
 
-        // Output shape: (num_bags, embedding_dim)
-        let output_shape = vec![num_bags, self.embedding_dim];
-        let output = Tensor::zeros(&output_shape);
+        let output = Tensor::from_vec(output_data, &[num_bags, dim])
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to build output: {e}")))?;
 
         Ok(PyTensor {
             tensor: Arc::new(output),
             requires_grad: input.requires_grad,
-            is_pinned: false,
+            is_pinned: input.is_pinned,
         })
     }
 
@@ -410,5 +540,141 @@ impl PyEmbeddingBag {
             "EmbeddingBag(num_embeddings={}, embedding_dim={}, mode='{}', max_norm={:?}, sparse={})",
             self.num_embeddings, self.embedding_dim, self.mode, self.max_norm, self.sparse
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
+        let tensor = Tensor::from_vec(data, shape).expect("tensor construction");
+        PyTensor {
+            tensor: Arc::new(tensor),
+            requires_grad: false,
+            is_pinned: false,
+        }
+    }
+
+    // Rows: [1,2,3], [4,5,6], [7,8,9], [10,11,12].
+    fn table() -> Tensor<f32> {
+        let data: Vec<f32> = (1..=12).map(|v| v as f32).collect();
+        Tensor::from_vec(data, &[4, 3]).expect("table")
+    }
+
+    #[test]
+    fn embedding_forward_gathers_rows() {
+        let mut emb = PyEmbedding::new(4, 3, None, None, None, None, None).expect("emb");
+        emb.weight = Some(table());
+        let input = make_tensor(vec![1.0, 3.0], &[2]);
+        let out = emb.forward(&input).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![2, 3]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        assert_eq!(out_vec, vec![4.0, 5.0, 6.0, 10.0, 11.0, 12.0]);
+    }
+
+    #[test]
+    fn embedding_uninitialized_errors() {
+        let mut emb = PyEmbedding::new(4, 3, None, None, None, None, None).expect("emb");
+        emb.weight = None;
+        let input = make_tensor(vec![0.0], &[1]);
+        assert!(emb.forward(&input).is_err());
+    }
+
+    #[test]
+    fn embedding_out_of_range_errors() {
+        let mut emb = PyEmbedding::new(4, 3, None, None, None, None, None).expect("emb");
+        emb.weight = Some(table());
+        let input = make_tensor(vec![9.0], &[1]);
+        assert!(emb.forward(&input).is_err());
+    }
+
+    #[test]
+    fn embedding_bag_mean_2d() {
+        let mut bag = PyEmbeddingBag::new(
+            4,
+            3,
+            None,
+            None,
+            None,
+            Some("mean".to_string()),
+            None,
+            None,
+            None,
+        )
+        .expect("bag");
+        bag.weight = Some(table());
+        let input = make_tensor(vec![0.0, 1.0, 2.0, 3.0], &[2, 2]);
+        let out = bag.forward(&input, None, None).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![2, 3]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        // mean([1,2,3],[4,5,6]) and mean([7,8,9],[10,11,12]).
+        assert_eq!(out_vec, vec![2.5, 3.5, 4.5, 8.5, 9.5, 10.5]);
+    }
+
+    #[test]
+    fn embedding_bag_sum_with_offsets() {
+        let mut bag = PyEmbeddingBag::new(
+            4,
+            3,
+            None,
+            None,
+            None,
+            Some("sum".to_string()),
+            None,
+            None,
+            None,
+        )
+        .expect("bag");
+        bag.weight = Some(table());
+        let input = make_tensor(vec![0.0, 1.0, 2.0, 3.0], &[4]);
+        let offsets = make_tensor(vec![0.0, 2.0], &[2]);
+        let out = bag.forward(&input, Some(&offsets), None).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![2, 3]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        // bag0 = [1,2,3]+[4,5,6]; bag1 = [7,8,9]+[10,11,12].
+        assert_eq!(out_vec, vec![5.0, 7.0, 9.0, 17.0, 19.0, 21.0]);
+    }
+
+    #[test]
+    fn embedding_bag_max_2d() {
+        let mut bag = PyEmbeddingBag::new(
+            4,
+            3,
+            None,
+            None,
+            None,
+            Some("max".to_string()),
+            None,
+            None,
+            None,
+        )
+        .expect("bag");
+        bag.weight = Some(table());
+        let input = make_tensor(vec![0.0, 1.0, 2.0, 3.0], &[1, 4]);
+        let out = bag.forward(&input, None, None).expect("forward");
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![1, 3]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        // max over all four rows -> row 3.
+        assert_eq!(out_vec, vec![10.0, 11.0, 12.0]);
+    }
+
+    #[test]
+    fn embedding_bag_uninitialized_errors() {
+        let mut bag = PyEmbeddingBag::new(
+            4,
+            3,
+            None,
+            None,
+            None,
+            Some("mean".to_string()),
+            None,
+            None,
+            None,
+        )
+        .expect("bag");
+        bag.weight = None;
+        let input = make_tensor(vec![0.0, 1.0], &[1, 2]);
+        assert!(bag.forward(&input, None, None).is_err());
     }
 }

@@ -655,55 +655,55 @@ impl KanSymbolicExtractor {
     ///
     /// Returns a 2-D vector indexed `[layer_idx][edge_idx]` where edge_idx
     /// enumerates edges in row-major order (out_j * in_dim + in_i).
-    pub fn extract_formula(&self, model: &KanModel, dataset: &[Vec<f64>]) -> Vec<Vec<SymbolicFit>> {
+    pub fn extract_formula(
+        &self,
+        model: &KanModel,
+        dataset: &[Vec<f64>],
+    ) -> Result<Vec<Vec<SymbolicFit>>, KanError> {
         // Build evaluation points: linspace over each input dimension
         let n_samples = dataset.len().max(200);
-        let result = model
-            .layers
-            .iter()
-            .enumerate()
-            .map(|(layer_idx, layer)| {
-                // Determine input range for this layer by propagating a few dataset points
-                let layer_inputs: Vec<Vec<f64>> = if layer_idx == 0 {
-                    dataset.iter().take(n_samples).cloned().collect()
-                } else {
-                    let mut acc = Vec::with_capacity(n_samples);
-                    for x in dataset.iter().take(n_samples) {
-                        let mut h = x.clone();
-                        for prev in &model.layers[..layer_idx] {
-                            h = prev.forward(&h).unwrap_or_default();
-                        }
-                        acc.push(h);
+        let mut result = Vec::with_capacity(model.layers.len());
+        for (layer_idx, layer) in model.layers.iter().enumerate() {
+            // Determine input range for this layer by propagating a few dataset points
+            let layer_inputs: Vec<Vec<f64>> = if layer_idx == 0 {
+                dataset.iter().take(n_samples).cloned().collect()
+            } else {
+                let mut acc = Vec::with_capacity(n_samples);
+                for x in dataset.iter().take(n_samples) {
+                    let mut h = x.clone();
+                    for prev in &model.layers[..layer_idx] {
+                        h = prev.forward(&h)?;
                     }
-                    acc
-                };
-
-                let mut fits = Vec::new();
-                for (j, acts_j) in layer.activations.iter().enumerate() {
-                    for (i, act) in acts_j.iter().enumerate() {
-                        // Collect samples for input dimension i
-                        let samples: Vec<f64> = layer_inputs
-                            .iter()
-                            .filter_map(|x| x.get(i).copied())
-                            .collect();
-                        let _ = j; // suppress unused warning
-                        let fit = if samples.is_empty() {
-                            SymbolicFit {
-                                function_name: "id".into(),
-                                r_squared: 0.0,
-                                scale: 1.0,
-                                offset: 0.0,
-                            }
-                        } else {
-                            self.fit_activation(act, &samples)
-                        };
-                        fits.push(fit);
-                    }
+                    acc.push(h);
                 }
-                fits
-            })
-            .collect();
-        result
+                acc
+            };
+
+            let mut fits = Vec::new();
+            for (j, acts_j) in layer.activations.iter().enumerate() {
+                for (i, act) in acts_j.iter().enumerate() {
+                    // Collect samples for input dimension i
+                    let samples: Vec<f64> = layer_inputs
+                        .iter()
+                        .filter_map(|x| x.get(i).copied())
+                        .collect();
+                    let _ = j; // suppress unused warning
+                    let fit = if samples.is_empty() {
+                        SymbolicFit {
+                            function_name: "id".into(),
+                            r_squared: 0.0,
+                            scale: 1.0,
+                            offset: 0.0,
+                        }
+                    } else {
+                        self.fit_activation(act, &samples)
+                    };
+                    fits.push(fit);
+                }
+            }
+            result.push(fits);
+        }
+        Ok(result)
     }
 }
 
@@ -914,12 +914,12 @@ impl KanTrainer {
                     for k in 0..n_coeff {
                         // Forward perturbation
                         self.model.layers[layer_idx].activations[j][i].coefficients[k] += h;
-                        let pred_p = self.model.forward(x).unwrap_or_default();
+                        let pred_p = self.model.forward(x)?;
                         let loss_p = Self::mse_loss(&pred_p, y) + self.model.regularization_loss();
 
                         // Backward perturbation
                         self.model.layers[layer_idx].activations[j][i].coefficients[k] -= 2.0 * h;
-                        let pred_m = self.model.forward(x).unwrap_or_default();
+                        let pred_m = self.model.forward(x)?;
                         let loss_m = Self::mse_loss(&pred_m, y) + self.model.regularization_loss();
 
                         // Restore
@@ -932,10 +932,10 @@ impl KanTrainer {
                     // Update residual_scale
                     {
                         self.model.layers[layer_idx].activations[j][i].residual_scale += h;
-                        let pred_p = self.model.forward(x).unwrap_or_default();
+                        let pred_p = self.model.forward(x)?;
                         let loss_p = Self::mse_loss(&pred_p, y) + self.model.regularization_loss();
                         self.model.layers[layer_idx].activations[j][i].residual_scale -= 2.0 * h;
-                        let pred_m = self.model.forward(x).unwrap_or_default();
+                        let pred_m = self.model.forward(x)?;
                         let loss_m = Self::mse_loss(&pred_m, y) + self.model.regularization_loss();
                         self.model.layers[layer_idx].activations[j][i].residual_scale += h;
                         let grad = (loss_p - loss_m) / (2.0 * h);
@@ -945,10 +945,10 @@ impl KanTrainer {
                     // Update spline_scale
                     {
                         self.model.layers[layer_idx].activations[j][i].spline_scale += h;
-                        let pred_p = self.model.forward(x).unwrap_or_default();
+                        let pred_p = self.model.forward(x)?;
                         let loss_p = Self::mse_loss(&pred_p, y) + self.model.regularization_loss();
                         self.model.layers[layer_idx].activations[j][i].spline_scale -= 2.0 * h;
-                        let pred_m = self.model.forward(x).unwrap_or_default();
+                        let pred_m = self.model.forward(x)?;
                         let loss_m = Self::mse_loss(&pred_m, y) + self.model.regularization_loss();
                         self.model.layers[layer_idx].activations[j][i].spline_scale += h;
                         let grad = (loss_p - loss_m) / (2.0 * h);
@@ -1024,19 +1024,23 @@ pub struct KanReport {
 
 impl KanReport {
     /// Build a full report for a trained model.
-    pub fn new(model: &KanModel, extractor: &KanSymbolicExtractor, dataset: &[Vec<f64>]) -> Self {
+    pub fn new(
+        model: &KanModel,
+        extractor: &KanSymbolicExtractor,
+        dataset: &[Vec<f64>],
+    ) -> Result<Self, KanError> {
         let metrics = compute_kan_metrics(model);
-        let symbolic_fits = extractor.extract_formula(model, dataset);
+        let symbolic_fits = extractor.extract_formula(model, dataset)?;
         let layer_scores = model
             .layers
             .iter()
             .map(|l| l.get_feature_scores())
             .collect();
-        KanReport {
+        Ok(KanReport {
             metrics,
             symbolic_fits,
             layer_scores,
-        }
+        })
     }
 
     /// Human-readable summary string.
@@ -1570,7 +1574,9 @@ mod tests {
         let model = KanModel::new(config).expect("model creation failed");
         let extractor = KanSymbolicExtractor::new();
         let dataset: Vec<Vec<f64>> = (-10..=10).map(|i| vec![i as f64 * 0.2]).collect();
-        let fits = extractor.extract_formula(&model, &dataset);
+        let fits = extractor
+            .extract_formula(&model, &dataset)
+            .expect("extract_formula failed");
         assert_eq!(fits.len(), 2, "Should have one SymbolicFit per layer");
         // Layer 0: 1*3=3 edges → 3 fits
         assert_eq!(fits[0].len(), 3);
@@ -1751,7 +1757,7 @@ mod tests {
         let model = KanModel::new(config).expect("model creation failed");
         let extractor = KanSymbolicExtractor::new();
         let dataset: Vec<Vec<f64>> = (0..10).map(|i| vec![i as f64 * 0.1]).collect();
-        let report = KanReport::new(&model, &extractor, &dataset);
+        let report = KanReport::new(&model, &extractor, &dataset).expect("report failed");
         let summary = report.summary();
         assert!(
             summary.contains("KAN Report"),
@@ -1772,7 +1778,7 @@ mod tests {
         let model = KanModel::new(config).expect("model creation failed");
         let extractor = KanSymbolicExtractor::new();
         let dataset: Vec<Vec<f64>> = (0..5).map(|i| vec![i as f64 * 0.2; 3]).collect();
-        let report = KanReport::new(&model, &extractor, &dataset);
+        let report = KanReport::new(&model, &extractor, &dataset).expect("report failed");
         // layer_scores[0] has in_dim=3 scores, layer_scores[1] has in_dim=4
         assert_eq!(report.layer_scores[0].len(), 3);
         assert_eq!(report.layer_scores[1].len(), 4);

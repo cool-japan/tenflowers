@@ -502,7 +502,14 @@ impl GpuRnnOps {
         let _result = futures::executor::block_on(receiver)
             .expect("buffer mapping should complete successfully");
 
-        let data = buffer_slice.get_mapped_range();
+        let data = buffer_slice.get_mapped_range().map_err(|e| {
+            TensorError::gpu_error(
+                "read_buffer_to_tensor",
+                &format!("Failed to map GPU result buffer: {:?}", e),
+                None,
+                false,
+            )
+        })?;
         let typed_data: &[T] = bytemuck::cast_slice(&data);
         let tensor_data = typed_data.to_vec();
 

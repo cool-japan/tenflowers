@@ -603,7 +603,8 @@ impl OnnxMobileExporter {
 
         // Producer info for ONNX Mobile
         let producer_info = format!(
-            "{{\"producer_name\":\"TenfloweRS\",\"producer_version\":\"0.1.1\",\"model_version\":\"{}\"}}",
+            "{{\"producer_name\":\"TenfloweRS\",\"producer_version\":\"{}\",\"model_version\":\"{}\"}}",
+            env!("CARGO_PKG_VERSION"),
             self.config.metadata.version
         );
         let producer_bytes = producer_info.as_bytes();

@@ -4,8 +4,6 @@
 //! performance across different operations, hardware configurations, and workloads.
 
 use crate::{Dataset, Transform};
-use scirs2_core::random::Rng;
-use scirs2_core::RngExt;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -632,23 +630,179 @@ impl MemoryTracker {
         MemoryStats {
             peak_usage: peak,
             average_usage: (start + current) / 2,
-            allocation_rate: allocations as f64, // Simplified
-            fragmentation_ratio: 0.1,            // Placeholder
+            // Allocation counting requires a custom global allocator hook,
+            // which is not installed; report what was actually tracked (0
+            // unless a hook increments it) rather than inventing a rate.
+            allocation_rate: allocations as f64,
+            // Fragmentation cannot be measured without allocator introspection.
+            // Report 0.0 ("not measured") instead of a fabricated ratio.
+            fragmentation_ratio: 0.0,
         }
     }
 
+    /// Read the process resident-set size (RSS) in bytes.
+    ///
+    /// Uses `/proc/self/statm` on Linux for a real measurement. On platforms
+    /// where this interface is unavailable the value cannot be measured, so 0
+    /// is returned (honest "unknown") rather than a fabricated figure.
     fn get_memory_usage() -> usize {
-        // Simplified memory usage estimation
-        // In a real implementation, this would use platform-specific APIs
-        std::mem::size_of::<usize>() * 1024 // Placeholder
+        read_process_rss_bytes().unwrap_or(0)
     }
 }
 
-/// CPU utilization tracker for benchmarking
+/// Read this process's resident-set size in bytes from `/proc/self/statm`.
+///
+/// Returns `None` when the measurement is unavailable (non-Linux targets or a
+/// read/parse failure), so callers can fall back to an honest "unknown".
+fn read_process_rss_bytes() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        // statm fields are in pages: size, resident, shared, text, lib, data, dt.
+        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let resident_pages: usize = statm.split_whitespace().nth(1)?.parse().ok()?;
+        // 4096 is the standard page size on the supported Linux targets.
+        const PAGE_SIZE: usize = 4096;
+        Some(resident_pages.saturating_mul(PAGE_SIZE))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+/// Read total physical memory in bytes from `/proc/meminfo` (Linux).
+///
+/// Returns `None` when unavailable so callers fall back to an honest "unknown".
+fn read_total_memory_bytes() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+        for line in meminfo.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                // Format: "MemTotal:       16384256 kB".
+                let kb: usize = rest.split_whitespace().next()?.parse().ok()?;
+                return Some(kb.saturating_mul(1024));
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+/// Aggregate CPU jiffy counters read from `/proc/stat`.
+#[derive(Debug, Clone, Copy)]
+struct CpuTimes {
+    idle: u64,
+    total: u64,
+}
+
+/// Read the aggregate CPU times from the `cpu` line of `/proc/stat` (Linux).
+///
+/// Returns `None` when unavailable, so callers fall back to honest "unknown".
+fn read_aggregate_cpu_times() -> Option<CpuTimes> {
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string("/proc/stat").ok()?;
+        let line = stat.lines().next()?; // first line is the aggregate "cpu" line
+        let mut fields = line.split_whitespace();
+        if fields.next()? != "cpu" {
+            return None;
+        }
+        // user nice system idle iowait irq softirq steal guest guest_nice
+        let values: Vec<u64> = fields.filter_map(|v| v.parse::<u64>().ok()).collect();
+        if values.len() < 4 {
+            return None;
+        }
+        // idle time = idle + iowait (iowait present when len >= 5).
+        let idle = values[3] + values.get(4).copied().unwrap_or(0);
+        let total: u64 = values.iter().sum();
+        Some(CpuTimes { idle, total })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+/// Read per-core CPU times from the `cpuN` lines of `/proc/stat` (Linux).
+fn read_per_core_cpu_times() -> Vec<CpuTimes> {
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(stat) = std::fs::read_to_string("/proc/stat") else {
+            return Vec::new();
+        };
+        let mut cores = Vec::new();
+        for line in stat.lines() {
+            // Per-core lines look like "cpu0 ...", "cpu1 ...". Skip the aggregate.
+            if !line.starts_with("cpu") || line.starts_with("cpu ") {
+                continue;
+            }
+            let mut fields = line.split_whitespace();
+            let Some(tag) = fields.next() else { continue };
+            // Require a trailing digit so we only take per-core lines.
+            if !tag[3..].chars().all(|c| c.is_ascii_digit()) || tag.len() <= 3 {
+                continue;
+            }
+            let values: Vec<u64> = fields.filter_map(|v| v.parse::<u64>().ok()).collect();
+            if values.len() < 4 {
+                continue;
+            }
+            let idle = values[3] + values.get(4).copied().unwrap_or(0);
+            let total: u64 = values.iter().sum();
+            cores.push(CpuTimes { idle, total });
+        }
+        cores
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
+/// Read the cumulative context-switch count from `/proc/stat` (Linux).
+fn read_context_switch_count() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string("/proc/stat").ok()?;
+        for line in stat.lines() {
+            if let Some(rest) = line.strip_prefix("ctxt ") {
+                return rest.trim().parse::<u64>().ok();
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+/// Compute utilization (0.0..=1.0) from two CPU snapshots.
+fn cpu_utilization_from_delta(prev: CpuTimes, next: CpuTimes) -> Option<f64> {
+    let total_delta = next.total.checked_sub(prev.total)?;
+    if total_delta == 0 {
+        return None;
+    }
+    let idle_delta = next.idle.saturating_sub(prev.idle);
+    let busy = total_delta.saturating_sub(idle_delta);
+    Some((busy as f64 / total_delta as f64).clamp(0.0, 1.0))
+}
+
+/// CPU utilization tracker for benchmarking.
+///
+/// On Linux this reports *real* CPU utilization and context-switch rates by
+/// reading `/proc/stat`. On other platforms (or when `/proc` is unavailable)
+/// it reports 0.0 ("not measured") instead of fabricating values.
 pub struct CpuTracker {
-    #[allow(dead_code)]
     start_time: std::time::Instant,
     utilization_samples: std::sync::Arc<std::sync::Mutex<Vec<f64>>>,
+    per_core_samples: std::sync::Arc<std::sync::Mutex<Vec<Vec<f64>>>>,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    start_ctxt: std::sync::atomic::AtomicU64,
     core_count: usize,
 }
 
@@ -663,75 +817,152 @@ impl CpuTracker {
         Self {
             start_time: std::time::Instant::now(),
             utilization_samples: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            per_core_samples: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            handle: std::sync::Mutex::new(None),
+            start_ctxt: std::sync::atomic::AtomicU64::new(0),
             core_count: num_cpus::get(),
         }
     }
 
     pub fn start(&self) {
-        // Start background CPU monitoring
+        // Record the starting context-switch count for a real per-second rate.
+        if let Some(ctxt) = read_context_switch_count() {
+            self.start_ctxt.store(ctxt, Ordering::Relaxed);
+        }
+
+        self.stop_flag.store(false, Ordering::Relaxed);
         let samples = self.utilization_samples.clone();
-        let _handle = std::thread::spawn(move || {
-            // Sample CPU utilization periodically
+        let core_samples = self.per_core_samples.clone();
+        let stop = self.stop_flag.clone();
+
+        let handle = std::thread::spawn(move || {
+            // Seed the previous snapshots so the first delta is meaningful.
+            let mut prev_agg = read_aggregate_cpu_times();
+            let mut prev_cores = read_per_core_cpu_times();
+            let mut iterations = 0usize;
+
             loop {
-                let utilization = Self::get_cpu_utilization();
-                if let Ok(mut samples_guard) = samples.lock() {
-                    samples_guard.push(utilization);
-                }
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                // In a real implementation, this would have a stop condition
-                if samples.lock().map(|s| s.len()).unwrap_or(0) > 100 {
+
+                if let (Some(prev), Some(next)) = (prev_agg, read_aggregate_cpu_times()) {
+                    if let Some(util) = cpu_utilization_from_delta(prev, next) {
+                        if let Ok(mut guard) = samples.lock() {
+                            guard.push(util);
+                        }
+                    }
+                    prev_agg = Some(next);
+                }
+
+                let next_cores = read_per_core_cpu_times();
+                if !prev_cores.is_empty() && prev_cores.len() == next_cores.len() {
+                    let per_core: Vec<f64> = prev_cores
+                        .iter()
+                        .zip(next_cores.iter())
+                        .map(|(&p, &n)| cpu_utilization_from_delta(p, n).unwrap_or(0.0))
+                        .collect();
+                    if let Ok(mut guard) = core_samples.lock() {
+                        guard.push(per_core);
+                    }
+                }
+                prev_cores = next_cores;
+
+                iterations += 1;
+                if stop.load(Ordering::Relaxed) || iterations > 100 {
                     break;
                 }
             }
         });
+
+        if let Ok(mut slot) = self.handle.lock() {
+            *slot = Some(handle);
+        }
     }
 
     pub fn finish(&self) -> CpuStats {
+        // Signal the sampling thread to stop and join it so all real samples land.
+        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Ok(mut slot) = self.handle.lock() {
+            if let Some(handle) = slot.take() {
+                let _ = handle.join();
+            }
+        }
+
         let samples = self
             .utilization_samples
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
 
+        let context_switches_per_sec = self.context_switches_per_sec();
+
         if samples.is_empty() {
+            // No measurements available (e.g. non-Linux): report honest zeros.
             return CpuStats {
                 average_utilization: 0.0,
                 peak_utilization: 0.0,
                 per_core_utilization: vec![0.0; self.core_count],
-                context_switches_per_sec: 0.0,
+                context_switches_per_sec,
             };
         }
 
         let average_utilization = samples.iter().sum::<f64>() / samples.len() as f64;
         let peak_utilization = samples.iter().fold(0.0f64, |a, &b| a.max(b));
 
-        // Generate per-core utilization (simplified)
-        let per_core_utilization = (0..self.core_count)
-            .map(|_| average_utilization + (scirs2_core::random::rng().random::<f64>() - 0.5) * 0.2)
-            .map(|u| u.clamp(0.0, 1.0))
-            .collect();
+        // Real per-core averages from `/proc/stat`; fall back to the aggregate
+        // average per core only when per-core sampling was unavailable.
+        let per_core_samples = self
+            .per_core_samples
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+
+        let per_core_utilization = if per_core_samples.is_empty() {
+            vec![average_utilization; self.core_count]
+        } else {
+            let core_count = per_core_samples[0].len();
+            (0..core_count)
+                .map(|core| {
+                    let sum: f64 = per_core_samples
+                        .iter()
+                        .filter_map(|row| row.get(core))
+                        .sum();
+                    let count = per_core_samples
+                        .iter()
+                        .filter(|row| row.get(core).is_some())
+                        .count();
+                    if count > 0 {
+                        sum / count as f64
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
+        };
 
         CpuStats {
             average_utilization,
             peak_utilization,
             per_core_utilization,
-            context_switches_per_sec: Self::get_context_switches_per_sec(),
+            context_switches_per_sec,
         }
     }
 
-    fn get_cpu_utilization() -> f64 {
-        // Simplified CPU utilization measurement
-        // In a real implementation, this would use platform-specific APIs like /proc/stat on Linux
-        // or performance counters on Windows
-
-        // Simulate CPU usage between 10% and 90%
-        0.1 + scirs2_core::random::rng().random::<f64>() * 0.8
-    }
-
-    fn get_context_switches_per_sec() -> f64 {
-        // Simplified context switch measurement
-        // In a real implementation, this would read from /proc/stat or similar
-        1000.0 + scirs2_core::random::rng().random::<f64>() * 5000.0
+    /// Compute the real context-switch rate over the tracked interval.
+    fn context_switches_per_sec(&self) -> f64 {
+        let start = self.start_ctxt.load(Ordering::Relaxed);
+        match read_context_switch_count() {
+            Some(end) if end >= start && start > 0 => {
+                let elapsed = self.start_time.elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    (end - start) as f64 / elapsed
+                } else {
+                    0.0
+                }
+            }
+            // Unavailable or not measurable: honest zero rather than a fake rate.
+            _ => 0.0,
+        }
     }
 }
 
@@ -754,8 +985,10 @@ impl SystemInfo {
     }
 
     fn get_total_memory() -> usize {
-        // Simplified memory detection
-        8 * 1024 * 1024 * 1024 // 8GB placeholder
+        // Read the real total physical memory from /proc/meminfo on Linux.
+        // Returns 0 ("unknown") on platforms where it cannot be measured,
+        // rather than reporting a fabricated capacity.
+        read_total_memory_bytes().unwrap_or(0)
     }
 
     fn get_gpu_info() -> Option<String> {
@@ -836,7 +1069,10 @@ impl ThroughputStats {
             samples_per_second,
             bytes_per_second: samples_per_second * std::mem::size_of::<f32>() as f64, // Assuming f32
             operations_per_second: samples_per_second,
-            bandwidth_efficiency: 0.8, // Placeholder
+            // Bandwidth efficiency = achieved bandwidth / theoretical peak.
+            // The theoretical peak is hardware-specific and not known here, so
+            // this stays 0.0 ("not measured") instead of a fabricated ratio.
+            bandwidth_efficiency: 0.0,
         }
     }
 }
@@ -906,5 +1142,69 @@ mod tests {
         assert!(report.contains("TenfloweRS Dataset Performance Benchmark Report"));
         assert!(report.contains("System Information"));
         assert!(report.contains("Benchmark Configuration"));
+    }
+
+    #[test]
+    fn test_throughput_stats_bandwidth_not_fabricated() {
+        // bandwidth_efficiency must no longer be a fabricated 0.8 constant.
+        let timing =
+            TimingStats::from_durations(&[Duration::from_millis(10), Duration::from_millis(10)]);
+        let stats = ThroughputStats::calculate(100, &timing);
+        assert_eq!(
+            stats.bandwidth_efficiency, 0.0,
+            "bandwidth efficiency is not measured and must be reported as 0.0"
+        );
+        // samples_per_second IS real (derived from timing): 100 samples / 0.01s.
+        assert!((stats.samples_per_second - 10_000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_memory_stats_fragmentation_not_fabricated() {
+        let tracker = MemoryTracker::new();
+        tracker.start();
+        let stats = tracker.finish();
+        assert_eq!(
+            stats.fragmentation_ratio, 0.0,
+            "fragmentation ratio is not measured and must be reported as 0.0"
+        );
+    }
+
+    #[test]
+    fn test_cpu_utilization_delta_math() {
+        // 100 total jiffies elapse, 25 of them idle -> 75% utilization.
+        let prev = CpuTimes {
+            idle: 100,
+            total: 1000,
+        };
+        let next = CpuTimes {
+            idle: 125,
+            total: 1100,
+        };
+        let util = cpu_utilization_from_delta(prev, next)
+            .expect("test: nonzero total delta should yield a value");
+        assert!((util - 0.75).abs() < 1e-9);
+
+        // No elapsed time -> no measurement (None), never a fabricated number.
+        assert!(cpu_utilization_from_delta(prev, prev).is_none());
+    }
+
+    #[test]
+    fn test_total_memory_is_real_or_zero() {
+        // Must be the real total memory (Linux) or an honest 0 elsewhere,
+        // never the old hardcoded 8 GiB placeholder.
+        let total = SystemInfo::collect().total_memory;
+        #[cfg(target_os = "linux")]
+        {
+            assert!(
+                total > 0,
+                "Linux total memory should be measured as nonzero"
+            );
+            // The old fabricated value was exactly 8 GiB; a real read is virtually
+            // never exactly that. We only assert it was actually measured (>0).
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = total; // honest 0 on unsupported platforms
+        }
     }
 }

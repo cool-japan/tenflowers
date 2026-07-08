@@ -50,6 +50,111 @@ impl Default for ArrowConfig {
     }
 }
 
+/// Shared dispatch logic for converting an Arrow array into a `Tensor`.
+///
+/// This centralizes the `Array::data_type()` match so the supported-type
+/// coverage used by both `ArrowDataset::<T>::array_to_tensor` and
+/// `ArrowArrayExt::to_tensor` cannot drift apart -- previously each call
+/// site carried its own independent copy of this match, and the
+/// `ArrowArrayExt::to_tensor` copy was never actually implemented (it
+/// unconditionally returned an "unimplemented" error).
+#[cfg(feature = "parquet")]
+fn convert_arrow_array_to_tensor<U: scirs2_core::numeric::NumCast + Clone + Default>(
+    array: &dyn Array,
+) -> Result<Tensor<U>> {
+    match array.data_type() {
+        ArrowDataType::Float32 => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .ok_or_else(|| {
+                    TensorError::unsupported_operation_simple(
+                        "Failed to downcast to Float32Array".to_string(),
+                    )
+                })?;
+
+            // Zero-copy path using values slice
+            let values: Vec<U> = arr
+                .values()
+                .iter()
+                .map(|&v| U::from(v).unwrap_or_default())
+                .collect();
+
+            Tensor::from_vec(values, &[arr.len()])
+        }
+        ArrowDataType::Float64 => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .ok_or_else(|| {
+                    TensorError::unsupported_operation_simple(
+                        "Failed to downcast to Float64Array".to_string(),
+                    )
+                })?;
+
+            let values: Vec<U> = arr
+                .values()
+                .iter()
+                .map(|&v| U::from(v).unwrap_or_default())
+                .collect();
+
+            Tensor::from_vec(values, &[arr.len()])
+        }
+        ArrowDataType::Int32 => {
+            let arr = array.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
+                TensorError::unsupported_operation_simple(
+                    "Failed to downcast to Int32Array".to_string(),
+                )
+            })?;
+
+            let values: Vec<U> = arr
+                .values()
+                .iter()
+                .map(|&v| U::from(v).unwrap_or_default())
+                .collect();
+
+            Tensor::from_vec(values, &[arr.len()])
+        }
+        ArrowDataType::Int64 => {
+            let arr = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
+                TensorError::unsupported_operation_simple(
+                    "Failed to downcast to Int64Array".to_string(),
+                )
+            })?;
+
+            let values: Vec<U> = arr
+                .values()
+                .iter()
+                .map(|&v| U::from(v).unwrap_or_default())
+                .collect();
+
+            Tensor::from_vec(values, &[arr.len()])
+        }
+        ArrowDataType::UInt32 => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .ok_or_else(|| {
+                    TensorError::unsupported_operation_simple(
+                        "Failed to downcast to UInt32Array".to_string(),
+                    )
+                })?;
+
+            let values: Vec<U> = arr
+                .values()
+                .iter()
+                .map(|&v| U::from(v).unwrap_or_default())
+                .collect();
+
+            Tensor::from_vec(values, &[arr.len()])
+        }
+        dt => Err(TensorError::unsupported_operation_simple(format!(
+            "Unsupported Arrow data type: {:?}",
+            dt
+        ))),
+    }
+}
+
 /// Dataset that loads data from Apache Arrow format with zero-copy optimization
 #[cfg(feature = "parquet")]
 pub struct ArrowDataset<T> {
@@ -213,101 +318,14 @@ impl<T> ArrowDataset<T> {
     }
 
     /// Convert an Arrow array to a Tensor (zero-copy where possible)
+    ///
+    /// Delegates to the shared `convert_arrow_array_to_tensor` dispatch
+    /// function so this stays in lockstep with `ArrowArrayExt::to_tensor`.
     fn array_to_tensor<U: scirs2_core::numeric::NumCast + Clone + Default>(
         &self,
         array: &dyn Array,
     ) -> Result<Tensor<U>> {
-        match array.data_type() {
-            ArrowDataType::Float32 => {
-                let arr = array
-                    .as_any()
-                    .downcast_ref::<Float32Array>()
-                    .ok_or_else(|| {
-                        TensorError::unsupported_operation_simple(
-                            "Failed to downcast to Float32Array".to_string(),
-                        )
-                    })?;
-
-                // Zero-copy path using values slice
-                let values: Vec<U> = arr
-                    .values()
-                    .iter()
-                    .map(|&v| U::from(v).unwrap_or_default())
-                    .collect();
-
-                Tensor::from_vec(values, &[arr.len()])
-            }
-            ArrowDataType::Float64 => {
-                let arr = array
-                    .as_any()
-                    .downcast_ref::<Float64Array>()
-                    .ok_or_else(|| {
-                        TensorError::unsupported_operation_simple(
-                            "Failed to downcast to Float64Array".to_string(),
-                        )
-                    })?;
-
-                let values: Vec<U> = arr
-                    .values()
-                    .iter()
-                    .map(|&v| U::from(v).unwrap_or_default())
-                    .collect();
-
-                Tensor::from_vec(values, &[arr.len()])
-            }
-            ArrowDataType::Int32 => {
-                let arr = array.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple(
-                        "Failed to downcast to Int32Array".to_string(),
-                    )
-                })?;
-
-                let values: Vec<U> = arr
-                    .values()
-                    .iter()
-                    .map(|&v| U::from(v).unwrap_or_default())
-                    .collect();
-
-                Tensor::from_vec(values, &[arr.len()])
-            }
-            ArrowDataType::Int64 => {
-                let arr = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
-                    TensorError::unsupported_operation_simple(
-                        "Failed to downcast to Int64Array".to_string(),
-                    )
-                })?;
-
-                let values: Vec<U> = arr
-                    .values()
-                    .iter()
-                    .map(|&v| U::from(v).unwrap_or_default())
-                    .collect();
-
-                Tensor::from_vec(values, &[arr.len()])
-            }
-            ArrowDataType::UInt32 => {
-                let arr = array
-                    .as_any()
-                    .downcast_ref::<UInt32Array>()
-                    .ok_or_else(|| {
-                        TensorError::unsupported_operation_simple(
-                            "Failed to downcast to UInt32Array".to_string(),
-                        )
-                    })?;
-
-                let values: Vec<U> = arr
-                    .values()
-                    .iter()
-                    .map(|&v| U::from(v).unwrap_or_default())
-                    .collect();
-
-                Tensor::from_vec(values, &[arr.len()])
-            }
-            dt => Err(TensorError::unsupported_operation_simple(format!(
-                "Unsupported Arrow data type: {:?}",
-                dt
-            ))),
-        }
+        convert_arrow_array_to_tensor(array)
     }
 
     /// Find which batch contains the given global index
@@ -740,9 +758,7 @@ impl ArrowArrayExt for dyn Array {
     }
 
     fn to_tensor<T: scirs2_core::numeric::NumCast + Clone + Default>(&self) -> Result<Tensor<T>> {
-        Err(TensorError::unsupported_operation_simple(
-            "to_tensor not implemented for this array type".to_string(),
-        ))
+        convert_arrow_array_to_tensor(self)
     }
 }
 
@@ -810,7 +826,10 @@ mod unified_integration {
 
         fn get_sample(&self, index: usize) -> Result<FormatSample> {
             Err(TensorError::unsupported_operation_simple(
-                "get_sample not supported for generic Arrow reader - use create_reader_f32"
+                "get_sample not supported for generic ArrowFormatReader<T> - use \
+                 GlobalFormatRegistry::get().create_reader(\"Parquet\", path) (backed by \
+                 ParquetFormatReader) for unified FormatReader access, or \
+                 ArrowDataset::<T>::get(index) for direct typed row access"
                     .to_string(),
             ))
         }
@@ -1102,6 +1121,95 @@ mod tests {
         // Create non-contiguous view with custom strides
         let non_contiguous = ArrowTensorView::new_with_strides(&data, vec![2, 3], vec![4, 1]);
         assert!(!non_contiguous.is_contiguous());
+    }
+
+    // -----------------------------------------------------------------
+    // convert_arrow_array_to_tensor / ArrowArrayExt::to_tensor /
+    // ArrowDataset::<T>::array_to_tensor share a single dispatch path
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_to_tensor_float32_array() {
+        let array: Float32Array = Float32Array::from(vec![1.0f32, 2.0, 3.0]);
+        let dyn_array: &dyn Array = &array;
+        let tensor = dyn_array
+            .to_tensor::<f32>()
+            .expect("test: to_tensor should succeed for Float32Array");
+        assert_eq!(tensor.shape().dims(), &[3]);
+        assert_eq!(tensor.data(), &[1.0f32, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_to_tensor_float64_array() {
+        let array: Float64Array = Float64Array::from(vec![1.5f64, 2.5, 3.5, 4.5]);
+        let dyn_array: &dyn Array = &array;
+        let tensor = dyn_array
+            .to_tensor::<f32>()
+            .expect("test: to_tensor should succeed for Float64Array");
+        assert_eq!(tensor.shape().dims(), &[4]);
+        assert_eq!(tensor.data(), &[1.5f32, 2.5, 3.5, 4.5]);
+    }
+
+    #[test]
+    fn test_to_tensor_int32_array() {
+        let array: Int32Array = Int32Array::from(vec![1, 2, 3, 4, 5]);
+        let dyn_array: &dyn Array = &array;
+        let tensor = dyn_array
+            .to_tensor::<f32>()
+            .expect("test: to_tensor should succeed for Int32Array");
+        assert_eq!(tensor.shape().dims(), &[5]);
+        assert_eq!(tensor.data(), &[1.0f32, 2.0, 3.0, 4.0, 5.0]);
+    }
+
+    #[test]
+    fn test_to_tensor_int64_array() {
+        let array: Int64Array = Int64Array::from(vec![10i64, 20, 30]);
+        let dyn_array: &dyn Array = &array;
+        let tensor = dyn_array
+            .to_tensor::<f32>()
+            .expect("test: to_tensor should succeed for Int64Array");
+        assert_eq!(tensor.shape().dims(), &[3]);
+        assert_eq!(tensor.data(), &[10.0f32, 20.0, 30.0]);
+    }
+
+    #[test]
+    fn test_to_tensor_uint32_array() {
+        let array: UInt32Array = UInt32Array::from(vec![7u32, 8, 9]);
+        let dyn_array: &dyn Array = &array;
+        let tensor = dyn_array
+            .to_tensor::<f32>()
+            .expect("test: to_tensor should succeed for UInt32Array");
+        assert_eq!(tensor.shape().dims(), &[3]);
+        assert_eq!(tensor.data(), &[7.0f32, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn test_to_tensor_unsupported_type_errors() {
+        // Utf8 is not one of the covered types (Float32/Float64/Int32/Int64/
+        // UInt32), so this must hit the catch-all `Err` arm.
+        let array: StringArray =
+            StringArray::from(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        let dyn_array: &dyn Array = &array;
+        let result = dyn_array.to_tensor::<f32>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_array_to_tensor_private_method_shares_dispatch_with_to_tensor() {
+        // Proves ArrowDataset::<T>::array_to_tensor and the public
+        // ArrowArrayExt::to_tensor delegate to the same shared
+        // `convert_arrow_array_to_tensor` dispatch function rather than
+        // carrying independent copies of the type-match logic.
+        let dataset: ArrowDataset<f32> =
+            ArrowDataset::from_batches(vec![], vec![], "label".to_string(), ArrowConfig::default())
+                .expect("test: from_batches with empty batches should succeed");
+
+        let array: Float32Array = Float32Array::from(vec![9.0f32, 8.0, 7.0]);
+        let tensor = dataset
+            .array_to_tensor::<f32>(&array)
+            .expect("test: array_to_tensor should succeed for Float32Array");
+        assert_eq!(tensor.shape().dims(), &[3]);
+        assert_eq!(tensor.data(), &[9.0f32, 8.0, 7.0]);
     }
 
     // Integration tests would require actual Parquet files

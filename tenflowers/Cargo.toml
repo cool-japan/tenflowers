@@ -23,6 +23,8 @@ tenflowers-dataset = { workspace = true }
 scirs2-core = { workspace = true }
 # Pod trait for tensor serialization helpers
 bytemuck = { workspace = true }
+# Unified error types for the framework
+thiserror = { workspace = true }
 
 # Optional Python bindings (requires Python environment, not published)
 # tenflowers-ffi = { version = "0.1.0", path = "../crates/tenflowers-ffi", optional = true }
@@ -80,6 +82,10 @@ benchmark = ["tenflowers-core/benchmark"]
 # All features (python excluded - requires Python environment)
 # Note: Using blas-oxiblas instead of blas-openblas for COOLJAPAN Pure Rust Policy
 full = ["gpu", "blas-oxiblas", "simd", "serialize", "compression", "onnx", "autograd"]
+
+[[test]]
+name = "ml_compat"
+path = "tests/ml_compat.rs"
 
 [lints]
 workspace = true

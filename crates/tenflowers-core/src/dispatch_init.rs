@@ -23,8 +23,9 @@ lazy_static! {
 /// Initialize GPU-specific operations
 #[cfg(feature = "gpu")]
 fn initialize_gpu_operations() {
-    // GPU operations will be registered here
-    // This includes sum, mean, and other reduction operations with GPU backends
+    // Reduction operations (sum, mean, ...) are registered here with a real CPU
+    // kernel plus a GPU kernel. The CPU kernel keeps CPU-tensor dispatch working
+    // (and correct) even when no usable GPU device exists.
     register_gpu_reductions();
 }
 
@@ -45,7 +46,18 @@ fn register_gpu_reductions() {
             F32_REGISTRY.register_operation(desc).ok();
         }
 
-        // Register GPU kernel
+        // Register the real CPU kernel so `sum` dispatches (and computes) on CPU
+        // tensors even when no usable GPU device exists. Without it a CPU tensor
+        // would fall back to the GPU kernel and fail with "device lost" on
+        // headless / sandboxed hosts.
+        F32_REGISTRY
+            .register_kernel(
+                "sum",
+                KernelImplementation::unary(BackendType::Cpu, sum_f32_cpu),
+            )
+            .ok();
+
+        // Register GPU kernel (used for GPU-resident tensors)
         F32_REGISTRY
             .register_kernel(
                 "sum",
@@ -62,7 +74,15 @@ fn register_gpu_reductions() {
             F32_REGISTRY.register_operation(desc).ok();
         }
 
-        // Register GPU kernel
+        // Real CPU kernel (see the `sum` note above).
+        F32_REGISTRY
+            .register_kernel(
+                "mean",
+                KernelImplementation::unary(BackendType::Cpu, mean_f32_cpu),
+            )
+            .ok();
+
+        // Register GPU kernel (used for GPU-resident tensors)
         F32_REGISTRY
             .register_kernel(
                 "mean",

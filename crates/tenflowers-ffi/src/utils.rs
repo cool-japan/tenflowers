@@ -7,6 +7,8 @@ use crate::tensor_ops::PyTensor;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use std::sync::Arc;
+use tenflowers_core::Tensor;
 
 /// Get tensor information as a dictionary
 ///
@@ -392,7 +394,7 @@ pub fn normalize_dimension(tensor: &PyTensor, dim: i32) -> PyResult<usize> {
 /// 1D tensor containing range of values
 #[pyfunction]
 #[pyo3(signature = (start, end, step=None))]
-pub fn arange(start: f32, end: f32, step: Option<f32>) -> PyResult<Vec<f32>> {
+pub fn arange(start: f32, end: f32, step: Option<f32>) -> PyResult<PyTensor> {
     let step = step.unwrap_or(1.0);
 
     if step == 0.0 {
@@ -413,7 +415,15 @@ pub fn arange(start: f32, end: f32, step: Option<f32>) -> PyResult<Vec<f32>> {
         current += step;
     }
 
-    Ok(result)
+    let len = result.len();
+    let tensor = Tensor::from_vec(result, &[len])
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create arange tensor: {}", e)))?;
+
+    Ok(PyTensor {
+        tensor: Arc::new(tensor),
+        requires_grad: false,
+        is_pinned: false,
+    })
 }
 
 /// Create a linearly spaced tensor
@@ -428,19 +438,26 @@ pub fn arange(start: f32, end: f32, step: Option<f32>) -> PyResult<Vec<f32>> {
 ///
 /// 1D tensor containing linearly spaced values
 #[pyfunction]
-pub fn linspace(start: f32, end: f32, num: usize) -> PyResult<Vec<f32>> {
+pub fn linspace(start: f32, end: f32, num: usize) -> PyResult<PyTensor> {
     if num == 0 {
         return Err(PyValueError::new_err("Number of samples must be positive"));
     }
 
-    if num == 1 {
-        return Ok(vec![start]);
-    }
+    let result: Vec<f32> = if num == 1 {
+        vec![start]
+    } else {
+        let step = (end - start) / (num - 1) as f32;
+        (0..num).map(|i| start + step * i as f32).collect()
+    };
 
-    let step = (end - start) / (num - 1) as f32;
-    let result: Vec<f32> = (0..num).map(|i| start + step * i as f32).collect();
+    let tensor = Tensor::from_vec(result, &[num])
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create linspace tensor: {}", e)))?;
 
-    Ok(result)
+    Ok(PyTensor {
+        tensor: Arc::new(tensor),
+        requires_grad: false,
+        is_pinned: false,
+    })
 }
 
 /// Get device information as a string
@@ -479,7 +496,7 @@ pub fn is_gpu_available() -> bool {
 /// Version string
 #[pyfunction]
 pub fn version() -> &'static str {
-    "0.1.1"
+    env!("CARGO_PKG_VERSION")
 }
 
 #[cfg(test)]
@@ -532,18 +549,28 @@ mod tests {
     #[test]
     fn test_arange() {
         let result = arange(0.0, 5.0, Some(1.0)).expect("test: operation should succeed");
-        assert_eq!(result, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(
+            result
+                .tensor
+                .to_vec()
+                .expect("test: tensor data should be accessible"),
+            vec![0.0, 1.0, 2.0, 3.0, 4.0]
+        );
 
         let result = arange(1.0, 2.0, Some(0.25)).expect("test: operation should succeed");
-        assert_eq!(result.len(), 4);
+        assert_eq!(result.shape(), vec![4]);
     }
 
     #[test]
     fn test_linspace() {
         let result = linspace(0.0, 1.0, 5).expect("test: operation should succeed");
-        assert_eq!(result.len(), 5);
-        assert_eq!(result[0], 0.0);
-        assert_eq!(result[4], 1.0);
+        assert_eq!(result.shape(), vec![5]);
+        let data = result
+            .tensor
+            .to_vec()
+            .expect("test: tensor data should be accessible");
+        assert_eq!(data[0], 0.0);
+        assert_eq!(data[4], 1.0);
     }
 
     #[test]

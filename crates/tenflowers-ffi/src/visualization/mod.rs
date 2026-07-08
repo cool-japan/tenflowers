@@ -53,6 +53,7 @@ pub fn advanced_gradient_analysis(
 
 /// Plot tensor distribution with customizable histogram
 #[pyfunction]
+#[pyo3(signature = (tensor_data, bins=None, title=None))]
 pub fn plot_tensor_distribution(
     py: Python,
     tensor_data: &Bound<'_, PyList>,
@@ -76,6 +77,7 @@ pub fn plot_tensor_distribution(
 
 /// Create comprehensive training dashboard
 #[pyfunction]
+#[pyo3(signature = (training_data, metrics_to_plot=None))]
 pub fn create_training_dashboard(
     py: Python,
     training_data: &Bound<'_, PyDict>,
@@ -88,14 +90,14 @@ pub fn create_training_dashboard(
         PyErr::new::<pyo3::exceptions::PyKeyError, _>("Missing 'epochs' in training data")
     })?;
     let epochs = epochs_opt
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| PyErr::new::<pyo3::exceptions::PyTypeError, _>("'epochs' must be a list"))?;
 
     let metrics_opt = training_data.get_item("metrics")?.ok_or_else(|| {
         PyErr::new::<pyo3::exceptions::PyKeyError, _>("Missing 'metrics' in training data")
     })?;
     let metrics = metrics_opt
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| PyErr::new::<pyo3::exceptions::PyTypeError, _>("'metrics' must be a dict"))?;
 
     dashboard_data.set_item("epochs", epochs)?;
@@ -153,7 +155,7 @@ fn generate_training_insights(
     // Analyze each metric
     for (metric_name, metric_values) in metrics.iter() {
         let name: String = metric_name.extract()?;
-        let values: &Bound<'_, PyList> = metric_values.downcast()?;
+        let values: &Bound<'_, PyList> = metric_values.cast()?;
         let values_vec: Vec<f64> = values.extract()?;
 
         if !values_vec.is_empty() {

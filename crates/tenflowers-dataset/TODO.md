@@ -1,6 +1,41 @@
-# TenfloweRS Dataset TODO & Roadmap (v0.1.1)
+# TenfloweRS Dataset TODO & Roadmap (v0.1.2)
 
 v0.1.1 focus: data loading and preprocessing capabilities and forward development plan.
+
+## v0.1.2 — Honesty Hardening (2026-06-22), extended through 2026-07-07
+
+- Removed production lock-poison panics via signature-preserving recovery; a
+  poisoned lock no longer aborts the process.
+- Download `verify_checksum` returned `Ok(true)` (integrity never checked) →
+  real SHA-256/CRC-32 verification (algorithm inferred from an `"algo:hex"`
+  prefix or digest length).
+- Audio file "loading" returned a synthetic 440 Hz sine wave → real
+  Symphonia-based decoding; `get_audio_info` now probes/decodes the
+  container for real `sample_rate`/`channels`/`num_samples`/`duration`
+  instead of fabricating them.
+- Zarr lz4/zstd chunks now really decompress via oxiarc; the `blosc` codec
+  is no longer an honest-error stub — `formats::blosc` is a new from-scratch
+  pure-Rust Blosc chunk decoder (BloscLZ own port, LZ4/Snappy/Zlib/Zstd via
+  oxiarc, byte/bit-shuffle filters) wired into the zarr `"blosc"` dispatch.
+- `memory_pool::MemoryBlock`/`MemoryPool`: Miri-confirmed UB from hardcoded
+  1-byte allocation alignment fixed via new `allocate_aligned`/
+  `allocate_exact`; `with_pool_capacity::<T>()` now requests
+  `mem::align_of::<T>()` correctly.
+- `arrow_advanced::ArrowPredicate::In` and `arrow::ArrowArrayExt::to_tensor`
+  were stubs (`not yet implemented` / generic error) → real implementations
+  (OR-of-equality-masks; real Arrow-array-to-Tensor conversion).
+- `transforms::noise::AddNoise::transform` always added zero noise → real
+  Box-Muller Gaussian noise.
+- `numa_scheduler` build-gating bug fixed (Linux-affinity code depended on
+  `libc`, which is only linked under the `numa` feature, but was gated on
+  `target_os = "linux"` alone).
+- New `formats::tfrecord_advanced` (`SequenceExample` reader, masked-CRC
+  integrity check), `gpu_transforms::{affine,perspective,elastic,equalize}`
+  (WGSL-backed GPU image transforms), `simd_transforms::functional` (SIMD
+  preprocessing functions), and `transform_arena::TransformArena`
+  (reusable-buffer arena).
+- Benchmark/CPU metrics were hardcoded or random → real `/proc` measurements
+  or honest sentinels.
 
 ## 1. Current Capabilities
 
@@ -46,7 +81,7 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 - **Arrow Integration**: Deep Apache Arrow integration incomplete, limited zero-copy operations
 - **Unified Reader**: No unified format abstraction layer for cross-format iteration
 - **Schema Validation**: Limited schema/validation diagnostics consistency across formats
-- **Advanced HDF5**: Limited advanced HDF5 features and optimization
+- **Advanced HDF5**: ✅ COMPLETED - `hdf5_advanced.rs` (chunked/attribute/tree/slice readers, feature-gated)
 
 ### Error Handling & Diagnostics
 - **Error Taxonomy**: Limited error taxonomy alignment with core crate patterns
@@ -57,6 +92,23 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 - **Adaptive Caching**: No auto-tuning cache policies for different access patterns
 - **Throughput Analysis**: Limited benchmarking harness for ingest and transform performance
 - **Memory Optimization**: Room for improvement in memory usage patterns and allocation strategies
+
+### Honest-error deferrals (post-2026-06-22 sweep; fail loudly, not faked)
+- [x] **Audio file decoding**: ~~no pure-Rust codec wired → honest error~~ RESOLVED — now
+  decodes for real via Symphonia (WAV/FLAC/MP3/OGG), with resampling and
+  normalization; `get_audio_info` probes/decodes real `sample_rate`/
+  `channels`/`num_samples`/`duration` instead of fabricating them.
+- [x] **Zarr `blosc` codec**: ~~returns an honest error~~ RESOLVED — new
+  `formats::blosc` pure-Rust decoder (BloscLZ own port, LZ4/Snappy/Zlib/Zstd
+  via oxiarc, byte/bit-shuffle filters) wired into the zarr dispatch;
+  lz4/zstd/gzip continue to decompress for real via oxiarc.
+
+### Pre-existing build issue (RESOLVED 2026-07-07)
+- [x] Building with `--no-default-features` previously failed due to a
+  feature-gating gap in `numa_scheduler.rs` (Linux-affinity code depended on
+  `libc`, only linked under the `numa` feature, but was gated on
+  `target_os = "linux"` alone) — now correctly gated on both; verified
+  `cargo check -p tenflowers-dataset --no-default-features` builds clean.
 
 ## 3. Near-Term Roadmap
 
@@ -131,20 +183,20 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 ### Performance & Optimization
 - [x] **Adaptive Prefetch Policy**: Auto-tuning cache policy implementation (COMPLETED 2026-04-19 — PidAdaptiveController with PID+anti-windup in adaptive_prefetch.rs)
 - [x] **Throughput Benchmark Setup**: Performance harness for data pipeline analysis (COMPLETED 2026-04-19 — benches/throughput.rs with Criterion, raw_get/dataloader_workers/transform_chain groups)
-- [ ] **Memory Usage Optimization**: Enhanced memory allocation and usage patterns
-- [ ] **SIMD Optimization**: Advanced SIMD acceleration for transform operations
-- [ ] **GPU Transform Expansion**: Additional GPU-accelerated data transforms
+- [x] **Memory Usage Optimization**: Enhanced memory allocation and usage patterns (COMPLETED 2026-06-10 — TransformArena in transform_arena.rs; Rc<Cell<T>> interior mutability, O(1) acquire, reuse tracking, 12 tests passing)
+- [x] **SIMD Optimization**: Advanced SIMD acceleration for transform operations (COMPLETED 2026-06-10 — simd_transforms/ module with normalization, element_wise, statistics, image_processing, convolution, matrix_ops, functional sub-modules; zero clippy warnings)
+- [x] **GPU Transform Expansion**: Additional GPU-accelerated data transforms (COMPLETED 2026-06-10 — affine.rs/affine.wgsl 2×3 matrix warp; perspective.rs/perspective.wgsl 3×3 homography warp; elastic.rs/elastic_distortion.wgsl SimoNikolenko elastic deformation with CPU Gaussian smoothing; equalize.rs/histogram_equalize.wgsl two-pass histogram equalization with GPU atomic histogram build + CPU CDF + GPU remap; 34 tests all passing)
 
 ### Integration & Quality
 - [x] **Schema Validation**: Unified validation system across formats (COMPLETED 2026-04-19 — FieldDiff/ValidationReport/validate_full/strict/lenient in schema_validator.rs)
-- [ ] **Advanced HDF5 Features**: Enhanced HDF5 support and optimization
-- [ ] **Format Integration**: Improved Parquet, TFRecord, and other format support
+- [x] **Advanced HDF5 Features**: Enhanced HDF5 support and optimization (COMPLETED 2026-06-10 — hdf5_advanced.rs: Hdf5ChunkedReader/Hdf5AttributeReader/Hdf5TreeWalker/DatasetInfo/Hdf5SliceReader; full #[cfg(feature="hdf5")] gating + stubs; 5 tests passing)
+- [x] **Format Integration**: Improved Parquet, TFRecord, and other format support (COMPLETED 2026-06-10 — parquet_advanced.rs: read_columns/ParquetRowGroupReader/read_filtered/FilterPredicate/inspect_schema; tfrecord_advanced.rs: TfRecordRawReader/TfRecordSequenceReader/masked_crc32/parse_feature_proto; 29 tests passing)
 - [x] **Documentation**: Comprehensive data loading concepts and usage guide (COMPLETED 2026-04-19 — expanded //! docs in lib.rs with PipelineInspector/DriftMetrics/PID/SchemaValidation sections + runnable doctest)
 - [x] **API Stabilization**: Prepare dataset APIs for stable release (COMPLETED 2026-04-19 — doc comments on all new public items, verified re-exports)
 
 ### Infrastructure Tasks
-- [ ] **Distributed Coordination**: Multi-worker dataset coordinator implementation
-- [ ] **Streaming Enhancement**: Advanced streaming capabilities and optimization
+- [x] **Distributed Coordination**: Multi-worker dataset coordinator implementation (COMPLETED 2026-04-19 — StreamCoordinator in distributed_streaming/, StreamingShardLoader in distributed_sharding.rs, 6 partition strategies; see section 3 Priority 1)
+- [x] **Streaming Enhancement**: Advanced streaming capabilities and optimization (COMPLETED 2026-04-19 — streaming_optimized.rs, stream_prefetch_optimizer.rs, distributed_streaming/ with full coordinator; see section 3 Priority 1)
 - [x] **Debug Tools**: Data pipeline debugging and profiling tool development (COMPLETED 2026-04-19 — InspectablePipeline/InspectionEvent/PipelineInspectionReport in debug_tools.rs)
 - [x] **Quality Metrics**: Data quality assessment and monitoring implementation (COMPLETED 2026-04-19 — PSI/KS/JSD functions + DriftReport + compute_drift in data_quality.rs)
 
@@ -184,4 +236,4 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 
 ---
 
-**v0.1.1 Status**: Production-ready data loading capabilities with comprehensive format support, GPU acceleration, and SciRS2 integration. Forward development focuses on distributed loading and advanced format integration.
+**v0.1.2 Status** (2026-07-07): Production-ready data loading capabilities with comprehensive format support (including a new pure-Rust Zarr Blosc decoder and TFRecord `SequenceExample` support), GPU-accelerated transforms (affine/perspective/elastic/histogram-equalize), SIMD preprocessing, a Miri-verified memory pool, and SciRS2 integration — 660 tests passing with `--all-features`. Forward development focuses on distributed loading and advanced format integration.

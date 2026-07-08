@@ -391,16 +391,20 @@ pub mod advanced_sampling;
 pub mod attention_optimized;
 pub mod benchmarks;
 pub mod cache;
+#[cfg(feature = "serialize")]
 pub mod config;
 pub mod data_quality;
 pub mod dataloader;
 pub mod dataset_core;
 pub mod debug_tools;
+#[cfg(feature = "serialize")]
 pub mod distributed_loading;
 pub mod distributed_sharding;
+#[cfg(feature = "serialize")]
 pub mod distributed_streaming;
 pub mod enhanced_dataloader;
 pub mod error_taxonomy;
+#[cfg(feature = "serialize")]
 pub mod federated;
 pub mod formats;
 pub mod gpu_transforms;
@@ -411,6 +415,7 @@ pub mod online_learning;
 pub mod predictive_prefetch;
 #[cfg(feature = "download")]
 pub mod real_datasets;
+#[cfg(feature = "serialize")]
 pub mod reproducibility;
 pub mod schema_inference;
 pub mod simd_transforms;
@@ -420,8 +425,10 @@ pub mod stream_prefetch_optimizer;
 pub mod streaming_optimized;
 pub mod synthetic;
 pub mod throughput_benchmark;
+pub mod transform_arena;
 pub mod transforms;
 pub mod validation;
+#[cfg(feature = "serialize")]
 pub mod versioning;
 pub mod visualization;
 pub mod work_stealing;
@@ -510,6 +517,7 @@ pub use cache::{
 };
 #[cfg(feature = "serialize")]
 pub use cache::{PersistentCache, PersistentlyCachedDataset, TensorPersistentCache};
+#[cfg(feature = "serialize")]
 pub use distributed_loading::{
     create_distributed_dataloader, CollectiveOpType, CommunicationManager,
     DistributedLoadingConfig, DistributedLoadingStats, DistributedMessage,
@@ -519,10 +527,12 @@ pub use distributed_sharding::{
     DatasetShardingExt, ShardConfig, ShardStatistics, ShardStrategy, ShardableDataset,
     ShardedDataset,
 };
+#[cfg(feature = "serialize")]
 pub use distributed_streaming::{
     CheckpointState, PartitionStrategy, StreamCoordinator, StreamingConfig, StreamingShardIterator,
     StreamingShardLoader, StreamingStats, WorkerHealth, WorkerMetrics, WorkerStatus,
 };
+#[cfg(feature = "serialize")]
 pub use federated::{
     AggregationStrategy, ClientConfig, ClientId, ClientIndexedDataset, ClientStats,
     DataDistribution, FederatedAggregator, FederatedClientDataset, FederatedDatasetExt,
@@ -561,8 +571,31 @@ pub use formats::zarr::{
 #[cfg(feature = "cloud")]
 pub use formats::zarr::CloudBackend;
 pub use gpu_transforms::{
-    GpuColorJitter, GpuContext, GpuGaussianBlur, GpuGaussianNoise, GpuRandomCrop,
-    GpuRandomHorizontalFlip, GpuResize, GpuRotation,
+    affine_compose,
+    affine_identity,
+    affine_rotation,
+    affine_scale,
+    affine_shear,
+    affine_translation,
+    homography_compose,
+    homography_from_quad,
+    homography_identity,
+    // New GPU transforms (v0.1.2)
+    AffineMatrix,
+    GpuAffineTransform,
+    // Original transforms
+    GpuColorJitter,
+    GpuContext,
+    GpuElasticDistortion,
+    GpuGaussianBlur,
+    GpuGaussianNoise,
+    GpuHistogramEqualize,
+    GpuPerspectiveTransform,
+    GpuRandomCrop,
+    GpuRandomHorizontalFlip,
+    GpuResize,
+    GpuRotation,
+    HomographyMatrix,
 };
 pub use memory_pool::{GlobalMemoryPool, MemoryPool, MemoryPoolExt, PoolStats, PooledMemory};
 pub use multimodal::{
@@ -586,6 +619,7 @@ pub use real_datasets::{
     RealAgNewsDataset, RealCifar10Builder, RealCifar10Dataset, RealImageNetBuilder,
     RealImageNetDataset, RealImdbBuilder, RealImdbDataset, RealMnistBuilder, RealMnistDataset,
 };
+#[cfg(feature = "serialize")]
 pub use reproducibility::{
     DatasetConfig, DeterministicDataset, DeterministicOps, DeterministicOrdering, EnvironmentInfo,
     ExperimentConfig, ExperimentTracker, OperationRecord, OrderingStrategy, ReproducibilityExt,
@@ -633,6 +667,7 @@ pub use validation::{
     DataValidator, DatasetValidationExt, RangeConstraint, SchemaInfo, ValidationConfig,
     ValidationResult,
 };
+#[cfg(feature = "serialize")]
 pub use versioning::{
     DatasetLineage, DatasetSizeInfo, DatasetVersionManager, LineageTree, TransformationRecord,
     VersionId, VersionMetadata, VersionedDataset,
@@ -652,3 +687,6 @@ pub use dataset_core::{
     BatchedDataset, ConcatDataset, Dataset, DatasetSplit, DatasetSplitter, DatasetUtilsExt,
     FilteredDataset, MergeStrategy, MergedDataset, SubsetDataset, TensorDataset,
 };
+pub use transform_arena::{ArenaError, ArenaStats, TransformArena};
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

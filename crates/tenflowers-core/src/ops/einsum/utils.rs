@@ -221,7 +221,7 @@ where
 /// Batch transpose operation
 pub fn batch_transpose<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let shape = tensor.shape().dims();
     if shape.len() != 3 {

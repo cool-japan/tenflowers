@@ -309,7 +309,14 @@ impl GpuAttentionOps {
         });
         self.device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
-        let data = buffer_slice.get_mapped_range();
+        let data = buffer_slice.get_mapped_range().map_err(|e| {
+            TensorError::gpu_error(
+                "scaled_dot_product_attention",
+                &format!("Failed to map GPU result buffer: {:?}", e),
+                None,
+                false,
+            )
+        })?;
         let result: Vec<T> = bytemuck::cast_slice(&data).to_vec();
         drop(data);
         staging_buffer.unmap();

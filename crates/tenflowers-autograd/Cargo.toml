@@ -41,6 +41,7 @@ gpu = ["tenflowers-core/gpu"]
 rocm = ["tenflowers-core/rocm"]
 jit = ["futures"]
 parallel = ["futures", "tokio", "num_cpus"]
+distributed = ["tokio"]
 
 [[bench]]
 name = "gradient_performance"

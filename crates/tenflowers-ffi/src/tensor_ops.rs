@@ -12,7 +12,56 @@ use std::sync::Arc;
 use tenflowers_autograd::TrackedTensor;
 use tenflowers_core::Tensor;
 
-/// Python wrapper for TenfloweRS Tensor
+/// Python-facing wrapper around a TenfloweRS `Tensor<f32>`.
+///
+/// `PyTensor` is the central data structure of the TenfloweRS Python API.
+/// Every operation (arithmetic, linear algebra, activation, …) returns or
+/// accepts `PyTensor` objects.
+///
+/// # Ownership and Thread Safety
+///
+/// The underlying `Tensor<f32>` is reference-counted via `Arc`, so clones are
+/// shallow (O(1)) and the data is shared until a write is needed.
+///
+/// # Python Examples
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// # Construction
+/// t = tf.PyTensor([3, 4])     # 3×4 zero tensor
+/// z = tf.zeros([3, 4])        # same, via convenience function
+/// o = tf.ones([3, 4])
+///
+/// # Shape / metadata
+/// print(t.shape())            # [3, 4]
+/// print(t.ndim())             # 2
+/// print(t.size())             # 12
+/// print(t.numel())            # 12  (alias)
+/// print(t.dtype())            # "float32"
+/// print(t.device())           # Device.cpu()
+/// print(t.memory_usage())     # 48   (12 × 4 bytes)
+///
+/// # Arithmetic (returns new tensors)
+/// a = tf.ones([2, 2])
+/// b = tf.ones([2, 2])
+/// c = a.add(b)
+/// d = a.matmul(b)
+/// e = a.pow(2.0)
+///
+/// # Shape manipulation
+/// r  = t.reshape([4, 3])
+/// tT = t.transpose()
+///
+/// # Gradient tracking
+/// t.set_requires_grad(True)
+/// print(t.requires_grad())    # True
+///
+/// # Python protocols
+/// print(len(t))               # 3   (first dimension)
+/// for row in t:
+///     print(row.shape())      # [4]
+/// ```
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyTensor {
@@ -23,7 +72,23 @@ pub struct PyTensor {
 
 #[pymethods]
 impl PyTensor {
-    /// Create a new tensor with given shape
+    /// Create a zero-filled tensor with the given shape.
+    ///
+    /// # Arguments
+    ///
+    /// * `shape` — dimensions, e.g. `[3, 4]` for a 3×4 matrix.
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if the tensor cannot be allocated.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// t = tf.PyTensor([2, 3])
+    /// print(t.shape())  # [2, 3]
+    /// ```
     #[new]
     pub fn new(shape: Vec<usize>) -> PyResult<Self> {
         let data = vec![0.0f32; shape.iter().product()];
@@ -73,9 +138,87 @@ impl PyTensor {
         self.requires_grad
     }
 
-    /// Set gradient requirement
+    /// Set gradient requirement.
+    ///
+    /// Setting this to `true` on a leaf tensor begins implicit (eager,
+    /// PyTorch-style) gradient tracking: this tensor, and every subsequent
+    /// tensor derived from it through a tracked operation, participates in
+    /// the implicit computation graph maintained by
+    /// [`crate::implicit_autograd`]. See [`PyTensor::backward`] and
+    /// [`PyTensor::grad`].
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// x = tf.tensor_from_numpy(__import__("numpy").ones((2, 2), dtype="float32"))
+    /// x.set_requires_grad(True)
+    /// y = tf.sum(tf.mul(x, x))
+    /// y.backward()
+    /// print(x.grad().shape())  # [2, 2]
+    /// ```
     fn set_requires_grad(&mut self, requires_grad: bool) {
         self.requires_grad = requires_grad;
+        if requires_grad {
+            crate::implicit_autograd::mark_leaf(self);
+        }
+    }
+
+    /// Run reverse-mode automatic differentiation starting from this tensor.
+    ///
+    /// This is the PyTorch-style eager counterpart of the explicit
+    /// [`crate::neural::gradient_tape::PyGradientTape::gradient`] API: no
+    /// tape object is created or referenced by the caller. Internally, every
+    /// tracked operation performed since the most recent
+    /// `set_requires_grad(True)` call has been implicitly recorded onto a
+    /// thread-local [`tenflowers_autograd::GradientTape`]
+    /// (see [`crate::implicit_autograd`]); this method runs that tape's real
+    /// backward pass and populates `.grad()` on every leaf tensor that
+    /// contributed to `self`.
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if `self` was never derived from a tensor with
+    /// `requires_grad=True` (i.e. it has no recorded computation graph —
+    /// analogous to PyTorch's "tensor does not require grad and does not
+    /// have a grad_fn"), or if the backward pass itself fails.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// x = tf.ones([3, 3])
+    /// x.set_requires_grad(True)
+    /// y = tf.sum(tf.add(x, x))
+    /// y.backward()
+    /// print(x.grad().shape())  # [3, 3]
+    /// ```
+    fn backward(&self) -> PyResult<()> {
+        crate::implicit_autograd::run_backward(self)
+    }
+
+    /// Retrieve the gradient accumulated for this tensor by a previous
+    /// [`PyTensor::backward`] call.
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if this tensor never had `requires_grad=True`
+    /// set, or if `.backward()` has not been called yet (or was called on a
+    /// tensor not connected to this one).
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// x = tf.ones([2])
+    /// x.set_requires_grad(True)
+    /// y = tf.sum(tf.mul(x, x))
+    /// y.backward()
+    /// g = x.grad()
+    /// print(g.shape())  # [2]
+    /// ```
+    fn grad(&self) -> PyResult<PyTensor> {
+        crate::implicit_autograd::get_grad(self)
     }
 
     /// Check if tensor is scalar (0-dimensional)
@@ -134,7 +277,25 @@ impl PyTensor {
         self.is_f_contiguous()
     }
 
-    /// Transpose tensor with optional axes
+    /// Transpose the tensor, optionally specifying a permutation of axes.
+    ///
+    /// When `axes` is `None` the axes are reversed (equivalent to NumPy's `T`
+    /// property or PyTorch's `.T`).  When provided, `axes` must be a permutation
+    /// of `0..ndim`.
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if the axes are invalid for the tensor rank.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// t   = tf.ones([2, 3])
+    /// tT  = t.transpose()           # shape (3, 2)
+    /// t2  = t.transpose([1, 0])     # same
+    /// print(t.T.shape())            # [3, 2]
+    /// ```
     #[pyo3(signature = (axes=None))]
     pub fn transpose(&self, axes: Option<Vec<usize>>) -> PyResult<PyTensor> {
         let result = if let Some(axes_vec) = axes {
@@ -153,7 +314,19 @@ impl PyTensor {
         }
     }
 
-    /// Reshape tensor
+    /// Return a view of this tensor with the given `shape`.
+    ///
+    /// The total number of elements must be preserved.  Raises `RuntimeError`
+    /// if the shapes are incompatible.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// t = tf.ones([6])
+    /// t2d = t.reshape([2, 3])
+    /// print(t2d.shape())  # [2, 3]
+    /// ```
     fn reshape(&self, shape: Vec<usize>) -> PyResult<PyTensor> {
         match tenflowers_core::ops::reshape(&self.tensor, &shape) {
             Ok(tensor) => Ok(PyTensor {
@@ -165,14 +338,35 @@ impl PyTensor {
         }
     }
 
-    /// Add two tensors
+    /// Element-wise addition of `self` and `other`.
+    ///
+    /// Both tensors must have the same shape.  The `requires_grad` flag of the
+    /// result is the logical-OR of the two operands' flags.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// a = tf.ones([2, 2])
+    /// b = tf.ones([2, 2])
+    /// c = a.add(b)  # all 2.0
+    /// ```
     pub fn add(&self, other: &PyTensor) -> PyResult<PyTensor> {
         match tenflowers_core::ops::add(&self.tensor, &other.tensor) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad || other.requires_grad,
-                is_pinned: self.is_pinned || other.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad || other.requires_grad,
+                    is_pinned: self.is_pinned || other.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_binary(
+                    crate::implicit_autograd::BinaryOpKind::Add,
+                    self,
+                    other,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!("Addition failed: {}", e))),
         }
     }
@@ -180,11 +374,20 @@ impl PyTensor {
     /// Multiply two tensors
     pub fn mul(&self, other: &PyTensor) -> PyResult<PyTensor> {
         match tenflowers_core::ops::mul(&self.tensor, &other.tensor) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad || other.requires_grad,
-                is_pinned: self.is_pinned || other.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad || other.requires_grad,
+                    is_pinned: self.is_pinned || other.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_binary(
+                    crate::implicit_autograd::BinaryOpKind::Mul,
+                    self,
+                    other,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!(
                 "Multiplication failed: {}",
                 e
@@ -195,11 +398,20 @@ impl PyTensor {
     /// Subtract two tensors
     pub fn sub(&self, other: &PyTensor) -> PyResult<PyTensor> {
         match tenflowers_core::ops::sub(&self.tensor, &other.tensor) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad || other.requires_grad,
-                is_pinned: self.is_pinned || other.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad || other.requires_grad,
+                    is_pinned: self.is_pinned || other.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_binary(
+                    crate::implicit_autograd::BinaryOpKind::Sub,
+                    self,
+                    other,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!(
                 "Subtraction failed: {}",
                 e
@@ -210,23 +422,55 @@ impl PyTensor {
     /// Divide two tensors
     pub fn div(&self, other: &PyTensor) -> PyResult<PyTensor> {
         match tenflowers_core::ops::div(&self.tensor, &other.tensor) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad || other.requires_grad,
-                is_pinned: self.is_pinned || other.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad || other.requires_grad,
+                    is_pinned: self.is_pinned || other.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_binary(
+                    crate::implicit_autograd::BinaryOpKind::Div,
+                    self,
+                    other,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!("Division failed: {}", e))),
         }
     }
 
-    /// Matrix multiplication
+    /// Matrix (batch-) multiplication of `self` and `other`.
+    ///
+    /// Follows standard BLAS GEMM semantics.  Both tensors must be at least
+    /// 2-D and the inner dimensions must match (`self` last dim == `other`
+    /// first dim).
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// a = tf.ones([3, 4])
+    /// b = tf.ones([4, 2])
+    /// c = a.matmul(b)
+    /// print(c.shape())  # [3, 2]
+    /// ```
     pub fn matmul(&self, other: &PyTensor) -> PyResult<PyTensor> {
         match tenflowers_core::ops::matmul(&self.tensor, &other.tensor) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad || other.requires_grad,
-                is_pinned: self.is_pinned || other.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad || other.requires_grad,
+                    is_pinned: self.is_pinned || other.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_binary(
+                    crate::implicit_autograd::BinaryOpKind::MatMul,
+                    self,
+                    other,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!(
                 "Matrix multiplication failed: {}",
                 e
@@ -308,7 +552,15 @@ impl PyTensor {
     }
 }
 
-/// Create a tensor filled with zeros
+/// Create a tensor of the given `shape` filled with `0.0` (dtype `float32`).
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.zeros([3, 4])
+/// print(t.shape())  # [3, 4]
+/// ```
 #[pyfunction]
 pub fn zeros(shape: Vec<usize>) -> PyResult<PyTensor> {
     let size: usize = shape.iter().product();
@@ -323,7 +575,15 @@ pub fn zeros(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor filled with ones
+/// Create a tensor of the given `shape` filled with `1.0` (dtype `float32`).
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.ones([2, 5])
+/// print(t.shape())  # [2, 5]
+/// ```
 #[pyfunction]
 pub fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
     let size: usize = shape.iter().product();
@@ -338,13 +598,21 @@ pub fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor with random values
+/// Create a tensor with uniform-random values in `[0, 1)` (dtype `float32`).
+///
+/// Values are drawn from a uniform distribution over `[0, 1)` using a
+/// time-seeded PRNG.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.rand([4, 4])
+/// print(t.shape())  # [4, 4]
+/// ```
 #[pyfunction]
 pub fn rand(shape: Vec<usize>) -> PyResult<PyTensor> {
-    let size: usize = shape.iter().product();
-    let data: Vec<f32> = (0..size).map(|_| 0.5).collect(); // Placeholder - would use proper random in production
-
-    let tensor = Tensor::from_vec(data, &shape)
+    let tensor = tenflowers_core::ops::rand_f32(&shape, None)
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create random tensor: {}", e)))?;
 
     Ok(PyTensor {
@@ -354,16 +622,22 @@ pub fn rand(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor with values from normal distribution
+/// Create a tensor with values drawn from the standard normal distribution
+/// N(0, 1) (dtype `float32`).
+///
+/// Values are drawn from a Gaussian distribution (mean=0, std=1) using a
+/// time-seeded PRNG backed by the Box-Muller transform via scirs2-core.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.randn([8, 8])
+/// print(t.shape())  # [8, 8]
+/// ```
 #[pyfunction]
 pub fn randn(shape: Vec<usize>) -> PyResult<PyTensor> {
-    let size: usize = shape.iter().product();
-
-    // Placeholder normal distribution - would use proper random in production
-    let mut data: Vec<f32> = (0..size).map(|_| 0.0).collect();
-    data.truncate(size);
-
-    let tensor = Tensor::from_vec(data, &shape)
+    let tensor = tenflowers_core::ops::randn_f32(&shape, None)
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create randn tensor: {}", e)))?;
 
     Ok(PyTensor {
@@ -373,7 +647,18 @@ pub fn randn(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor filled with zeros using pinned memory
+/// Create a zero-filled tensor backed by pinned (page-locked) host memory.
+///
+/// Pinned memory enables faster DMA transfers to/from GPU devices.  The
+/// returned tensor has [`PyTensor::is_pinned`] set to `true`.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.zeros_pinned([1024, 1024])
+/// assert t.is_pinned()  # True
+/// ```
 #[pyfunction]
 pub fn zeros_pinned(shape: Vec<usize>) -> PyResult<PyTensor> {
     let size: usize = shape.iter().product();
@@ -389,7 +674,17 @@ pub fn zeros_pinned(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor filled with ones using pinned memory
+/// Create a one-filled tensor backed by pinned (page-locked) host memory.
+///
+/// See [`zeros_pinned`] for details about pinned memory semantics.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.ones_pinned([512])
+/// assert t.is_pinned()  # True
+/// ```
 #[pyfunction]
 pub fn ones_pinned(shape: Vec<usize>) -> PyResult<PyTensor> {
     let size: usize = shape.iter().product();
@@ -405,67 +700,152 @@ pub fn ones_pinned(shape: Vec<usize>) -> PyResult<PyTensor> {
     })
 }
 
-/// Create a tensor with random values using pinned memory
+/// Create a random-filled tensor backed by pinned (page-locked) host memory.
+///
+/// See [`zeros_pinned`] for details about pinned memory semantics.
+/// Values are uniform-random in `[0, 1)` drawn from a time-seeded PRNG.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.rand_pinned([256, 256])
+/// assert t.is_pinned()  # True
+/// ```
 #[pyfunction]
 pub fn rand_pinned(shape: Vec<usize>) -> PyResult<PyTensor> {
-    let size: usize = shape.iter().product();
-    let data: Vec<f32> = (0..size).map(|_| 0.5).collect(); // Placeholder - would use proper random in production
-
-    let tensor = Tensor::from_vec(data, &shape).map_err(|e| {
+    let tensor = tenflowers_core::ops::rand_f32(&shape, None).map_err(|e| {
         PyRuntimeError::new_err(format!("Failed to create rand_pinned tensor: {}", e))
     })?;
 
     Ok(PyTensor {
         tensor: Arc::new(tensor),
         requires_grad: false,
-        is_pinned: true, // This tensor uses pinned memory
+        is_pinned: true,
     })
 }
 
-/// Element-wise addition of two tensors
+/// Element-wise addition `lhs + rhs`.
+///
+/// Both tensors must have the same shape.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// c = tf.add(tf.ones([3]), tf.ones([3]))   # [2, 2, 2]
+/// ```
 #[pyfunction]
 pub fn add(lhs: &PyTensor, rhs: &PyTensor) -> PyResult<PyTensor> {
     lhs.add(rhs)
 }
 
-/// Element-wise multiplication of two tensors
+/// Element-wise multiplication (Hadamard product) `lhs * rhs`.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// c = tf.mul(tf.ones([3]), tf.ones([3]))   # [1, 1, 1]
+/// ```
 #[pyfunction]
 pub fn mul(lhs: &PyTensor, rhs: &PyTensor) -> PyResult<PyTensor> {
     lhs.mul(rhs)
 }
 
-/// Element-wise subtraction of two tensors
+/// Element-wise subtraction `lhs - rhs`.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// c = tf.sub(tf.ones([3]), tf.ones([3]))   # [0, 0, 0]
+/// ```
 #[pyfunction]
 pub fn sub(lhs: &PyTensor, rhs: &PyTensor) -> PyResult<PyTensor> {
     lhs.sub(rhs)
 }
 
-/// Element-wise division of two tensors
+/// Element-wise division `lhs / rhs`.
+///
+/// Division by zero produces `±inf` or `NaN` per IEEE 754.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// c = tf.div(tf.ones([3]), tf.ones([3]))   # [1, 1, 1]
+/// ```
 #[pyfunction]
 pub fn div(lhs: &PyTensor, rhs: &PyTensor) -> PyResult<PyTensor> {
     lhs.div(rhs)
 }
 
-/// Matrix multiplication of two tensors
+/// Matrix multiplication `lhs @ rhs` (BLAS GEMM).
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// c = tf.matmul(tf.ones([3, 4]), tf.ones([4, 2]))
+/// print(c.shape())  # [3, 2]
+/// ```
 #[pyfunction]
 pub fn matmul(lhs: &PyTensor, rhs: &PyTensor) -> PyResult<PyTensor> {
     lhs.matmul(rhs)
 }
 
-/// Transpose a tensor
+/// Transpose `tensor`, optionally specifying an axis permutation.
+///
+/// Without `axes`, reverses all axes (equivalent to `tensor.T`).
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t  = tf.ones([2, 3])
+/// tT = tf.transpose(t)            # shape (3, 2)
+/// t2 = tf.transpose(t, [1, 0])   # same
+/// ```
 #[pyfunction]
 #[pyo3(signature = (tensor, axes=None))]
 pub fn transpose(tensor: &PyTensor, axes: Option<Vec<usize>>) -> PyResult<PyTensor> {
     tensor.transpose(axes)
 }
 
-/// Reshape a tensor
+/// Return a view of `tensor` with the given `shape`.
+///
+/// Total element count must be preserved.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.ones([12])
+/// t2 = tf.reshape(t, [3, 4])
+/// print(t2.shape())  # [3, 4]
+/// ```
 #[pyfunction]
 pub fn reshape(tensor: &PyTensor, shape: Vec<usize>) -> PyResult<PyTensor> {
     tensor.reshape(shape)
 }
 
-/// Python wrapper for TenfloweRS TrackedTensor (autograd-enabled)
+/// Autograd-enabled tensor wrapper produced by [`PyGradientTape::watch`].
+///
+/// `PyTrackedTensor` wraps a `tenflowers_autograd::TrackedTensor<f32>` and is
+/// used as input/output to gradient computations.  It is intentionally
+/// lightweight — all gradient bookkeeping lives inside the tape, not here.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// tape = tf.PyGradientTape()
+/// x    = tf.ones([3])
+/// tx   = tape.watch(x)          # returns PyTrackedTensor
+/// raw  = tx.tensor()            # unwrap back to PyTensor
+/// ```
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyTrackedTensor {
@@ -498,9 +878,21 @@ impl PyTrackedTensor {
     }
 }
 
-/// Iterator over first-dimension slices of a `PyTensor`.
+/// Iterator over first-dimension slices of a [`PyTensor`].
 ///
-/// Yielded items are rank-(N-1) tensors obtained by slicing one row.
+/// Calling `iter(tensor)` in Python returns a `PyTensorIter`.  Each
+/// `next()` call yields a rank-(N-1) tensor that is a contiguous slice
+/// along axis 0.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// matrix = tf.ones([3, 4])
+/// for row in matrix:
+///     print(row.shape())  # [4]  — three iterations
+/// ```
 #[pyclass]
 pub struct PyTensorIter {
     source: PyTensor,

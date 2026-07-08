@@ -417,7 +417,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             .ok();
 
         if let Ok(Ok(())) = receiver.await {
-            let data = buffer_slice.get_mapped_range();
+            let data = buffer_slice.get_mapped_range().map_err(|_| {
+                TensorError::device_error_simple("Failed to read GPU buffer".to_string())
+            })?;
             let result: &[f32] = bytemuck::cast_slice(&data);
             let output_tensor = Tensor::from_vec(result.to_vec(), &[channels, height, width])?;
             Ok(output_tensor)

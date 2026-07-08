@@ -38,7 +38,11 @@ impl GradientTape {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let inner = self.inner.lock().expect("lock should not be poisoned");
+        let inner = self.inner.lock().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "gradient tape lock poisoned".to_string(),
+            )
+        })?;
 
         // Initialize gradients map
         let mut gradients: HashMap<TensorId, Tensor<T>> = HashMap::new();
@@ -193,6 +197,20 @@ impl GradientTape {
                 original_shape,
                 gradients,
             ),
+            Operation::Squeeze {
+                input,
+                axes: _,
+                original_shape,
+            } => {
+                // grad_x = unsqueeze(grad_y) back to the pre-squeeze shape.
+                let grad_input = grad_ops::squeeze_backward(grad_output, original_shape)?;
+                super::super::utils::accumulate_gradient(gradients, *input, grad_input)
+            }
+            Operation::Unsqueeze { input, axes } => {
+                // grad_x = squeeze(grad_y) along the axes that were inserted.
+                let grad_input = grad_ops::unsqueeze_backward(grad_output, axes)?;
+                super::super::utils::accumulate_gradient(gradients, *input, grad_input)
+            }
             Operation::Sum {
                 input,
                 axes: _,
@@ -294,8 +312,8 @@ impl GradientTape {
                 input,
                 weight,
                 bias,
-                stride: _,
-                padding: _,
+                stride,
+                padding,
             } => super::neural_ops::process_conv2d_backward(
                 self,
                 inner,
@@ -303,6 +321,8 @@ impl GradientTape {
                 *input,
                 *weight,
                 *bias,
+                *stride,
+                padding,
                 gradients,
             ),
             Operation::BatchNorm {
@@ -331,6 +351,53 @@ impl GradientTape {
                 *beta,
                 gradients,
             ),
+
+            // Pooling operations - dispatch to the real pooling backward kernels
+            Operation::MaxPool2D {
+                input,
+                kernel_size,
+                stride,
+                padding,
+            } => {
+                let input_tensor = get_tensor_value::<T>(inner, *input).ok_or_else(|| {
+                    tenflowers_core::TensorError::invalid_operation_simple(
+                        "MaxPool2D backward: input tensor value not recorded on the tape"
+                            .to_string(),
+                    )
+                })?;
+                // The forward pooling op does not record a dilation factor, so the
+                // backward pass uses the default unit dilation that matches it.
+                let grad_input = crate::ops::convolution_ops::max_pool2d_backward(
+                    grad_output,
+                    &input_tensor,
+                    *kernel_size,
+                    *stride,
+                    padding,
+                    (1, 1),
+                )?;
+                super::super::utils::accumulate_gradient(gradients, *input, grad_input)
+            }
+            Operation::AvgPool2D {
+                input,
+                kernel_size,
+                stride,
+                padding,
+            } => {
+                let input_tensor = get_tensor_value::<T>(inner, *input).ok_or_else(|| {
+                    tenflowers_core::TensorError::invalid_operation_simple(
+                        "AvgPool2D backward: input tensor value not recorded on the tape"
+                            .to_string(),
+                    )
+                })?;
+                let grad_input = crate::ops::convolution_ops::avg_pool2d_backward(
+                    grad_output,
+                    &input_tensor,
+                    *kernel_size,
+                    *stride,
+                    padding,
+                )?;
+                super::super::utils::accumulate_gradient(gradients, *input, grad_input)
+            }
 
             // Special operations
             Operation::Constant => {
@@ -379,25 +446,26 @@ impl GradientTape {
 
             // Linear algebra operations
             Operation::Pinv { input } => {
-                // Get the input tensor for pseudoinverse backward computation
-                if let Some(input_tensor) = get_tensor_value::<T>(inner, *input) {
-                    // Compute the backward gradient using the existing pinv_backward function
-                    let grad_input = grad_ops::pinv_backward(grad_output, &input_tensor)?;
-                    super::super::utils::accumulate_gradient(gradients, *input, grad_input)?;
-                } else {
-                    println!(
-                        "Warning: Could not retrieve input tensor for pinv backward computation"
-                    );
-                }
-                Ok(())
+                // Get the input tensor for pseudoinverse backward computation. The
+                // input value must have been recorded on the tape; otherwise the
+                // gradient cannot be computed and we surface a hard error rather
+                // than silently dropping it.
+                let input_tensor = get_tensor_value::<T>(inner, *input).ok_or_else(|| {
+                    tenflowers_core::TensorError::invalid_operation_simple(
+                        "Pinv backward: input tensor value not recorded on the tape".to_string(),
+                    )
+                })?;
+                let grad_input = grad_ops::pinv_backward(grad_output, &input_tensor)?;
+                super::super::utils::accumulate_gradient(gradients, *input, grad_input)
             }
 
-            // For all other operations, use placeholder implementation
-            _ => {
-                // Placeholder implementation for operations not yet implemented
-                // This maintains gradient flow for testing purposes
-                Ok(())
-            }
+            // Any operation without an explicit backward arm above does NOT have a
+            // gradient implementation. Returning Ok(()) here would silently discard
+            // the gradient and make training appear to work while parameters never
+            // update, so we surface a hard error instead.
+            _ => Err(tenflowers_core::TensorError::not_implemented_simple(
+                format!("backward pass not implemented for operation: {operation:?}"),
+            )),
         }
     }
 

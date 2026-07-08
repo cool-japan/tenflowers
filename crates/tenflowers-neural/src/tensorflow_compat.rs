@@ -185,30 +185,32 @@ impl SavedModelLoader {
         }
     }
 
-    /// Load from binary protobuf file
-    fn load_from_pb<P: AsRef<Path>>(&self, _pb_path: P) -> Result<SavedModel> {
-        // In a real implementation, this would use a protobuf library to parse the .pb file
-        // For now, return a placeholder implementation
-
+    /// Load from binary protobuf file.
+    ///
+    /// Parsing a real TensorFlow `saved_model.pb` requires decoding the
+    /// `tensorflow.SavedModel` protobuf schema (MetaGraphDef, GraphDef, NodeDefs,
+    /// the attribute map, and the embedded checkpoint variable values). That is a
+    /// large subsystem that is on the roadmap but not yet implemented here.
+    ///
+    /// Returning a hardcoded `SavedModel` (e.g. version "2.8.0") that ignores the
+    /// actual bytes on disk would silently fabricate a model and mislead callers
+    /// into thinking their file was imported, so an honest error is returned instead.
+    fn load_from_pb<P: AsRef<Path>>(&self, pb_path: P) -> Result<SavedModel> {
+        let path = pb_path.as_ref();
         if self.verbose {
-            println!("Loading from protobuf format (binary)...");
+            println!(
+                "TensorFlow binary protobuf import requested for: {}",
+                path.display()
+            );
         }
 
-        Ok(SavedModel {
-            metadata: SavedModelMetadata {
-                tensorflow_version: "2.8.0".to_string(),
-                created_time: Some(1234567890),
-                description: Some("Converted from TensorFlow SavedModel".to_string()),
-                tags: vec!["serve".to_string()],
-                tensor_specs: HashMap::new(),
-            },
-            signatures: self.create_default_signatures(),
-            graph_def: GraphDef {
-                operations: Vec::new(),
-                io_mapping: HashMap::new(),
-            },
-            variables: HashMap::new(),
-        })
+        Err(TensorError::not_implemented_simple(format!(
+            "TensorFlow SavedModel binary protobuf import is not yet implemented \
+             (file: {}). Decoding the tensorflow.SavedModel / GraphDef protobuf schema \
+             and its embedded checkpoint variables is a planned subsystem; no model can \
+             be produced from this file yet.",
+            path.display()
+        )))
     }
 
     /// Load from text protobuf file
@@ -225,26 +227,30 @@ impl SavedModelLoader {
         self.parse_pbtxt_content(&content)
     }
 
-    /// Parse protobuf text content
-    fn parse_pbtxt_content(&self, _content: &str) -> Result<SavedModel> {
-        // Placeholder implementation
-        // Real implementation would parse the protobuf text format
+    /// Parse protobuf text content.
+    ///
+    /// A faithful parser would tokenize the protobuf text format and reconstruct the
+    /// `tensorflow.SavedModel` message (meta graphs, node defs, signatures, and
+    /// variable values). That parser is not yet implemented.
+    ///
+    /// Returning a fabricated `SavedModel` with invented metadata (version "2.8.0",
+    /// timestamp `1234567890`) that ignores `content` would misrepresent the input,
+    /// so an honest error is returned instead.
+    fn parse_pbtxt_content(&self, content: &str) -> Result<SavedModel> {
+        if self.verbose {
+            println!(
+                "TensorFlow text protobuf parse requested ({} bytes); parser not yet \
+                 implemented.",
+                content.len()
+            );
+        }
 
-        Ok(SavedModel {
-            metadata: SavedModelMetadata {
-                tensorflow_version: "2.8.0".to_string(),
-                created_time: Some(1234567890),
-                description: Some("Parsed from pbtxt file".to_string()),
-                tags: vec!["serve".to_string()],
-                tensor_specs: HashMap::new(),
-            },
-            signatures: self.create_default_signatures(),
-            graph_def: GraphDef {
-                operations: Vec::new(),
-                io_mapping: HashMap::new(),
-            },
-            variables: HashMap::new(),
-        })
+        Err(TensorError::not_implemented_simple(
+            "TensorFlow SavedModel text protobuf (pbtxt) parsing is not yet implemented. \
+             Reconstructing the tensorflow.SavedModel message from the text format is a \
+             planned subsystem; the file's contents cannot be converted into a model yet."
+                .to_string(),
+        ))
     }
 
     /// Create default function signatures
@@ -303,33 +309,79 @@ impl SavedModelLoader {
             }
         }
 
-        // If no layers were created from operations, create a simple example model
-        if layers.is_empty() && self.verbose {
-            println!("No convertible operations found, creating example model...");
-
-            // Create a simple model for demonstration
-            layers.push(Box::new(Dense::new(224 * 224 * 3, 128, true)));
-            layers.push(Box::new(Dense::new(128, 64, true)));
-            layers.push(Box::new(Dense::new(64, 1000, true)));
+        // If no convertible operations were found we must NOT fabricate an example
+        // model (e.g. an arbitrary 224*224*3 -> 128 -> 64 -> 1000 stack); doing so
+        // would misrepresent the source graph. Surface an honest error instead.
+        if layers.is_empty() {
+            return Err(TensorError::not_implemented_simple(
+                "No convertible operations were found in the SavedModel graph. \
+                 Fabricating a placeholder example model would misrepresent the \
+                 source graph, so conversion is reported as failed."
+                    .to_string(),
+            ));
         }
 
         Ok(Sequential::new(layers))
     }
 
-    /// Convert a TensorFlow operation to a TenfloweRS layer
+    /// Find the variable whose shape describes the weights of an operation.
+    ///
+    /// TensorFlow lists the weight tensor among an operation's inputs, so we look up
+    /// each input name in the variable table and return the first real match. This
+    /// lets us derive layer dimensions from actual data rather than fabricating them.
+    fn find_weight_variable<'a>(
+        &self,
+        operation: &Operation,
+        variables: &'a HashMap<String, VariableInfo>,
+    ) -> Option<&'a VariableInfo> {
+        operation
+            .inputs
+            .iter()
+            .find_map(|input_name| variables.get(input_name))
+    }
+
+    /// Convert a TensorFlow operation to a TenfloweRS layer.
+    ///
+    /// Layer dimensions are derived from the operation's actual weight variable shape
+    /// (when present in `variables`). If the real dimensions cannot be determined we
+    /// return an honest error rather than inventing placeholder sizes that would not
+    /// match the source model.
     fn convert_operation_to_layer(
         &self,
         operation: &Operation,
-        _variables: &HashMap<String, VariableInfo>,
+        variables: &HashMap<String, VariableInfo>,
     ) -> Result<Option<Box<dyn Layer<f32>>>> {
         match operation.op_type.as_str() {
             "MatMul" | "Dense" => {
-                // Extract dimensions from attributes if available
-                let input_features = 128; // Placeholder
-                let output_features = 64; // Placeholder
+                // A Dense/MatMul weight is 2-D with shape [input_features, output_features].
+                let weight = self
+                    .find_weight_variable(operation, variables)
+                    .ok_or_else(|| {
+                        TensorError::not_implemented_simple(format!(
+                            "Cannot convert operation '{}' (MatMul/Dense): no weight variable \
+                         was found among its inputs, so the input/output dimensions are \
+                         unknown. Inventing placeholder dimensions would not match the \
+                         source model.",
+                            operation.name
+                        ))
+                    })?;
+
+                if weight.shape.len() != 2 {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Operation '{}' (MatMul/Dense) has a weight variable '{}' with \
+                         shape {:?}; expected a 2-D [in, out] weight.",
+                        operation.name, weight.name, weight.shape
+                    )));
+                }
+
+                let input_features = weight.shape[0];
+                let output_features = weight.shape[1];
 
                 if self.verbose {
-                    println!("Converting {} to Dense layer", operation.name);
+                    println!(
+                        "Converting {} to Dense layer ({} -> {})",
+                        operation.name, input_features, output_features
+                    );
                 }
 
                 Ok(Some(Box::new(Dense::new(
@@ -339,29 +391,78 @@ impl SavedModelLoader {
                 ))))
             }
             "Conv2D" => {
-                // Extract conv parameters from attributes
-                let in_channels = 3; // Placeholder
-                let out_channels = 32; // Placeholder
-                let kernel_size = 3; // Placeholder
+                // A Conv2D kernel is 4-D. TensorFlow stores it as
+                // [kernel_h, kernel_w, in_channels, out_channels].
+                let weight = self
+                    .find_weight_variable(operation, variables)
+                    .ok_or_else(|| {
+                        TensorError::not_implemented_simple(format!(
+                            "Cannot convert operation '{}' (Conv2D): no kernel variable was \
+                         found among its inputs, so the channel/kernel dimensions are \
+                         unknown. Inventing placeholder dimensions would not match the \
+                         source model.",
+                            operation.name
+                        ))
+                    })?;
+
+                if weight.shape.len() != 4 {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Operation '{}' (Conv2D) has a kernel variable '{}' with shape \
+                         {:?}; expected a 4-D [kh, kw, in, out] kernel.",
+                        operation.name, weight.name, weight.shape
+                    )));
+                }
+
+                let kernel_h = weight.shape[0];
+                let kernel_w = weight.shape[1];
+                let in_channels = weight.shape[2];
+                let out_channels = weight.shape[3];
 
                 if self.verbose {
-                    println!("Converting {} to Conv2D layer", operation.name);
+                    println!(
+                        "Converting {} to Conv2D layer ({}x{}, {} -> {})",
+                        operation.name, kernel_h, kernel_w, in_channels, out_channels
+                    );
                 }
 
                 Ok(Some(Box::new(Conv2D::new(
                     in_channels,
                     out_channels,
-                    (kernel_size, kernel_size),
-                    (1, 1),             // stride
+                    (kernel_h, kernel_w),
+                    (1, 1),             // stride (real strides require attribute decoding)
                     "same".to_string(), // padding
                     true,               // use_bias
                 ))))
             }
             "BatchNorm" => {
-                let num_features = 32; // Placeholder
+                // BatchNorm parameters (gamma/beta/mean/variance) are 1-D vectors whose
+                // length equals the number of features.
+                let weight = self
+                    .find_weight_variable(operation, variables)
+                    .ok_or_else(|| {
+                        TensorError::not_implemented_simple(format!(
+                            "Cannot convert operation '{}' (BatchNorm): no parameter variable \
+                         was found among its inputs, so the feature count is unknown. \
+                         Inventing a placeholder feature count would not match the source \
+                         model.",
+                            operation.name
+                        ))
+                    })?;
+
+                let num_features = weight.shape.iter().copied().product::<usize>();
+                if num_features == 0 {
+                    return Err(TensorError::invalid_argument(format!(
+                        "Operation '{}' (BatchNorm) has a parameter variable '{}' with an \
+                         empty shape {:?}; cannot determine the feature count.",
+                        operation.name, weight.name, weight.shape
+                    )));
+                }
 
                 if self.verbose {
-                    println!("Converting {} to BatchNorm layer", operation.name);
+                    println!(
+                        "Converting {} to BatchNorm layer ({} features)",
+                        operation.name, num_features
+                    );
                 }
 
                 Ok(Some(Box::new(BatchNorm::new(num_features))))
@@ -389,7 +490,14 @@ impl SavedModelLoader {
         }
     }
 
-    /// Load variables from checkpoint files
+    /// Load variables (weights/biases) from TensorFlow checkpoint files.
+    ///
+    /// TensorFlow checkpoints are stored across a `.index` file and one or more
+    /// sharded `.data-*` files using the BundleHeader/BundleEntry protobuf format.
+    /// Decoding that format and the raw tensor payloads is a planned subsystem.
+    ///
+    /// Returning an empty `HashMap` would silently claim the checkpoint contained no
+    /// variables, so an honest error is returned instead.
     pub fn load_variables<P: AsRef<Path>>(
         &self,
         checkpoint_dir: P,
@@ -397,12 +505,19 @@ impl SavedModelLoader {
         let checkpoint_path = checkpoint_dir.as_ref();
 
         if self.verbose {
-            println!("Loading variables from: {}", checkpoint_path.display());
+            println!(
+                "TensorFlow checkpoint variable load requested for: {}",
+                checkpoint_path.display()
+            );
         }
 
-        // In real implementation, this would parse TensorFlow checkpoint files
-        // For now, return empty variables
-        Ok(HashMap::new())
+        Err(TensorError::not_implemented_simple(format!(
+            "TensorFlow checkpoint variable loading is not yet implemented (path: {}). \
+             Decoding the checkpoint bundle (.index / .data-* BundleEntry protobufs) and \
+             the raw tensor payloads is a planned subsystem; returning empty variables \
+             would falsely report an empty checkpoint.",
+            checkpoint_path.display()
+        )))
     }
 }
 
@@ -490,12 +605,14 @@ mod tests {
     }
 
     #[test]
-    fn test_create_temp_saved_model_structure() {
+    fn test_load_pbtxt_returns_honest_error() {
+        // A real saved_model.pbtxt must NOT be silently turned into a fabricated model.
+        // Loading it should now surface an honest "not implemented" error rather than
+        // returning an invented version/timestamp that ignores the file contents.
         let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let model_dir = temp_dir.path().join("test_model");
         fs::create_dir_all(&model_dir).expect("test: directory creation should succeed");
 
-        // Create a dummy saved_model.pbtxt file
         let pbtxt_content = r#"
 meta_graphs {
   meta_info_def {
@@ -509,21 +626,42 @@ meta_graphs {
 
         let loader = SavedModelLoader::new();
         let result = loader.load_saved_model(&model_dir);
-        assert!(result.is_ok());
-
-        let saved_model = result.expect("test: result should be valid");
-        assert_eq!(saved_model.metadata.tensorflow_version, "2.8.0");
+        assert!(
+            result.is_err(),
+            "pbtxt import must return an honest error, not a fabricated SavedModel"
+        );
     }
 
     #[test]
-    fn test_convert_to_sequential() {
+    fn test_load_pb_returns_honest_error() {
+        // A binary saved_model.pb must also surface an honest error rather than a
+        // hardcoded model that ignores the bytes on disk.
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let model_dir = temp_dir.path().join("test_model_pb");
+        fs::create_dir_all(&model_dir).expect("test: directory creation should succeed");
+
+        // Write arbitrary bytes; the importer must not pretend to parse them.
+        fs::write(model_dir.join("saved_model.pb"), [0u8, 1, 2, 3, 4])
+            .expect("test: file write should succeed");
+
+        let loader = SavedModelLoader::new();
+        let result = loader.load_saved_model(&model_dir);
+        assert!(
+            result.is_err(),
+            "pb import must return an honest error, not a fabricated SavedModel"
+        );
+    }
+
+    #[test]
+    fn test_convert_to_sequential_without_weights_errors() {
+        // Converting a graph whose operations lack weight variables must NOT fabricate
+        // an example model with invented dimensions.
         let loader = SavedModelLoader::new();
 
-        // Create a minimal SavedModel for testing
         let saved_model = SavedModel {
             metadata: SavedModelMetadata {
-                tensorflow_version: "2.8.0".to_string(),
-                created_time: Some(1234567890),
+                tensorflow_version: "unknown".to_string(),
+                created_time: None,
                 description: Some("Test model".to_string()),
                 tags: vec!["serve".to_string()],
                 tensor_specs: HashMap::new(),
@@ -543,17 +681,68 @@ meta_graphs {
         };
 
         let result = loader.convert_to_sequential(&saved_model);
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "conversion without real weight dimensions must error, not fabricate sizes"
+        );
+    }
 
-        let _model = result.expect("test: result should be valid");
-        // Model created successfully (parameters length is unsigned, so >= 0 is always true)
+    #[test]
+    fn test_convert_to_sequential_with_real_weights() {
+        // When a real weight variable is present, the Dense layer must be built from
+        // its actual [in, out] shape rather than placeholder dimensions.
+        let loader = SavedModelLoader::new();
+
+        let mut variables = HashMap::new();
+        variables.insert(
+            "dense1/kernel".to_string(),
+            VariableInfo {
+                name: "dense1/kernel".to_string(),
+                shape: vec![16, 7],
+                dtype: DType::Float32,
+                data: vec![0.0_f32; 16 * 7],
+            },
+        );
+
+        let saved_model = SavedModel {
+            metadata: SavedModelMetadata {
+                tensorflow_version: "unknown".to_string(),
+                created_time: None,
+                description: Some("Test model".to_string()),
+                tags: vec!["serve".to_string()],
+                tensor_specs: HashMap::new(),
+            },
+            signatures: HashMap::new(),
+            graph_def: GraphDef {
+                operations: vec![Operation {
+                    name: "dense1".to_string(),
+                    op_type: "MatMul".to_string(),
+                    inputs: vec!["input".to_string(), "dense1/kernel".to_string()],
+                    outputs: vec!["dense1_output".to_string()],
+                    attributes: HashMap::new(),
+                }],
+                io_mapping: HashMap::new(),
+            },
+            variables,
+        };
+
+        let model = loader
+            .convert_to_sequential(&saved_model)
+            .expect("test: conversion with real weights should succeed");
+        // The single Dense layer must expose a weight tensor matching the source shape.
+        let params = model.parameters();
+        assert!(
+            params.iter().any(|p| p.shape().dims() == [16, 7]),
+            "Dense layer dimensions must be derived from the real [16, 7] weight"
+        );
     }
 
     #[test]
     fn test_operation_conversion() {
         let loader = SavedModelLoader::new();
-        let variables = HashMap::new();
 
+        // Without a weight variable the MatMul conversion must error (no fabrication).
+        let empty_variables = HashMap::new();
         let matmul_op = Operation {
             name: "dense1".to_string(),
             op_type: "MatMul".to_string(),
@@ -561,11 +750,36 @@ meta_graphs {
             outputs: vec!["output".to_string()],
             attributes: HashMap::new(),
         };
+        let result = loader.convert_operation_to_layer(&matmul_op, &empty_variables);
+        assert!(
+            result.is_err(),
+            "MatMul conversion without a weight variable must error, not fabricate dims"
+        );
 
-        let result = loader.convert_operation_to_layer(&matmul_op, &variables);
-        assert!(result.is_ok());
-        assert!(result.expect("test: result should be valid").is_some());
+        // With a real weight variable, the conversion yields a layer.
+        let mut variables = HashMap::new();
+        variables.insert(
+            "kernel".to_string(),
+            VariableInfo {
+                name: "kernel".to_string(),
+                shape: vec![5, 3],
+                dtype: DType::Float32,
+                data: vec![0.0_f32; 15],
+            },
+        );
+        let matmul_with_weight = Operation {
+            name: "dense2".to_string(),
+            op_type: "MatMul".to_string(),
+            inputs: vec!["input".to_string(), "kernel".to_string()],
+            outputs: vec!["output".to_string()],
+            attributes: HashMap::new(),
+        };
+        let layer = loader
+            .convert_operation_to_layer(&matmul_with_weight, &variables)
+            .expect("test: conversion should succeed with real weight");
+        assert!(layer.is_some());
 
+        // Activation ops remain unconverted (handled separately).
         let relu_op = Operation {
             name: "relu1".to_string(),
             op_type: "Relu".to_string(),
@@ -573,10 +787,18 @@ meta_graphs {
             outputs: vec!["output".to_string()],
             attributes: HashMap::new(),
         };
-
         let result = loader.convert_operation_to_layer(&relu_op, &variables);
         assert!(result.is_ok());
         assert!(result.expect("test: result should be valid").is_none()); // ReLU is handled separately
+    }
+
+    #[test]
+    fn test_load_variables_returns_honest_error() {
+        // Checkpoint loading is not implemented; it must error rather than silently
+        // returning an empty variable map (which would falsely report no weights).
+        let loader = SavedModelLoader::new();
+        let result = loader.load_variables("/nonexistent/checkpoint");
+        assert!(result.is_err());
     }
 
     #[test]

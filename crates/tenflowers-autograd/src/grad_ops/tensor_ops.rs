@@ -168,7 +168,7 @@ pub fn concat_backward<T>(
     axis: i32,
 ) -> Result<Vec<Tensor<T>>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let output_shape = grad_output.shape().dims();
     let ndim = output_shape.len();
@@ -227,7 +227,7 @@ pub fn stack_backward<T>(
     axis: i32,
 ) -> Result<Vec<Tensor<T>>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let output_shape = grad_output.shape().dims();
     let ndim = output_shape.len();
@@ -289,7 +289,7 @@ where
 /// For splits = split(x, sizes, axis), grad_x = concat(grad_splits, axis)
 pub fn split_backward<T>(grad_outputs: &[Tensor<T>], axis: i32) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if grad_outputs.is_empty() {
         return Err(TensorError::shape_mismatch(
@@ -328,7 +328,7 @@ where
 /// For y = transpose(x, axes), grad_x = transpose(grad_y, inverse_axes)
 pub fn transpose_backward<T>(grad_output: &Tensor<T>, axes: Option<&[usize]>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     match axes {
         Some(axes) => {

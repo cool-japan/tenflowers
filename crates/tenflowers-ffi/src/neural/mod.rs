@@ -1,7 +1,69 @@
-//! Neural network operations module
+//! Neural network operations module.
 //!
-//! This module provides comprehensive neural network functionality organized into
-//! focused sub-modules for better maintainability and clarity.
+//! This module is the top-level namespace for all neural network functionality
+//! exposed to Python.  It is organised into focused sub-modules:
+//!
+//! | Sub-module | Contents |
+//! |---|---|
+//! | [`activations`] | Additional activation functions (SELU, SiLU, Softplus, …) |
+//! | [`attention`] | Multi-head attention and scaled dot-product attention |
+//! | [`conv_layers`] | Conv1D / Conv2D / MaxPool2D / AvgPool2D |
+//! | [`embedding`] | Embedding and EmbeddingBag |
+//! | [`extended_optimizers`] | RAdam, Nadam, AdaGrad, AdaDelta, AdaBelief |
+//! | [`functions`] | Core activation functions (ReLU, GELU, Softmax, …) |
+//! | [`gradient_tape`] | Automatic differentiation via gradient tape |
+//! | [`gradient_utils`] | Gradient clipping, accumulation, and statistics |
+//! | [`hooks`] | Forward / backward hooks for debugging and monitoring |
+//! | [`layers`] | Dense, Parameter, Sequential |
+//! | [`losses`] | MSE, BCE, cross-entropy, Huber, KL-divergence, … |
+//! | [`normalization`] | BatchNorm1d, LayerNorm, GroupNorm, InstanceNorm1d |
+//! | [`optimizers`] | Adam, SGD, RMSprop, AdamW |
+//! | [`recurrent`] | LSTM, GRU, RNN, LSTMCell, GRUCell |
+//! | [`regularization`] | Dropout, Dropout2D, AlphaDropout, L1/L2 regularisation |
+//! | [`schedulers`] | StepLR, ExponentialLR, CosineAnnealingLR, ReduceLROnPlateau, … |
+//! | [`ssm`] | Mamba / State-Space Model layers |
+//! | [`training_utils`] | EarlyStopping, LRWarmup, MetricsTracker, ProgressTracker |
+//! | [`transformer`] | TransformerEncoderLayer, TransformerDecoderLayer, PositionalEncoding |
+//!
+//! All public types and free functions are re-exported at this module level and
+//! registered in the Python `tenflowers` namespace by [`register_neural_functions`].
+//!
+//! ## Python Quick-Reference
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # --- Layers ----------------------------------------------------------------
+//! dense = tf.PyDense(128, 64, use_bias=True, activation='relu')
+//! model = tf.PySequential()
+//! model.add(dense)
+//! out   = model.forward(tf.ones([4, 128]))
+//!
+//! # --- Optimizers ------------------------------------------------------------
+//! adam = tf.Adam(learning_rate=1e-3)
+//! state = adam.state_dict()          # save
+//! adam.load_state_dict(state)        # restore
+//!
+//! # --- Activation functions --------------------------------------------------
+//! tf.relu(tf.ones([4, 4]))
+//! tf.gelu(tf.ones([4, 4]))
+//! tf.softmax(tf.ones([4, 4]), dim=-1)
+//!
+//! # --- Loss functions --------------------------------------------------------
+//! tf.mse_loss(tf.ones([4]), tf.zeros([4]))
+//! tf.cross_entropy(tf.ones([4, 10]), tf.zeros([4, 10]))
+//!
+//! # --- Gradient tape ---------------------------------------------------------
+//! tape = tf.PyGradientTape()
+//! tx   = tape.watch(tf.ones([3, 3]))
+//! # ... forward pass ...
+//! # grad = tape.gradient(ty, tx)
+//!
+//! # --- Hooks -----------------------------------------------------------------
+//! reg = tf.PyGlobalHookRegistry()
+//! h   = dense.register_forward_hook(lambda inp, out: None)
+//! h.remove()
+//! ```
 
 pub mod activations;
 pub mod attention;
@@ -48,7 +110,15 @@ pub use transformer::{PyPositionalEncoding, PyTransformerDecoderLayer, PyTransfo
 
 use pyo3::prelude::*;
 
-/// Register neural network functions with Python module
+/// Register all neural network classes and functions into the given Python module.
+///
+/// This is called once from the top-level [`crate::tenflowers`] module initialiser.
+/// After registration, all items are accessible as attributes of the `tenflowers`
+/// package (e.g. `tf.PyDense`, `tf.relu`, `tf.Adam`, …).
+///
+/// # Errors
+///
+/// Returns a `PyErr` if any class or function fails to register.
 pub fn register_neural_functions(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register classes
     m.add_class::<PyHookHandle>()?;

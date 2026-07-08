@@ -4,8 +4,8 @@
 mod tests {
     use crate::backends::thread::ThreadBackend;
     use crate::distributed::types::{
-        BackendConfig, CollectiveOp, CollectiveResult, CommunicationBackend,
-        CommunicationBackendImpl, CommunicationGroup, CommunicationRuntime, ReductionOp,
+        BackendConfig, CollectiveOp, CommunicationBackend, CommunicationBackendImpl,
+        CommunicationGroup, CommunicationRuntime, ReductionOp,
     };
     use tenflowers_core::{Device, Tensor};
 
@@ -48,7 +48,17 @@ mod tests {
     }
 
     #[test]
-    fn test_all_reduce_operation() {
+    fn test_all_reduce_operation_returns_honest_error() {
+        // `ThreadBackend::all_reduce_f32` (via `simulate_all_reduce`) cannot perform
+        // a genuine cross-rank reduction: separate `ThreadBackend` instances never
+        // share `shared_state`, so this call only ever sees its own local `tensor`
+        // and has no other rank's data to combine it with. `Sum`/`Average` used to
+        // fabricate a result by scaling or echoing back that local tensor as if it
+        // were a real cross-rank reduction; now they honestly error out just like
+        // `Min`/`Max`/`Product` already did, and `CommunicationRuntime::
+        // collective_op_f32` must propagate that error rather than reporting
+        // success. See `ThreadBackend::simulate_all_reduce` and
+        // `backends::thread::tests::test_thread_all_reduce_returns_honest_error`.
         let mut runtime = CommunicationRuntime::new();
         runtime.register_backend(CommunicationBackend::Thread, Box::new(ThreadBackend::new()));
 
@@ -74,13 +84,12 @@ mod tests {
             reduction_op: ReductionOp::Sum,
         };
 
-        let result = runtime
-            .collective_op_f32(op, &tensor, Some("test_group"))
-            .expect("test: operation should succeed");
+        let result = runtime.collective_op_f32(op, &tensor, Some("test_group"));
 
         assert!(
-            matches!(result, CollectiveResult::Tensor(_)),
-            "Expected tensor result from collective operation"
+            result.is_err(),
+            "all-reduce must never silently fabricate a cross-rank result for the \
+             thread backend; expected an honest error, got {result:?}"
         );
     }
 }

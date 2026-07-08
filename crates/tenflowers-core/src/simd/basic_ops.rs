@@ -70,7 +70,7 @@ impl BasicOps {
                 operation: "SIMD add_f32".to_string(),
                 expected: format!("arrays of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -146,7 +146,7 @@ impl BasicOps {
                 operation: "SIMD mul_f32".to_string(),
                 expected: format!("arrays of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -208,7 +208,7 @@ impl BasicOps {
                 operation: "SIMD sub_f32".to_string(),
                 expected: format!("arrays of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
         Self::sub_f32_unchecked(a, b, result);
@@ -274,7 +274,7 @@ impl BasicOps {
                 operation: "Batch SIMD add".to_string(),
                 expected: format!("{} result arrays", batches.len()),
                 got: format!("{} result arrays", results.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -284,7 +284,7 @@ impl BasicOps {
                     operation: format!("Batch SIMD add (batch {})", i),
                     expected: format!("arrays of length {}", a.len()),
                     got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                    context: Some(ErrorContext::new()),
+                    context: Some(Box::new(ErrorContext::new())),
                 });
             }
 
@@ -305,7 +305,7 @@ impl BasicOps {
                     operation: "Simple add_f32".to_string(),
                     expected: format!("arrays of length {}", a.len()),
                     got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                    context: Some(ErrorContext::new()),
+                    context: Some(Box::new(ErrorContext::new())),
                 });
             }
 

@@ -160,13 +160,18 @@ fn get_global_state() -> &'static Arc<Mutex<DeterministicState>> {
 /// When enabled, all operations will use deterministic algorithms and RNG seeding.
 pub fn set_deterministic_mode(enabled: bool) {
     let state = get_global_state();
-    state.lock().expect("lock should not be poisoned").enabled = enabled;
+    if let Ok(mut s) = state.lock() {
+        s.enabled = enabled;
+    }
 }
 
 /// Check if deterministic mode is enabled
 pub fn is_deterministic_mode() -> bool {
     let state = get_global_state();
-    state.lock().expect("lock should not be poisoned").enabled
+    match state.lock() {
+        Ok(s) => s.enabled,
+        Err(_) => false,
+    }
 }
 
 /// Set the global random seed
@@ -174,7 +179,10 @@ pub fn is_deterministic_mode() -> bool {
 /// This seed is used to derive subseeds for all random operations.
 pub fn set_global_seed(seed: u64) {
     let state = get_global_state();
-    let mut s = state.lock().expect("lock should not be poisoned");
+    let mut s = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     s.global_seed = seed;
     s.operation_counter = 0;
     s.clear_log();
@@ -183,28 +191,27 @@ pub fn set_global_seed(seed: u64) {
 /// Get the current global seed
 pub fn get_global_seed() -> u64 {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .global_seed
+    match state.lock() {
+        Ok(s) => s.global_seed,
+        Err(_) => 0,
+    }
 }
 
 /// Enable strict mode (fail on non-deterministic operations)
 pub fn set_strict_mode(strict: bool) {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .strict_mode = strict;
+    if let Ok(mut s) = state.lock() {
+        s.strict_mode = strict;
+    }
 }
 
 /// Check if strict mode is enabled
 pub fn is_strict_mode() -> bool {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .strict_mode
+    match state.lock() {
+        Ok(s) => s.strict_mode,
+        Err(_) => false,
+    }
 }
 
 /// Get a subseed for a specific operation
@@ -213,7 +220,10 @@ pub fn is_strict_mode() -> bool {
 /// derived from the global seed and operation sequence.
 pub fn get_operation_seed(operation_name: &str) -> u64 {
     let state = get_global_state();
-    let mut s = state.lock().expect("lock should not be poisoned");
+    let mut s = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
 
     if !s.enabled {
         // In non-deterministic mode, use system time
@@ -233,10 +243,9 @@ pub fn get_operation_seed(operation_name: &str) -> u64 {
 /// the same global seed.
 pub fn reset_operation_counter() {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .reset_counter();
+    if let Ok(mut s) = state.lock() {
+        s.reset_counter();
+    }
 }
 
 /// Get a snapshot of the current deterministic state
@@ -244,44 +253,48 @@ pub fn reset_operation_counter() {
 /// Useful for checkpointing and restoring state.
 pub fn get_state_snapshot() -> DeterministicSnapshot {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .snapshot()
+    match state.lock() {
+        Ok(s) => s.snapshot(),
+        Err(_) => DeterministicSnapshot {
+            global_seed: 0,
+            operation_counter: 0,
+            enabled: false,
+        },
+    }
 }
 
 /// Restore deterministic state from a snapshot
 pub fn restore_state_snapshot(snapshot: &DeterministicSnapshot) {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .restore(snapshot);
+    if let Ok(mut s) = state.lock() {
+        s.restore(snapshot);
+    }
 }
 
 /// Get the operation log for debugging
 pub fn get_operation_log() -> Vec<String> {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .operation_log
-        .clone()
+    match state.lock() {
+        Ok(s) => s.operation_log.clone(),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// Clear the operation log
 pub fn clear_operation_log() {
     let state = get_global_state();
-    state
-        .lock()
-        .expect("lock should not be poisoned")
-        .clear_log();
+    if let Ok(mut s) = state.lock() {
+        s.clear_log();
+    }
 }
 
 /// Enable operation logging with default max size
 pub fn enable_operation_logging() {
     let state = get_global_state();
-    let mut s = state.lock().expect("lock should not be poisoned");
+    let mut s = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     s.max_log_size = 1000;
 }
 
@@ -289,7 +302,10 @@ pub fn enable_operation_logging() {
 #[doc(hidden)]
 pub fn reset_to_defaults() {
     let state = get_global_state();
-    let mut s = state.lock().expect("lock should not be poisoned");
+    let mut s = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     *s = DeterministicState::default();
 }
 
@@ -358,7 +374,10 @@ impl DeterministicConfig {
         set_strict_mode(self.strict);
 
         let state = get_global_state();
-        let mut s = state.lock().expect("lock should not be poisoned");
+        let mut s = match state.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         s.prefer_deterministic_algorithms = self.prefer_deterministic;
 
         if !self.log_operations {
@@ -424,8 +443,10 @@ pub fn mark_non_deterministic(operation_name: &str) -> Result<()> {
 /// Helper to check if GPU operations should use deterministic algorithms
 pub fn should_use_deterministic_gpu_ops() -> bool {
     let state = get_global_state();
-    let s = state.lock().expect("lock should not be poisoned");
-    s.enabled && s.prefer_deterministic_algorithms
+    match state.lock() {
+        Ok(s) => s.enabled && s.prefer_deterministic_algorithms,
+        Err(_) => false,
+    }
 }
 
 // ============================================================================

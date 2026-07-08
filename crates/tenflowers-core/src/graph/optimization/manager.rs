@@ -11,9 +11,9 @@ use super::passes::{
     OperationSchedulingPass, StrengthReductionPass,
 };
 use super::placement::DevicePlacementOptimizationPass;
-use crate::graph::Graph;
+use crate::graph::{Graph, NodeId};
 use crate::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Graph optimization manager
 pub struct GraphOptimizer {
@@ -49,6 +49,37 @@ impl GraphOptimizer {
         self.add_pass(Box::new(MemoryOptimizationPass::new()));
         self.add_pass(Box::new(DevicePlacementOptimizationPass::new()));
         self.add_pass(Box::new(DeadCodeEliminationPass::new())); // Priority 50 (run last)
+    }
+
+    /// Build an optimizer using only the passes that are safe to run ahead
+    /// of the eager `Session` executor.
+    ///
+    /// This deliberately excludes:
+    /// - [`OperationFusionPass`]: it rewrites nodes into fused operation
+    ///   names (`"Dense"`, `"AddReLU"`, `"ConvBatchNormReLU"`, ...) that the
+    ///   eager executor's operation dispatcher does not implement. Running
+    ///   it here would silently turn a working graph (e.g. any `MatMul`
+    ///   immediately followed by `Add`) into a hard
+    ///   "operation not supported" error at execution time.
+    /// - [`MemoryOptimizationPass`] and [`DevicePlacementOptimizationPass`]:
+    ///   both only annotate node attributes (lifetime hints, in-place
+    ///   markers, device placement metadata) that the eager executor never
+    ///   reads, so running them would add cost without any effect.
+    ///
+    /// The remaining passes (constant folding, algebraic simplification,
+    /// common subexpression elimination, strength reduction, scheduling,
+    /// and dead code elimination) only ever produce operation names the
+    /// executor already understands, or mutate a node's inputs/op in place
+    /// while preserving its id, so they are safe to run unconditionally.
+    pub fn for_eager_execution() -> Self {
+        let mut optimizer = Self::empty();
+        optimizer.add_pass(Box::new(ConstantFoldingPass::new()));
+        optimizer.add_pass(Box::new(AlgebraicSimplificationPass::new()));
+        optimizer.add_pass(Box::new(CSEPass::new()));
+        optimizer.add_pass(Box::new(StrengthReductionPass::new()));
+        optimizer.add_pass(Box::new(OperationSchedulingPass::new()));
+        optimizer.add_pass(Box::new(DeadCodeEliminationPass::new()));
+        optimizer
     }
 
     /// Add an optimization pass
@@ -99,6 +130,29 @@ impl GraphOptimizer {
         }
 
         Ok(stats)
+    }
+
+    /// Optimize a computation graph while protecting `outputs` from being
+    /// eliminated or merged away.
+    ///
+    /// `outputs` should contain every node id that must keep its identity
+    /// after optimization — typically the fetch targets a caller (such as
+    /// the eager `Session` executor) intends to read back by node id or
+    /// name. Every pass is informed of this set via
+    /// [`OptimizationPass::set_outputs`] before running; passes that never
+    /// destroy a node's identity ignore it, while dead code elimination,
+    /// common subexpression elimination, and identity-removing algebraic /
+    /// strength-reduction rewrites treat these ids as protected (skipping
+    /// the rewrite for that node this iteration rather than applying it).
+    pub fn optimize_with_outputs(
+        &self,
+        graph: &mut Graph,
+        outputs: &HashSet<NodeId>,
+    ) -> Result<OptimizationStats> {
+        for pass in &self.passes {
+            pass.set_outputs(outputs);
+        }
+        self.optimize(graph)
     }
 }
 
@@ -197,6 +251,99 @@ mod tests {
         let mut optimizer = GraphOptimizer::new();
         optimizer.set_max_iterations(5);
         assert_eq!(optimizer.max_iterations, 5);
+    }
+
+    #[test]
+    fn test_for_eager_execution_excludes_unsupported_passes() {
+        // The eager executor's operation dispatcher does not implement the
+        // fused op names OperationFusionPass produces, and it never reads
+        // the metadata MemoryOptimizationPass / DevicePlacementOptimizationPass
+        // attach, so `for_eager_execution` must omit all three while keeping
+        // the other six passes `add_default_passes` registers.
+        let eager = GraphOptimizer::for_eager_execution();
+        assert_eq!(eager.pass_count(), 6);
+
+        let default_optimizer = GraphOptimizer::new();
+        assert_eq!(default_optimizer.pass_count(), 9);
+
+        for pass in &eager.passes {
+            assert_ne!(pass.name(), "OperationFusion");
+            assert_ne!(pass.name(), "MemoryOptimization");
+            assert_ne!(pass.name(), "DevicePlacementOptimization");
+        }
+    }
+
+    #[test]
+    fn test_optimize_with_outputs_protects_marked_node() {
+        // `x + 0` would normally simplify away to `x`, losing the node id.
+        // Marking it as an output must prevent that.
+        let mut graph = Graph::new();
+        let x = graph
+            .add_node(
+                "x".to_string(),
+                crate::graph::NodeType::Placeholder {
+                    dtype: crate::dtype::DType::Float32,
+                    shape: crate::shape::Shape::new(vec![]),
+                },
+                crate::device::Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        let mut zero_attrs = HashMap::new();
+        zero_attrs.insert(
+            "value".to_string(),
+            crate::graph::AttributeValue::Tensor(crate::tensor::Tensor::from_scalar(0.0f32)),
+        );
+        let zero = graph
+            .add_node(
+                "zero".to_string(),
+                crate::graph::NodeType::Constant,
+                crate::device::Device::Cpu,
+                zero_attrs,
+            )
+            .expect("test: add_node should succeed");
+        let add = graph
+            .add_node(
+                "x_plus_zero".to_string(),
+                crate::graph::NodeType::Operation("Add".to_string()),
+                crate::device::Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(
+                x,
+                add,
+                0,
+                0,
+                crate::dtype::DType::Float32,
+                crate::shape::Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(
+                zero,
+                add,
+                0,
+                1,
+                crate::dtype::DType::Float32,
+                crate::shape::Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+
+        let optimizer = GraphOptimizer::for_eager_execution();
+        let mut outputs = HashSet::new();
+        outputs.insert(add);
+        optimizer
+            .optimize_with_outputs(&mut graph, &outputs)
+            .expect("test: optimize_with_outputs should succeed");
+
+        assert!(
+            graph.get_node(add).is_some(),
+            "the marked output node must survive optimization"
+        );
     }
 
     #[test]

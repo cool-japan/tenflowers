@@ -2,9 +2,6 @@ use crate::{Result, Tensor, TensorError};
 use scirs2_core::numeric::{Float, One, Zero};
 
 #[cfg(feature = "gpu")]
-use crate::tensor::TensorStorage;
-
-#[cfg(feature = "gpu")]
 use crate::gpu::linalg::context::GpuLinalgContext;
 #[cfg(feature = "gpu")]
 use lazy_static::lazy_static;
@@ -23,9 +20,9 @@ lazy_static! {
 async fn ensure_gpu_linalg_context() -> Result<()> {
     use crate::gpu::GpuContext;
 
-    let mut context_guard = GPU_LINALG_CONTEXT
-        .lock()
-        .expect("lock should not be poisoned");
+    let mut context_guard = GPU_LINALG_CONTEXT.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("GPU linalg context lock poisoned".to_string())
+    })?;
     if context_guard.is_none() {
         // Initialize GPU context
         let gpu_ctx = GpuContext::new().map_err(|e| TensorError::ComputeError {
@@ -386,7 +383,7 @@ where
 /// Compute matrix inverse using Gauss-Jordan elimination
 pub fn inv<T>(input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Float + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     let shape = input.shape().dims();
     if shape.len() != 2 || shape[0] != shape[1] {
@@ -402,62 +399,14 @@ where
         ));
     }
 
-    // For larger matrices, try GPU implementation first if available
-    #[cfg(feature = "gpu")]
-    if n > 2 {
-        use crate::gpu::buffer::GpuBuffer;
-        use bytemuck::{Pod, Zeroable};
+    // Bring GPU-resident data back to the CPU once, up front, so the
+    // Gauss-Jordan implementation below always operates on genuinely
+    // CPU-backed storage (`as_slice()` returns `None` for GPU storage). This
+    // is a no-op clone when `input` is already CPU-resident. Mirrors the
+    // GPU-readback-then-delegate pattern already proven for GPU einsum in
+    // `ops/einsum/gpu.rs`; no separate GPU kernel implementation is needed.
+    let input = &input.to_cpu()?;
 
-        if should_use_gpu(input) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
-            // Use GPU implementation for f32 tensors
-            let rt = tokio::runtime::Runtime::new().map_err(|e| TensorError::ComputeError {
-                operation: "async_runtime_init".to_string(),
-                details: format!("Failed to create async runtime: {}", e),
-                retry_possible: false,
-                context: None,
-            })?;
-
-            let gpu_result = rt.block_on(async {
-                ensure_gpu_linalg_context().await?;
-
-                let mut context_guard = GPU_LINALG_CONTEXT
-                    .lock()
-                    .expect("lock should not be poisoned");
-                let context = context_guard
-                    .as_mut()
-                    .expect("GPU linalg context must be initialized");
-
-                // Create output tensor with same shape and device
-                let mut output = Tensor::<T>::zeros(input.shape().dims());
-
-                // Get GPU buffers using pattern matching
-                match (&input.storage, &output.storage) {
-                    (TensorStorage::Gpu(input_buffer), TensorStorage::Gpu(output_buffer)) => {
-                        // context.inverse(input_buffer, output_buffer, input.shape())?;
-                        // GPU linalg not yet implemented
-                        Err(TensorError::unsupported_operation_simple(
-                            "GPU matrix inverse not yet implemented".to_string(),
-                        ))
-                    }
-                    _ => Err(TensorError::unsupported_operation_simple(
-                        "GPU matrix inverse requires GPU tensors".to_string(),
-                    )),
-                }
-            });
-
-            match gpu_result {
-                Ok(result) => {
-                    // Convert back to generic type T if needed
-                    return Ok(result);
-                }
-                Err(_) => {
-                    // Fall back to CPU implementation
-                }
-            }
-        }
-    }
-
-    // Use CPU implementation (fallback or when GPU not available)
     // Create augmented matrix [A | I]
     let mut augmented = vec![T::zero(); n * 2 * n];
     let input_data = input.as_slice().expect("tensor should be contiguous");
@@ -608,7 +557,7 @@ where
 /// Matrix determinant
 pub fn det<T>(input: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Float + Send + Sync + 'static,
+    T: Clone + Default + Zero + One + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     let shape = input.shape().dims();
     if shape.len() != 2 || shape[0] != shape[1] {
@@ -621,6 +570,15 @@ where
     if n == 0 {
         return Ok(Tensor::from_scalar(T::one()));
     }
+
+    // Bring GPU-resident data back to the CPU once, up front (before any of
+    // the fast paths below, all of which call `as_slice()` unconditionally),
+    // so this function always operates on genuinely CPU-backed storage. This
+    // is a no-op clone when `input` is already CPU-resident. Mirrors the
+    // GPU-readback-then-delegate pattern already proven for GPU einsum in
+    // `ops/einsum/gpu.rs`; no separate GPU kernel implementation is needed.
+    let input = &input.to_cpu()?;
+
     if n == 1 {
         let val = input.as_slice().expect("tensor should be contiguous")[0];
         return Ok(Tensor::from_scalar(val));
@@ -632,58 +590,7 @@ where
         return Ok(Tensor::from_scalar(det_val));
     }
 
-    // For larger matrices, try GPU implementation first if available
-    #[cfg(feature = "gpu")]
-    {
-        use crate::gpu::buffer::GpuBuffer;
-        use bytemuck::{Pod, Zeroable};
-
-        if should_use_gpu(input) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
-            // Use GPU implementation for f32 tensors
-            let rt = tokio::runtime::Runtime::new().map_err(|e| TensorError::ComputeError {
-                operation: "async_runtime_init".to_string(),
-                details: format!("Failed to create async runtime: {}", e),
-                retry_possible: false,
-                context: None,
-            })?;
-
-            let gpu_result: Result<Tensor<T>> = rt.block_on(async {
-                ensure_gpu_linalg_context().await?;
-
-                let mut context_guard = GPU_LINALG_CONTEXT
-                    .lock()
-                    .expect("lock should not be poisoned");
-                let context = context_guard
-                    .as_mut()
-                    .expect("GPU linalg context must be initialized");
-
-                // Get GPU buffer from tensor using pattern matching
-                match &input.storage {
-                    TensorStorage::Gpu(gpu_buffer) => {
-                        // let det_val = context.determinant(gpu_buffer, input.shape())?;
-                        // GPU linalg not yet implemented
-                        Err(TensorError::unsupported_operation_simple(
-                            "GPU matrix determinant not yet implemented".to_string(),
-                        ))
-                    }
-                    _ => Err(TensorError::unsupported_operation_simple(
-                        "GPU matrix determinant requires GPU tensor".to_string(),
-                    )),
-                }
-            });
-
-            match gpu_result {
-                Ok(det_val) => {
-                    return Ok(det_val);
-                }
-                Err(_) => {
-                    // Fall back to CPU implementation
-                }
-            }
-        }
-    }
-
-    // Use CPU implementation (fallback or when GPU not available)
+    // Use CPU implementation (LU decomposition)
     match lu_decompose_with_det(input) {
         Ok((_, _, det_val)) => Ok(Tensor::from_scalar(det_val)),
         Err(e) => Err(e),
@@ -729,9 +636,9 @@ where
     let gpu_result = rt.block_on(async {
         ensure_gpu_linalg_context().await?;
 
-        let mut context_guard = GPU_LINALG_CONTEXT
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut context_guard = GPU_LINALG_CONTEXT.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("GPU linalg context lock poisoned".to_string())
+        })?;
         let context = context_guard
             .as_mut()
             .expect("GPU linalg context must be initialized");
@@ -982,5 +889,82 @@ mod tests {
 
         // One should be significantly larger (this is a rank-1 matrix)
         assert!(s1 > s2 || s2 > s1);
+    }
+
+    // --- GPU-resident regression tests -------------------------------------
+    //
+    // Bug: `inv()`/`det()` used to fall through a dead `#[cfg(feature = "gpu")]`
+    // block (whose scratch tensor was always CPU-backed regardless of input
+    // device, so its own `(Gpu, Gpu)` match arm could never fire) into the
+    // Gauss-Jordan/LU CPU code operating directly on the original,
+    // possibly-GPU-resident tensor, which panicked in `as_slice().expect(...)`.
+    // The fix reads the tensor back to the CPU once via `to_cpu()` up front,
+    // so these must now return the SAME correct values as the CPU-only tests
+    // above (`test_inv_2x2`, `test_det_2x2`, `test_det_3x3`) instead of
+    // panicking.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_inv_2x2_gpu_resident() {
+        let cpu_a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let a = match cpu_a.to_gpu(0) {
+            Ok(t) => t,
+            Err(_) => {
+                eprintln!("skipping test_inv_2x2_gpu_resident: no GPU adapter available");
+                return;
+            }
+        };
+
+        // This used to panic; it must now succeed with the correct values.
+        let inv_result = inv(&a).expect("test: inv should succeed on GPU-resident tensor");
+        let inv_data = inv_result.as_slice().expect("tensor should be contiguous");
+
+        // Same expected values as the CPU-only test_inv_2x2.
+        assert_relative_eq!(inv_data[0], -2.0, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[1], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[2], 1.5, epsilon = 1e-10);
+        assert_relative_eq!(inv_data[3], -0.5, epsilon = 1e-10);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_det_2x2_gpu_resident() {
+        let cpu_a = Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let a = match cpu_a.to_gpu(0) {
+            Ok(t) => t,
+            Err(_) => {
+                eprintln!("skipping test_det_2x2_gpu_resident: no GPU adapter available");
+                return;
+            }
+        };
+
+        // This used to panic unconditionally (det()'s n<=2 fast path has no
+        // GPU guard at all); it must now succeed with the correct value.
+        let det_result = det(&a).expect("test: det should succeed on GPU-resident tensor");
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
+        assert_relative_eq!(det_val, -2.0, epsilon = 1e-10); // Same as CPU-only test_det_2x2
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_det_3x3_gpu_resident() {
+        let cpu_a =
+            Tensor::<f64>::from_vec(vec![1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0], &[3, 3])
+                .expect("test: from_vec should succeed");
+        let a = match cpu_a.to_gpu(0) {
+            Ok(t) => t,
+            Err(_) => {
+                eprintln!("skipping test_det_3x3_gpu_resident: no GPU adapter available");
+                return;
+            }
+        };
+
+        // This used to panic (falls through to lu_decompose_with_det, which
+        // calls as_slice().expect() on the still-GPU-resident tensor); it
+        // must now succeed with the correct value.
+        let det_result = det(&a).expect("test: det should succeed on GPU-resident tensor");
+        let det_val = det_result.as_slice().expect("tensor should be contiguous")[0];
+        assert_relative_eq!(det_val, 1.0, epsilon = 1e-10); // Same as CPU-only test_det_3x3
     }
 }

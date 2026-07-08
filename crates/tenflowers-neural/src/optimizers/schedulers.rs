@@ -305,9 +305,9 @@ fn interpolate(start: f32, end: f32, t: f32, strategy: AnnealStrategy) -> f32 {
 ///
 /// # Example
 /// ```rust
-/// use tenflowers_neural::optimizers::{ReduceLrOnPlateau, MetricMode};
+/// use tenflowers_neural::optimizers::{SchedReduceLrOnPlateau, MetricMode};
 ///
-/// let mut sched = ReduceLrOnPlateau::new(MetricMode::Min, 0.5, 3, 0.0, 0, 1e-6, 0.0);
+/// let mut sched = SchedReduceLrOnPlateau::new(MetricMode::Min, 0.5, 3, 0.0, 0, 1e-6, 0.0);
 /// let new_lr = sched.step_with_metric(1.0, 0.1);
 /// assert!((new_lr - 0.1).abs() < 1e-7);
 /// ```

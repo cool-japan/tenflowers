@@ -131,8 +131,8 @@ impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Te
     }
 }
 
-impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Dataset<T>
-    for TensorDataset<T>
+impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod>
+    Dataset<T> for TensorDataset<T>
 {
     fn len(&self) -> usize {
         self.features.shape().dims()[0]
@@ -178,7 +178,7 @@ impl<T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static> Da
 /// Helper function to squeeze the first dimension of a tensor
 fn squeeze_first_dim<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     let shape = tensor.shape();
     if shape.rank() == 0 {

@@ -58,7 +58,7 @@ impl PyTensorAnalyzer {
         let percentiles_item = py_dict
             .get_item("percentiles")?
             .expect("percentiles key was just set");
-        let percentiles_dict = percentiles_item.downcast::<PyDict>()?;
+        let percentiles_dict = percentiles_item.cast::<PyDict>()?;
         for (percentile, value) in analysis.percentiles.iter() {
             percentiles_dict.set_item(percentile.to_string(), *value)?;
         }
@@ -128,7 +128,7 @@ impl PyTensorAnalyzer {
         // Extract tensor data from Python dictionary
         for (key, value) in tensor_dict.iter() {
             let name: String = key.extract()?;
-            let data_list: &Bound<'_, PyList> = value.downcast()?;
+            let data_list: &Bound<'_, PyList> = value.cast()?;
             let values: Vec<f32> = data_list
                 .iter()
                 .map(|item| item.extract::<f32>())

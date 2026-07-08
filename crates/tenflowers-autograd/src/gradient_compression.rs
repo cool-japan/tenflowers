@@ -301,6 +301,15 @@ impl GradientCompressor {
         let total_elements = data.len();
         let k = k.min(total_elements);
 
+        // NaN gradient values are a common training pathology (exploding gradients,
+        // bad loss function, infinite learning rate). Detect early and return a
+        // diagnostic error rather than panicking inside the sort comparator.
+        if data.iter().any(|v| v.is_nan()) {
+            return Err(tenflowers_core::TensorError::invalid_argument(
+                "gradient contains NaN values; check loss function and learning rate".to_string(),
+            ));
+        }
+
         // Create pairs of (absolute_value, index, original_value)
         let mut indexed_values: Vec<(f32, usize, f32)> = data
             .iter()
@@ -308,11 +317,10 @@ impl GradientCompressor {
             .map(|(i, &val)| (val.abs(), i, val))
             .collect();
 
-        // Sort by absolute value in descending order
-        indexed_values.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .expect("gradient values should not be NaN during compression")
-        });
+        // Sort by absolute value in descending order.
+        // NaN elements are guarded above; use total_cmp fallback for any
+        // remaining edge-cases (e.g. -0.0 vs +0.0) to keep the sort stable.
+        indexed_values.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         // Take top K
         let mut indices = Vec::with_capacity(k);

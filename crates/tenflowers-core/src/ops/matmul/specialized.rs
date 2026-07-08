@@ -47,8 +47,18 @@ where
         }
         #[cfg(feature = "gpu")]
         (TensorStorage::Gpu(_), TensorStorage::Gpu(_)) => {
-            // Delegate to GPU mixed precision implementation
-            super::gpu::matmul_mixed_precision_gpu(a, b, precision_mode == MixedPrecisionMode::Fast)
+            // The raw-buffer-level `matmul_mixed_precision_gpu` cannot
+            // correctly dispatch by precision mode: it only receives a
+            // collapsed `use_tf32: bool`, not the full `MixedPrecisionMode`
+            // needed to choose between the Kahan-summation high-precision
+            // path, the balanced path, and the fast path. Read both operands
+            // back to the host here (where the real `precision_mode` is
+            // still available) and re-call this function with CPU tensors,
+            // landing on the CPU arm above, which already dispatches
+            // correctly.
+            let cpu_a = a.to_cpu()?;
+            let cpu_b = b.to_cpu()?;
+            matmul_mixed_precision(&cpu_a, &cpu_b, precision_mode)
         }
         #[cfg(feature = "gpu")]
         _ => Err(TensorError::invalid_operation_simple(
@@ -60,7 +70,7 @@ where
 /// Outer product of two tensors
 pub fn outer<T>(a: &Tensor<T>, b: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Zero + std::ops::Mul<Output = T> + Default + Send + Sync + 'static,
+    T: Clone + Zero + std::ops::Mul<Output = T> + Default + Send + Sync + 'static + bytemuck::Pod,
 {
     let a_shape = a.shape().dims();
     let b_shape = b.shape().dims();
@@ -93,9 +103,13 @@ where
         }
         #[cfg(feature = "gpu")]
         (TensorStorage::Gpu(_), TensorStorage::Gpu(_)) => {
-            Err(TensorError::unsupported_operation_simple(
-                "GPU outer product not yet implemented".to_string(),
-            ))
+            // No native GPU outer-product kernel exists yet. Read both
+            // operands back to the host (a real device->host transfer) and
+            // delegate to the CPU implementation above, which is
+            // known-correct.
+            let cpu_a = a.to_cpu()?;
+            let cpu_b = b.to_cpu()?;
+            outer(&cpu_a, &cpu_b)
         }
         #[cfg(feature = "gpu")]
         _ => Err(TensorError::invalid_operation_simple(
@@ -236,5 +250,67 @@ mod tests {
 
         let result = outer(&a, &b);
         assert!(result.is_err());
+    }
+}
+
+// GPU-resident correctness tests for the readback+delegate fixes in this
+// file: `outer()`'s (Gpu,Gpu) arm and `matmul_mixed_precision()`'s GPU arm.
+// Skips gracefully (without failing the suite) if no GPU adapter is
+// available in this environment.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_outer_product_matches_cpu_reference() {
+        let a_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b_cpu =
+            Tensor::<f32>::from_vec(vec![4.0, 5.0], &[2]).expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu) = match (a_cpu.to(Device::Gpu(0)), b_cpu.to(Device::Gpu(0))) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = outer(&a_gpu, &b_gpu)
+            .expect("test: gpu outer product should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[3, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![4.0, 5.0, 8.0, 10.0, 12.0, 15.0]);
+    }
+
+    #[test]
+    fn gpu_matmul_mixed_precision_matches_cpu_reference() {
+        let a_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b_cpu = Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu) = match (a_cpu.to(Device::Gpu(0)), b_cpu.to(Device::Gpu(0))) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        for mode in [
+            MixedPrecisionMode::HighPrecision,
+            MixedPrecisionMode::Balanced,
+            MixedPrecisionMode::Fast,
+        ] {
+            let result = matmul_mixed_precision(&a_gpu, &b_gpu, mode).unwrap_or_else(|e| {
+                panic!(
+                    "test: gpu matmul_mixed_precision (mode {mode:?}) should succeed with a real adapter: {e}"
+                )
+            });
+            assert_eq!(result.shape().dims(), &[2, 2]);
+            let data = result.to_vec().expect("test: to_vec should succeed");
+            // [[1,2],[3,4]] @ [[5,6],[7,8]] = [[19,22],[43,50]]
+            assert_eq!(
+                data,
+                vec![19.0, 22.0, 43.0, 50.0],
+                "mismatch for mode {mode:?}"
+            );
+        }
     }
 }

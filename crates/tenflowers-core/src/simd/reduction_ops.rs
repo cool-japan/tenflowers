@@ -164,7 +164,7 @@ impl ReductionOps {
             return Err(TensorError::InvalidOperation {
                 operation: "SIMD min_max".to_string(),
                 reason: "Cannot find min/max of empty array".to_string(),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -219,7 +219,7 @@ impl ReductionOps {
                 operation: "SIMD normalize".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -289,7 +289,7 @@ impl ReductionOps {
             return Err(TensorError::InvalidOperation {
                 operation: "SIMD mean_variance".to_string(),
                 reason: "Cannot compute mean/variance of empty array".to_string(),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -429,7 +429,7 @@ impl ReductionOps {
             return Err(TensorError::InvalidOperation {
                 operation: "SIMD argmax".to_string(),
                 reason: "Cannot find argmax of empty array".to_string(),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -452,7 +452,7 @@ impl ReductionOps {
             return Err(TensorError::InvalidOperation {
                 operation: "SIMD argmin".to_string(),
                 reason: "Cannot find argmin of empty array".to_string(),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 

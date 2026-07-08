@@ -115,7 +115,11 @@ impl JitGradientContext {
 
         let compiler = Self::get_compiler()?;
         let compiled_kernel = {
-            let compiler_guard = compiler.read().expect("read lock should not be poisoned");
+            let compiler_guard = compiler.read().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "jit compiler lock poisoned".to_string(),
+                )
+            })?;
             compiler_guard.compile_gradient_kernel(signature)?
         };
 
@@ -188,8 +192,9 @@ impl JitGradientContext {
     {
         let start_time = std::time::Instant::now();
 
-        // For now, fallback to regular gradient computation
-        // In a full implementation, this would execute the compiled GPU kernel
+        // Compiled-kernel execution is not yet wired up; delegate to the fallback path.
+        // The fallback surfaces an honest error (no tape context) rather than fabricating
+        // zero gradients, so this propagates that error to the caller.
         let gradients = self
             .fallback_gradient_computation(operation, inputs, grad_output)
             .await?;
@@ -206,28 +211,33 @@ impl JitGradientContext {
         Ok(gradients)
     }
 
-    /// Fallback to regular gradient computation
+    /// Fallback gradient computation when no compiled JIT kernel is available.
+    ///
+    /// This entry point receives only the operation name, the forward input tensors,
+    /// and the upstream gradient — it does **not** receive the [`GradientTape`] nor the
+    /// recorded computation graph, so it cannot reconstruct the real backward pass on its
+    /// own. Returning zero tensors here would silently fabricate gradients (corrupting any
+    /// downstream optimizer), so instead we surface an honest, actionable error directing
+    /// the caller to the tape-based gradient path.
+    ///
+    /// To compute gradients without a JIT kernel, call [`GradientTape::gradient`] directly,
+    /// which performs reverse-mode differentiation over the recorded graph.
     async fn fallback_gradient_computation<T>(
         &self,
-        _operation: &str,
-        inputs: &[&Tensor<T>],
+        operation: &str,
+        _inputs: &[&Tensor<T>],
         _grad_output: &Tensor<T>,
     ) -> Result<Vec<Tensor<T>>>
     where
         T: Clone + std::fmt::Debug + 'static + Default + scirs2_core::num_traits::Zero,
     {
-        // This would integrate with the existing gradient computation system
-        // For now, return placeholder gradients
-        let mut gradients = Vec::new();
-
-        for input in inputs {
-            // Create gradient with same shape as input
-            // For now, create a simple placeholder tensor
-            let grad = Tensor::zeros(input.shape().dims());
-            gradients.push(grad);
-        }
-
-        Ok(gradients)
+        Err(tenflowers_core::TensorError::not_implemented_simple(
+            format!(
+                "JIT fallback for operation '{operation}' has no tape context and cannot \
+             compute real gradients; call GradientTape::gradient directly to differentiate \
+             over the recorded graph"
+            ),
+        ))
     }
 
     /// Update performance statistics for a kernel
@@ -240,7 +250,7 @@ impl JitGradientContext {
         let mut tracker = self
             .performance_tracker
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let stats = tracker
             .entry(operation.to_string())
@@ -264,7 +274,7 @@ impl JitGradientContext {
         let tracker = self
             .performance_tracker
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut report = String::new();
 
         report.push_str("# JIT Kernel Performance Report\n\n");
@@ -295,15 +305,20 @@ impl JitGradientContext {
             return Ok(());
         }
 
-        let tracker = self
-            .performance_tracker
-            .read()
-            .expect("read lock should not be poisoned");
+        let tracker = self.performance_tracker.read().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "jit compiler lock poisoned".to_string(),
+            )
+        })?;
         let compiler = Self::get_compiler()?;
 
         for (operation, stats) in tracker.iter() {
             // If a kernel is significantly slower than estimated, recompile with different optimizations
-            let _compiler_guard = compiler.read().expect("read lock should not be poisoned");
+            let _compiler_guard = compiler.read().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "jit compiler lock poisoned".to_string(),
+                )
+            })?;
             // This would implement the auto-tuning logic
             if self.config.debug_output {
                 println!(
@@ -321,7 +336,7 @@ impl JitGradientContext {
         let mut tracker = self
             .performance_tracker
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         tracker.clear();
     }
 }
@@ -340,17 +355,26 @@ pub trait JitGradientTapeExt {
 
 impl JitGradientTapeExt for GradientTape {
     fn enable_jit(&mut self, _config: JitConfig) -> Result<()> {
-        // In a full implementation, this would modify the GradientTape to use JIT compilation
-        // For now, this is a placeholder
-        Ok(())
+        // The GradientTape does not yet carry a JIT compilation hook. Returning `Ok(())`
+        // would silently claim JIT was enabled while changing nothing, so we return an
+        // honest error instead. Use `JitGradientContext` directly to compile and execute
+        // gradient kernels until tape-level integration lands.
+        Err(tenflowers_core::TensorError::not_implemented_simple(
+            "GradientTape does not yet support per-tape JIT enablement; \
+             use JitGradientContext directly to compile/execute gradient kernels"
+                .to_string(),
+        ))
     }
 
     fn disable_jit(&mut self) {
-        // Placeholder implementation
+        // No per-tape JIT state exists yet (see `enable_jit`), so there is nothing to
+        // disable. This is intentionally a no-op rather than a fabricated state change.
     }
 
     fn jit_performance_report(&self) -> Option<String> {
-        // Placeholder implementation
+        // The GradientTape does not track JIT performance; that data lives on
+        // `JitGradientContext::get_performance_report`. Report `None` honestly rather
+        // than synthesizing an empty-but-plausible report.
         None
     }
 }
@@ -367,18 +391,14 @@ pub mod utils {
         JitGradientContext::initialize_global_compiler(device_features, &config)
     }
 
-    /// Auto-detect device features
+    /// Auto-detect device features.
+    ///
+    /// No live device-capability query is wired in yet. Rather than fabricating
+    /// optimistic "modern GPU" specifications (which would skew the JIT cost model toward
+    /// non-existent hardware), this returns the conservative [`DeviceFeatures::default`]
+    /// baseline. When a real device probe is added, replace this with the actual query.
     async fn auto_detect_device_features() -> Result<DeviceFeatures> {
-        // This would query the actual GPU device for capabilities
-        // For now, return reasonable defaults
-        Ok(DeviceFeatures {
-            max_workgroup_size: 1024,
-            max_workgroups_per_dim: 65535,
-            supports_f64: true,
-            supports_i64: true,
-            memory_bandwidth_gb_s: 500.0, // Modern GPU estimate
-            compute_units: 64,            // Modern GPU estimate
-        })
+        Ok(DeviceFeatures::default())
     }
 
     /// Create a JIT-enabled gradient context with reasonable defaults
@@ -395,7 +415,13 @@ pub mod utils {
         })
     }
 
-    /// Benchmark JIT vs non-JIT gradient computation
+    /// Benchmark JIT vs non-JIT gradient computation.
+    ///
+    /// Returns `(jit_time_us, regular_time_us)` averaged over `iterations`. Both legs go
+    /// through the gradient-execution path, which currently has no compiled kernel and no
+    /// tape context, so this propagates the honest "not implemented" error from
+    /// [`JitGradientContext::execute_jit_gradient`] rather than reporting fabricated
+    /// timings for a no-op. It will yield real numbers once the execution path is wired up.
     pub async fn benchmark_jit_performance<T>(
         operation: &str,
         inputs: &[&Tensor<T>],

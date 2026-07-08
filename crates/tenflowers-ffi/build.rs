@@ -13,10 +13,10 @@ fn main() {
     // feature is enabled (correct for .so files, but test binaries need Python linked).
     // Emit link args directly here to cover both cases on macOS.
     let config = pyo3_build_config::get();
-    if let Some(lib_dir) = &config.lib_dir {
+    if let Some(lib_dir) = config.lib_dir() {
         println!("cargo:rustc-link-search=native={lib_dir}");
     }
-    if let Some(lib_name) = &config.lib_name {
+    if let Some(lib_name) = config.lib_name() {
         println!("cargo:rustc-link-lib={lib_name}");
     }
     #[cfg(feature = "c-header-generate")]

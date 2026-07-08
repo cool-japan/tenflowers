@@ -44,7 +44,7 @@ impl CacheTelemetryCollector {
             let mut metrics = self
                 .current_metrics
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.hits += 1;
 
             let latency_us = latency.as_micros() as f64;
@@ -76,7 +76,7 @@ impl CacheTelemetryCollector {
             let mut metrics = self
                 .current_metrics
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.misses += 1;
 
             let latency_us = latency.as_micros() as f64;
@@ -104,7 +104,7 @@ impl CacheTelemetryCollector {
             let mut metrics = self
                 .current_metrics
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.evictions += 1;
 
             if let Some(size) = size_bytes {
@@ -128,7 +128,7 @@ impl CacheTelemetryCollector {
             let mut metrics = self
                 .current_metrics
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.insertions += 1;
 
             if let Some(size) = size_bytes {
@@ -152,7 +152,7 @@ impl CacheTelemetryCollector {
         let mut metrics = self
             .current_metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         metrics.window_duration = metrics.window_start.elapsed();
         metrics.calculate_derived();
@@ -161,7 +161,7 @@ impl CacheTelemetryCollector {
             let histogram = self
                 .latency_histogram
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let percentiles = calculate_percentiles(&histogram);
             metrics.p50_latency_us = percentiles.0;
             metrics.p95_latency_us = percentiles.1;
@@ -178,7 +178,10 @@ impl CacheTelemetryCollector {
             metrics: self.get_metrics(),
         };
 
-        let mut snapshots = self.snapshots.lock().expect("lock should not be poisoned");
+        let mut snapshots = self
+            .snapshots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         snapshots.push_back(snapshot);
 
         while snapshots.len() > self.config.max_snapshots {
@@ -190,7 +193,7 @@ impl CacheTelemetryCollector {
     pub fn get_recent_events(&self, count: usize) -> Vec<CacheEvent> {
         self.recent_events
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
             .rev()
             .take(count)
@@ -202,7 +205,7 @@ impl CacheTelemetryCollector {
     pub fn get_snapshots(&self) -> Vec<MetricsSnapshot> {
         self.snapshots
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
             .cloned()
             .collect()
@@ -213,18 +216,18 @@ impl CacheTelemetryCollector {
         *self
             .current_metrics
             .lock()
-            .expect("lock should not be poisoned") = CacheTelemetryMetrics::new();
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = CacheTelemetryMetrics::new();
         self.recent_events
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.snapshots
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.latency_histogram
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
@@ -234,7 +237,7 @@ impl CacheTelemetryCollector {
         let mut events = self
             .recent_events
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         events.push_back(event);
 
         while events.len() > self.config.max_events {
@@ -247,7 +250,7 @@ impl CacheTelemetryCollector {
         let mut histogram = self
             .latency_histogram
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *histogram.entry(bucket).or_insert(0) += 1;
     }
 }

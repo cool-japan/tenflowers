@@ -192,7 +192,7 @@ pub use pooling::{
 };
 pub use rnn::{
     BahdanauAttention, HierarchicalAttention, LuongAttention, LuongAttentionType,
-    ResetGateVariation, GRU, LSTM, RNN,
+    ResetGateVariation, RnnNonlinearity, GRU, LSTM, RNN,
 };
 pub use state_space::{MambaBlock, StateSpaceModel};
 pub use stochastic_depth::{StochasticDepth, StochasticDepthNoResidual};
@@ -286,6 +286,25 @@ pub trait Layer<T> {
     fn parameters_mut(&mut self) -> Vec<&mut Tensor<T>>;
     fn set_training(&mut self, training: bool);
     fn clone_box(&self) -> Box<dyn Layer<T>>;
+
+    /// Forward pass for layers that accept multiple input tensors (e.g. merge/combine
+    /// layers). The default implementation only supports the single-input case: it
+    /// requires exactly one input and delegates to [`Layer::forward`], so existing
+    /// single-input layer implementations are completely unaffected by this method's
+    /// addition (no breaking change). Layers that genuinely need multiple inputs
+    /// should override this method.
+    fn forward_multi(&self, inputs: &[&Tensor<T>]) -> Result<Tensor<T>> {
+        if inputs.len() != 1 {
+            return Err(tenflowers_core::TensorError::unsupported_operation_simple(
+                format!(
+                    "this layer only supports single-input forward, but {} inputs were given \
+                 (override Layer::forward_multi to support multiple inputs)",
+                    inputs.len()
+                ),
+            ));
+        }
+        self.forward(inputs[0])
+    }
 
     /// Returns the type of this layer for ONNX export and introspection
     fn layer_type(&self) -> LayerType {

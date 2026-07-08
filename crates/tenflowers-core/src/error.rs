@@ -9,7 +9,7 @@ pub enum TensorError {
         operation: String,
         expected: String,
         got: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Incompatible devices in operation '{operation}': {device1} and {device2}")]
@@ -17,7 +17,7 @@ pub enum TensorError {
         operation: String,
         device1: String,
         device2: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Operation '{operation}' not supported on device: {device}")]
@@ -25,7 +25,7 @@ pub enum TensorError {
         operation: String,
         device: String,
         fallback_available: bool,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Invalid shape in operation '{operation}': {reason}")]
@@ -33,7 +33,7 @@ pub enum TensorError {
         operation: String,
         reason: String,
         shape: Option<Vec<usize>>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Invalid axis {axis} in operation '{operation}' for tensor with {ndim} dimensions")]
@@ -41,21 +41,21 @@ pub enum TensorError {
         operation: String,
         axis: i32,
         ndim: usize,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Gradient computation not enabled for tensor in operation '{operation}'")]
     GradientNotEnabled {
         operation: String,
         suggestion: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Invalid argument in operation '{operation}': {reason}")]
     InvalidArgument {
         operation: String,
         reason: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Memory allocation failed in operation '{operation}': {details}")]
@@ -64,7 +64,7 @@ pub enum TensorError {
         details: String,
         requested_bytes: Option<usize>,
         available_bytes: Option<usize>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Operation '{operation}' not supported: {reason}")]
@@ -72,7 +72,7 @@ pub enum TensorError {
         operation: String,
         reason: String,
         alternatives: Vec<String>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("GPU error in operation '{operation}': {details}")]
@@ -82,7 +82,7 @@ pub enum TensorError {
         details: String,
         gpu_id: Option<usize>,
         fallback_attempted: bool,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Device error in operation '{operation}': {details}")]
@@ -90,7 +90,7 @@ pub enum TensorError {
         operation: String,
         details: String,
         device: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Compute error in operation '{operation}': {details}")]
@@ -98,7 +98,7 @@ pub enum TensorError {
         operation: String,
         details: String,
         retry_possible: bool,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("BLAS error in operation '{operation}': {details}")]
@@ -106,14 +106,14 @@ pub enum TensorError {
     BlasError {
         operation: String,
         details: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Serialization error in operation '{operation}': {details}")]
     SerializationError {
         operation: String,
         details: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Operation '{operation}' not implemented: {details}")]
@@ -121,21 +121,21 @@ pub enum TensorError {
         operation: String,
         details: String,
         planned_version: Option<String>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Invalid operation '{operation}': {reason}")]
     InvalidOperation {
         operation: String,
         reason: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Benchmark error in '{operation}': {details}")]
     BenchmarkError {
         operation: String,
         details: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("IO error in operation '{operation}': {details}")]
@@ -143,7 +143,7 @@ pub enum TensorError {
         operation: String,
         details: String,
         path: Option<String>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Numerical error in operation '{operation}': {details}")]
@@ -151,7 +151,7 @@ pub enum TensorError {
         operation: String,
         details: String,
         suggestions: Vec<String>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Resource exhaustion in operation '{operation}': {resource}")]
@@ -160,14 +160,14 @@ pub enum TensorError {
         resource: String,
         current_usage: Option<usize>,
         limit: Option<usize>,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Timeout in operation '{operation}' after {duration_ms}ms")]
     Timeout {
         operation: String,
         duration_ms: u64,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Cache operation failed in '{operation}': {details}")]
@@ -175,14 +175,14 @@ pub enum TensorError {
         operation: String,
         details: String,
         recoverable: bool,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 
     #[error("Other error in operation '{operation}': {details}")]
     Other {
         operation: String,
         details: String,
-        context: Option<ErrorContext>,
+        context: Option<Box<ErrorContext>>,
     },
 }
 
@@ -503,6 +503,9 @@ impl TensorError {
 
     /// Add context to an existing error
     pub fn with_context(mut self, context: ErrorContext) -> Self {
+        // `ErrorContext` is heap-boxed inside the error to keep each variant
+        // small (see `Option<Box<ErrorContext>>` fields above).
+        let context = Box::new(context);
         match &mut self {
             Self::ShapeMismatch { context: ctx, .. } => *ctx = Some(context),
             Self::DeviceMismatch { context: ctx, .. } => *ctx = Some(context),

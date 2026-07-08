@@ -54,44 +54,42 @@ impl CheckpointManager {
         _tensor_id: TensorId,
         operation_name: &str,
         layer_index: usize,
-    ) -> bool {
+    ) -> Result<bool> {
         if !self.enabled {
-            return false;
+            return Ok(false);
         }
 
         match &self.strategy {
-            CheckpointStrategy::NoCheckpointing => false,
-            CheckpointStrategy::EveryNLayers(n) => layer_index % n == 0,
+            CheckpointStrategy::NoCheckpointing => Ok(false),
+            CheckpointStrategy::EveryNLayers(n) => Ok(layer_index % n == 0),
             CheckpointStrategy::MemoryThreshold(threshold) => {
-                let current_usage = *self
-                    .memory_usage
-                    .lock()
-                    .expect("lock should not be poisoned");
-                current_usage < *threshold
+                let current_usage = *self.memory_usage.lock().map_err(|_| {
+                    TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+                })?;
+                Ok(current_usage < *threshold)
             }
-            CheckpointStrategy::Custom(predicate) => predicate(operation_name),
+            CheckpointStrategy::Custom(predicate) => Ok(predicate(operation_name)),
         }
     }
 
     /// Save a tensor to checkpoint
-    pub fn save_checkpoint<T>(&self, tensor_id: TensorId, tensor: &Tensor<T>)
+    pub fn save_checkpoint<T>(&self, tensor_id: TensorId, tensor: &Tensor<T>) -> Result<()>
     where
         T: Clone + Send + Sync + 'static,
     {
-        let mut checkpoints = self
-            .checkpoints
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut checkpoints = self.checkpoints.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
 
         // Estimate memory usage
         let estimated_size = self.estimate_tensor_size(tensor);
-        let mut memory_usage = self
-            .memory_usage
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut memory_usage = self.memory_usage.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
         *memory_usage += estimated_size;
 
         checkpoints.insert(tensor_id, Box::new(tensor.clone()));
+        Ok(())
     }
 
     /// Restore a tensor from checkpoint
@@ -99,10 +97,9 @@ impl CheckpointManager {
     where
         T: Clone + Send + Sync + 'static,
     {
-        let checkpoints = self
-            .checkpoints
-            .lock()
-            .expect("lock should not be poisoned");
+        let checkpoints = self.checkpoints.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
 
         if let Some(checkpoint) = checkpoints.get(&tensor_id) {
             if let Some(tensor) = checkpoint.downcast_ref::<Tensor<T>>() {
@@ -118,43 +115,44 @@ impl CheckpointManager {
     }
 
     /// Remove a checkpoint (to free memory)
-    pub fn remove_checkpoint(&self, tensor_id: TensorId) {
-        let mut checkpoints = self
-            .checkpoints
-            .lock()
-            .expect("lock should not be poisoned");
+    pub fn remove_checkpoint(&self, tensor_id: TensorId) -> Result<()> {
+        let mut checkpoints = self.checkpoints.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
         checkpoints.remove(&tensor_id);
+        Ok(())
     }
 
     /// Clear all checkpoints
-    pub fn clear_checkpoints(&self) {
-        let mut checkpoints = self
-            .checkpoints
-            .lock()
-            .expect("lock should not be poisoned");
+    pub fn clear_checkpoints(&self) -> Result<()> {
+        let mut checkpoints = self.checkpoints.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
         checkpoints.clear();
 
-        let mut memory_usage = self
-            .memory_usage
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut memory_usage = self.memory_usage.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?;
         *memory_usage = 0;
+        Ok(())
     }
 
     /// Get current memory usage
-    pub fn memory_usage(&self) -> usize {
-        *self
-            .memory_usage
-            .lock()
-            .expect("lock should not be poisoned")
+    pub fn memory_usage(&self) -> Result<usize> {
+        Ok(*self.memory_usage.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+        })?)
     }
 
     /// Get number of stored checkpoints
-    pub fn checkpoint_count(&self) -> usize {
-        self.checkpoints
+    pub fn checkpoint_count(&self) -> Result<usize> {
+        Ok(self
+            .checkpoints
             .lock()
-            .expect("lock should not be poisoned")
-            .len()
+            .map_err(|_| {
+                TensorError::invalid_operation_simple("checkpoint lock poisoned".to_string())
+            })?
+            .len())
     }
 
     /// Estimate the memory size of a tensor
@@ -199,22 +197,23 @@ impl<F> CheckpointedFunction<F> {
         // Check if we should checkpoint the input
         if self
             .checkpoint_manager
-            .should_checkpoint(input.id, &self.operation_name, layer_index)
+            .should_checkpoint(input.id, &self.operation_name, layer_index)?
         {
             self.checkpoint_manager
-                .save_checkpoint(input.id, &input.tensor);
+                .save_checkpoint(input.id, &input.tensor)?;
         }
 
         // Execute the function
         let result = (self.func)(input)?;
 
         // Check if we should checkpoint the result
-        if self
-            .checkpoint_manager
-            .should_checkpoint(result.id, &self.operation_name, layer_index)
-        {
+        if self.checkpoint_manager.should_checkpoint(
+            result.id,
+            &self.operation_name,
+            layer_index,
+        )? {
             self.checkpoint_manager
-                .save_checkpoint(result.id, &result.tensor);
+                .save_checkpoint(result.id, &result.tensor)?;
         }
 
         Ok(result)
@@ -286,8 +285,8 @@ where
 
     for (i, op) in operations.into_iter().enumerate() {
         // Check if we should checkpoint before this operation
-        if checkpoint_manager.should_checkpoint(current.id, "sequence_op", i) {
-            checkpoint_manager.save_checkpoint(current.id, &current.tensor);
+        if checkpoint_manager.should_checkpoint(current.id, "sequence_op", i)? {
+            checkpoint_manager.save_checkpoint(current.id, &current.tensor)?;
         }
 
         // Execute the operation
@@ -387,17 +386,27 @@ mod tests {
         let manager = CheckpointManager::new(CheckpointStrategy::NoCheckpointing);
 
         // Test checkpointing decision
-        assert!(!manager.should_checkpoint(1, "test", 0));
+        assert!(!manager
+            .should_checkpoint(1, "test", 0)
+            .expect("test: lock should not be poisoned"));
 
         // Test with EveryNLayers strategy
         let mut manager = CheckpointManager::new(CheckpointStrategy::EveryNLayers(2));
-        assert!(manager.should_checkpoint(1, "test", 0)); // 0 % 2 == 0
-        assert!(!manager.should_checkpoint(1, "test", 1)); // 1 % 2 != 0
-        assert!(manager.should_checkpoint(1, "test", 2)); // 2 % 2 == 0
+        assert!(manager
+            .should_checkpoint(1, "test", 0)
+            .expect("test: lock should not be poisoned")); // 0 % 2 == 0
+        assert!(!manager
+            .should_checkpoint(1, "test", 1)
+            .expect("test: lock should not be poisoned")); // 1 % 2 != 0
+        assert!(manager
+            .should_checkpoint(1, "test", 2)
+            .expect("test: lock should not be poisoned")); // 2 % 2 == 0
 
         // Test enable/disable
         manager.set_enabled(false);
-        assert!(!manager.should_checkpoint(1, "test", 0));
+        assert!(!manager
+            .should_checkpoint(1, "test", 0)
+            .expect("test: lock should not be poisoned"));
     }
 
     #[test]
@@ -409,8 +418,15 @@ mod tests {
         let tensor = Tensor::from_array(data);
 
         // Save checkpoint
-        manager.save_checkpoint(1, &tensor);
-        assert_eq!(manager.checkpoint_count(), 1);
+        manager
+            .save_checkpoint(1, &tensor)
+            .expect("test: checkpoint save should succeed");
+        assert_eq!(
+            manager
+                .checkpoint_count()
+                .expect("test: lock should not be poisoned"),
+            1
+        );
 
         // Restore checkpoint
         let restored: Option<Tensor<f32>> = manager
@@ -435,8 +451,15 @@ mod tests {
         assert!(missing.is_none());
 
         // Clear checkpoints
-        manager.clear_checkpoints();
-        assert_eq!(manager.checkpoint_count(), 0);
+        manager
+            .clear_checkpoints()
+            .expect("test: clear checkpoints should succeed");
+        assert_eq!(
+            manager
+                .checkpoint_count()
+                .expect("test: lock should not be poisoned"),
+            0
+        );
     }
 
     #[test]
@@ -500,19 +523,32 @@ mod tests {
         let manager = CheckpointManager::new(CheckpointStrategy::MemoryThreshold(1000));
 
         // Initially under threshold
-        assert!(manager.should_checkpoint(1, "test", 0));
+        assert!(manager
+            .should_checkpoint(1, "test", 0)
+            .expect("test: lock should not be poisoned"));
 
         // Save a large tensor to exceed threshold
         let large_data = Array1::from_vec(vec![1.0f32; 1000]).into_dyn();
         let large_tensor = Tensor::from_array(large_data);
-        manager.save_checkpoint(1, &large_tensor);
+        manager
+            .save_checkpoint(1, &large_tensor)
+            .expect("test: save_checkpoint should not fail");
 
         // Now over threshold
-        assert!(!manager.should_checkpoint(2, "test", 0));
+        assert!(!manager
+            .should_checkpoint(2, "test", 0)
+            .expect("test: lock should not be poisoned"));
 
         // Clear to reset
-        manager.clear_checkpoints();
-        assert_eq!(manager.memory_usage(), 0);
+        manager
+            .clear_checkpoints()
+            .expect("test: clear_checkpoints should not fail");
+        assert_eq!(
+            manager
+                .memory_usage()
+                .expect("test: lock should not be poisoned"),
+            0
+        );
     }
 }
 
@@ -685,7 +721,7 @@ impl ActivationRecomputeManager {
     {
         let size = self.estimate_tensor_size(tensor);
 
-        self.checkpoint_manager.save_checkpoint(tensor_id, tensor);
+        self.checkpoint_manager.save_checkpoint(tensor_id, tensor)?;
         self.current_memory_usage += size;
         self.stats.checkpointed_activations += 1;
         self.stats.total_activations += 1;
@@ -741,7 +777,7 @@ impl ActivationRecomputeManager {
 
     /// Clear all checkpoints and reset memory usage
     pub fn clear(&mut self) {
-        self.checkpoint_manager.clear_checkpoints();
+        let _ = self.checkpoint_manager.clear_checkpoints();
         self.current_memory_usage = 0;
     }
 

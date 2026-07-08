@@ -386,7 +386,10 @@ impl GpuMemoryDiagnostics {
 
     /// Run comprehensive diagnostics
     pub fn run_diagnostics(&self) -> DiagnosticReport {
-        let tracker = self.tracker.lock().expect("lock should not be poisoned");
+        let tracker = self
+            .tracker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Get base statistics
         let memory_stats = tracker.global_stats().clone();
@@ -518,7 +521,10 @@ impl GpuMemoryDiagnostics {
 
     /// Check for memory leaks
     pub fn check_for_leaks(&self) -> LeakDetectionResult {
-        let tracker = self.tracker.lock().expect("lock should not be poisoned");
+        let tracker = self
+            .tracker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let suspected_leaks = tracker
             .find_potential_leaks(self.config.leak_detection_threshold)
             .into_iter()
@@ -531,7 +537,7 @@ impl GpuMemoryDiagnostics {
     pub fn current_usage(&self) -> usize {
         self.tracker
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .current_usage()
     }
 
@@ -539,7 +545,7 @@ impl GpuMemoryDiagnostics {
     pub fn peak_usage(&self) -> usize {
         self.tracker
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .peak_usage()
     }
 
@@ -547,7 +553,7 @@ impl GpuMemoryDiagnostics {
     pub fn reset(&self) {
         self.tracker
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .reset();
     }
 }

@@ -296,10 +296,9 @@ impl AsyncGpuScheduler {
 
         // Add to queue with priority ordering
         {
-            let mut queue = self
-                .operation_queue
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut queue = self.operation_queue.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("operation queue lock poisoned".to_string())
+            })?;
             let insert_pos = queue
                 .iter()
                 .position(|op| op.priority < priority)
@@ -339,10 +338,9 @@ impl AsyncGpuScheduler {
 
         // Add to queue with priority ordering
         {
-            let mut queue = self
-                .operation_queue
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut queue = self.operation_queue.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("operation queue lock poisoned".to_string())
+            })?;
             let insert_pos = queue
                 .iter()
                 .position(|op| op.priority < priority)
@@ -373,7 +371,7 @@ impl AsyncGpuScheduler {
             let mut queue = self
                 .operation_queue
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             queue.pop_front()
         };
 
@@ -423,7 +421,10 @@ impl AsyncGpuScheduler {
         // Update metrics
         let execution_time = start_time.elapsed();
         {
-            let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+            let mut metrics = self
+                .metrics
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.record_operation_time(operation.operation.get_operation_type(), execution_time);
         }
 
@@ -560,14 +561,20 @@ impl AsyncGpuScheduler {
 
     /// Generate unique operation ID
     async fn generate_operation_id(&self) -> u64 {
-        let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let mut metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metrics.total_operations += 1;
         metrics.total_operations
     }
 
     /// Update performance metrics
     async fn update_metrics(&self, execution_time: Duration, success: bool) {
-        let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let mut metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Update running average of execution time
         let alpha = 0.1; // Exponential moving average factor
@@ -589,7 +596,10 @@ impl AsyncGpuScheduler {
 
     /// Get current performance metrics
     pub async fn get_metrics(&self) -> PerformanceMetrics {
-        let metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         (*metrics).clone()
     }
 }
@@ -635,14 +645,20 @@ impl MemoryPrefetcher {
         let mut queue = self
             .prefetch_queue
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         queue.push_back(request);
     }
 
     /// Get cache hit rate
     pub fn get_cache_hit_rate(&self) -> f64 {
-        let hits = *self.hit_count.lock().expect("lock should not be poisoned");
-        let misses = *self.miss_count.lock().expect("lock should not be poisoned");
+        let hits = *self
+            .hit_count
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let misses = *self
+            .miss_count
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if hits + misses == 0 {
             0.0
@@ -671,7 +687,7 @@ impl KernelFusionOptimizer {
         let mut fusion_candidates = self
             .fusion_candidates
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Get current operation type and memory requirements
         let op_type = operation.operation.get_operation_type();
@@ -759,11 +775,11 @@ impl KernelFusionOptimizer {
         let successful = *self
             .successful_fusions
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempted = *self
             .attempted_fusions
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if attempted == 0 {
             0.0

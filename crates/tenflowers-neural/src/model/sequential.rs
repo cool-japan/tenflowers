@@ -2,7 +2,7 @@ use crate::layers::Layer;
 use crate::model::{zero_tensor_grad, Model};
 
 #[cfg(feature = "serialize")]
-use crate::model::ModelState;
+use crate::model::{ModelSerialization, ModelState};
 use tenflowers_core::{Result, Tensor};
 
 #[cfg(feature = "serialize")]
@@ -257,8 +257,8 @@ impl Sequential<f32> {
             let loaded_tensor = Tensor::from_vec(data.clone(), shape)?;
 
             // Replace the parameter (preserving device placement)
-            let device = param.device().clone();
-            let new_param = if let tenflowers_core::Device::Cpu = device {
+            let device = *param.device();
+            let new_param = if device.is_cpu() {
                 loaded_tensor
             } else {
                 #[cfg(feature = "gpu")]
@@ -274,6 +274,21 @@ impl Sequential<f32> {
         }
 
         Ok(())
+    }
+}
+
+/// Thin delegate from the dyn-incompatible `ModelSerialization` trait to the
+/// concrete `save_f32`/`load_f32` methods above, so `Sequential<f32>` can be
+/// used polymorphically anywhere `M: Model<T> + ModelSerialization<T>` is
+/// required (e.g. `mixed_precision::fit`'s checkpoint helper).
+#[cfg(feature = "serialize")]
+impl ModelSerialization<f32> for Sequential<f32> {
+    fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        self.save_f32(path)
+    }
+
+    fn load<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
+        self.load_f32(path)
     }
 }
 
@@ -435,6 +450,90 @@ mod tests {
             model.parameters().iter().zip(new_model.parameters().iter())
         {
             assert_eq!(orig_param.shape().dims(), loaded_param.shape().dims());
+        }
+
+        // Clean up
+        fs::remove_file(model_path).ok();
+    }
+
+    #[test]
+    #[cfg(feature = "serialize")]
+    fn test_model_serialization_trait_polymorphic_round_trip() {
+        use std::fs;
+
+        // Generic helpers bounded by `Model<f32> + ModelSerialization<f32>` --
+        // not by the concrete `Sequential<f32>` type -- to genuinely prove the
+        // trait-polymorphic dispatch path works. This is the exact bound used
+        // by `mixed_precision::fit`'s checkpoint helper, which is otherwise
+        // unusable without at least one real `ModelSerialization` impl.
+        fn save_via_trait<M: Model<f32> + ModelSerialization<f32>>(
+            model: &M,
+            path: &str,
+        ) -> Result<()> {
+            ModelSerialization::save(model, path)
+        }
+
+        fn load_via_trait<M: Model<f32> + ModelSerialization<f32>>(
+            model: &mut M,
+            path: &str,
+        ) -> Result<()> {
+            ModelSerialization::load(model, path)
+        }
+
+        // Create a simple sequential model with a dense layer (same pattern as
+        // `test_model_serialization` above).
+        let dense1 = Dense::<f32>::new(3, 5, true);
+        let dense2 = Dense::<f32>::new(5, 2, true);
+        let model = Sequential::new(vec![Box::new(dense1), Box::new(dense2)]);
+
+        // Unique filename (pid + nanosecond timestamp) to avoid collisions
+        // with parallel test runs.
+        let temp_dir = std::env::temp_dir();
+        let unique_name = format!(
+            "test_model_tenflowers_trait_{}_{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after UNIX_EPOCH")
+                .as_nanos()
+        );
+        let model_path_buf = temp_dir.join(unique_name);
+        let model_path = model_path_buf
+            .to_str()
+            .expect("Failed to convert temp path to string");
+
+        // Save via the trait-polymorphic helper (dispatched through
+        // `ModelSerialization`, not the inherent `save_f32`).
+        save_via_trait(&model, model_path)
+            .expect("Failed to save model via ModelSerialization trait");
+
+        assert!(std::path::Path::new(model_path).exists());
+
+        // Fresh, differently-initialized model with the same architecture.
+        let dense1_new = Dense::<f32>::new(3, 5, true);
+        let dense2_new = Dense::<f32>::new(5, 2, true);
+        let mut new_model = Sequential::new(vec![Box::new(dense1_new), Box::new(dense2_new)]);
+
+        // Load via the trait-polymorphic helper.
+        load_via_trait(&mut new_model, model_path)
+            .expect("Failed to load model via ModelSerialization trait");
+
+        // Verify the loaded parameters exactly match the original. JSON f32
+        // round-tripping via serde_json (backed by ryu) is lossless, so exact
+        // equality -- not just shape equality -- is the correct assertion.
+        let orig_params = model.parameters();
+        let loaded_params = new_model.parameters();
+        assert_eq!(orig_params.len(), loaded_params.len());
+
+        for (orig_param, loaded_param) in orig_params.iter().zip(loaded_params.iter()) {
+            assert_eq!(orig_param.shape().dims(), loaded_param.shape().dims());
+            let orig_data = orig_param
+                .as_slice()
+                .expect("original parameter should expose data");
+            let loaded_data = loaded_param
+                .as_slice()
+                .expect("loaded parameter should expose data");
+            assert_eq!(orig_data, loaded_data);
         }
 
         // Clean up

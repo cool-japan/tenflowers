@@ -26,7 +26,17 @@ use tenflowers_autograd::{
 #[derive(Debug)]
 pub struct UltraDense<T>
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     /// Weight matrix with optimized layout
     weight: Tensor<T>,
@@ -106,9 +116,12 @@ pub struct UltraDenseMetrics {
     pub activation_time: std::time::Duration,
     /// Memory allocation time
     pub memory_time: std::time::Duration,
-    /// SIMD utilization percentage
+    /// SIMD path engagement indicator: 1.0 when the SIMD code path is active
+    /// (enabled and hardware-supported), 0.0 otherwise. Not a sampled
+    /// lane-utilisation fraction.
     pub simd_utilization: f64,
-    /// Parallel efficiency
+    /// Parallel path engagement indicator: 1.0 when parallel execution is
+    /// enabled, 0.0 otherwise. Not a measured speed-up efficiency.
     pub parallel_efficiency: f64,
     /// Cache hit rate
     pub cache_hit_rate: f64,
@@ -118,7 +131,17 @@ pub struct UltraDenseMetrics {
 
 impl<T> UltraDense<T>
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     /// Create a new ultra-high-performance dense layer
     pub fn new(input_dim: usize, output_dim: usize, use_bias: bool) -> Result<Self> {
@@ -398,14 +421,26 @@ where
     /// SIMD-accelerated GELU activation
     fn ultra_gelu(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         if self.config.enable_simd_acceleration && input.numel() > self.config.simd_threshold {
-            let sqrt_2_over_pi = T::from(0.7978845608028654).expect("Failed to convert sqrt(2/π) to tensor type"); // sqrt(2/π)
+            // Hoist the GELU constants out of the closure so conversion failures
+            // surface as honest errors instead of panicking inside the kernel.
+            let convert = |value: f64| -> Result<T> {
+                <T as scirs2_core::num_traits::NumCast>::from(value).ok_or_else(|| {
+                    TensorError::invalid_argument(
+                        "Failed to convert GELU constant to tensor element type".to_string(),
+                    )
+                })
+            };
+            let sqrt_2_over_pi = convert(0.797_884_560_802_865_4)?; // sqrt(2/pi)
+            let coeff = convert(0.044715)?;
+            let half = convert(0.5)?;
+
             if let Ok(result) = auto_vectorize(
                 input.data().as_slice(),
                 &vec![T::zero(); input.numel()],
                 |x, _| {
-                    let tanh_input = sqrt_2_over_pi * (x + T::from(0.044715).expect("Failed to convert 0.044715 to tensor type") * x.powi(3));
-                    T::from(0.5).expect("Failed to convert 0.5 to tensor type") * x * (T::one() + tanh_input.tanh())
-                }
+                    let tanh_input = sqrt_2_over_pi * (x + coeff * x.powi(3));
+                    half * x * (T::one() + tanh_input.tanh())
+                },
             ) {
                 Tensor::from_vec(&result, input.shape().dims())
             } else {
@@ -455,73 +490,79 @@ where
 
     // Helper methods for weight initialization
 
-    fn create_optimized_weight(shape: &[usize], config: &UltraDenseConfig) -> Result<Tensor<T>> {
-        if config.enable_memory_optimization {
-            // Use gradient buffer manager for optimized allocation
-            let buffer_manager = global_gradient_buffer_manager();
-            let buffer_manager = buffer_manager.lock().map_err(|_| {
-                TensorError::compute_error_simple("Failed to lock gradient buffer manager".to_string())
-            })?;
-
-            let allocation = buffer_manager.allocate_gradient_buffer::<T>(shape)?;
-            Ok(allocation.buffer)
-        } else {
-            Ok(Tensor::zeros(shape))
-        }
+    fn create_optimized_weight(shape: &[usize], _config: &UltraDenseConfig) -> Result<Tensor<T>> {
+        // Weights MUST be initialised with real random values; an all-zero weight
+        // matrix makes the layer's output independent of its input (no learning
+        // signal). Xavier/Glorot is a sensible default for a generic dense layer.
+        Self::create_xavier_weight(shape)
     }
 
-    fn create_optimized_bias(shape: &[usize], config: &UltraDenseConfig) -> Result<Tensor<T>> {
-        if config.enable_memory_optimization {
-            let buffer_manager = global_gradient_buffer_manager();
-            let buffer_manager = buffer_manager.lock().map_err(|_| {
-                TensorError::compute_error_simple("Failed to lock gradient buffer manager".to_string())
-            })?;
+    fn create_optimized_bias(shape: &[usize], _config: &UltraDenseConfig) -> Result<Tensor<T>> {
+        // Biases are conventionally initialised to zero; this is the correct
+        // initial value (not a fabrication) and gives the layer a learnable
+        // offset that starts neutral.
+        Ok(Tensor::zeros(shape))
+    }
 
-            let allocation = buffer_manager.allocate_gradient_buffer::<T>(shape)?;
-            Ok(allocation.buffer)
-        } else {
-            Ok(Tensor::zeros(shape))
-        }
+    /// Scale factor for a fan-based initialisation, converted to `T`.
+    fn init_std(value: f64) -> Result<T> {
+        <T as scirs2_core::num_traits::NumCast>::from(value).ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Failed to convert initialisation scale to tensor element type".to_string(),
+            )
+        })
     }
 
     fn create_he_weight(shape: &[usize]) -> Result<Tensor<T>> {
-        // He initialization: std = sqrt(2 / fan_in)
+        // He initialization: sample from N(0, 1) and scale by sqrt(2 / fan_in).
         let fan_in = shape[0] as f64;
         let std = (2.0 / fan_in).sqrt();
-        let std_t = T::from(std).expect("Failed to convert std to tensor type");
+        let std_t = Self::init_std(std)?;
 
-        // For now, create zeros (would implement proper random initialization)
-        Ok(Tensor::zeros(shape))
+        let base = Tensor::<T>::randn(shape)?;
+        base.multiply_scalar(std_t)
     }
 
     fn create_xavier_weight(shape: &[usize]) -> Result<Tensor<T>> {
-        // Xavier/Glorot initialization: std = sqrt(2 / (fan_in + fan_out))
+        // Xavier/Glorot initialization: sample from N(0, 1) and scale by
+        // sqrt(2 / (fan_in + fan_out)).
         let fan_in = shape[0] as f64;
         let fan_out = shape[1] as f64;
         let std = (2.0 / (fan_in + fan_out)).sqrt();
-        let std_t = T::from(std).expect("Failed to convert std to tensor type");
+        let std_t = Self::init_std(std)?;
 
-        // For now, create zeros (would implement proper random initialization)
-        Ok(Tensor::zeros(shape))
+        let base = Tensor::<T>::randn(shape)?;
+        base.multiply_scalar(std_t)
     }
 
-    // Performance calculation methods
+    // Performance reporting methods.
+    //
+    // These report a real, computed *engagement* indicator (1.0 = the
+    // optimisation path is active for this layer's configuration and hardware,
+    // 0.0 = inactive). They deliberately do NOT fabricate a measured
+    // utilisation/efficiency fraction: this layer carries no per-operation SIMD
+    // lane / thread-occupancy counters, so any specific percentage would be
+    // invented. Cache hit-rate and memory efficiency, which *are* tracked, are
+    // reported from their real counters instead.
 
+    /// Returns 1.0 when SIMD acceleration is enabled and the hardware actually
+    /// supports it, 0.0 otherwise. This reflects whether the SIMD code path is
+    /// engaged, not a sampled lane-utilisation fraction.
     fn calculate_simd_utilization(&self) -> Result<f64> {
-        // Calculate SIMD utilization based on operations performed
-        if self.config.enable_simd_acceleration && SimdOps::is_hardware_accelerated() {
-            Ok(0.85) // Placeholder - would implement actual SIMD utilization tracking
-        } else {
-            Ok(0.0)
-        }
+        let simd_active =
+            self.config.enable_simd_acceleration && SimdOps::is_hardware_accelerated();
+        Ok(if simd_active { 1.0 } else { 0.0 })
     }
 
+    /// Returns 1.0 when the parallel processing path is enabled, 0.0 otherwise.
+    /// This reflects whether parallel execution is engaged, not a measured
+    /// speed-up efficiency.
     fn calculate_parallel_efficiency(&self) -> Result<f64> {
-        if self.config.enable_parallel_processing {
-            Ok(0.90) // Placeholder - would implement actual parallel efficiency tracking
+        Ok(if self.config.enable_parallel_processing {
+            1.0
         } else {
-            Ok(0.0)
-        }
+            0.0
+        })
     }
 
     fn calculate_memory_efficiency(&self) -> Result<f64> {
@@ -541,7 +582,17 @@ where
 
 impl<T> Layer<T> for UltraDense<T>
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
         let result = self.forward_ultra(input)?;
@@ -649,7 +700,17 @@ pub trait UltraDenseExt<T> {
 
 impl<T> UltraDenseExt<T> for T
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     fn ultra_dense(input_dim: usize, output_dim: usize, use_bias: bool) -> Result<UltraDense<T>> {
         UltraDense::new(input_dim, output_dim, use_bias)
@@ -661,6 +722,22 @@ mod tests {
     use super::*;
     use tenflowers_core::Tensor;
 
+    /// Assert a weight matrix is genuinely random: non-zero and non-constant.
+    fn assert_real_random_weights(weight: &Tensor<f32>) {
+        let values = weight.to_vec().expect("test: weight to_vec");
+        assert!(!values.is_empty(), "weights must not be empty");
+
+        let any_nonzero = values.iter().any(|v| v.abs() > 1e-12);
+        assert!(any_nonzero, "weights must not be all zeros (real init required)");
+
+        let first = values[0];
+        let any_different = values.iter().any(|v| (v - first).abs() > 1e-12);
+        assert!(
+            any_different,
+            "weights must not be constant (real random init required)"
+        );
+    }
+
     #[test]
     fn test_ultra_dense_creation() {
         let layer = UltraDense::<f32>::new(10, 5, true);
@@ -670,6 +747,97 @@ mod tests {
         assert_eq!(layer.weight.shape().dims(), &[10, 5]);
         assert!(layer.bias.is_some());
         assert_eq!(layer.bias.as_ref().expect("test: bias should exist").shape().dims(), &[5]);
+    }
+
+    #[test]
+    fn test_default_weights_are_random_not_zeros() {
+        // The default constructor previously produced an all-zero weight matrix
+        // (fabrication): the layer's output was independent of its input.
+        let layer = UltraDense::<f32>::new(6, 4, true)
+            .expect("test: UltraDense creation should succeed");
+        assert_real_random_weights(&layer.weight);
+    }
+
+    #[test]
+    fn test_he_and_xavier_weights_are_random() {
+        let he = UltraDense::<f32>::new_he(8, 5, false)
+            .expect("test: He init should succeed");
+        assert_real_random_weights(&he.weight);
+
+        let xavier = UltraDense::<f32>::new_xavier(8, 5, false)
+            .expect("test: Xavier init should succeed");
+        assert_real_random_weights(&xavier.weight);
+
+        // The two schemes use different scales, so their statistics should differ.
+        let he_vals = he.weight.to_vec().expect("test: to_vec");
+        let xavier_vals = xavier.weight.to_vec().expect("test: to_vec");
+        let he_var: f32 = he_vals.iter().map(|v| v * v).sum::<f32>() / he_vals.len() as f32;
+        let xavier_var: f32 =
+            xavier_vals.iter().map(|v| v * v).sum::<f32>() / xavier_vals.len() as f32;
+        // He std = sqrt(2/fan_in), Xavier std = sqrt(2/(fan_in+fan_out)); He is
+        // larger here, so its empirical second moment should be larger too.
+        assert!(
+            he_var > xavier_var,
+            "He init variance ({he_var}) should exceed Xavier ({xavier_var})"
+        );
+    }
+
+    #[test]
+    fn test_forward_output_depends_on_input() {
+        // With real random weights the forward output must change when the input
+        // changes (a zeros-init layer would return zeros for any input).
+        let layer = UltraDense::<f32>::new(4, 3, false)
+            .expect("test: UltraDense creation should succeed");
+
+        let input_a = Tensor::<f32>::ones(&[2, 4]);
+        let input_b = Tensor::from_vec(vec![0.5f32; 8], &[2, 4])
+            .expect("test: input_b creation");
+
+        let out_a = layer
+            .forward(&input_a)
+            .expect("test: forward a")
+            .to_vec()
+            .expect("test: to_vec a");
+        let out_b = layer
+            .forward(&input_b)
+            .expect("test: forward b")
+            .to_vec()
+            .expect("test: to_vec b");
+
+        // Output for the all-ones input must itself be non-zero...
+        assert!(
+            out_a.iter().any(|v| v.abs() > 1e-8),
+            "forward output must be non-zero with real weights"
+        );
+        // ...and differ from the output for a different input.
+        let differs = out_a
+            .iter()
+            .zip(out_b.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-8);
+        assert!(differs, "forward output must depend on the input");
+    }
+
+    #[test]
+    fn test_metrics_report_real_engagement_indicator() {
+        // simd_utilization / parallel_efficiency are engagement indicators in
+        // {0.0, 1.0}, not fabricated fractions like 0.85 / 0.90.
+        let layer = UltraDense::<f32>::new(4, 3, true)
+            .expect("test: UltraDense creation should succeed");
+        let input = Tensor::<f32>::ones(&[2, 4]);
+        let result = layer.forward_ultra(&input).expect("test: forward_ultra");
+
+        let simd = result.metrics.simd_utilization;
+        let parallel = result.metrics.parallel_efficiency;
+        assert!(
+            simd == 0.0 || simd == 1.0,
+            "simd_utilization must be a 0/1 engagement indicator, got {simd}"
+        );
+        assert!(
+            parallel == 0.0 || parallel == 1.0,
+            "parallel_efficiency must be a 0/1 engagement indicator, got {parallel}"
+        );
+        // Parallel processing is enabled by default, so it must report active.
+        assert_eq!(parallel, 1.0, "default config enables parallel processing");
     }
 
     #[test]

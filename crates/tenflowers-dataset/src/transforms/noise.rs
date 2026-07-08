@@ -41,25 +41,34 @@ where
         let (features, labels) = sample;
         let shape = features.shape().dims();
 
-        // Generate random noise with same shape as features
-        let noise = if std::any::type_name::<T>() == std::any::type_name::<f32>() {
-            // For f32, use the random normal function
-            let _noise_f32 = tenflowers_core::ops::random_normal_f32(
-                shape,
-                T::zero().to_f32().unwrap_or(0.0),
-                self.noise_std.to_f32().unwrap_or(0.1),
-                None,
-            )?;
-            // This is a simplification - we'll just return a zero tensor for now due to type constraints
-            Tensor::zeros(shape)
-        } else {
-            // For non-f32 types, return zero noise (no augmentation)
-            Tensor::zeros(shape)
-        };
+        // Generate Gaussian noise N(0, noise_std) element-wise via Box-Muller so that
+        // the same code path works for any Float type T, not just f32.
+        let data = features.as_slice().ok_or_else(|| {
+            TensorError::invalid_argument(
+                "AddNoise: cannot access tensor data (GPU tensors not supported)".to_string(),
+            )
+        })?;
 
-        // Add noise to features
-        let noisy_features = features.add(&noise)?;
+        let mut rng = scirs2_core::random::rng();
 
+        let mut noisy_data: Vec<T> = Vec::with_capacity(data.len());
+        let std_f = self.noise_std.to_f32().unwrap_or(0.1f32);
+        let mut it = data.iter().peekable();
+        while let Some(&v0) = it.next() {
+            let u1 = rng.random::<f32>().max(f32::MIN_POSITIVE);
+            let u2 = rng.random::<f32>();
+            let mag = (-2.0f32 * u1.ln()).sqrt();
+            let z0 = mag * (2.0f32 * std::f32::consts::PI * u2).cos();
+            let z1 = mag * (2.0f32 * std::f32::consts::PI * u2).sin();
+            let n0 = T::from(std_f * z0).unwrap_or(T::zero());
+            noisy_data.push(v0 + n0);
+            if let Some(&v1) = it.next() {
+                let n1 = T::from(std_f * z1).unwrap_or(T::zero());
+                noisy_data.push(v1 + n1);
+            }
+        }
+
+        let noisy_features = Tensor::from_vec(noisy_data, shape)?;
         Ok((noisy_features, labels))
     }
 }

@@ -199,7 +199,7 @@ impl CompressionCodec for TopKCodec {
             data.iter().enumerate().map(|(i, &val)| (i, val)).collect();
 
         // Sort by value (descending)
-        indexed_values.sort_by(|a, b| b.1.cmp(&a.1));
+        indexed_values.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Keep only top-k
         indexed_values.truncate(self.k);

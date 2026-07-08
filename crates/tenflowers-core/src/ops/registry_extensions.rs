@@ -160,7 +160,7 @@ impl EnhancedRegistry {
         let mut caps = self
             .device_capabilities
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         caps.entry(device)
             .or_insert_with(|| DeviceCapabilities::for_device(device))
             .clone()
@@ -168,7 +168,10 @@ impl EnhancedRegistry {
 
     /// Set kernel selection strategy
     pub fn set_strategy(&self, strategy: KernelSelectionStrategy) {
-        *self.strategy.lock().expect("lock should not be poisoned") = strategy;
+        *self
+            .strategy
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = strategy;
     }
 
     /// Get kernel with intelligent device selection and fallback
@@ -212,7 +215,7 @@ impl EnhancedRegistry {
         let mut warmed = self
             .warmed_kernels
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         for (op_name, device, dtype) in ops {
             let cache_key = format!("{}_{}_{:?}_{:?}", op_name, "warmed", device, dtype);
@@ -233,7 +236,7 @@ impl EnhancedRegistry {
         let warmed = self
             .warmed_kernels
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         warmed.get(&cache_key).cloned()
     }
 
@@ -250,7 +253,7 @@ impl EnhancedRegistry {
         let mut stats = self
             .kernel_stats
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let entry = stats.entry(key).or_insert_with(KernelStats::default);
 
         if success {
@@ -266,7 +269,7 @@ impl EnhancedRegistry {
         let stats = self
             .kernel_stats
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.get(&key).cloned().unwrap_or_default()
     }
 
@@ -274,13 +277,16 @@ impl EnhancedRegistry {
     pub fn get_all_stats(&self) -> HashMap<String, KernelStats> {
         self.kernel_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
     /// Find optimal device for an operation
     pub fn find_optimal_device(&self, op_name: &str, dtype: DType, data_size: usize) -> Device {
-        let strategy = *self.strategy.lock().expect("lock should not be poisoned");
+        let strategy = *self
+            .strategy
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         match strategy {
             KernelSelectionStrategy::Performance => {
@@ -326,7 +332,7 @@ impl EnhancedRegistry {
         let stats = self
             .kernel_stats
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         for (key, stat) in stats.iter() {
             // Suggest warming for frequently used kernels
@@ -363,7 +369,7 @@ impl EnhancedRegistry {
     pub fn reset_statistics(&self) {
         self.kernel_stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
@@ -372,7 +378,7 @@ impl EnhancedRegistry {
         let stats = self
             .kernel_stats
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let total_executions: u64 = stats.values().map(|s| s.execution_count).sum();
         let total_successes: u64 = stats.values().map(|s| s.success_count).sum();

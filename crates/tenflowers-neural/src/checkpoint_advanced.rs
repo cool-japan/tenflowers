@@ -712,11 +712,14 @@ impl CheckpointDiff {
         let mut removed_tensors: Vec<String> = Vec::new();
 
         for (name, new_values) in &new.tensors {
-            let new_shape = new.tensor_shapes.get(name).cloned().unwrap_or_default();
+            let new_shape = new.tensor_shapes.get(name).cloned();
             let changed = match base.tensors.get(name) {
+                // Tensor is new (added): always record it
                 None => true,
                 Some(base_values) => {
-                    let base_shape = base.tensor_shapes.get(name).cloned().unwrap_or_default();
+                    let base_shape = base.tensor_shapes.get(name).cloned();
+                    // Shape mismatch: either shape is absent in one snapshot, or
+                    // the concrete shapes differ — either way the tensor changed.
                     if base_shape != new_shape {
                         true
                     } else {
@@ -729,7 +732,10 @@ impl CheckpointDiff {
             };
             if changed {
                 changed_tensors.insert(name.clone(), new_values.clone());
-                changed_shapes.insert(name.clone(), new_shape);
+                // Record the actual new shape; fall back to empty only when the
+                // snapshot genuinely has no shape metadata for this tensor.
+                changed_shapes
+                    .insert(name.clone(), new_shape.unwrap_or_default());
             }
         }
 

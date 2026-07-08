@@ -1,5 +1,7 @@
+use crate::ops::utils::unbroadcast;
 use scirs2_core::numeric::{One, Zero};
-use tenflowers_core::{Result, Tensor, TensorError};
+use tenflowers_core::ops::where_op;
+use tenflowers_core::{Result, Shape, Tensor, TensorError};
 
 /// Backward pass for boolean mask indexing
 /// For `y = x[mask]`, where mask is a boolean tensor, gradient flows only to positions where mask is true
@@ -367,41 +369,35 @@ pub fn where_backward<T>(
     z_shape: &[usize],
 ) -> Result<(Tensor<T>, Tensor<T>)>
 where
-    T: Clone + Default + Zero + One + std::ops::Add<Output = T> + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
 {
-    let condition_data = condition.as_slice().ok_or_else(|| {
-        TensorError::invalid_argument("Could not access condition data".to_string())
-    })?;
+    // grad_output is already at the (broadcast) output shape of the forward
+    // `where_op(condition, x, z)` call. Build zero tensors at that same shape and
+    // reuse the forward `where_op` (which already fully supports independently
+    // broadcasting `condition`, `x`, and `y`) to route `grad_output` to whichever
+    // side each output element came from, then reduce each side back down to its
+    // own (possibly narrower) original shape via `unbroadcast` — the same
+    // full-shape-then-unbroadcast pattern used by add/sub/mul/div/pow backward in
+    // `ops/binary_ops.rs`.
+    let output_shape = grad_output.shape().dims();
+    let zeros = Tensor::<T>::zeros(output_shape);
 
-    let grad_data = grad_output.as_slice().ok_or_else(|| {
-        TensorError::invalid_argument("Could not access gradient data".to_string())
-    })?;
+    let grad_x_full = where_op(condition, grad_output, &zeros)?;
+    let grad_z_full = where_op(condition, &zeros, grad_output)?;
 
-    // Will initialize gradients later
+    let grad_x = unbroadcast(&grad_x_full, &Shape::from_slice(x_shape))?;
+    let grad_z = unbroadcast(&grad_z_full, &Shape::from_slice(z_shape))?;
 
-    // Handle broadcasting - for simplicity, assume same shape for now
-    if condition.shape().dims() == x_shape && x_shape == z_shape {
-        let mut grad_x_data = vec![T::zero(); x_shape.iter().product()];
-        let mut grad_z_data = vec![T::zero(); z_shape.iter().product()];
-
-        for (i, (&cond, grad)) in condition_data.iter().zip(grad_data.iter()).enumerate() {
-            if cond {
-                grad_x_data[i] = grad.clone();
-            } else {
-                grad_z_data[i] = grad.clone();
-            }
-        }
-
-        let grad_x = Tensor::from_vec(grad_x_data, x_shape)?;
-        let grad_z = Tensor::from_vec(grad_z_data, z_shape)?;
-
-        Ok((grad_x, grad_z))
-    } else {
-        // Handle broadcasting case - would need to implement proper broadcasting logic
-        Err(TensorError::unsupported_operation_simple(
-            "Broadcasting in where operation not yet implemented".to_string(),
-        ))
-    }
+    Ok((grad_x, grad_z))
 }
 
 /// Backward pass for integer array indexing
@@ -549,6 +545,94 @@ mod tests {
         } else {
             panic!("Could not access gradient data");
         }
+    }
+
+    #[test]
+    fn test_where_backward_broadcast_narrow_condition() {
+        // condition shape [3] broadcasts (right-aligned, NumPy-style) against x_shape/z_shape/grad_output [2,3].
+        let condition = Tensor::from_vec(vec![true, false, true], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let x_shape = [2, 3];
+        let z_shape = [2, 3];
+
+        let (grad_x, grad_z) = where_backward(&grad_output, &condition, &x_shape, &z_shape)
+            .expect("test: broadcasting where backward should succeed");
+
+        assert_eq!(grad_x.shape().dims(), &[2, 3]);
+        assert_eq!(grad_z.shape().dims(), &[2, 3]);
+        assert_eq!(
+            grad_x.as_slice().expect("contiguous"),
+            &[1.0, 0.0, 3.0, 4.0, 0.0, 6.0]
+        );
+        assert_eq!(
+            grad_z.as_slice().expect("contiguous"),
+            &[0.0, 2.0, 0.0, 0.0, 5.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn test_where_backward_broadcast_narrow_x() {
+        // condition and grad_output at [2,3]; x_shape narrower at [1,3] (x was broadcast up during forward).
+        let condition = Tensor::from_vec(vec![true, false, true, false, true, false], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let x_shape = [1, 3];
+        let z_shape = [2, 3];
+
+        let (grad_x, grad_z) = where_backward(&grad_output, &condition, &x_shape, &z_shape)
+            .expect("test: broadcasting where backward should succeed");
+
+        assert_eq!(grad_x.shape().dims(), &[1, 3]);
+        assert_eq!(grad_z.shape().dims(), &[2, 3]);
+        // grad_x_full = [[1,0,3],[0,5,0]] summed over axis 0 (unbroadcast) -> [1,5,3]
+        assert_eq!(grad_x.as_slice().expect("contiguous"), &[1.0, 5.0, 3.0]);
+        // grad_z_full = [[0,2,0],[4,0,6]], z already at full shape (no reduction)
+        assert_eq!(
+            grad_z.as_slice().expect("contiguous"),
+            &[0.0, 2.0, 0.0, 4.0, 0.0, 6.0]
+        );
+    }
+
+    #[test]
+    fn test_where_backward_broadcast_narrow_z() {
+        // condition and grad_output at [2,3]; z_shape narrower at [1,3].
+        let condition = Tensor::from_vec(vec![true, false, true, false, true, false], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let x_shape = [2, 3];
+        let z_shape = [1, 3];
+
+        let (grad_x, grad_z) = where_backward(&grad_output, &condition, &x_shape, &z_shape)
+            .expect("test: broadcasting where backward should succeed");
+
+        assert_eq!(grad_x.shape().dims(), &[2, 3]);
+        assert_eq!(grad_z.shape().dims(), &[1, 3]);
+        // grad_x_full = [[1,0,3],[0,5,0]], x already at full shape (no reduction)
+        assert_eq!(
+            grad_x.as_slice().expect("contiguous"),
+            &[1.0, 0.0, 3.0, 0.0, 5.0, 0.0]
+        );
+        // grad_z_full = [[0,2,0],[4,0,6]] summed over axis 0 (unbroadcast) -> [4,2,6]
+        assert_eq!(grad_z.as_slice().expect("contiguous"), &[4.0, 2.0, 6.0]);
+    }
+
+    #[test]
+    fn test_where_backward_incompatible_shapes_returns_err() {
+        // condition shape [4] cannot broadcast against x_shape/z_shape [2,3]:
+        // trailing dims 4 vs 3 are unequal and neither is 1.
+        let condition = Tensor::from_vec(vec![true, false, true, false], &[4])
+            .expect("test: tensor creation from valid data should succeed");
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let x_shape = [2, 3];
+        let z_shape = [2, 3];
+
+        let result = where_backward(&grad_output, &condition, &x_shape, &z_shape);
+        assert!(result.is_err());
     }
 
     #[test]

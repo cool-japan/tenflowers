@@ -13,22 +13,30 @@
 //! - **noise**: GPU-accelerated Gaussian noise addition
 //! - **crop**: GPU-accelerated random cropping
 //! - **rotation**: GPU-accelerated image rotation
+//! - **affine**: GPU-accelerated 2-D affine warp (translation, scale, shear, rotation matrix)
+//! - **perspective**: GPU-accelerated perspective / homographic warp
+//! - **elastic**: GPU-accelerated elastic distortion (SimoNikolenko-style)
+//! - **equalize**: GPU-accelerated per-channel histogram equalization
 //!
 //! All functionality maintains 100% backward compatibility through strategic re-exports.
 
+pub mod affine;
 pub mod blur;
 pub mod context;
 pub mod crop;
+pub mod elastic;
+pub mod equalize;
 pub mod flip;
 pub mod jitter;
 pub mod noise;
+pub mod perspective;
 pub mod resize;
 pub mod rotation;
 
 // Re-export core context types for backward compatibility
 pub use context::GpuContext;
 
-// Re-export all transform types
+// Re-export all transform types (original)
 pub use blur::GpuGaussianBlur;
 pub use crop::GpuRandomCrop;
 pub use flip::GpuRandomHorizontalFlip;
@@ -36,6 +44,18 @@ pub use jitter::GpuColorJitter;
 pub use noise::GpuGaussianNoise;
 pub use resize::GpuResize;
 pub use rotation::GpuRotation;
+
+// Re-export new GPU transforms (v0.1.2)
+pub use affine::{
+    affine_compose, affine_identity, affine_rotation, affine_scale, affine_shear,
+    affine_translation, AffineMatrix, GpuAffineTransform,
+};
+pub use elastic::GpuElasticDistortion;
+pub use equalize::GpuHistogramEqualize;
+pub use perspective::{
+    homography_compose, homography_from_quad, homography_identity, GpuPerspectiveTransform,
+    HomographyMatrix,
+};
 
 // Re-export uniform structures for backward compatibility
 #[cfg(feature = "gpu")]
@@ -142,7 +162,7 @@ mod tests {
         // Verify that all re-exported types are accessible
         #[cfg(feature = "gpu")]
         {
-            // These would compile if types are properly re-exported
+            // Original transforms
             let _context_type = std::marker::PhantomData::<GpuContext>;
             let _resize_type = std::marker::PhantomData::<GpuResize>;
             let _flip_type = std::marker::PhantomData::<GpuRandomHorizontalFlip>;
@@ -151,6 +171,26 @@ mod tests {
             let _noise_type = std::marker::PhantomData::<GpuGaussianNoise>;
             let _crop_type = std::marker::PhantomData::<GpuRandomCrop>;
             let _rotation_type = std::marker::PhantomData::<GpuRotation>;
+            // New transforms
+            let _affine_type = std::marker::PhantomData::<GpuAffineTransform>;
+            let _persp_type = std::marker::PhantomData::<GpuPerspectiveTransform>;
+            let _elastic_type = std::marker::PhantomData::<GpuElasticDistortion>;
+            let _equalize_type = std::marker::PhantomData::<GpuHistogramEqualize>;
         }
+    }
+
+    #[test]
+    fn test_affine_helper_functions() {
+        let id = affine_identity();
+        assert_eq!(id, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let t = affine_translation(1.0, 2.0);
+        assert_eq!(t[0][2], 1.0);
+        assert_eq!(t[1][2], 2.0);
+    }
+
+    #[test]
+    fn test_homography_helper_functions() {
+        let id = homography_identity();
+        assert_eq!(id[2], [0.0, 0.0, 1.0]);
     }
 }

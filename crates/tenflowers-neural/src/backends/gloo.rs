@@ -77,68 +77,91 @@ impl GlooBackend {
         }
     }
 
-    /// Simulate Gloo all-reduce operation
-    /// In a real implementation, this would use Gloo's allreduce algorithms
+    /// Perform Gloo all-reduce operation
+    ///
+    /// A real all-reduce requires the Gloo collective-communications library
+    /// (`libgloo`) to be linked, plus a real transport (TCP, InfiniBand, or shared
+    /// memory) connecting every rank in `group`. This crate does not link libgloo
+    /// and performs no cross-process communication of any kind: this function only
+    /// ever sees the calling rank's own local `tensor`, never the other
+    /// `group.world_size - 1` ranks' actual values.
+    ///
+    /// Every `ReductionOp` variant is affected, not just the arithmetically "obvious"
+    /// ones. `Sum` (scale the local tensor by `world_size`) and
+    /// `Average`/`Min`/`Max` (echo the local tensor back unchanged) only coincide
+    /// with the true cross-rank result in the degenerate case where every rank
+    /// happens to hold bit-identical data -- which real distributed training does
+    /// not guarantee (each rank typically holds a distinct data shard and therefore
+    /// a distinct local gradient). `Product` does not even hold in that degenerate
+    /// case (it would need to return `tensor^world_size`, not `tensor`). Returning
+    /// `Ok` for any of these would silently fabricate a successful reduction across
+    /// ranks, so we surface an honest error instead, exactly as
+    /// `NcclBackend::nccl_all_reduce` does for the same reason.
     fn gloo_all_reduce(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         group: &CommunicationGroup,
         op: ReductionOp,
     ) -> Result<Tensor<f32>> {
-        // Simulate Gloo's ring-allreduce algorithm behavior
-        // In real Gloo, this would use optimized reduction algorithms based on topology
-        match op {
-            ReductionOp::Sum => {
-                // Simulate sum across all ranks
-                let scale_factor = group.world_size as f32;
-                let scale_tensor = Tensor::from_scalar(scale_factor);
-                tensor.mul(&scale_tensor)
-            }
-            ReductionOp::Average => {
-                // Return original tensor (simulating sum / world_size)
-                Ok(tensor.clone())
-            }
-            ReductionOp::Min | ReductionOp::Max => {
-                // For min/max, return original tensor (simulating global min/max)
-                Ok(tensor.clone())
-            }
-            ReductionOp::Product => {
-                // Simulate product by raising to power of world_size
-                // This is a simplification - real Gloo would compute actual product
-                Ok(tensor.clone())
-            }
-        }
+        Err(TensorError::not_implemented_simple(format!(
+            "Gloo all-reduce (op={op:?}, group={}, world_size={}) is not available: \
+             the Gloo runtime (libgloo) is not linked and no real transport connects \
+             the ranks in this group, so no genuine cross-rank reduction can be \
+             performed. Returning the local tensor (scaled or unscaled) would \
+             silently fabricate the result.",
+            group.group_id, group.world_size
+        )))
     }
 
-    /// Simulate Gloo all-gather operation  
-    /// In real implementation, would use Gloo's efficient gathering algorithms
+    /// Perform Gloo all-gather operation
+    ///
+    /// A real all-gather collects every rank's distinct local tensor into a `Vec`
+    /// with one entry per rank. Without libgloo linked and a real transport, this
+    /// function has no way to obtain any rank's data but its own. Cloning the local
+    /// tensor `group.world_size` times would fabricate the contributions of all
+    /// other ranks, so we surface an honest error instead, mirroring
+    /// `NcclBackend::all_gather_f32`.
     fn gloo_all_gather(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         group: &CommunicationGroup,
     ) -> Result<Vec<Tensor<f32>>> {
-        // Return tensor replicated for each rank (simulating gather from all ranks)
-        Ok(vec![tensor.clone(); group.world_size])
+        Err(TensorError::not_implemented_simple(format!(
+            "Gloo all-gather (group={}, world_size={}) is not available: the Gloo \
+             runtime (libgloo) is not linked, so the per-rank contributions cannot \
+             be collected.",
+            group.group_id, group.world_size
+        )))
     }
 
-    /// Simulate bandwidth-efficient broadcast
-    /// Real Gloo uses tree-based broadcast for optimal performance
+    /// Perform Gloo broadcast operation
+    ///
+    /// A real broadcast delivers the root rank's data to every other rank. Without
+    /// libgloo linked and a real transport, a non-root rank's `tensor` argument does
+    /// not hold the root's data, so echoing it back would fabricate the broadcast
+    /// result, mirroring `NcclBackend::broadcast_f32`. The root-rank range check
+    /// below is still performed for real: it needs no cross-process data, so keeping
+    /// it gives callers a genuine argument diagnostic instead of folding it into the
+    /// generic "not available" error.
     fn gloo_broadcast(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         root_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<Tensor<f32>> {
-        // In simulation, just return the tensor
-        // Real Gloo would implement tree broadcast or ring broadcast based on topology
-        if root_rank < group.world_size {
-            Ok(tensor.clone())
-        } else {
-            Err(TensorError::invalid_argument(format!(
+        if root_rank >= group.world_size {
+            return Err(TensorError::invalid_argument(format!(
                 "Root rank {} exceeds world size {}",
                 root_rank, group.world_size
-            )))
+            )));
         }
+
+        Err(TensorError::not_implemented_simple(format!(
+            "Gloo broadcast (group={}, root={root_rank}, world_size={}) is not \
+             available: the Gloo runtime (libgloo) is not linked, so data cannot be \
+             transmitted from the root rank to the others.",
+            group.group_id, group.world_size
+        )))
     }
 
     /// Get optimal algorithm for given tensor size and group configuration
@@ -296,9 +319,18 @@ impl CommunicationBackendImpl for GlooBackend {
         self.gloo_broadcast(tensor, root_rank, group)
     }
 
+    /// Send an f32 tensor to a specific rank (point-to-point).
+    ///
+    /// A real send (Gloo's point-to-point primitives) transmits the tensor's bytes
+    /// to `dest_rank` over a real transport. This crate does not link libgloo, so
+    /// nothing is actually transmitted anywhere. Returning `Ok(())` without
+    /// transmitting anything would falsely report a delivered message to the
+    /// destination rank, so we surface an honest error instead, mirroring
+    /// `NcclBackend::send_f32`. The destination-rank range check below is still
+    /// performed for real: it needs no cross-process data.
     fn send_f32(
         &self,
-        tensor: &Tensor<f32>,
+        _tensor: &Tensor<f32>,
         dest_rank: usize,
         group: &CommunicationGroup,
     ) -> Result<()> {
@@ -313,14 +345,22 @@ impl CommunicationBackendImpl for GlooBackend {
             )));
         }
 
-        // In real implementation, would use Gloo point-to-point send:
-        // gloo::send(tensor.data(), dest_rank, group.context)
-
-        // For simulation, just validate the operation
-        let _tensor_size = tensor.size();
-        Ok(())
+        Err(TensorError::not_implemented_simple(format!(
+            "Gloo point-to-point send (group={}, dest={dest_rank}) is not available: \
+             the Gloo runtime (libgloo) is not linked, so no data can be \
+             transmitted.",
+            group.group_id
+        )))
     }
 
+    /// Receive an f32 tensor from a specific rank (point-to-point).
+    ///
+    /// A real receive (Gloo's point-to-point primitives) blocks until the sender's
+    /// actual bytes arrive over a real transport. This crate does not link libgloo,
+    /// so no data can ever arrive here. Returning a zero tensor would fabricate a
+    /// received payload, so we surface an honest error instead, mirroring
+    /// `NcclBackend::recv_f32`. The source-rank range check below is still
+    /// performed for real: it needs no cross-process data.
     fn recv_f32(
         &self,
         shape: &[usize],
@@ -338,12 +378,12 @@ impl CommunicationBackendImpl for GlooBackend {
             )));
         }
 
-        // In real implementation, would use Gloo point-to-point receive:
-        // let data = gloo::recv(src_rank, group.context)?;
-        // Tensor::from_data(data, shape)
-
-        // For simulation, return zero tensor with requested shape
-        Ok(Tensor::zeros(shape))
+        Err(TensorError::not_implemented_simple(format!(
+            "Gloo point-to-point recv (group={}, src={src_rank}, shape={shape:?}) is \
+             not available: the Gloo runtime (libgloo) is not linked, so no data can \
+             be received.",
+            group.group_id
+        )))
     }
 
     fn finalize(&mut self) -> Result<()> {
@@ -477,7 +517,13 @@ mod tests {
     }
 
     #[test]
-    fn test_gloo_all_reduce() {
+    fn test_gloo_all_reduce_returns_honest_error() {
+        // Without libgloo linked, no genuine cross-rank reduction can be performed,
+        // so every ReductionOp variant must surface an honest error rather than
+        // silently returning the (scaled or unscaled) local tensor as if it were a
+        // real reduction across ranks. This covers Sum and Average too: multiplying
+        // or echoing back only the local rank's tensor is just as fabricated as
+        // doing so for Min/Max/Product once ranks hold genuinely different data.
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
         backend
@@ -497,40 +543,28 @@ mod tests {
             .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[100, 50]);
-        let result = backend.all_reduce_f32(&tensor, &group, ReductionOp::Sum);
 
-        assert!(result.is_ok());
+        for op in [
+            ReductionOp::Sum,
+            ReductionOp::Average,
+            ReductionOp::Min,
+            ReductionOp::Max,
+            ReductionOp::Product,
+        ] {
+            let result = backend.all_reduce_f32(&tensor, &group, op);
+            assert!(
+                result.is_err(),
+                "all-reduce must never silently fabricate a result for {op:?}"
+            );
+        }
     }
 
     #[test]
-    fn test_gloo_all_gather() {
-        let mut backend = GlooBackend::new();
-        let config = BackendConfig::default();
-        backend
-            .initialize(&config)
-            .expect("test: operation should succeed");
-
-        let group = CommunicationGroup {
-            group_id: "test".to_string(),
-            rank: 0,
-            world_size: 4,
-            devices: vec![Device::Cpu; 4],
-            backend: CommunicationBackend::Gloo,
-        };
-
-        backend
-            .create_group(&group)
-            .expect("test: operation should succeed");
-
-        let tensor = Tensor::<f32>::ones(&[50]);
-        let result = backend.all_gather_f32(&tensor, &group);
-
-        assert!(result.is_ok());
-        assert_eq!(result.expect("test: result should be valid").len(), 4);
-    }
-
-    #[test]
-    fn test_gloo_broadcast() {
+    fn test_gloo_collectives_do_not_fabricate() {
+        // all-gather would need to fabricate every other rank's contribution, and
+        // broadcast (with a valid root) would need to fabricate the root's data on
+        // non-root callers. Neither is possible without libgloo linked, so both must
+        // surface honest errors instead of cloning the local tensor.
         let mut backend = GlooBackend::new();
         let config = BackendConfig::default();
         backend
@@ -550,9 +584,100 @@ mod tests {
             .expect("test: operation should succeed");
 
         let tensor = Tensor::<f32>::ones(&[25, 25]);
-        let result = backend.broadcast_f32(&tensor, 0, &group);
 
-        assert!(result.is_ok());
+        assert!(backend.all_gather_f32(&tensor, &group).is_err());
+        assert!(backend.broadcast_f32(&tensor, 0, &group).is_err());
+    }
+
+    #[test]
+    fn test_gloo_broadcast_still_validates_root_rank() {
+        // The root-rank range check needs no cross-process data, so it remains a
+        // genuine (non-fabricated) validation even though the collective itself now
+        // always errors. An out-of-range root must still be rejected distinctly.
+        let mut backend = GlooBackend::new();
+        let config = BackendConfig::default();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
+
+        let group = CommunicationGroup {
+            group_id: "test".to_string(),
+            rank: 0,
+            world_size: 4,
+            devices: vec![Device::Cpu; 4],
+            backend: CommunicationBackend::Gloo,
+        };
+
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
+
+        let tensor = Tensor::<f32>::ones(&[4]);
+        assert!(backend.broadcast_f32(&tensor, 10, &group).is_err());
+    }
+
+    #[test]
+    fn test_gloo_send_recv_do_not_fabricate() {
+        // send_f32 previously returned Ok(()) without transmitting anything
+        // (falsely reporting delivery), and recv_f32 previously fabricated a zero
+        // tensor as if it were real data from src_rank. Without libgloo linked,
+        // neither can genuinely happen, so both must surface honest errors.
+        let mut backend = GlooBackend::new();
+        let config = BackendConfig::default();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
+
+        let group = CommunicationGroup {
+            group_id: "test".to_string(),
+            rank: 0,
+            world_size: 4,
+            devices: vec![Device::Cpu; 4],
+            backend: CommunicationBackend::Gloo,
+        };
+
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
+
+        let tensor = Tensor::<f32>::ones(&[8]);
+
+        assert!(
+            backend.send_f32(&tensor, 1, &group).is_err(),
+            "send must never silently report a fabricated delivery"
+        );
+        assert!(
+            backend.recv_f32(&[8], 1, &group).is_err(),
+            "recv must never silently return a fabricated zero tensor"
+        );
+    }
+
+    #[test]
+    fn test_gloo_send_recv_still_validate_rank_bounds() {
+        // The destination/source rank range checks need no cross-process data, so
+        // they remain genuine (non-fabricated) validations even though a
+        // genuinely in-range send/recv now always errors afterward.
+        let mut backend = GlooBackend::new();
+        let config = BackendConfig::default();
+        backend
+            .initialize(&config)
+            .expect("test: operation should succeed");
+
+        let group = CommunicationGroup {
+            group_id: "test".to_string(),
+            rank: 0,
+            world_size: 4,
+            devices: vec![Device::Cpu; 4],
+            backend: CommunicationBackend::Gloo,
+        };
+
+        backend
+            .create_group(&group)
+            .expect("test: operation should succeed");
+
+        let tensor = Tensor::<f32>::ones(&[4]);
+        assert!(backend.send_f32(&tensor, 10, &group).is_err());
+        assert!(backend.recv_f32(&[4], 10, &group).is_err());
     }
 
     #[test]

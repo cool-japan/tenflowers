@@ -8,7 +8,10 @@ pub use context::{
 };
 
 #[cfg(feature = "gpu")]
-pub use context::{get_gpu_context, GpuContext, GpuContextInfo};
+pub use context::{
+    get_gpu_adapter_capabilities, get_gpu_context, GpuAdapterCapabilities, GpuContext,
+    GpuContextInfo,
+};
 
 #[cfg(any(feature = "gpu", feature = "cudnn"))]
 pub use context::{get_enhanced_gpu_context, EnhancedGpuContext, GpuBackend};
@@ -107,12 +110,22 @@ impl Device {
         Self::try_gpu(0)
     }
 
-    /// Try to create a GPU device with the specified ID
+    /// Try to create a GPU device with the specified ID.
+    ///
+    /// Returns `Err` when no usable GPU device can actually be created. This
+    /// performs a real device-creation probe (adapter *and* `request_device`)
+    /// via [`crate::gpu::gpu_device_available`] rather than assuming
+    /// availability, so callers can gate real GPU work on a genuine device
+    /// instead of on mere adapter enumeration.
     #[cfg(feature = "gpu")]
     pub fn try_gpu(gpu_id: usize) -> Result<Self, String> {
-        // For now, assume GPU is available - in a full implementation,
-        // this would check actual GPU availability
-        Ok(Device::Gpu(gpu_id))
+        if crate::gpu::gpu_device_available() {
+            Ok(Device::Gpu(gpu_id))
+        } else {
+            Err(format!(
+                "GPU {gpu_id} is not available: no usable GPU device could be created"
+            ))
+        }
     }
 
     /// Get the best available GPU device (CPU fallback when GPU not available)

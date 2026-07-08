@@ -396,6 +396,7 @@ pub fn is_safe_cast(from: &PyDType, to: &PyDType) -> bool {
 
 /// Python function to check if a cast is safe
 #[pyfunction]
+#[pyo3(name = "is_safe_cast")]
 pub fn is_safe_cast_py(from: &PyDType, to: &PyDType) -> bool {
     is_safe_cast(from, to)
 }

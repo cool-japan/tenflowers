@@ -196,18 +196,22 @@ struct ResourceAllocation {
     priority: f64,
 }
 
-/// System resource information
+/// System resource information.
+///
+/// Memory and GPU figures are `Option`: `None` means the value was not probed (no
+/// system/accelerator query is wired in), which is reported honestly instead of
+/// fabricating sizes such as "8GB total". CPU core counts are real (`num_cpus`).
 #[derive(Debug)]
 struct SystemResources {
-    /// Total system memory
-    total_memory: usize,
-    /// Available memory
-    available_memory: usize,
-    /// Total CPU cores
+    /// Total system memory in bytes, or `None` if not probed
+    total_memory: Option<usize>,
+    /// Available memory in bytes, or `None` if not probed
+    available_memory: Option<usize>,
+    /// Total CPU cores (real)
     total_cpu_cores: usize,
-    /// Available CPU cores
+    /// Available CPU cores (real)
     available_cpu_cores: usize,
-    /// GPU memory (if available)
+    /// GPU memory in bytes, or `None` if unavailable / not probed
     gpu_memory: Option<usize>,
 }
 
@@ -559,18 +563,19 @@ impl UltraLayerManager {
         Ok(applied)
     }
 
-    fn calculate_performance_improvement(&self) -> Result<f64> {
-        // Calculate overall performance improvement
-        Ok(1.15) // Placeholder - 15% improvement
+    fn calculate_performance_improvement(&self) -> Result<Option<f64>> {
+        // A real improvement ratio requires before/after performance measurements that
+        // are not yet captured around an optimization pass. Returning a fabricated
+        // constant (e.g. 1.15) would falsely claim a 15% speedup, so we report `None`
+        // ("not measured") until baseline/after sampling is implemented.
+        Ok(None)
     }
 
     fn get_resource_utilization(&self) -> Result<ResourceUtilization> {
-        Ok(ResourceUtilization {
-            cpu_utilization: 0.75,
-            memory_utilization: 0.60,
-            gpu_utilization: Some(0.85),
-            buffer_pool_utilization: 0.70,
-        })
+        // Live CPU/memory/GPU/buffer-pool utilisation is not sampled here. Rather than
+        // fabricating fractions (the previous code returned hardcoded 0.75/0.60/0.85/
+        // 0.70), every field is reported as `None` to honestly signal "not measured".
+        Ok(ResourceUtilization::default())
     }
 }
 
@@ -636,8 +641,9 @@ pub struct GlobalOptimizationResult {
     pub recommendations: Vec<OptimizationRecommendation>,
     /// Applied optimizations
     pub applied_optimizations: Vec<String>,
-    /// Performance improvement achieved
-    pub performance_improvement: f64,
+    /// Measured performance improvement ratio, or `None` when no before/after timing
+    /// baseline was captured (so it cannot be reported without fabrication).
+    pub performance_improvement: Option<f64>,
 }
 
 /// Optimization event for history tracking
@@ -653,17 +659,22 @@ pub struct OptimizationEvent {
     pub impact: f64,
 }
 
-/// Resource utilization statistics
-#[derive(Debug)]
+/// Resource utilization statistics.
+///
+/// Each field is `Option<f64>`: `Some(fraction in 0..=1)` when the value has actually
+/// been sampled, or `None` when that resource is not currently instrumented. Using
+/// `None` keeps the report honest instead of fabricating a plausible utilisation
+/// number for a resource that was never measured.
+#[derive(Debug, Default)]
 pub struct ResourceUtilization {
-    /// CPU utilization (0-1)
-    pub cpu_utilization: f64,
-    /// Memory utilization (0-1)
-    pub memory_utilization: f64,
-    /// GPU utilization (0-1, if available)
+    /// CPU utilization (0-1), or `None` if not measured
+    pub cpu_utilization: Option<f64>,
+    /// Memory utilization (0-1), or `None` if not measured
+    pub memory_utilization: Option<f64>,
+    /// GPU utilization (0-1), or `None` if unavailable / not measured
     pub gpu_utilization: Option<f64>,
-    /// Buffer pool utilization (0-1)
-    pub buffer_pool_utilization: f64,
+    /// Buffer pool utilization (0-1), or `None` if not measured
+    pub buffer_pool_utilization: Option<f64>,
 }
 
 // Implementation details for wrapper types and optimization engine
@@ -686,8 +697,15 @@ where
     }
 
     fn get_performance_metrics(&self) -> Result<LayerPerformanceMetrics> {
-        // Return metrics based on layer type and recorded data
-        Ok(LayerPerformanceMetrics::default())
+        // Report the metrics we can actually measure. The memory usage is computed from
+        // the real parameter tensors below. The remaining fields (throughput, SIMD/GPU
+        // utilisation, cache hit rate) are not yet instrumented for this wrapper, so we
+        // leave them at zero rather than fabricating plausible-looking values; once the
+        // corresponding probes are wired in they can be populated here.
+        Ok(LayerPerformanceMetrics {
+            memory_usage: self.get_memory_usage(),
+            ..LayerPerformanceMetrics::default()
+        })
     }
 
     fn optimize(&mut self) -> Result<()> {
@@ -696,8 +714,14 @@ where
     }
 
     fn get_memory_usage(&self) -> usize {
-        // Calculate memory usage based on layer parameters
-        1000 // Placeholder
+        // Real memory usage: sum the byte footprint of every parameter tensor the
+        // layer exposes. This reflects the actual weights/biases rather than a
+        // fabricated constant.
+        self.layer
+            .parameters()
+            .iter()
+            .map(|tensor| tensor.memory_usage())
+            .sum()
     }
 
     fn clone_wrapper(&self) -> Box<dyn LayerWrapper> {
@@ -776,8 +800,10 @@ impl OptimizationEngine {
     }
 
     fn get_optimization_history(&self) -> Vec<OptimizationEvent> {
-        // Return optimization history
-        Vec::new() // Placeholder
+        // No `OptimizationEvent`s are recorded yet (the engine tracks per-layer metric
+        // history but does not log applied-optimization events), so the truthful answer
+        // is an empty history rather than a fabricated list of events.
+        Vec::new()
     }
 }
 
@@ -792,12 +818,16 @@ impl ResourceOptimizer {
 
 impl SystemResources {
     fn detect_system_resources() -> Result<Self> {
+        // Only the CPU core count can be queried portably here (via `num_cpus`). System
+        // memory and GPU memory are not probed, so they are reported as `None` rather
+        // than fabricated with hardcoded 8GB/6GB/4GB constants.
+        let cpu_cores = num_cpus::get();
         Ok(Self {
-            total_memory: 8_000_000_000,     // 8GB
-            available_memory: 6_000_000_000, // 6GB
-            total_cpu_cores: num_cpus::get(),
-            available_cpu_cores: num_cpus::get(),
-            gpu_memory: Some(4_000_000_000), // 4GB
+            total_memory: None,
+            available_memory: None,
+            total_cpu_cores: cpu_cores,
+            available_cpu_cores: cpu_cores,
+            gpu_memory: None,
         })
     }
 }

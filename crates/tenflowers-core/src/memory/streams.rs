@@ -34,19 +34,17 @@ impl MultiStreamMemoryManager {
 
     /// Get the appropriate memory pool for an operation
     pub fn get_pool(&self, operation_id: usize) -> Result<&MemoryPool> {
-        let stream_assignment = self
-            .stream_assignment
-            .lock()
-            .expect("lock should not be poisoned");
+        let stream_assignment = self.stream_assignment.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("stream assignment lock poisoned".to_string())
+        })?;
 
         let stream_id = if let Some(&stream_id) = stream_assignment.get(&operation_id) {
             stream_id
         } else {
             // Assign to current stream and rotate
-            let mut current_stream = self
-                .current_stream
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut current_stream = self.current_stream.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("current stream lock poisoned".to_string())
+            })?;
             let stream_id = *current_stream;
             *current_stream = (*current_stream + 1) % self.pools.len();
             stream_id
@@ -67,10 +65,9 @@ impl MultiStreamMemoryManager {
             )));
         }
 
-        let mut stream_assignment = self
-            .stream_assignment
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut stream_assignment = self.stream_assignment.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("stream assignment lock poisoned".to_string())
+        })?;
         stream_assignment.insert(operation_id, stream_id);
         Ok(())
     }
@@ -80,7 +77,7 @@ impl MultiStreamMemoryManager {
         let mut stream_assignment = self
             .stream_assignment
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stream_assignment.remove(&operation_id);
     }
 
@@ -89,7 +86,7 @@ impl MultiStreamMemoryManager {
         let stream_assignment = self
             .stream_assignment
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stream_assignment.get(&operation_id).copied()
     }
 
@@ -172,10 +169,9 @@ impl MultiStreamMemoryManager {
             total_allocated / self.pools.len()
         };
 
-        let mut stream_assignment = self
-            .stream_assignment
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut stream_assignment = self.stream_assignment.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("stream assignment lock poisoned".to_string())
+        })?;
 
         // Identify overloaded and underloaded streams
         let mut overloaded_streams = Vec::new();
@@ -246,7 +242,7 @@ impl MultiStreamMemoryManager {
         let stream_assignment = self
             .stream_assignment
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !stream_assignment.is_empty() {
             report.push_str("Operation Assignments:\n");
             for (op_id, stream_id) in stream_assignment.iter() {
@@ -262,7 +258,7 @@ impl MultiStreamMemoryManager {
         let mut stream_assignment = self
             .stream_assignment
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stream_assignment.clear();
     }
 
@@ -271,7 +267,7 @@ impl MultiStreamMemoryManager {
         let stream_assignment = self
             .stream_assignment
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut counts = vec![0; self.pools.len()];
 
         for &stream_id in stream_assignment.values() {

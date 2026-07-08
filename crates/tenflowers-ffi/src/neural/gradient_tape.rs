@@ -8,7 +8,37 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 use tenflowers_autograd::{GradientTape, TrackedTensor};
 
-/// Python binding for GradientTape automatic differentiation
+/// Automatic differentiation engine using the gradient-tape (eager) paradigm.
+///
+/// `PyGradientTape` records tensor operations performed inside its scope and
+/// can then compute first-order gradients (and higher-order via nesting)
+/// with respect to watched tensors.
+///
+/// The design mirrors TensorFlow's `tf.GradientTape` / JAX's `grad` pattern.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// # Basic gradient computation
+/// tape = tf.PyGradientTape()
+/// x    = tf.ones([3, 3])
+/// tx   = tape.watch(x)
+///
+/// # Forward pass (recorded by the tape)
+/// ty = tape.watch(tf.matmul(x, x))
+///
+/// # Compute dY/dX
+/// grad = tape.gradient(ty, tx)
+/// print(grad.shape())   # [3, 3]
+///
+/// # Jacobian of a scalar-valued function
+/// jac = tf.jacobian(ty, [tx])
+///
+/// # Hessian (second-order)
+/// H = tf.hessian(ty, tx)
+/// ```
 #[pyclass]
 #[derive(Debug)]
 pub struct PyGradientTape {
@@ -18,6 +48,7 @@ pub struct PyGradientTape {
 
 #[pymethods]
 impl PyGradientTape {
+    /// Create a new, empty gradient tape.
     #[new]
     pub fn new() -> Self {
         Self {
@@ -26,7 +57,17 @@ impl PyGradientTape {
         }
     }
 
-    /// Watch a tensor for gradient computation
+    /// Begin tracking `tensor` for gradient computation.
+    ///
+    /// Returns a [`PyTrackedTensor`] that participates in the autograd graph.
+    /// The original `tensor` is not modified.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// tape = tf.PyGradientTape()
+    /// tx   = tape.watch(tf.ones([4]))
+    /// ```
     pub fn watch(&self, tensor: &PyTensor) -> PyResult<PyTrackedTensor> {
         let tracked = self.tape.watch((*tensor.tensor).clone());
         Ok(PyTrackedTensor {
@@ -34,7 +75,25 @@ impl PyGradientTape {
         })
     }
 
-    /// Compute gradient for a single source
+    /// Compute the gradient of `target` with respect to `source`.
+    ///
+    /// Returns a tensor of the same shape as `source` containing `d(target)/d(source)`.
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if no gradient could be computed (disconnected graph,
+    /// or the operation is not differentiable).
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// tape = tf.PyGradientTape()
+    /// x    = tf.ones([3])
+    /// tx   = tape.watch(x)
+    /// ty   = tape.watch(tf.relu(x))
+    /// grad = tape.gradient(ty, tx)
+    /// print(grad.shape())  # [3]
+    /// ```
     pub fn gradient(
         &self,
         target: &PyTrackedTensor,
@@ -76,7 +135,21 @@ impl PyGradientTape {
         }
     }
 
-    /// Compute gradients for multiple sources
+    /// Compute gradients of multiple `targets` with respect to multiple `sources`.
+    ///
+    /// Returns a list of optional gradient tensors, one per source.  An entry is
+    /// `None` when the corresponding source is not connected to any target.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// tape = tf.PyGradientTape()
+    /// tx = tape.watch(tf.ones([3]))
+    /// ty = tape.watch(tf.ones([3]))
+    /// tz = tape.watch(tf.add(tx.tensor(), ty.tensor()))
+    /// grads = tape.gradients([tz], [tx, ty])
+    /// # grads[0] and grads[1] are the partial derivatives
+    /// ```
     pub fn gradients(
         &self,
         targets: Vec<PyTrackedTensor>,

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 // Cloud-native and compression support
 #[cfg(feature = "compression")]
-use oxiarc_archive::GzipReader;
+use oxiarc_archive::{GzipReader, Lz4Reader, ZstdReader};
 #[cfg(feature = "cloud")]
 /// Cloud storage backend types
 #[derive(Debug, Clone, PartialEq)]
@@ -501,10 +501,9 @@ where
     pub fn load_chunk(&self, chunk_coords: &[usize]) -> Result<Vec<T>> {
         // Check cache first
         {
-            let cache = self
-                .chunk_cache
-                .lock()
-                .expect("lock should not be poisoned");
+            let cache = self.chunk_cache.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("chunk cache lock poisoned".to_string())
+            })?;
             if let Some(cached_data) = cache.get(chunk_coords) {
                 return Ok(cached_data.clone());
             }
@@ -515,10 +514,9 @@ where
 
         // Cache the loaded chunk
         {
-            let mut cache = self
-                .chunk_cache
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut cache = self.chunk_cache.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("chunk cache lock poisoned".to_string())
+            })?;
             cache.insert(chunk_coords.to_vec(), chunk_data.clone());
         }
 
@@ -760,7 +758,13 @@ where
         Ok(data)
     }
 
-    /// Decompress chunk data based on compression type
+    /// Decompress chunk data based on the array's declared compressor.
+    ///
+    /// Supported codecs (including `blosc`, with all five of its inner
+    /// codecs and both shuffle filters -- see `formats::blosc`) are
+    /// decompressed for real. Codecs nobody has implemented yet return an
+    /// honest error rather than handing back the still-compressed bytes
+    /// pretending they were decoded, which would silently corrupt the data.
     fn decompress_chunk_data(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         match &self.array_info.compressor {
             Some(compressor) => {
@@ -780,29 +784,51 @@ where
                         })?;
                         Ok(decompressed)
                     }
-                    "blosc" => {
-                        // Blosc decompression would require the blosc crate
-                        // For now, return the data as-is
-                        Ok(compressed_data.to_vec())
-                    }
+                    #[cfg(feature = "compression")]
                     "lz4" => {
-                        // LZ4 decompression would require the lz4 crate
-                        // For now, return the data as-is
-                        Ok(compressed_data.to_vec())
+                        let mut lz4_reader = Lz4Reader::new(std::io::Cursor::new(compressed_data))
+                            .map_err(|e| {
+                                TensorError::invalid_argument(format!(
+                                    "LZ4 decompression init failed: {e}"
+                                ))
+                            })?;
+                        let decompressed = lz4_reader.decompress().map_err(|e| {
+                            TensorError::invalid_argument(format!("LZ4 decompression failed: {e}"))
+                        })?;
+                        Ok(decompressed)
                     }
+                    #[cfg(feature = "compression")]
                     "zstd" => {
-                        // Zstandard decompression would require the zstd crate
-                        // For now, return the data as-is
-                        Ok(compressed_data.to_vec())
+                        let mut zstd_reader = ZstdReader::new(std::io::Cursor::new(
+                            compressed_data,
+                        ))
+                        .map_err(|e| {
+                            TensorError::invalid_argument(format!(
+                                "Zstd decompression init failed: {e}"
+                            ))
+                        })?;
+                        let decompressed = zstd_reader.decompress().map_err(|e| {
+                            TensorError::invalid_argument(format!("Zstd decompression failed: {e}"))
+                        })?;
+                        Ok(decompressed)
                     }
-                    _ => {
-                        // Unknown compressor, return data as-is
-                        Ok(compressed_data.to_vec())
+                    #[cfg(feature = "compression")]
+                    "blosc" => super::blosc::decompress(compressed_data),
+                    other => {
+                        // Unsupported codec (or compression feature
+                        // disabled). Never return still-compressed bytes as if
+                        // they were decompressed: that would silently corrupt
+                        // every downstream value.
+                        Err(TensorError::not_implemented_simple(format!(
+                            "Zarr chunk codec '{other}' is not supported; cannot decompress \
+                             chunk data. Supported codecs: gzip, lz4, zstd, blosc (with the \
+                             'compression' feature enabled)."
+                        )))
                     }
                 }
             }
             None => {
-                // No compression, return data as-is
+                // No compression declared: the chunk bytes are already raw.
                 Ok(compressed_data.to_vec())
             }
         }
@@ -1096,5 +1122,133 @@ mod tests {
         assert_eq!(metadata.chunks, vec![100, 224, 224, 3]);
         assert_eq!(metadata.order, "C");
         assert_eq!(metadata.zarr_format, 2);
+    }
+
+    /// Build a minimal `ZarrDataset<u8>` whose array declares `compressor`.
+    fn dataset_with_compressor(compressor: Option<&str>) -> ZarrDataset<u8> {
+        let array_info = ZarrArrayInfo {
+            shape: vec![16],
+            dtype: "|u1".to_string(),
+            chunks: vec![16],
+            compressor: compressor.map(|s| s.to_string()),
+            fill_value: None,
+            order: "C".to_string(),
+            zarr_format: 2,
+        };
+        ZarrDataset::<u8> {
+            config: ZarrConfig {
+                array_path: PathBuf::from("/test"),
+                ..Default::default()
+            },
+            array_info,
+            labels_info: None,
+            chunk_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    #[test]
+    fn test_decompress_chunk_no_compressor_returns_raw() {
+        let dataset = dataset_with_compressor(None);
+        let raw = b"raw chunk bytes!".to_vec();
+        let out = dataset
+            .decompress_chunk_data(&raw)
+            .expect("test: no-compression path should succeed");
+        assert_eq!(out, raw);
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn test_decompress_chunk_gzip_roundtrip() {
+        let original: Vec<u8> = (0u16..512).map(|v| (v % 251) as u8).collect();
+        let compressed = oxiarc_archive::gzip::compress(&original, 6)
+            .expect("test: gzip compression should succeed");
+
+        let dataset = dataset_with_compressor(Some("gzip"));
+        let decompressed = dataset
+            .decompress_chunk_data(&compressed)
+            .expect("test: gzip decompression should succeed");
+        assert_eq!(decompressed, original, "gzip must round-trip exactly");
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn test_decompress_chunk_zstd_roundtrip() {
+        let original: Vec<u8> = (0u16..512).map(|v| (v % 251) as u8).collect();
+        let compressed = oxiarc_archive::zstd::ZstdWriter::new()
+            .compress(&original)
+            .expect("test: zstd compression should succeed");
+
+        let dataset = dataset_with_compressor(Some("zstd"));
+        let decompressed = dataset
+            .decompress_chunk_data(&compressed)
+            .expect("test: zstd decompression should succeed");
+        assert_eq!(decompressed, original, "zstd must round-trip exactly");
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn test_decompress_chunk_lz4_roundtrip() {
+        let original: Vec<u8> = (0u16..512).map(|v| (v % 251) as u8).collect();
+        let mut writer = oxiarc_archive::Lz4Writer::new(Vec::new());
+        writer
+            .write_compressed(&original)
+            .expect("test: lz4 compression should succeed");
+        let compressed = writer.into_inner();
+
+        let dataset = dataset_with_compressor(Some("lz4"));
+        let decompressed = dataset
+            .decompress_chunk_data(&compressed)
+            .expect("test: lz4 decompression should succeed");
+        assert_eq!(decompressed, original, "lz4 must round-trip exactly");
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn test_decompress_chunk_blosc_roundtrip() {
+        // Hand-assemble a real (single-block, single-split, zstd-inner-codec)
+        // blosc chunk around real oxiarc-zstd-compressed bytes, then verify
+        // `decompress_chunk_data` round-trips it via `formats::blosc`. The
+        // blosc container format itself (header/bstarts/splits/shuffle) is
+        // covered far more thoroughly by `formats::blosc`'s own tests,
+        // including vectors produced by the real reference C-Blosc library;
+        // this test only needs to prove the "blosc" compressor string is
+        // wired up correctly here.
+        let original: Vec<u8> = (0u16..512).map(|v| (v % 251) as u8).collect();
+        let compressed_split = oxiarc_archive::zstd::ZstdWriter::new()
+            .compress(&original)
+            .expect("test: zstd compression should succeed");
+
+        let mut chunk = Vec::with_capacity(16 + 4 + 4 + compressed_split.len());
+        chunk.push(0); // version (unchecked by the decoder)
+        chunk.push(1); // versionlz (unchecked by the decoder)
+        chunk.push(4 << 5); // flags: format code 4 == zstd, no shuffle/memcpy
+        chunk.push(1); // typesize
+        chunk.extend_from_slice(&(original.len() as u32).to_le_bytes()); // nbytes
+        chunk.extend_from_slice(&(original.len() as u32).to_le_bytes()); // blocksize (single block)
+        let cbytes = (16 + 4 + 4 + compressed_split.len()) as u32;
+        chunk.extend_from_slice(&cbytes.to_le_bytes()); // cbytes
+        chunk.extend_from_slice(&20u32.to_le_bytes()); // bstarts[0]
+        chunk.extend_from_slice(&(compressed_split.len() as u32).to_le_bytes()); // split length prefix
+        chunk.extend_from_slice(&compressed_split);
+        assert_eq!(chunk.len(), cbytes as usize);
+
+        let dataset = dataset_with_compressor(Some("blosc"));
+        let decompressed = dataset
+            .decompress_chunk_data(&chunk)
+            .expect("test: blosc decompression should succeed");
+        assert_eq!(decompressed, original, "blosc must round-trip exactly");
+    }
+
+    #[test]
+    fn test_decompress_chunk_unsupported_codec_is_honest_error() {
+        // A codec nobody has implemented must error, never return the still
+        // compressed bytes pretending they were decompressed.
+        let dataset = dataset_with_compressor(Some("brotli"));
+        let result = dataset.decompress_chunk_data(b"fake brotli payload");
+        assert!(
+            result.is_err(),
+            "unsupported codec must return an error, not raw compressed bytes"
+        );
     }
 }

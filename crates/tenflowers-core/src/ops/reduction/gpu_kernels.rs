@@ -109,7 +109,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     let shape = tensor.shape();
     if axis >= shape.rank() {
@@ -164,7 +165,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     // Check if tensor is on GPU
     if !tensor.device().is_gpu() {
@@ -202,7 +204,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -226,7 +229,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -250,7 +254,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -274,7 +279,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -298,7 +304,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -322,7 +329,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -346,7 +354,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {
@@ -370,7 +379,8 @@ where
         + 'static
         + scirs2_core::num_traits::FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     #[cfg(feature = "gpu")]
     {

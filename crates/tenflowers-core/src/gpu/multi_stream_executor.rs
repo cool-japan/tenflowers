@@ -79,7 +79,7 @@ impl MultiStreamGpuExecutor {
         let mut counter = self
             .operation_counter
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *counter += 1;
         *counter
     }
@@ -262,22 +262,22 @@ impl MultiStreamGpuExecutor {
         self.compute_stream
             .pending_operations
             .lock()
-            .expect("compute stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.transfer_stream
             .pending_operations
             .lock()
-            .expect("transfer stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.high_priority_stream
             .pending_operations
             .lock()
-            .expect("high priority stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.background_stream
             .pending_operations
             .lock()
-            .expect("background stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
@@ -287,25 +287,25 @@ impl MultiStreamGpuExecutor {
             .compute_stream
             .pending_operations
             .lock()
-            .expect("compute stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let transfer_count = self
             .transfer_stream
             .pending_operations
             .lock()
-            .expect("transfer stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let high_priority_count = self
             .high_priority_stream
             .pending_operations
             .lock()
-            .expect("high priority stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let background_count = self
             .background_stream
             .pending_operations
             .lock()
-            .expect("background stream lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
 
         compute_count + transfer_count + high_priority_count + background_count

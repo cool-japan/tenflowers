@@ -305,8 +305,11 @@ pub fn multinomial_f32(
         });
     }
 
-    let weights_data = weights.as_slice().ok_or_else(|| {
-        TensorError::unsupported_operation_simple("GPU multinomial not supported yet".to_string())
+    let weights_cpu = weights.to_cpu()?;
+    let weights_data = weights_cpu.as_slice().ok_or_else(|| {
+        TensorError::unsupported_operation_simple(
+            "Cannot access tensor data for multinomial sampling".to_string(),
+        )
     })?;
 
     // Normalize weights to probabilities
@@ -453,7 +456,32 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "GPU random normal not yet implemented"]
+    fn test_gpu_multinomial_matches_cpu_reference() {
+        #[cfg(feature = "gpu")]
+        {
+            use crate::Device;
+
+            let weights_cpu = Tensor::<f32>::from_vec(vec![0.1, 0.2, 0.3, 0.4], &[4])
+                .expect("test: from_vec should succeed");
+
+            let weights_gpu = match weights_cpu.to(Device::Gpu(0)) {
+                Ok(t) => t,
+                Err(_) => return, // No GPU adapter available in this environment; skip.
+            };
+
+            let expected = multinomial_f32(&weights_cpu, 20, Some(999))
+                .expect("test: CPU multinomial should succeed");
+            let actual = multinomial_f32(&weights_gpu, 20, Some(999))
+                .expect("test: GPU multinomial should succeed with a real adapter");
+
+            assert_eq!(
+                actual.to_vec().expect("test: to_vec should succeed"),
+                expected.to_vec().expect("test: to_vec should succeed")
+            );
+        }
+    }
+
+    #[test]
     fn test_gpu_random_normal_f32() {
         #[cfg(feature = "gpu")]
         {
@@ -477,7 +505,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "GPU random uniform not yet implemented"]
     fn test_gpu_random_uniform_f32() {
         #[cfg(feature = "gpu")]
         {

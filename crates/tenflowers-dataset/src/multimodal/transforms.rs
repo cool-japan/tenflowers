@@ -55,7 +55,8 @@ where
         + scirs2_core::numeric::Float
         + Send
         + Sync
-        + 'static,
+        + 'static
+        + bytemuck::Pod,
 {
     fn len(&self) -> usize {
         self.dataset.len()

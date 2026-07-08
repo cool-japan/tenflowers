@@ -61,14 +61,13 @@ impl HookManager {
 
     /// Register a forward hook
     pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
-        let mut hooks = self
-            .forward_hooks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut hooks = self.forward_hooks.write().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+        })?;
         let mut next_id = self
             .next_hook_id
             .write()
-            .expect("write lock should not be poisoned");
+            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("hook id lock poisoned"))?;
 
         let id = *next_id;
         *next_id += 1;
@@ -80,14 +79,13 @@ impl HookManager {
 
     /// Register a backward hook
     pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
-        let mut hooks = self
-            .backward_hooks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut hooks = self.backward_hooks.write().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+        })?;
         let mut next_id = self
             .next_hook_id
             .write()
-            .expect("write lock should not be poisoned");
+            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("hook id lock poisoned"))?;
 
         let id = *next_id;
         *next_id += 1;
@@ -101,17 +99,15 @@ impl HookManager {
     pub fn remove_hook(&self, handle: &PyHookHandle) -> PyResult<()> {
         match handle.hook_type.as_str() {
             "forward" => {
-                let mut hooks = self
-                    .forward_hooks
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut hooks = self.forward_hooks.write().map_err(|_| {
+                    pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+                })?;
                 hooks.remove(&handle.id);
             }
             "backward" => {
-                let mut hooks = self
-                    .backward_hooks
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut hooks = self.backward_hooks.write().map_err(|_| {
+                    pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+                })?;
                 hooks.remove(&handle.id);
             }
             _ => {
@@ -127,11 +123,11 @@ impl HookManager {
     pub fn clear_hooks(&self) {
         self.forward_hooks
             .write()
-            .expect("write lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.backward_hooks
             .write()
-            .expect("write lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
@@ -140,22 +136,21 @@ impl HookManager {
         let forward_count = self
             .forward_hooks
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let backward_count = self
             .backward_hooks
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         (forward_count, backward_count)
     }
 
     /// Execute forward hooks
     pub fn execute_forward_hooks(&self, input: &PyTensor, output: &PyTensor) -> PyResult<()> {
-        let hooks = self
-            .forward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
+        let hooks = self.forward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+        })?;
 
         Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
@@ -172,10 +167,9 @@ impl HookManager {
 
     /// Execute backward hooks
     pub fn execute_backward_hooks(&self, grad_input: &PyTensor) -> PyResult<()> {
-        let hooks = self
-            .backward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
+        let hooks = self.backward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+        })?;
 
         Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
@@ -232,14 +226,13 @@ impl PyGlobalHookRegistry {
 
     /// Register a global forward hook
     pub fn register_forward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
-        let mut hooks = self
-            .forward_hooks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut hooks = self.forward_hooks.write().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+        })?;
         let mut next_id = self
             .next_hook_id
             .write()
-            .expect("write lock should not be poisoned");
+            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("hook id lock poisoned"))?;
 
         let id = *next_id;
         *next_id += 1;
@@ -251,14 +244,13 @@ impl PyGlobalHookRegistry {
 
     /// Register a global backward hook
     pub fn register_backward_hook(&self, hook: Py<PyAny>) -> PyResult<PyHookHandle> {
-        let mut hooks = self
-            .backward_hooks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut hooks = self.backward_hooks.write().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+        })?;
         let mut next_id = self
             .next_hook_id
             .write()
-            .expect("write lock should not be poisoned");
+            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("hook id lock poisoned"))?;
 
         let id = *next_id;
         *next_id += 1;
@@ -272,17 +264,15 @@ impl PyGlobalHookRegistry {
     pub fn remove_hook(&self, handle: &PyHookHandle) -> PyResult<()> {
         match handle.hook_type.as_str() {
             "forward" => {
-                let mut hooks = self
-                    .forward_hooks
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut hooks = self.forward_hooks.write().map_err(|_| {
+                    pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+                })?;
                 hooks.remove(&handle.id);
             }
             "backward" => {
-                let mut hooks = self
-                    .backward_hooks
-                    .write()
-                    .expect("write lock should not be poisoned");
+                let mut hooks = self.backward_hooks.write().map_err(|_| {
+                    pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+                })?;
                 hooks.remove(&handle.id);
             }
             _ => {
@@ -298,11 +288,11 @@ impl PyGlobalHookRegistry {
     pub fn clear_hooks(&self) {
         self.forward_hooks
             .write()
-            .expect("write lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
         self.backward_hooks
             .write()
-            .expect("write lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 
@@ -311,22 +301,21 @@ impl PyGlobalHookRegistry {
         let forward_count = self
             .forward_hooks
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         let backward_count = self
             .backward_hooks
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
         (forward_count, backward_count)
     }
 
     /// Execute global forward hooks
     pub fn execute_forward_hooks(&self, input: &PyTensor, output: &PyTensor) -> PyResult<()> {
-        let hooks = self
-            .forward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
+        let hooks = self.forward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+        })?;
 
         Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
@@ -342,10 +331,9 @@ impl PyGlobalHookRegistry {
 
     /// Execute global backward hooks
     pub fn execute_backward_hooks(&self, grad_input: &PyTensor) -> PyResult<()> {
-        let hooks = self
-            .backward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
+        let hooks = self.backward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+        })?;
 
         Python::attach(|py| {
             for (_id, hook) in hooks.iter() {
@@ -365,14 +353,12 @@ impl PyGlobalHookRegistry {
 
         let result = PyDict::new(py);
 
-        let forward_hooks = self
-            .forward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
-        let backward_hooks = self
-            .backward_hooks
-            .read()
-            .expect("read lock should not be poisoned");
+        let forward_hooks = self.forward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("forward hooks lock poisoned")
+        })?;
+        let backward_hooks = self.backward_hooks.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("backward hooks lock poisoned")
+        })?;
 
         result.set_item("forward_count", forward_hooks.len())?;
         result.set_item("backward_count", backward_hooks.len())?;

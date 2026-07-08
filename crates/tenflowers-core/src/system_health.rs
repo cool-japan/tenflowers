@@ -239,12 +239,11 @@ impl SystemHealthChecker {
         // Tensor creation latency
         let tensor_creation_latency = self.benchmark_tensor_creation(&Device::Cpu)?;
 
-        // Device transfer bandwidth
-        let device_transfer_bandwidth = if devices.len() > 1 {
-            Some(self.benchmark_device_transfer(devices)?)
-        } else {
-            None
-        };
+        // Device-to-device transfer bandwidth is not measurable through the current
+        // Tensor API (no public cross-device transfer primitive).  Report None so
+        // callers know the measurement was not taken rather than receiving a fake value.
+        let device_transfer_bandwidth: Option<f64> = None;
+        let _ = devices; // suppress unused-variable warning (used by GPU benchmarks above)
 
         Ok(PerformanceBenchmarks {
             cpu_add_throughput,
@@ -310,24 +309,6 @@ impl SystemHealthChecker {
         let elapsed = start.elapsed();
 
         Ok(elapsed / iterations)
-    }
-
-    fn benchmark_device_transfer(
-        &self,
-        devices: &[Device],
-    ) -> Result<f64, Box<dyn std::error::Error>> {
-        if devices.len() < 2 {
-            return Ok(0.0);
-        }
-
-        let shape = vec![1024, 1024];
-        let _tensor: Tensor<f32> = Tensor::ones(&shape);
-        let data_size = shape.iter().product::<usize>() * std::mem::size_of::<f32>();
-
-        // For now, return mock transfer rate since device transfer API might not be available
-        let elapsed = Duration::from_millis(10); // Mock transfer time
-
-        Ok(data_size as f64 / elapsed.as_secs_f64() / 1e9)
     }
 
     fn assess_health_status(

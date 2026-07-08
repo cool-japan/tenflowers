@@ -5,7 +5,7 @@ use crate::{
     ops::registry::OpRegistry,
     tensor::Tensor,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 /// Session configuration options
@@ -23,6 +23,25 @@ pub struct SessionConfig {
     pub inter_op_parallelism_threads: usize,
     /// Number of intra-op threads
     pub intra_op_parallelism_threads: usize,
+    /// Whether to run graph-level optimization (constant folding, algebraic
+    /// simplification, common subexpression elimination, strength
+    /// reduction, scheduling, and dead code elimination — see
+    /// `crate::graph::optimization::GraphOptimizer::for_eager_execution`)
+    /// before executing a graph.
+    ///
+    /// Optimization always protects the node ids being fetched by the
+    /// current call (and every node this session has fetched before), so a
+    /// single fetch, or a fetch repeated across calls, produces identical
+    /// results whether or not this is enabled. The one documented
+    /// limitation: a node that has never been fetched is not guaranteed to
+    /// survive optimization triggered by *other* fetches on the same
+    /// session — for example, common subexpression elimination may merge it
+    /// into a structurally identical node before it is ever requested.
+    /// Fetching such a node later fails with an honest "not found" error
+    /// rather than returning a silently wrong value — the same contract
+    /// ordinary dead-code elimination gives in a compiler. Defaults to
+    /// `true`.
+    pub enable_graph_optimization: bool,
 }
 
 impl Default for SessionConfig {
@@ -34,6 +53,7 @@ impl Default for SessionConfig {
             gpu_memory_limit: None,
             inter_op_parallelism_threads: 0, // Use system default
             intra_op_parallelism_threads: 0, // Use system default
+            enable_graph_optimization: true,
         }
     }
 }
@@ -100,6 +120,12 @@ pub struct DefaultSession {
     // Partial run state
     partial_runs: HashMap<String, PartialRunState>,
     next_partial_run_id: u64,
+    // Every node id this session has ever resolved as a fetch target.
+    // Accumulated (never shrinks) so that graph optimization, which may run
+    // again on a later call with a *different* fetch list, never merges or
+    // eliminates a node this session has already promised to be able to
+    // fetch.
+    protected_output_roots: HashSet<NodeId>,
 }
 
 /// Execution plan for a set of fetches
@@ -142,15 +168,23 @@ impl DefaultSession {
             execution_cache: HashMap::new(),
             partial_runs: HashMap::new(),
             next_partial_run_id: 0,
+            protected_output_roots: HashSet::new(),
         }
     }
 
     /// Create execution plan for the given fetches
-    fn create_execution_plan(&self, fetches: &[FetchSpec]) -> Result<ExecutionPlan, TensorError> {
-        let graph = self.graph.read().expect("read lock should not be poisoned");
+    fn create_execution_plan(
+        &mut self,
+        fetches: &[FetchSpec],
+    ) -> Result<ExecutionPlan, TensorError> {
+        // Resolve fetches to concrete node ids first. These become GC roots
+        // protected across optimization below: no pass may remove or merge
+        // away a node the caller is fetching by id or name.
+        let graph = self.graph.read().map_err(|_| {
+            TensorError::invalid_operation_simple("graph read lock poisoned".to_string())
+        })?;
 
-        // Find all nodes that need to be executed
-        let mut required_nodes = std::collections::HashSet::new();
+        let mut output_roots: HashSet<NodeId> = HashSet::new();
         let mut output_mapping = HashMap::new();
 
         // Process each fetch specification
@@ -179,17 +213,48 @@ impl DefaultSession {
                 )));
             }
 
-            required_nodes.insert(node_id);
+            output_roots.insert(node_id);
             output_mapping.insert(fetch.clone(), (node_id, output_idx));
         }
 
-        // Find all dependencies using DFS
-        let mut stack = required_nodes.iter().cloned().collect::<Vec<_>>();
+        drop(graph); // Release the read lock before taking the write lock below.
+
+        // Every node this session has ever been asked to fetch (this call's
+        // roots plus every prior call's) is protected, per the contract
+        // documented on `SessionConfig::enable_graph_optimization`.
+        self.protected_output_roots.extend(output_roots.iter());
+
+        // Optimize (if enabled) and compute the topological order on the,
+        // possibly rewritten, graph. Ordering matters: optimization must
+        // run before `compute_topological_order` below, since the
+        // scheduling pass installs its schedule directly into the graph's
+        // cached order, which `compute_topological_order` then returns
+        // as-is.
+        let mut graph_write = self.graph.write().map_err(|_| {
+            TensorError::invalid_operation_simple("graph write lock poisoned".to_string())
+        })?;
+
+        let mut graph_was_mutated = false;
+        if self.config.enable_graph_optimization {
+            let optimizer = crate::graph::optimization::GraphOptimizer::for_eager_execution();
+            let stats =
+                optimizer.optimize_with_outputs(&mut graph_write, &self.protected_output_roots)?;
+            graph_was_mutated = stats.iterations > 0;
+        }
+
+        let full_topo_order = graph_write.compute_topological_order()?.to_vec();
+
+        // Recompute the fetch dependency closure AFTER optimization: passes
+        // may have merged or redirected ancestor nodes (e.g. common
+        // subexpression elimination choosing a different node as
+        // canonical), so the closure must be walked on the graph as it
+        // exists now, not reused from before optimization ran.
+        let mut required_nodes: HashSet<NodeId> = output_roots.clone();
+        let mut stack: Vec<NodeId> = output_roots.iter().copied().collect();
         while let Some(node_id) = stack.pop() {
-            if let Some(node) = graph.get_node(node_id) {
-                // Add all input nodes
+            if let Some(node) = graph_write.get_node(node_id) {
                 for &edge_id in &node.inputs {
-                    if let Some(edge) = graph.get_edge(edge_id) {
+                    if let Some(edge) = graph_write.get_edge(edge_id) {
                         if required_nodes.insert(edge.from_node) {
                             stack.push(edge.from_node);
                         }
@@ -198,16 +263,17 @@ impl DefaultSession {
             }
         }
 
-        // We need to access compute_topological_order on the graph
-        // Since we can't clone RwLockReadGuard, we'll call it on the original graph
-        let full_topo_order = {
-            drop(graph); // Release the read lock
-            let mut graph_write = self
-                .graph
-                .write()
-                .expect("write lock should not be poisoned");
-            graph_write.compute_topological_order()?.to_vec()
-        };
+        drop(graph_write);
+
+        // If optimization actually mutated the shared graph, any
+        // previously cached execution plan (built for a *different* fetch
+        // list) may reference node ids that were merged or removed. Drop
+        // the cache so those plans are honestly recomputed against the
+        // current graph on next use rather than risk executing a stale one.
+        if graph_was_mutated {
+            self.execution_cache.clear();
+        }
+
         let execution_order: Vec<NodeId> = full_topo_order
             .iter()
             .filter(|&&node_id| required_nodes.contains(&node_id))
@@ -215,7 +281,9 @@ impl DefaultSession {
             .collect();
 
         // Create input mapping (placeholders)
-        let graph = self.graph.read().expect("read lock should not be poisoned");
+        let graph = self.graph.read().map_err(|_| {
+            TensorError::invalid_operation_simple("graph read lock poisoned".to_string())
+        })?;
         let mut input_mapping = HashMap::new();
         for node in graph.nodes() {
             if let NodeType::Placeholder { .. } = node.op_type {
@@ -237,7 +305,9 @@ impl DefaultSession {
         node_values: &mut HashMap<NodeId, Vec<Tensor<f32>>>,
         feed_dict: &FeedDict,
     ) -> Result<(), TensorError> {
-        let graph = self.graph.read().expect("read lock should not be poisoned");
+        let graph = self.graph.read().map_err(|_| {
+            TensorError::invalid_operation_simple("graph read lock poisoned".to_string())
+        })?;
         let node = graph
             .get_node(node_id)
             .ok_or_else(|| TensorError::invalid_argument(format!("Node {node_id} not found")))?;
@@ -933,5 +1003,299 @@ mod tests {
         let fetches = vec![];
         let result = session.run(&fetches, &feed_dict);
         assert!(result.is_err());
+    }
+
+    /// Build `result = (x + y) * (1 + 2) + (x + y)`, deliberately using two
+    /// separately-built `x + y` nodes (a CSE target) and a literal `1 + 2`
+    /// constant subexpression (a constant-folding target), plus one node
+    /// (`dead`) that is never on the path to `result` at all.
+    fn build_optimizable_graph() -> (Arc<RwLock<Graph>>, NodeId) {
+        let mut graph = Graph::new();
+
+        let x = graph
+            .add_node(
+                "x".to_string(),
+                NodeType::Placeholder {
+                    dtype: DType::Float32,
+                    shape: Shape::new(vec![]),
+                },
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        let y = graph
+            .add_node(
+                "y".to_string(),
+                NodeType::Placeholder {
+                    dtype: DType::Float32,
+                    shape: Shape::new(vec![]),
+                },
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+
+        let mut one_attrs = HashMap::new();
+        one_attrs.insert(
+            "value".to_string(),
+            AttributeValue::Tensor(Tensor::from_scalar(1.0f32)),
+        );
+        let one = graph
+            .add_node(
+                "one".to_string(),
+                NodeType::Constant,
+                Device::Cpu,
+                one_attrs,
+            )
+            .expect("test: add_node should succeed");
+        let mut two_attrs = HashMap::new();
+        two_attrs.insert(
+            "value".to_string(),
+            AttributeValue::Tensor(Tensor::from_scalar(2.0f32)),
+        );
+        let two = graph
+            .add_node(
+                "two".to_string(),
+                NodeType::Constant,
+                Device::Cpu,
+                two_attrs,
+            )
+            .expect("test: add_node should succeed");
+
+        let const_sum = graph
+            .add_node(
+                "const_sum".to_string(),
+                NodeType::Operation("Add".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(
+                one,
+                const_sum,
+                0,
+                0,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(
+                two,
+                const_sum,
+                0,
+                1,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+
+        let xy_sum_1 = graph
+            .add_node(
+                "xy_sum_1".to_string(),
+                NodeType::Operation("Add".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(x, xy_sum_1, 0, 0, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(y, xy_sum_1, 0, 1, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+
+        // Structurally identical to `xy_sum_1` — a genuine CSE target.
+        let xy_sum_2 = graph
+            .add_node(
+                "xy_sum_2".to_string(),
+                NodeType::Operation("Add".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(x, xy_sum_2, 0, 0, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(y, xy_sum_2, 0, 1, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+
+        let scaled = graph
+            .add_node(
+                "scaled".to_string(),
+                NodeType::Operation("Mul".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(
+                xy_sum_1,
+                scaled,
+                0,
+                0,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(
+                const_sum,
+                scaled,
+                0,
+                1,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+
+        let result = graph
+            .add_node(
+                "result".to_string(),
+                NodeType::Operation("Add".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(
+                scaled,
+                result,
+                0,
+                0,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(
+                xy_sum_2,
+                result,
+                0,
+                1,
+                DType::Float32,
+                Shape::new(vec![]),
+                false,
+            )
+            .expect("test: add_edge should succeed");
+
+        // Never on the path to `result`: must not affect the fetched value,
+        // and must not itself cause any error, whether or not optimization
+        // is enabled.
+        let dead = graph
+            .add_node(
+                "dead".to_string(),
+                NodeType::Operation("Mul".to_string()),
+                Device::Cpu,
+                HashMap::new(),
+            )
+            .expect("test: add_node should succeed");
+        graph
+            .add_edge(x, dead, 0, 0, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+        graph
+            .add_edge(y, dead, 0, 1, DType::Float32, Shape::new(vec![]), false)
+            .expect("test: add_edge should succeed");
+
+        (Arc::new(RwLock::new(graph)), result)
+    }
+
+    #[test]
+    fn test_graph_optimization_preserves_results_and_reduces_node_count() {
+        let mut feed_dict = FeedDict::new();
+        feed_dict.insert("x".to_string(), Tensor::<f32>::from_scalar(3.0f32));
+        feed_dict.insert("y".to_string(), Tensor::<f32>::from_scalar(4.0f32));
+        let fetches = vec![FetchSpec::Name("result".to_string())];
+
+        // Baseline: optimization disabled.
+        let (graph_off, _result_off) = build_optimizable_graph();
+        let node_count_before_off = graph_off
+            .read()
+            .expect("test: read lock should succeed")
+            .node_count();
+        let config_off = SessionConfig {
+            enable_graph_optimization: false,
+            ..SessionConfig::default()
+        };
+        let mut session_off = create_session(Arc::clone(&graph_off), Some(config_off), None);
+        let results_off = session_off
+            .run(&fetches, &feed_dict)
+            .expect("test: run (optimizer off) should succeed");
+        let node_count_after_off = graph_off
+            .read()
+            .expect("test: read lock should succeed")
+            .node_count();
+
+        // Optimization enabled.
+        let (graph_on, result_on) = build_optimizable_graph();
+        let node_count_before_on = graph_on
+            .read()
+            .expect("test: read lock should succeed")
+            .node_count();
+        let config_on = SessionConfig {
+            enable_graph_optimization: true,
+            ..SessionConfig::default()
+        };
+        let mut session_on = create_session(Arc::clone(&graph_on), Some(config_on), None);
+        let results_on = session_on
+            .run(&fetches, &feed_dict)
+            .expect("test: run (optimizer on) should succeed");
+        let node_count_after_on = graph_on
+            .read()
+            .expect("test: read lock should succeed")
+            .node_count();
+
+        assert_eq!(
+            node_count_before_off, node_count_before_on,
+            "both graphs must start out identical"
+        );
+
+        // Identical numeric results whether or not optimization ran.
+        assert_eq!(results_off.len(), 1);
+        assert_eq!(results_on.len(), 1);
+        let off_slice = results_off[0]
+            .as_slice()
+            .expect("test: tensor should have data");
+        let on_slice = results_on[0]
+            .as_slice()
+            .expect("test: tensor should have data");
+        assert_eq!(
+            off_slice, on_slice,
+            "optimization must never change the fetched value"
+        );
+        // (x + y) * (1 + 2) + (x + y) = 7.0 * 3.0 + 7.0 = 28.0
+        assert!(
+            (off_slice[0] - 28.0).abs() < 1e-5,
+            "expected 28.0, got {}",
+            off_slice[0]
+        );
+
+        // Disabling optimization must never mutate the graph.
+        assert_eq!(node_count_after_off, node_count_before_off);
+
+        // Enabling optimization must have done something observable: the
+        // duplicated `x + y` subexpression should have been merged by CSE.
+        assert!(
+            node_count_after_on < node_count_before_on,
+            "optimization should reduce node count (before={node_count_before_on}, after={node_count_after_on})"
+        );
+
+        // The fetch target keeps its identity (both by id and by name) even
+        // though the graph was rewritten underneath it.
+        let graph_on_guard = graph_on.read().expect("test: read lock should succeed");
+        assert!(graph_on_guard.get_node(result_on).is_some());
+        assert!(graph_on_guard.get_node_by_name("result").is_some());
+    }
+
+    #[test]
+    fn test_graph_optimization_default_is_enabled() {
+        assert!(SessionConfig::default().enable_graph_optimization);
     }
 }

@@ -12,6 +12,8 @@
 //! - **Complete Bindings**: Access to all TenfloweRS functionality from Python
 //! - **Performance**: Near-native Rust performance from Python
 //! - **Type Safety**: Strong typing with Python type hints
+//! - **Session Profiling**: Operation-level timing and memory accounting via [`PyProfiler`]
+//! - **Stable API Catalogue**: Query symbol stability via [`stable_api`] module
 //!
 //! ## Installation
 //!
@@ -21,183 +23,506 @@
 //! pip install tenflowers
 //! ```
 //!
-//! Or build from source:
+//! Or build from source with [maturin](https://github.com/PyO3/maturin):
 //!
 //! ```bash
 //! cd tenflowers/crates/tenflowers-ffi
+//! pip install maturin
 //! maturin develop --release
 //! ```
 //!
 //! ## Quick Start (Python)
 //!
+//! ### Tensor Creation
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Zero-filled and one-filled tensors
+//! z = tf.zeros([3, 4])          # shape (3, 4), dtype float32
+//! o = tf.ones([2, 2])
+//!
+//! # Uniform random  [0, 1)
+//! r = tf.rand([10, 10])
+//!
+//! # Standard-normal random
+//! n = tf.randn([10, 10])
+//!
+//! # Range and linspace helpers (both return a PyTensor, like zeros/ones/rand)
+//! x = tf.arange(0.0, 10.0, 1.0)   # shape [10], values [0, 1, ..., 9]
+//! y = tf.linspace(0.0, 1.0, 100)  # shape [100], 100 evenly-spaced values
+//! ```
+//!
 //! ### Basic Tensor Operations
 //!
 //! ```python
 //! import tenflowers as tf
+//!
+//! a = tf.ones([2, 3])
+//! b = tf.ones([2, 3])
+//!
+//! # Element-wise arithmetic
+//! c = tf.add(a, b)
+//! d = tf.sub(a, b)
+//! e = tf.mul(a, b)
+//! f = tf.div(a, b)
+//!
+//! # Linear algebra
+//! x = tf.ones([3, 4])
+//! y = tf.ones([4, 2])
+//! z = tf.matmul(x, y)   # (3, 2)
+//!
+//! # Shape manipulation
+//! t = tf.ones([6])
+//! t2d = tf.reshape(t, [2, 3])
+//! t_T = tf.transpose(t2d)
+//! ```
+//!
+//! ### PyTensor Methods
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! t = tf.ones([4, 5])
+//!
+//! # Shape and metadata
+//! print(t.shape())          # [4, 5]
+//! print(t.ndim())           # 2
+//! print(t.size())           # 20
+//! print(t.numel())          # 20  (alias)
+//! print(t.dtype())          # "float32"
+//! print(t.is_matrix())      # True
+//!
+//! # Gradient tracking
+//! t.set_requires_grad(True)
+//! print(t.requires_grad())  # True
+//!
+//! # Python protocols
+//! print(len(t))             # 4  (first dimension)
+//! for row in t:
+//!     print(row.shape())    # [5]
+//! ```
+//!
+//! ### Math Operations
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! t = tf.ones([3, 4])
+//!
+//! # Unary math
+//! tf.exp(t)
+//! tf.log(t)
+//! tf.sqrt(t)
+//! tf.abs(t)
+//! tf.neg(t)
+//! tf.sin(t); tf.cos(t); tf.tan(t)
+//!
+//! # Reductions (return scalars as float)
+//! s   = tf.sum(t)
+//! m   = tf.mean(t)
+//! mx  = tf.max(t)
+//! mn  = tf.min(t)
+//! v   = tf.var(t)
+//! sd  = tf.std(t)
+//!
+//! # Comparison
+//! tf.eq(t, t)
+//! tf.lt(t, tf.zeros([3, 4]))
+//!
+//! # Concatenation
+//! a = tf.ones([2, 3])
+//! b = tf.zeros([2, 3])
+//! ab = tf.cat([a, b], dim=0)   # (4, 3)
+//! ab2 = tf.stack([a, b], dim=0)  # (2, 2, 3)
+//! ```
+//!
+//! ### Activation Functions
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! x = tf.ones([4, 4])
+//!
+//! # Basic activations
+//! tf.relu(x)
+//! tf.sigmoid(x)
+//! tf.tanh(x)
+//! tf.gelu(x)
+//! tf.swish(x)
+//! tf.mish(x)
+//! tf.softmax(x, dim=-1)
+//! tf.log_softmax(x, dim=-1)
+//!
+//! # Additional activations
+//! tf.leaky_relu(x)
+//! tf.elu(x)
+//! tf.relu6(x)
+//! tf.hardswish(x)
+//! tf.selu(x)
+//! tf.silu(x)
+//! ```
+//!
+//! ### Neural Network Layers
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Dense (fully-connected) layer
+//! layer = tf.PyDense(in_features=128, out_features=64, use_bias=True, activation='relu')
+//! x = tf.ones([8, 128])
+//! y = layer.forward(x)  # (8, 64)
+//!
+//! # Sequential model
+//! model = tf.PySequential()
+//! model.add(tf.PyDense(128, 256, activation='relu'))
+//! model.add(tf.PyDense(256, 10,  activation=None))
+//! model.train()          # switch to training mode
+//! out = model.forward(tf.ones([4, 128]))
+//! print(model.num_parameters())  # 128*256+256 + 256*10+10
+//!
+//! # Convolutional layers
+//! conv = tf.PyConv2D(in_channels=3, out_channels=64, kernel_size=3, padding=1)
+//! pool = tf.PyMaxPool2D(kernel_size=2, stride=2)
+//!
+//! # Normalization
+//! bn = tf.PyBatchNorm1d(num_features=128)
+//! ln = tf.PyLayerNorm(normalized_shape=[128])
+//!
+//! # Recurrent layers
+//! lstm = tf.PyLSTM(input_size=64, hidden_size=128, num_layers=2)
+//! gru  = tf.PyGRU(input_size=64, hidden_size=128)
+//!
+//! # Attention
+//! attn = tf.PyMultiheadAttention(embed_dim=256, num_heads=8)
+//!
+//! # Transformer building blocks
+//! enc = tf.PyTransformerEncoderLayer(d_model=256, nhead=8, dim_feedforward=1024)
+//! ```
+//!
+//! ### Optimizers
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Standard optimizers
+//! adam   = tf.Adam(learning_rate=1e-3)
+//! adamw  = tf.AdamW(learning_rate=1e-3)
+//! sgd    = tf.SGD(learning_rate=1e-2)
+//! rmsprop = tf.RMSprop(learning_rate=1e-3)
+//!
+//! # Extended optimizers (new in 0.1.2)
+//! radam   = tf.RAdam(learning_rate=1e-3)
+//! nadam   = tf.Nadam(learning_rate=1e-3)
+//! adagrad = tf.AdaGrad(learning_rate=1e-2)
+//! adadelta = tf.AdaDelta()
+//! adabelief = tf.AdaBelief(learning_rate=1e-3)
+//!
+//! # Learning rate schedulers
+//! step_lr = tf.PyStepLR(step_size=10, gamma=0.1)
+//! cosine  = tf.PyCosineAnnealingLR(T_max=100, eta_min=1e-6)
+//!
+//! # Optimizer state inspection / checkpointing
+//! state = adam.state_dict()
+//! adam.load_state_dict(state)
+//! ```
+//!
+//! ### Loss Functions
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! y_pred = tf.ones([4, 10])
+//! y_true = tf.zeros([4, 10])
+//!
+//! loss = tf.mse_loss(y_pred, y_true)
+//! bce  = tf.binary_cross_entropy(y_pred, y_true)
+//! ce   = tf.cross_entropy(y_pred, y_true)
+//! l1   = tf.l1_loss(y_pred, y_true)
+//! huber = tf.smooth_l1_loss(y_pred, y_true)
+//! ```
+//!
+//! ### Gradient Tape (Automatic Differentiation)
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! x = tf.ones([3, 3])
+//! x.set_requires_grad(True)
+//!
+//! tape = tf.PyGradientTape()
+//! tx = tape.watch(x)
+//!
+//! # Forward computation
+//! y = tf.matmul(x, x)   # x²
+//! ty = tape.watch(y)
+//!
+//! grad = tape.gradient(ty, tx)
+//! print(grad.shape())   # [3, 3]
+//!
+//! # Jacobian
+//! J = tf.jacobian(ty, [tx])
+//!
+//! # Context manager style
+//! with tf.PyGradientContext() as ctx:
+//!     z = tf.relu(x)
+//! ```
+//!
+//! ### Device Management
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Query default device
+//! dev = tf.get_default_device()   # "cpu"
+//!
+//! # Switch to GPU
+//! tf.set_default_device("gpu:0")
+//!
+//! # Device objects
+//! cpu  = tf.Device.cpu()
+//! gpu0 = tf.Device.gpu(0)
+//! print(repr(gpu0))               # "Device.gpu(0)"
+//! print(gpu0.is_gpu)              # True
+//! print(gpu0.device_id)           # 0
+//!
+//! # Parse from string
+//! dev = tf.Device.from_string("rocm:1")
+//!
+//! # Gradient control
+//! tf.set_grad_enabled(False)   # disable autograd globally
+//! print(tf.is_grad_enabled())  # False
+//! tf.set_grad_enabled(True)
+//! ```
+//!
+//! ### Data Types
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Dtype constants exposed at module level
+//! print(tf.float32)   # DType.Float32
+//! print(tf.int64)     # DType.Int64
+//!
+//! # DType objects
+//! dt = tf.DType.from_string("bfloat16")
+//! print(dt.size_bytes())      # 2
+//! print(dt.is_floating_point())  # True
+//!
+//! # Type promotion
+//! promoted = tf.promote_types(tf.float32, tf.float64)  # float64
+//! result   = tf.result_type(tf.int32, tf.float32)      # float32
+//! ok       = tf.is_safe_cast(tf.float32, tf.float64)   # True
+//! ```
+//!
+//! ### NumPy Interoperability
+//!
+//! ```python
 //! import numpy as np
-//!
-//! # Create tensors
-//! a = tf.tensor([[1.0, 2.0], [3.0, 4.0]])
-//! b = tf.ones((2, 2))
-//!
-//! # Operations
-//! c = a + b
-//! d = a @ b  # Matrix multiplication
-//!
-//! # Convert to NumPy
-//! numpy_array = c.numpy()
-//! ```
-//!
-//! ### Neural Network Training
-//!
-//! ```python
 //! import tenflowers as tf
-//! from tenflowers.neural import Sequential, Dense
-//! from tenflowers.optimizers import Adam
 //!
-//! # Build model
-//! model = Sequential([
-//!     Dense(128, activation='relu'),
-//!     Dense(10, activation='softmax')
-//! ])
+//! # NumPy array -> TenfloweRS tensor
+//! arr = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+//! t = tf.tensor_from_numpy(arr)
+//! print(t.shape())   # [2, 2]
 //!
-//! # Compile
-//! model.compile(
-//!     optimizer=Adam(lr=0.001),
-//!     loss='categorical_crossentropy',
-//!     metrics=['accuracy']
-//! )
-//!
-//! # Train
-//! model.fit(x_train, y_train, epochs=10, batch_size=32)
+//! # TenfloweRS tensor -> NumPy array
+//! back = tf.tensor_to_numpy(t)
+//! print(type(back))  # <class 'numpy.ndarray'>
 //! ```
 //!
-//! ### GPU Acceleration
+//! ### Evaluation Metrics
 //!
 //! ```python
 //! import tenflowers as tf
 //!
-//! # Enable GPU
-//! tf.set_default_device('gpu:0')
+//! logits  = tf.rand([100, 10])   # 100 samples, 10 classes
+//! labels  = tf.zeros([100])      # ground-truth class ids
 //!
-//! # Tensors automatically use GPU
-//! a = tf.ones((1000, 1000))  # Created on GPU
-//! b = tf.matmul(a, a)  # Computed on GPU
+//! acc     = tf.accuracy(logits, labels)
+//! mse     = tf.mean_squared_error(logits, logits)
+//! mae     = tf.mean_absolute_error(logits, logits)
+//! r2      = tf.r2_score(logits, logits)
+//! prec, recall, f1 = tf.precision_recall_f1(logits, labels)
+//! top5    = tf.top_k_accuracy(logits, labels, k=5)
+//! auc     = tf.auc_roc(logits, labels)
+//! cm      = tf.confusion_matrix(logits, labels)
+//! ```
+//!
+//! ### Profiling
+//!
+//! ```python
+//! import tenflowers as tf
+//! import time
+//!
+//! profiler = tf.PyProfiler()
+//! profiler.start_session()
+//!
+//! # Instrument operations manually
+//! t0 = time.perf_counter_ns()
+//! a  = tf.matmul(tf.ones([512, 512]), tf.ones([512, 512]))
+//! t1 = time.perf_counter_ns()
+//! profiler.record("matmul", t1 - t0, a.memory_usage())
+//!
+//! t0 = time.perf_counter_ns()
+//! b  = tf.relu(a)
+//! t1 = time.perf_counter_ns()
+//! profiler.record("relu", t1 - t0, b.memory_usage())
+//!
+//! report = profiler.end_session()
+//! print(f"ops={report.total_ops}, total_ns={report.total_time_ns}")
+//! for rec in report.top_ops(3):
+//!     print(f"  {rec.op_name}: {rec.duration_ns} ns")
+//! ```
+//!
+//! ### Serialization
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! # Save / load a single tensor
+//! t = tf.ones([4, 4])
+//! tf.save_tensor(t, "/tmp/weights.bin")
+//! t2 = tf.load_tensor("/tmp/weights.bin")
+//!
+//! # Checkpoint manager for full model state
+//! ckpt = tf.PyCheckpointManager("/tmp/checkpoints")
+//! state = {"layer0.weight": t, "layer0.bias": tf.zeros([4])}
+//! tf.save_state_dict(state, "/tmp/model_epoch1.bin")
+//! loaded = tf.load_state_dict("/tmp/model_epoch1.bin")
+//! ```
+//!
+//! ### Stable API Catalogue
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! ver = tf.stable_api_version()
+//! print(f"API {ver.version_string()} ({ver.stability})")
+//! # "API 0.1.2 (Beta)"
+//!
+//! surface = tf.stable_api_surface()
+//! print(f"{surface.count()} entries")
+//!
+//! for entry in surface.stable_entries():
+//!     print(f"  STABLE  {entry.name:30s}  since {entry.since_version}")
+//!
+//! for entry in surface.entries_since("0.1.2"):
+//!     print(f"  NEW     {entry.name}")
+//! ```
+//!
+//! ### Memory Profiling
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! tf.enable_memory_profiling()
+//!
+//! a = tf.ones([1000, 1000])
+//! b = tf.matmul(a, a)
+//!
+//! current_bytes, peak_bytes = tf.get_memory_info()
+//! print(f"current={current_bytes} peak={peak_bytes}")
+//!
+//! tf.disable_memory_profiling()
+//! ```
+//!
+//! ### Utility Helpers
+//!
+//! ```python
+//! import tenflowers as tf
+//!
+//! t = tf.ones([4, 5])
+//!
+//! # Inspection
+//! info = tf.tensor_info(t)       # dict with shape/ndim/numel/dtype
+//! tf.print_tensor_info(t)        # human-readable summary to stdout
+//! tf.tensor_summary(t)           # compact string
+//! print(tf.numel(t))             # 20
+//! print(tf.tensor_memory_bytes(t))  # 80
+//! print(tf.tensor_memory_str(t))    # "80 B"
+//! print(tf.format_bytes(1048576))   # "1.00 MB"
+//!
+//! # Shape predicates
+//! tf.is_scalar(t)     # False
+//! tf.is_vector(t)     # False
+//! tf.is_matrix(t)     # True
+//! tf.same_shape(t, t) # True
+//!
+//! # Broadcasting helpers
+//! shape = tf.broadcast_shape([2, 1], [1, 3])  # [2, 3]
+//! ok    = tf.is_broadcastable([2, 1], [1, 3]) # True
+//!
+//! # Device info
+//! print(tf.get_device_info())
+//! print(tf.is_gpu_available())
+//! print(tf.version())
 //! ```
 //!
 //! ## Architecture
 //!
 //! This crate provides Python bindings through PyO3:
 //!
-//! - [`tensor_ops`]: Tensor operations and manipulation
-//! - [`math_ops`]: Mathematical operations (arithmetic, linear algebra)
-//! - [`neural`]: Neural network layers and models
-//! - [`metrics`]: Model evaluation metrics
-//! - [`utils`]: Utility functions and helpers
+//! - [`tensor_ops`]: Tensor creation, arithmetic, and shape manipulation
+//! - [`math_ops`]: Mathematical, trigonometric, statistical, and reduction operations
+//! - [`neural`]: Neural network layers, optimizers, loss functions, and autograd
+//! - [`metrics`]: Model evaluation metrics (accuracy, MSE, AUC-ROC, etc.)
+//! - [`utils`]: Utility functions for tensor inspection and broadcasting
 //! - [`serialization`]: Model serialization and checkpointing
 //! - [`visualization`]: Training visualization and monitoring
-//!
-//! ## NumPy Interoperability
-//!
-//! TenfloweRS tensors support zero-copy conversion to/from NumPy arrays when possible:
-//!
-//! ```python
-//! import numpy as np
-//! import tenflowers as tf
-//!
-//! # NumPy to TenfloweRS (zero-copy when possible)
-//! numpy_array = np.array([[1.0, 2.0], [3.0, 4.0]])
-//! tensor = tf.from_numpy(numpy_array)
-//!
-//! # TenfloweRS to NumPy (zero-copy when possible)
-//! back_to_numpy = tensor.numpy()
-//! ```
-//!
-//! ## Type System
-//!
-//! TenfloweRS supports various data types:
-//!
-//! ```python
-//! import tenflowers as tf
-//!
-//! # Float types
-//! f32_tensor = tf.tensor([1.0, 2.0], dtype=tf.float32)
-//! f16_tensor = tf.tensor([1.0, 2.0], dtype=tf.float16)  # Half precision
-//! bf16_tensor = tf.tensor([1.0, 2.0], dtype=tf.bfloat16)
-//!
-//! # Integer types
-//! i32_tensor = tf.tensor([1, 2, 3], dtype=tf.int32)
-//! i64_tensor = tf.tensor([1, 2, 3], dtype=tf.int64)
-//! ```
-//!
-//! ## Performance Monitoring
-//!
-//! ```python
-//! import tenflowers as tf
-//!
-//! # Enable memory profiling
-//! tf.enable_memory_profiling()
-//!
-//! # Run operations
-//! a = tf.ones((1000, 1000))
-//! b = tf.matmul(a, a)
-//!
-//! # Get memory statistics
-//! stats = tf.get_memory_stats()
-//! print(f"Peak memory: {stats.peak_memory_mb} MB")
-//! ```
+//! - [`profiling`]: Session-based operation profiler ([`PyProfiler`])
+//! - [`stable_api`]: API stability catalogue and versioning
+//! - [`device`]: Device abstraction (CPU / GPU / ROCm)
+//! - [`dtype`]: Data type abstraction (float32 / float16 / bf16 / int* / uint*)
 //!
 //! ## Error Handling
 //!
-//! TenfloweRS provides clear error messages and Python exceptions:
+//! All Python-facing functions return `PyResult<T>`. On error, they raise Python
+//! exceptions mapped from Rust error types:
 //!
 //! ```python
 //! import tenflowers as tf
 //!
 //! try:
-//!     # Shape mismatch
-//!     a = tf.ones((2, 3))
-//!     b = tf.ones((4, 5))
-//!     c = tf.matmul(a, b)  # Raises TensorError
-//! except tf.TensorError as e:
+//!     a = tf.ones([2, 3])
+//!     b = tf.ones([4, 5])
+//!     tf.matmul(a, b)  # shape mismatch -> raises RuntimeError
+//! except RuntimeError as e:
 //!     print(f"Error: {e}")
 //! ```
 //!
 //! ## Integration with Python Ecosystem
 //!
 //! TenfloweRS integrates with:
-//! - **NumPy**: Zero-copy array conversion
-//! - **PyTorch**: Model conversion utilities (planned)
-//! - **TensorFlow**: ONNX-based model exchange
-//! - **Pandas**: DataFrame integration for datasets
-//! - **Matplotlib**: Visualization integration
+//! - **NumPy**: `tensor_from_numpy` / `tensor_to_numpy` for zero-copy conversion
+//! - **PyTorch**: `tenflowers.torch` compatibility sub-module
+//! - **TensorFlow**: ONNX-based model exchange (planned)
+//! - **Pandas**: DataFrame integration for datasets (planned)
 //!
-//! ## Development
-//!
-//! Building the Python bindings:
+//! ## Building the Python Package
 //!
 //! ```bash
 //! # Install maturin
 //! pip install maturin
 //!
-//! # Development build
+//! # Development build (editable install)
 //! maturin develop
 //!
 //! # Release build
 //! maturin build --release
 //!
-//! # Build wheel
+//! # Build wheel for distribution
 //! maturin build --release --out dist/
 //! ```
 //!
-//! ## Testing
+//! ## Running Tests
 //!
 //! ```bash
-//! # Run Python tests
-//! pytest tests/
+//! # Rust unit tests
+//! cargo test -p tenflowers-ffi
 //!
-//! # Run Rust tests
-//! cargo test
+//! # Python integration tests
+//! pytest tests/
 //! ```
 
 #![deny(unsafe_code)]
@@ -223,6 +548,7 @@ pub mod dtype; // Data type abstraction for f16/bf16/etc support
 pub mod dtype_promotion;
 pub mod eager_execution_optimizer;
 pub mod error_mapping; // Error mapping and exception handling
+pub mod implicit_autograd; // PyTorch-style eager `.backward()` / `.grad` support
 pub mod large_model_support;
 pub mod memory_optimizer;
 pub mod metrics; // Model evaluation metrics
@@ -232,6 +558,18 @@ pub mod test_module;
 // Refactored modular structures
 pub mod neural; // New modular neural operations
 pub mod visualization; // New modular visualization
+
+// Advanced profiling integration
+pub mod profiling;
+
+// Stable API surface catalogue
+pub mod stable_api;
+
+// Gradient parity validation (pure Rust, no PyO3 dependency)
+pub mod gradient_parity;
+pub use gradient_parity::{
+    gradients_are_close, numeric_jacobian, GradientParityChecker, GradientParityResult,
+};
 
 // Core FFI modules
 pub mod math_ops;
@@ -261,12 +599,19 @@ fn get_memory_profiling_lock() -> &'static RwLock<MemoryProfilingState> {
     MEMORY_PROFILING.get_or_init(|| RwLock::new(MemoryProfilingState::default()))
 }
 
-/// Device management functions
+/// Return the current default device as a string, e.g. `"cpu"` or `"gpu:0"`.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// print(tf.get_default_device())  # "cpu"
+/// ```
 #[pyfunction]
 fn get_default_device() -> String {
     let device = get_default_device_lock()
         .read()
-        .expect("read lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     match *device {
         Device::Cpu => "cpu".to_string(),
         #[cfg(feature = "gpu")]
@@ -276,6 +621,23 @@ fn get_default_device() -> String {
     }
 }
 
+/// Set the global default device used by newly created tensors.
+///
+/// Accepted strings: `"cpu"`, `"gpu:N"` (requires the `gpu` Cargo feature),
+/// or `"rocm:N"` (currently returns an error — ROCm is not yet enabled).
+///
+/// # Errors
+///
+/// Raises `ValueError` for unrecognised device strings or when GPU support
+/// is not compiled in.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// tf.set_default_device("gpu:0")
+/// print(tf.get_default_device())  # "gpu:0"
+/// ```
 #[pyfunction]
 fn set_default_device(device_str: &str) -> PyResult<()> {
     let device = match device_str {
@@ -307,53 +669,129 @@ fn set_default_device(device_str: &str) -> PyResult<()> {
 
     *get_default_device_lock()
         .write()
-        .expect("write lock should not be poisoned") = device;
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = device;
     Ok(())
 }
 
-/// Memory profiling functions
+/// Enable memory usage tracking.
+///
+/// Once enabled, every tensor allocation updates the internal `current_memory`
+/// and `peak_memory` counters accessible through [`get_memory_info`].
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// tf.enable_memory_profiling()
+/// ```
 #[pyfunction]
 fn enable_memory_profiling() {
     let mut state = get_memory_profiling_lock()
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.enabled = true;
 }
 
+/// Disable memory usage tracking.
+///
+/// Has no effect if profiling was not previously enabled.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// tf.disable_memory_profiling()
+/// ```
 #[pyfunction]
 fn disable_memory_profiling() {
     let mut state = get_memory_profiling_lock()
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.enabled = false;
 }
 
+/// Return `(current_bytes, peak_bytes)` from the memory profiling state.
+///
+/// Both values are zero when profiling has never been enabled.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// tf.enable_memory_profiling()
+/// current, peak = tf.get_memory_info()
+/// print(f"current={current} peak={peak}")
+/// ```
 #[pyfunction]
 fn get_memory_info() -> PyResult<(usize, usize)> {
     let state = get_memory_profiling_lock()
         .read()
-        .expect("read lock should not be poisoned");
+        .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("memory profiling lock poisoned"))?;
     Ok((state.current_memory, state.peak_memory))
 }
 
-/// Gradient management functions
+/// Return `True` if autograd is currently enabled (the default).
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// print(tf.is_grad_enabled())   # True
+/// tf.set_grad_enabled(False)
+/// print(tf.is_grad_enabled())   # False
+/// ```
 #[pyfunction]
 fn is_grad_enabled() -> bool {
     tenflowers_autograd::no_grad::is_grad_enabled()
 }
 
+/// Enable or disable the autograd engine globally.
+///
+/// Equivalent to PyTorch's `torch.set_grad_enabled(mode)`.
+/// When disabled, no gradient information is recorded and all gradient-related
+/// operations are no-ops.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// tf.set_grad_enabled(False)   # inference-only mode
+/// # ... run model forward pass ...
+/// tf.set_grad_enabled(True)    # restore for training
+/// ```
 #[pyfunction]
 fn set_grad_enabled(enabled: bool) {
     tenflowers_autograd::no_grad::set_grad_enabled(enabled);
 }
 
-/// Utility functions for working with Python objects
+/// Convert a NumPy `ndarray` (dtype `float32`) to a [`tensor_ops::PyTensor`].
+///
+/// The array is read element-by-element (row-major) and the resulting tensor
+/// shares the same shape.  Raises `RuntimeError` if the conversion fails.
+///
+/// # Python Example
+///
+/// ```python
+/// import numpy as np
+/// import tenflowers as tf
+///
+/// arr = np.ones((3, 4), dtype=np.float32)
+/// t   = tf.tensor_from_numpy(arr)
+/// print(t.shape())  # [3, 4]
+/// ```
 #[pyfunction]
 fn tensor_from_numpy(py: Python, array: Bound<'_, PyAny>) -> PyResult<tensor_ops::PyTensor> {
     use scirs2_numpy::PyReadonlyArrayDyn;
 
-    // Convert numpy array to PyReadonlyArrayDyn<f32>
-    let np_array: PyReadonlyArrayDyn<f32> = array.extract()?;
+    // Convert numpy array to PyReadonlyArrayDyn<f32>. Only float32 arrays are
+    // accepted today; other dtypes (float64, int32, ...) are rejected here with
+    // a clear message rather than the confusing generic extraction error.
+    let np_array: PyReadonlyArrayDyn<f32> = array.extract().map_err(|_| {
+        pyo3::exceptions::PyTypeError::new_err(
+            "tensor_from_numpy expects a numpy array with dtype=float32; \
+             cast it first, e.g. `arr.astype(np.float32)`",
+        )
+    })?;
     let array_view = np_array.as_array();
 
     // Extract shape and data
@@ -372,6 +810,22 @@ fn tensor_from_numpy(py: Python, array: Bound<'_, PyAny>) -> PyResult<tensor_ops
     })
 }
 
+/// Convert a [`tensor_ops::PyTensor`] to a NumPy `ndarray` (dtype `float32`).
+///
+/// The tensor data is laid out in C-contiguous (row-major) order.  Raises
+/// `RuntimeError` if the internal data cannot be extracted.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// import numpy as np
+///
+/// t   = tf.ones([2, 3])
+/// arr = tf.tensor_to_numpy(t)
+/// print(arr.shape)        # (2, 3)
+/// print(arr.dtype)        # float32
+/// ```
 #[pyfunction]
 fn tensor_to_numpy(py: Python, tensor: &tensor_ops::PyTensor) -> PyResult<Py<PyAny>> {
     // use numpy::PyArrayDyn; // Unused for now
@@ -542,7 +996,8 @@ fn setup_default_pytorch_compatibility(
 #[pymodule]
 fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add version info
-    m.setattr("__version__", "0.1.1")?;
+    // Sourced directly from Cargo.toml (workspace version) so it can never drift.
+    m.setattr("__version__", env!("CARGO_PKG_VERSION"))?;
     m.setattr("__author__", "TenfloweRS Team")?;
 
     // Register custom exceptions
@@ -697,6 +1152,12 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(serialization::save_state_dict, py)?)?;
     m.add_function(wrap_pyfunction!(serialization::load_state_dict, py)?)?;
 
+    // Register profiling classes
+    profiling::register_profiling_classes(py, m)?;
+
+    // Register stable API surface
+    stable_api::register_stable_api(py, m)?;
+
     // Register evaluation metrics
     m.add_function(wrap_pyfunction!(metrics::accuracy, py)?)?;
     m.add_function(wrap_pyfunction!(metrics::precision_recall_f1, py)?)?;
@@ -706,6 +1167,18 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(metrics::top_k_accuracy, py)?)?;
     m.add_function(wrap_pyfunction!(metrics::auc_roc, py)?)?;
     m.add_function(wrap_pyfunction!(metrics::confusion_matrix, py)?)?;
+
+    // Register dtype promotion utilities (NumPy/PyTorch-compatible promotion rules)
+    dtype_promotion::register_dtype_promotion_functions(py, m)?;
+
+    // Register large-model support utilities (gradient checkpointing, parameter sharding)
+    large_model_support::register_large_model_functions(py, m)?;
+
+    // Register performance bottleneck detection utilities
+    bottleneck_detection::register_bottleneck_detection_functions(py, m)?;
+
+    // Register eager execution optimizer utilities
+    eager_execution_optimizer::register_eager_execution_functions(py, m)?;
 
     // Create a torch-compatible namespace for PyTorch users with version handling
     let torch_module = PyModule::new(py, "torch")?;

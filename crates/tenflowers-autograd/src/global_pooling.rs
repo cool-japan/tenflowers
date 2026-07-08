@@ -11,6 +11,7 @@ macro_rules! float_const {
 }
 
 use scirs2_core::numeric::{One, Zero};
+use tenflowers_core::ops::broadcast_to;
 use tenflowers_core::{Result, Tensor, TensorError};
 
 /// Backward pass for Global Average Pooling 2D
@@ -74,7 +75,7 @@ where
     let scaled_grad = grad_output.div(&scale_tensor)?;
 
     // Broadcast to input shape
-    broadcast_to_shape(&scaled_grad, input_shape)
+    broadcast_to(&scaled_grad, input_shape)
 }
 
 /// Backward pass for Global Max Pooling 2D
@@ -484,60 +485,6 @@ where
     Ok(grad_input)
 }
 
-/// Helper function to broadcast a tensor to a target shape
-fn broadcast_to_shape<T>(tensor: &Tensor<T>, target_shape: &[usize]) -> Result<Tensor<T>>
-where
-    T: Clone + Default + Send + Sync + 'static,
-{
-    // For now, implement a simple broadcast for the global pooling case
-    // In a full implementation, this would be a more general broadcast operation
-
-    let current_shape = tensor.shape().dims();
-
-    // Handle the case where we're broadcasting [N, C, 1, 1] to [N, C, H, W]
-    if current_shape.len() == 4 && target_shape.len() == 4 {
-        let [n, c, curr_h, curr_w] = [
-            current_shape[0],
-            current_shape[1],
-            current_shape[2],
-            current_shape[3],
-        ];
-        let [target_n, target_c, target_h, target_w] = [
-            target_shape[0],
-            target_shape[1],
-            target_shape[2],
-            target_shape[3],
-        ];
-
-        if n == target_n && c == target_c && curr_h == 1 && curr_w == 1 {
-            // Simple repeat operation for [N, C, 1, 1] -> [N, C, H, W]
-            if let Some(data) = tensor.as_slice() {
-                let mut broadcasted_data =
-                    Vec::with_capacity(target_n * target_c * target_h * target_w);
-
-                for batch in 0..target_n {
-                    for channel in 0..target_c {
-                        let value_idx = batch * target_c + channel;
-                        let value = &data[value_idx];
-
-                        // Repeat this value target_h * target_w times
-                        for _ in 0..(target_h * target_w) {
-                            broadcasted_data.push(value.clone());
-                        }
-                    }
-                }
-
-                return Tensor::from_vec(broadcasted_data, target_shape);
-            }
-        }
-    }
-
-    // Fallback for other cases
-    Err(TensorError::unsupported_operation_simple(format!(
-        "Broadcasting from {current_shape:?} to {target_shape:?} not implemented"
-    )))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +515,46 @@ mod tests {
             for item in data.iter().skip(9).take(9) {
                 assert!((item - 2.0 / 9.0).abs() < 1e-6);
             }
+        }
+    }
+
+    #[test]
+    fn test_global_avg_pool2d_backward_broadcast_to_substitution_n2c2() {
+        // N=2, C=2, H=2, W=2 -> spatial_size = 4. Distinct per-(n,c) grad values chosen
+        // as exact powers of two so dividing by 4 and broadcasting stays exact in f32.
+        let input_shape = [2, 2, 2, 2];
+        let grad_output = Tensor::from_vec(vec![2.0f32, 4.0, 8.0, 16.0], &[2, 2, 1, 1])
+            .expect("test: tensor creation from valid data should succeed");
+
+        let grad_input = global_avg_pool2d_backward(&grad_output, &input_shape)
+            .expect("test: gradient computation should succeed");
+
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let expected = [
+            0.5, 0.5, 0.5, 0.5, // n0 c0 (2.0 / 4)
+            1.0, 1.0, 1.0, 1.0, // n0 c1 (4.0 / 4)
+            2.0, 2.0, 2.0, 2.0, // n1 c0 (8.0 / 4)
+            4.0, 4.0, 4.0, 4.0, // n1 c1 (16.0 / 4)
+        ];
+        assert_eq!(grad_input.as_slice().expect("contiguous"), &expected);
+    }
+
+    #[test]
+    fn test_broadcast_to_handles_shape_old_helper_rejected() {
+        // The deleted hand-rolled `broadcast_to_shape` only handled rank-4-to-rank-4
+        // broadcasts of the exact form [N,C,1,1] -> [N,C,H,W] (anything else, e.g. a
+        // rank mismatch, fell through to its Err fallback). global_pooling.rs's
+        // internals now delegate to the general `tenflowers_core::ops::broadcast_to`,
+        // which handles arbitrary-rank broadcasts fine.
+        let narrow = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[1, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let broadcasted = broadcast_to(&narrow, &[4, 3]).expect(
+            "test: general broadcast_to should handle a rank pattern the old helper rejected",
+        );
+        assert_eq!(broadcasted.shape().dims(), &[4, 3]);
+        let data = broadcasted.as_slice().expect("contiguous");
+        for row in 0..4 {
+            assert_eq!(&data[row * 3..row * 3 + 3], &[1.0, 2.0, 3.0]);
         }
     }
 

@@ -1,7 +1,7 @@
 //! DevicePlacement manager and global convenience functions.
 
 use super::types::{OpCategory, OpInfo, PlacementStrategy, PrecisionType};
-use crate::{Device, Result};
+use crate::{Device, Result, TensorError};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -203,10 +203,9 @@ impl DevicePlacement {
 
     /// Round-robin device placement
     fn round_robin_placement(&self) -> Result<Device> {
-        let mut counter = self
-            .round_robin_counter
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut counter = self.round_robin_counter.write().map_err(|_| {
+            TensorError::invalid_operation_simple("round robin counter lock poisoned".to_string())
+        })?;
         let device = self.available_devices[*counter % self.available_devices.len()];
         *counter += 1;
         Ok(device)
@@ -219,7 +218,7 @@ impl DevicePlacement {
             let loads = self
                 .device_loads
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
 
             self.available_devices
                 .iter()
@@ -241,10 +240,9 @@ impl DevicePlacement {
 
     /// Load-balanced placement considering current device utilization
     fn load_balanced_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let loads = self
-            .device_loads
-            .read()
-            .expect("read lock should not be poisoned");
+        let loads = self.device_loads.read().map_err(|_| {
+            TensorError::invalid_operation_simple("device loads lock poisoned".to_string())
+        })?;
 
         // Find device with minimum load
         let best_device = self
@@ -270,10 +268,9 @@ impl DevicePlacement {
 
     /// Memory-aware placement considering device memory constraints
     fn memory_aware_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let memory_usage = self
-            .device_memory_usage
-            .read()
-            .expect("read lock should not be poisoned");
+        let memory_usage = self.device_memory_usage.read().map_err(|_| {
+            TensorError::invalid_operation_simple("device memory usage lock poisoned".to_string())
+        })?;
 
         // Find devices that can accommodate the operation
         let suitable_devices: Vec<_> = self
@@ -318,10 +315,9 @@ impl DevicePlacement {
 
     /// Performance-optimized placement using learned heuristics
     fn performance_optimized_placement(&self, op_info: &OpInfo) -> Result<Device> {
-        let history = self
-            .performance_history
-            .read()
-            .expect("read lock should not be poisoned");
+        let history = self.performance_history.read().map_err(|_| {
+            TensorError::invalid_operation_simple("performance history lock poisoned".to_string())
+        })?;
 
         // Look up historical performance for this operation type
         if let Some(op_history) = history.get(&op_info.name) {
@@ -351,7 +347,7 @@ impl DevicePlacement {
         let mut loads = self
             .device_loads
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         loads.insert(device, load);
     }
 
@@ -359,7 +355,7 @@ impl DevicePlacement {
     pub fn get_device_loads(&self) -> HashMap<Device, f64> {
         self.device_loads
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -373,7 +369,7 @@ impl DevicePlacement {
         let mut usage = self
             .device_memory_usage
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         usage.insert(device, memory_usage);
     }
 
@@ -382,7 +378,7 @@ impl DevicePlacement {
         let mut history = self
             .performance_history
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         history
             .entry(op_name.to_string())
             .or_default()
@@ -393,7 +389,7 @@ impl DevicePlacement {
     pub fn get_device_memory_usage(&self) -> HashMap<Device, usize> {
         self.device_memory_usage
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -407,7 +403,7 @@ impl DevicePlacement {
         let usage = self
             .device_memory_usage
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let current_usage = usage.get(&device).unwrap_or(&0);
         let capacity = self.device_memory_capacity.get(&device).unwrap_or(&0);
 
@@ -425,14 +421,14 @@ lazy_static::lazy_static! {
 pub fn get_placement_manager() -> std::sync::RwLockReadGuard<'static, DevicePlacement> {
     GLOBAL_PLACEMENT
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Set the global placement strategy
 pub fn set_placement_strategy(strategy: PlacementStrategy) -> Result<()> {
-    let mut placement = GLOBAL_PLACEMENT
-        .write()
-        .expect("write lock should not be poisoned");
+    let mut placement = GLOBAL_PLACEMENT.write().map_err(|_| {
+        TensorError::invalid_operation_simple("global placement lock poisoned".to_string())
+    })?;
     *placement = DevicePlacement::new(strategy);
     Ok(())
 }

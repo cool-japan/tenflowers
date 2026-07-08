@@ -185,6 +185,22 @@ impl<T> SharedLayer<T> {
         layer.forward(input)
     }
 
+    /// Execute forward pass through the shared layer with multiple input tensors.
+    /// Delegates to the inner layer's `Layer::forward_multi` (which itself falls back
+    /// to plain `forward` for single-input layers that haven't opted in to multi-input
+    /// support).
+    pub fn forward_multi(&self, inputs: &[&Tensor<T>]) -> Result<Tensor<T>> {
+        let layer = self
+            .layer
+            .lock()
+            .map_err(|_| TensorError::InvalidArgument {
+                operation: "SharedLayer::forward_multi".to_string(),
+                reason: "Failed to acquire lock on shared layer".to_string(),
+                context: None,
+            })?;
+        layer.forward_multi(inputs)
+    }
+
     /// Get parameters from the shared layer (returns copies to avoid borrowing issues)
     pub fn parameters(&self) -> Result<Vec<Tensor<T>>>
     where
@@ -564,20 +580,7 @@ where
                         }
                         layer.forward(input_tensors[0])?
                     }
-                    LayerOp::Shared(shared_layer) => {
-                        if input_tensors.len() != 1 {
-                            return Err(TensorError::InvalidArgument {
-                                operation: "forward_multi".to_string(),
-                                reason: "Shared layer received multiple inputs (multi-input not yet supported)".to_string(),
-                                context: None,
-                            });
-                        }
-                        let layer = shared_layer
-                            .layer
-                            .lock()
-                            .expect("lock should not be poisoned");
-                        layer.forward(input_tensors[0])?
-                    }
+                    LayerOp::Shared(shared_layer) => shared_layer.forward_multi(&input_tensors)?,
                     LayerOp::Custom(custom_fn) => custom_fn(&input_tensors)?,
                 };
 
@@ -725,7 +728,7 @@ where
                     let mut layer = shared_layer
                         .layer
                         .lock()
-                        .expect("lock should not be poisoned");
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     layer.set_training(training);
                 }
                 LayerOp::Custom(_) => {
@@ -1000,5 +1003,127 @@ mod tests {
             .expect("test: operation should succeed");
         assert_eq!(model.num_inputs(), 2);
         assert_eq!(model.num_outputs(), 2);
+    }
+
+    /// Test-only layer that overrides `forward_multi` to sum all inputs elementwise,
+    /// while its plain `forward` is a deliberately-different identity so tests can
+    /// tell which code path actually ran.
+    #[derive(Clone)]
+    struct SumLayer;
+
+    impl Layer<f32> for SumLayer {
+        fn forward(&self, input: &Tensor<f32>) -> Result<Tensor<f32>> {
+            Ok(input.clone())
+        }
+
+        fn parameters(&self) -> Vec<&Tensor<f32>> {
+            Vec::new()
+        }
+
+        fn parameters_mut(&mut self) -> Vec<&mut Tensor<f32>> {
+            Vec::new()
+        }
+
+        fn set_training(&mut self, _training: bool) {}
+
+        fn clone_box(&self) -> Box<dyn Layer<f32>> {
+            Box::new(self.clone())
+        }
+
+        fn forward_multi(&self, inputs: &[&Tensor<f32>]) -> Result<Tensor<f32>> {
+            let mut iter = inputs.iter();
+            let first = iter.next().ok_or_else(|| {
+                TensorError::invalid_argument(
+                    "SumLayer::forward_multi requires at least one input".to_string(),
+                )
+            })?;
+            let mut acc = (*first).clone();
+            for t in iter {
+                acc = acc.add(t)?;
+            }
+            Ok(acc)
+        }
+    }
+
+    #[test]
+    fn test_shared_layer_forward_multi_with_override() {
+        let shared = SharedLayer::new(Box::new(SumLayer));
+
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+
+        let result = shared
+            .forward_multi(&[&a, &b])
+            .expect("test: SharedLayer::forward_multi should delegate to the overridden Layer::forward_multi");
+
+        assert_eq!(result.as_slice().expect("contiguous"), &[11.0, 22.0, 33.0]);
+    }
+
+    #[test]
+    fn test_layer_default_forward_multi_single_input_matches_forward() {
+        let dense = Dense::<f32>::new(4, 2, true);
+        let input = Tensor::<f32>::zeros(&[1, 4]);
+
+        let via_forward = dense.forward(&input).expect("test: forward should succeed");
+        let via_forward_multi = Layer::forward_multi(&dense, &[&input]).expect(
+            "test: default forward_multi with exactly one input should delegate to forward",
+        );
+
+        assert_eq!(via_forward.shape().dims(), via_forward_multi.shape().dims());
+        assert_eq!(
+            via_forward.as_slice().expect("contiguous"),
+            via_forward_multi.as_slice().expect("contiguous")
+        );
+    }
+
+    #[test]
+    fn test_layer_default_forward_multi_rejects_multiple_inputs() {
+        let dense = Dense::<f32>::new(4, 2, true);
+        let input1 = Tensor::<f32>::zeros(&[1, 4]);
+        let input2 = Tensor::<f32>::zeros(&[1, 4]);
+
+        let result = Layer::forward_multi(&dense, &[&input1, &input2]);
+        assert!(
+            result.is_err(),
+            "a layer that has not opted in to multi-input support must reject >1 inputs via the default forward_multi"
+        );
+    }
+
+    #[test]
+    fn test_functional_model_shared_layer_multi_input_end_to_end() {
+        // This is the exact scenario that used to hit "Shared layer received multiple
+        // inputs (multi-input not yet supported)" inside FunctionalModel::forward_multi's
+        // LayerOp::Shared match arm. It must now succeed.
+        let input1 = Input::<f32>::new(vec![2, 3]);
+        let input2 = Input::<f32>::new(vec![2, 3]);
+
+        let shared = SharedLayer::new(Box::new(SumLayer));
+        let shared_id = shared.id();
+
+        let output_node = Node::from_layer(shared_id, vec![2, 3], vec![input1.id(), input2.id()]);
+
+        let model = FunctionalModelBuilder::new()
+            .add_input(input1.clone())
+            .add_input(input2.clone())
+            .add_shared_layer(shared)
+            .build(vec![output_node])
+            .expect("test: model with a multi-input shared layer node should build successfully");
+
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+        let b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[2, 3])
+            .expect("test: tensor creation from valid data should succeed");
+
+        let outputs = model.forward_multi(&[&a, &b]).expect(
+            "test: shared-layer multi-input forward should now succeed instead of erroring",
+        );
+
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(
+            outputs[0].as_slice().expect("contiguous"),
+            &[11.0, 22.0, 33.0, 44.0, 55.0, 66.0]
+        );
     }
 }

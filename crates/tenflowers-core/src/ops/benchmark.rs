@@ -313,7 +313,9 @@ impl BenchmarkSuite {
         // Store result
         self.results
             .write()
-            .expect("write lock should not be poisoned")
+            .map_err(|_| {
+                TensorError::invalid_operation_simple("benchmark results lock poisoned".to_string())
+            })?
             .push(result.clone());
 
         Ok(result)
@@ -323,7 +325,7 @@ impl BenchmarkSuite {
     pub fn results(&self) -> Vec<BenchmarkResult> {
         self.results
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -331,7 +333,7 @@ impl BenchmarkSuite {
     pub fn clear_results(&self) {
         self.results
             .write()
-            .expect("write lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
     }
 

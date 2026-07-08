@@ -3,6 +3,7 @@
 
 use super::types::{PruningConfig, PruningMask, PruningScope, PruningStats, PruningStrategy};
 use crate::model::{Model, Sequential};
+use scirs2_core::random::RngExt;
 use tenflowers_core::{Tensor, TensorError};
 
 /// Model pruning engine.
@@ -24,6 +25,17 @@ impl ModelPruner {
     }
 
     /// Prune a sequential model.
+    ///
+    /// This performs *real* weight pruning: it clones the input model, builds a
+    /// binary keep/prune mask for each weight tensor from the actual weight
+    /// magnitudes, zeroes the pruned weights in place, and reports statistics
+    /// derived from the genuine number of zeroed scalar parameters.
+    ///
+    /// Only the unstructured strategies that can be expressed as element-wise
+    /// masking on the existing layer parameters (`Magnitude`, `Random`) are
+    /// supported on a generic [`Sequential`]. Strategies that require rewriting
+    /// the network architecture (`Structured`, `Gradual`, `LotteryTicket`)
+    /// return an explicit error rather than fabricating results.
     pub fn prune_sequential<T>(
         &self,
         model: &Sequential<T>,
@@ -34,6 +46,9 @@ impl ModelPruner {
             + Send
             + Sync
             + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -41,37 +56,50 @@ impl ModelPruner {
         let mut stats = PruningStats::new();
         stats.original_params = self.count_parameters(model);
 
-        // Create a new empty model as placeholder since Sequential doesn't implement Clone
-        let mut pruned_model = Sequential::new(vec![]);
+        // Sequential implements Clone (each layer is cloned via clone_box), so we
+        // start from a true copy of the model and mutate its weights in place.
+        let mut pruned_model = model.clone();
 
-        // Apply pruning based on strategy
-        match self.config.strategy {
-            PruningStrategy::Magnitude => {
-                // Placeholder implementation - would modify pruned_model in practice
-                self.apply_magnitude_pruning(&mut stats)?;
-            }
+        // Apply pruning based on strategy. Each routine zeroes weights in
+        // `pruned_model` and returns the number of layers it actually touched.
+        let layers_pruned = match self.config.strategy {
+            PruningStrategy::Magnitude => self.apply_magnitude_pruning(&mut pruned_model)?,
+            PruningStrategy::Random => self.apply_random_pruning(&mut pruned_model)?,
             PruningStrategy::Structured => {
-                // Placeholder implementation - would modify pruned_model in practice
-                self.apply_structured_pruning(&mut stats)?;
+                return Err(TensorError::not_implemented_simple(
+                    "structured pruning requires rewriting layer dimensions and is not \
+                     supported through the generic Sequential interface; use magnitude pruning"
+                        .to_string(),
+                ));
             }
             PruningStrategy::Gradual => {
-                // Placeholder implementation - would modify pruned_model in practice
-                self.apply_gradual_pruning(&mut stats)?;
-            }
-            PruningStrategy::Random => {
-                // Placeholder implementation - would modify pruned_model in practice
-                self.apply_random_pruning(&mut stats)?;
+                return Err(TensorError::not_implemented_simple(
+                    "gradual pruning requires an interleaved fine-tuning loop; apply magnitude \
+                     pruning repeatedly between training steps instead"
+                        .to_string(),
+                ));
             }
             PruningStrategy::LotteryTicket => {
-                // Placeholder implementation - would modify pruned_model in practice
-                self.apply_lottery_ticket_pruning(&mut stats)?;
+                return Err(TensorError::not_implemented_simple(
+                    "lottery-ticket pruning requires storing initial weights and iterative \
+                     retraining, which is not available here; use magnitude pruning"
+                        .to_string(),
+                ));
             }
-        }
+        };
 
-        // Update final statistics
-        stats.remaining_params = self.count_parameters(&pruned_model);
-        stats.pruned_params = stats.original_params - stats.remaining_params;
-        stats.achieved_sparsity = stats.pruned_params as f32 / stats.original_params as f32;
+        stats.layers_pruned = layers_pruned;
+
+        // Update final statistics from the genuinely pruned model. Pruning keeps
+        // the tensor shapes intact (weights are zeroed, not removed), so the
+        // "remaining" count is the number of non-zero scalar parameters.
+        stats.remaining_params = self.count_nonzero_parameters(&pruned_model);
+        stats.pruned_params = stats.original_params.saturating_sub(stats.remaining_params);
+        stats.achieved_sparsity = if stats.original_params > 0 {
+            stats.pruned_params as f32 / stats.original_params as f32
+        } else {
+            0.0
+        };
         stats.memory_reduction = stats.achieved_sparsity;
         stats.flops_reduction = self.estimate_flops_reduction(&stats);
         stats.inference_speedup = self.estimate_inference_speedup(&stats);
@@ -79,404 +107,236 @@ impl ModelPruner {
         Ok((pruned_model, stats))
     }
 
-    /// Apply magnitude-based pruning.
-    fn apply_magnitude_pruning(&self, stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Enhanced magnitude-based pruning implementation
-        // This method identifies weights with smallest absolute values for removal
-
+    /// Apply magnitude-based pruning to a model in place.
+    ///
+    /// Builds a keep/prune mask from the real absolute weight values and zeroes
+    /// the smallest-magnitude weights. Returns the number of weight tensors that
+    /// were modified.
+    fn apply_magnitude_pruning<T>(&self, model: &mut Sequential<T>) -> Result<usize, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
         match self.config.scope {
-            PruningScope::Global => {
-                self.apply_global_magnitude_pruning(stats)?;
-            }
-            PruningScope::LayerWise => {
-                self.apply_layerwise_magnitude_pruning(stats)?;
-            }
-            _ => {
-                return Err(TensorError::unsupported_operation_simple(
-                    "Magnitude pruning only supports Global and LayerWise scopes".to_string(),
-                ));
-            }
+            PruningScope::Global => self.apply_global_magnitude_pruning(model),
+            PruningScope::LayerWise => self.apply_layerwise_magnitude_pruning(model),
+            _ => Err(TensorError::unsupported_operation_simple(
+                "Magnitude pruning only supports Global and LayerWise scopes".to_string(),
+            )),
         }
+    }
 
-        stats.layers_pruned = 3; // Number of layers affected by pruning
-        Ok(())
+    /// Compute the magnitude threshold for a target sparsity from a set of
+    /// absolute weight values. Returns the value at the `sparsity` quantile, so
+    /// that weights with magnitude strictly below it are pruned.
+    fn magnitude_threshold(&self, mut magnitudes: Vec<f32>, sparsity: f32) -> f32 {
+        if magnitudes.is_empty() {
+            return 0.0;
+        }
+        magnitudes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let clamped = sparsity.clamp(0.0, 1.0);
+        let threshold_index = ((magnitudes.len() as f32 * clamped) as usize).min(magnitudes.len());
+        if threshold_index >= magnitudes.len() {
+            // Pruning everything: use a threshold above the maximum magnitude.
+            magnitudes[magnitudes.len() - 1] + 1.0
+        } else {
+            magnitudes[threshold_index]
+        }
+    }
+
+    /// Zero every weight whose absolute value is below `threshold`, in place.
+    /// Returns the number of scalar weights that were zeroed.
+    fn zero_below_threshold<T>(
+        &self,
+        param: &mut Tensor<T>,
+        threshold: f32,
+    ) -> Result<usize, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        let values = param.to_vec()?;
+        let shape = param.shape().dims().to_vec();
+        let mut pruned = 0usize;
+
+        let new_values: Vec<T> = values
+            .into_iter()
+            .map(|value| {
+                let magnitude = value.abs().to_f32().unwrap_or(0.0);
+                if magnitude < threshold {
+                    pruned += 1;
+                    T::zero()
+                } else {
+                    value
+                }
+            })
+            .collect();
+
+        *param = Tensor::from_vec(new_values, &shape)?;
+        Ok(pruned)
     }
 
     /// Apply global magnitude-based pruning across all layers.
-    fn apply_global_magnitude_pruning(&self, _stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Global magnitude pruning implementation:
-        // 1. Collect all weights from all layers and compute global threshold
-        // 2. Apply threshold uniformly across all layers
-        // 3. Some layers may be heavily pruned while others remain mostly intact
-
-        // Step 1: Collect all weight magnitudes globally
-        let mut all_magnitudes = Vec::new();
-
-        // In a real implementation, this would iterate through model layers:
-        // for layer in model.layers() {
-        //     for weight_tensor in layer.parameters() {
-        //         let magnitudes = weight_tensor.abs().flatten();
-        //         all_magnitudes.extend(magnitudes);
-        //     }
-        // }
-
-        // For now, simulate with example data
-        for i in 0..1000 {
-            all_magnitudes.push((i as f32 * 0.001).abs());
+    ///
+    /// Collects every weight magnitude across all parameter tensors, derives a
+    /// single global threshold, and applies it uniformly. Returns the number of
+    /// weight tensors that ended up with at least one weight pruned.
+    fn apply_global_magnitude_pruning<T>(
+        &self,
+        model: &mut Sequential<T>,
+    ) -> Result<usize, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        // Step 1: collect all weight magnitudes globally from the real weights.
+        let mut all_magnitudes: Vec<f32> = Vec::new();
+        for param in model.parameters() {
+            for value in param.to_vec()? {
+                all_magnitudes.push(value.abs().to_f32().unwrap_or(0.0));
+            }
         }
 
-        // Step 2: Sort and find global threshold
-        all_magnitudes.sort_by(|a, b| {
-            a.partial_cmp(b)
-                .expect("partial_cmp should not return None for valid values")
-        });
-        let threshold_index = (all_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
-        let global_threshold = if threshold_index < all_magnitudes.len() {
-            all_magnitudes[threshold_index]
-        } else {
-            0.0
-        };
+        // Step 2: derive a single global threshold at the target quantile.
+        let global_threshold =
+            self.magnitude_threshold(all_magnitudes, self.config.target_sparsity);
 
-        // Step 3: Apply global threshold to create masks
-        // This would create binary masks for each layer based on the global threshold
+        // Step 3: apply the threshold uniformly to every weight tensor.
+        let mut layers_pruned = 0usize;
+        for param in model.parameters_mut() {
+            let pruned = self.zero_below_threshold(param, global_threshold)?;
+            if pruned > 0 {
+                layers_pruned += 1;
+            }
+        }
 
-        println!("Global magnitude pruning: threshold = {global_threshold:.6}");
-        Ok(())
+        Ok(layers_pruned)
     }
 
     /// Apply layer-wise magnitude-based pruning.
-    fn apply_layerwise_magnitude_pruning(
+    ///
+    /// Each weight tensor gets an independent threshold so the target sparsity
+    /// is reached uniformly per layer. Returns the number of weight tensors that
+    /// had at least one weight pruned.
+    fn apply_layerwise_magnitude_pruning<T>(
         &self,
-        _stats: &mut PruningStats,
-    ) -> Result<(), TensorError> {
-        // Layer-wise magnitude pruning implementation:
-        // 1. Apply target sparsity to each layer independently
-        // 2. For each layer, compute layer-specific threshold
-        // 3. This ensures uniform pruning distribution across layers
+        model: &mut Sequential<T>,
+    ) -> Result<usize, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        let mut layers_pruned = 0usize;
 
-        let num_layers = 3; // Simulate number of layers
+        for param in model.parameters_mut() {
+            // Step 1: collect this layer's weight magnitudes.
+            let layer_magnitudes: Vec<f32> = param
+                .to_vec()?
+                .into_iter()
+                .map(|value| value.abs().to_f32().unwrap_or(0.0))
+                .collect();
 
-        for layer_idx in 0..num_layers {
-            // Step 1: Collect weights for this layer
-            let mut layer_magnitudes = Vec::new();
+            // Step 2: derive a layer-specific threshold.
+            let layer_threshold =
+                self.magnitude_threshold(layer_magnitudes, self.config.target_sparsity);
 
-            // Simulate layer weights
-            let layer_size = 100 + layer_idx * 50;
-            for i in 0..layer_size {
-                let weight = (i as f32 * 0.01 + layer_idx as f32 * 0.1).sin();
-                layer_magnitudes.push(weight.abs());
-            }
-
-            // Step 2: Sort layer weights and find layer-specific threshold
-            layer_magnitudes.sort_by(|a, b| {
-                a.partial_cmp(b)
-                    .expect("partial_cmp should not return None for valid values")
-            });
-            let threshold_index =
-                (layer_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
-            let layer_threshold = if threshold_index < layer_magnitudes.len() {
-                layer_magnitudes[threshold_index]
-            } else {
-                0.0
-            };
-
-            // Step 3: Create layer-specific mask
-            // In practice, this would create a binary tensor mask for the layer
-
-            println!(
-                "Layer {} magnitude pruning: threshold = {:.6}, weights = {}",
-                layer_idx,
-                layer_threshold,
-                layer_magnitudes.len()
-            );
-
-            // Apply mask to layer weights (would be done in actual implementation)
-        }
-
-        Ok(())
-    }
-
-    /// Apply structured pruning.
-    fn apply_structured_pruning(&self, stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Enhanced structured pruning implementation
-        // Removes entire structural units (neurons, channels, filters) rather than individual weights
-
-        match self.config.scope {
-            PruningScope::ChannelWise => {
-                self.apply_channel_wise_pruning(stats)?;
-            }
-            PruningScope::NeuronWise => {
-                self.apply_neuron_wise_pruning(stats)?;
-            }
-            PruningScope::LayerWise => {
-                self.apply_layer_wise_pruning(stats)?;
-            }
-            _ => {
-                return Err(TensorError::unsupported_operation_simple(
-                    "Structured pruning requires ChannelWise, NeuronWise, or LayerWise scope"
-                        .to_string(),
-                ));
+            // Step 3: zero this layer's sub-threshold weights.
+            let pruned = self.zero_below_threshold(param, layer_threshold)?;
+            if pruned > 0 {
+                layers_pruned += 1;
             }
         }
 
-        stats.layers_pruned = 2; // Number of layers affected by structured pruning
-        Ok(())
+        Ok(layers_pruned)
     }
 
-    /// Apply channel-wise structured pruning (for convolutional layers).
-    fn apply_channel_wise_pruning(&self, _stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Channel-wise pruning implementation for convolutional layers:
-        // 1. Compute importance score for each channel using L1 norm
-        // 2. Remove least important channels based on target sparsity
-        // 3. More hardware-friendly than unstructured pruning
+    /// Apply random pruning (baseline method) to a model in place.
+    ///
+    /// Randomly zeroes a `target_sparsity` fraction of weights in each tensor
+    /// using a deterministically seeded RNG from `scirs2_core::random`. Returns
+    /// the number of weight tensors that had at least one weight pruned.
+    fn apply_random_pruning<T>(&self, model: &mut Sequential<T>) -> Result<usize, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        use scirs2_core::random::{rngs::StdRng, Rng, SeedableRng};
 
-        let num_conv_layers = 2; // Simulate convolutional layers
+        // Deterministic seed so results are reproducible across runs.
+        let mut rng = StdRng::seed_from_u64(0x5072_756E_696E_6701);
+        let sparsity = self.config.target_sparsity.clamp(0.0, 1.0);
+        let mut layers_pruned = 0usize;
 
-        for layer_idx in 0..num_conv_layers {
-            // Simulate conv layer dimensions: [out_channels, in_channels, kernel_h, kernel_w]
-            let out_channels = 64 + layer_idx * 32;
-            let in_channels = 32 + layer_idx * 16;
-            let kernel_size = 3;
+        for param in model.parameters_mut() {
+            let values = param.to_vec()?;
+            let shape = param.shape().dims().to_vec();
+            let mut pruned = 0usize;
 
-            println!("Processing Conv Layer {layer_idx}: {out_channels}x{in_channels}x{kernel_size}x{kernel_size}");
-
-            // Step 1: Compute channel importance using L1 norm
-            let mut channel_importance = Vec::new();
-            for ch_idx in 0..in_channels {
-                // Simulate computing L1 norm for each input channel across all output filters
-                let mut channel_norm = 0.0f32;
-
-                for out_ch in 0..out_channels {
-                    // Sum absolute values of all weights in this channel
-                    for h in 0..kernel_size {
-                        for w in 0..kernel_size {
-                            // Simulate weight value
-                            let weight = ((out_ch + ch_idx + h + w) as f32 * 0.01).sin();
-                            channel_norm += weight.abs();
-                        }
+            let new_values: Vec<T> = values
+                .into_iter()
+                .map(|value| {
+                    if rng.random::<f32>() < sparsity {
+                        pruned += 1;
+                        T::zero()
+                    } else {
+                        value
                     }
-                }
-
-                channel_importance.push((ch_idx, channel_norm));
-            }
-
-            // Step 2: Sort channels by importance (ascending for pruning least important)
-            channel_importance.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .expect("partial_cmp should not return None for valid values")
-            });
-
-            // Step 3: Determine channels to prune based on target sparsity
-            let channels_to_prune = (in_channels as f32 * self.config.target_sparsity) as usize;
-            let pruned_channels: Vec<usize> = channel_importance
-                .iter()
-                .take(channels_to_prune)
-                .map(|(idx, _)| *idx)
+                })
                 .collect();
 
-            println!("  Pruning {channels_to_prune} channels: {pruned_channels:?}");
-            println!(
-                "  Remaining channels: {}/{}",
-                in_channels - channels_to_prune,
-                in_channels
-            );
-
-            // Step 4: In practice, this would:
-            // - Remove the selected channels from current layer
-            // - Update the input dimension of the next layer
-            // - Adjust batch normalization parameters if present
-            // - Update skip connections that depend on these channels
-
-            let sparsity_achieved = channels_to_prune as f32 / in_channels as f32;
-            println!(
-                "  Layer {} channel sparsity: {:.2}%",
-                layer_idx,
-                sparsity_achieved * 100.0
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Apply neuron-wise structured pruning (for dense layers).
-    fn apply_neuron_wise_pruning(&self, _stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Neuron-wise pruning implementation for dense layers:
-        // 1. Compute importance score for each neuron using L1 norm of weights
-        // 2. Remove least important neurons (entire rows/columns)
-        // 3. Update layer dimensions and subsequent layers accordingly
-
-        let num_dense_layers = 3; // Simulate dense layers
-
-        for layer_idx in 0..num_dense_layers {
-            // Simulate dense layer dimensions: [input_size, output_size]
-            let input_size = 128 + layer_idx * 64;
-            let output_size = 64 + layer_idx * 32;
-
-            println!("Processing Dense Layer {layer_idx}: {input_size}x{output_size}");
-
-            // Step 1: Compute neuron importance for output neurons
-            let mut neuron_importance = Vec::new();
-
-            for neuron_idx in 0..output_size {
-                // Compute L1 norm of all weights connecting to this neuron
-                let mut neuron_norm = 0.0f32;
-
-                for input_idx in 0..input_size {
-                    // Simulate weight value for connection from input_idx to neuron_idx
-                    let weight = ((neuron_idx + input_idx + layer_idx) as f32 * 0.001).cos();
-                    neuron_norm += weight.abs();
-                }
-
-                // Also include bias term if present
-                let bias = (neuron_idx as f32 * 0.01).sin();
-                neuron_norm += bias.abs();
-
-                neuron_importance.push((neuron_idx, neuron_norm));
-            }
-
-            // Step 2: Sort neurons by importance (ascending for pruning least important)
-            neuron_importance.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .expect("partial_cmp should not return None for valid values")
-            });
-
-            // Step 3: Determine neurons to prune based on target sparsity
-            let neurons_to_prune = (output_size as f32 * self.config.target_sparsity) as usize;
-            let pruned_neurons: Vec<usize> = neuron_importance
-                .iter()
-                .take(neurons_to_prune)
-                .map(|(idx, _)| *idx)
-                .collect();
-
-            println!("  Pruning {neurons_to_prune} neurons: {pruned_neurons:?}");
-            println!(
-                "  Remaining neurons: {}/{}",
-                output_size - neurons_to_prune,
-                output_size
-            );
-
-            // Step 4: In practice, this would:
-            // - Remove the selected neurons (rows) from current layer weights
-            // - Remove corresponding bias terms
-            // - Update the input dimension of the next layer
-            // - Ensure architectural consistency throughout the network
-
-            let sparsity_achieved = neurons_to_prune as f32 / output_size as f32;
-            println!(
-                "  Layer {} neuron sparsity: {:.2}%",
-                layer_idx,
-                sparsity_achieved * 100.0
-            );
-
-            // For last layer, ensure we don't prune too aggressively
-            if layer_idx == num_dense_layers - 1 && neurons_to_prune > output_size / 2 {
-                println!("  Warning: Aggressive pruning in output layer may hurt accuracy");
+            *param = Tensor::from_vec(new_values, &shape)?;
+            if pruned > 0 {
+                layers_pruned += 1;
             }
         }
 
-        Ok(())
+        Ok(layers_pruned)
     }
 
-    /// Apply layer-wise structured pruning (remove entire layers).
-    fn apply_layer_wise_pruning(&self, _stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Layer-wise pruning:
-        // 1. Analyze layer importance (gradient flow, activation statistics)
-        // 2. Remove entire layers that contribute least to model performance
-        // 3. Update skip connections if necessary
-
-        // Implementation would involve:
-        // - Computing layer importance metrics
-        // - Removing entire layers from the model
-        // - Ensuring architectural consistency (input/output dimensions)
-        // - Handling skip connections and residual blocks
-
-        Ok(())
-    }
-
-    /// Apply gradual pruning.
-    fn apply_gradual_pruning(&self, stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Gradual pruning implementation:
-        // Removes weights incrementally over multiple steps to allow model adaptation
-        // This typically achieves better final accuracy than one-shot pruning
-
-        println!(
-            "Starting gradual pruning over {} steps",
-            self.config.pruning_steps
-        );
-
-        let sparsity_per_step = self.config.target_sparsity / self.config.pruning_steps as f32;
-        let mut cumulative_sparsity = 0.0f32;
-
-        for step in 0..self.config.pruning_steps {
-            let current_target = sparsity_per_step * (step + 1) as f32;
-            let step_sparsity = current_target - cumulative_sparsity;
-
-            println!(
-                "Gradual pruning step {}/{}",
-                step + 1,
-                self.config.pruning_steps
-            );
-            println!("  Step sparsity: {:.2}%", step_sparsity * 100.0);
-            println!("  Cumulative sparsity: {:.2}%", current_target * 100.0);
-
-            // Apply magnitude-based pruning for this step
-            // In practice, this would:
-            // 1. Compute current weight magnitudes
-            // 2. Find threshold for additional weights to prune this step
-            // 3. Update masks to prune additional weights
-            // 4. Continue training between steps to allow adaptation
-
-            // Simulate weight analysis for this step
-            let num_layers = 3;
-            for layer_idx in 0..num_layers {
-                let layer_weights = 100 + layer_idx * 50; // Simulate weights per layer
-                let weights_to_prune_this_step = (layer_weights as f32 * step_sparsity) as usize;
-
-                println!("    Layer {layer_idx}: pruning {weights_to_prune_this_step} additional weights");
-
-                // In practice, here we would:
-                // - Analyze current weight magnitudes in this layer
-                // - Select additional weights to prune based on magnitude
-                // - Update the pruning mask for this layer
-                // - Apply the mask to the weights
-            }
-
-            cumulative_sparsity = current_target;
-
-            // Between steps, the model would typically be fine-tuned
-            if step < self.config.pruning_steps - 1 {
-                println!("  -> Fine-tuning before next pruning step");
-                // In practice: run several training epochs to recover performance
-            }
-        }
-
-        println!(
-            "Gradual pruning completed. Final sparsity: {:.2}%",
-            self.config.target_sparsity * 100.0
-        );
-
-        stats.layers_pruned = 3; // Number of layers affected
-        Ok(())
-    }
-
-    /// Apply random pruning (baseline method).
-    fn apply_random_pruning(&self, stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Random pruning removes weights randomly (useful as baseline)
-        stats.layers_pruned = 3; // Assume 3 layers were pruned
-        Ok(())
-    }
-
-    /// Apply lottery ticket hypothesis based pruning.
-    fn apply_lottery_ticket_pruning(&self, stats: &mut PruningStats) -> Result<(), TensorError> {
-        // Lottery ticket hypothesis: there exist sparse subnetworks that can
-        // achieve comparable accuracy when trained in isolation
-        // This requires identifying the "winning ticket" through iterative pruning
-
-        stats.layers_pruned = 2; // Assume 2 layers were pruned
-        Ok(())
-    }
-
-    /// Count total parameters in a model.
+    /// Count total scalar parameters in a model (sum over all weight tensors).
     fn count_parameters<T>(&self, model: &Sequential<T>) -> usize
     where
         T: Clone
@@ -488,8 +348,36 @@ impl ModelPruner {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        // Count all parameters across all layers
-        model.parameters().len()
+        model
+            .parameters()
+            .iter()
+            .map(|param| param.shape().dims().iter().product::<usize>())
+            .sum()
+    }
+
+    /// Count the number of non-zero scalar parameters in a model.
+    fn count_nonzero_parameters<T>(&self, model: &Sequential<T>) -> usize
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        model
+            .parameters()
+            .iter()
+            .map(|param| match param.to_vec() {
+                Ok(values) => values.iter().filter(|value| !value.is_zero()).count(),
+                // If a parameter cannot be read back, fall back to its full size
+                // (treat all as remaining) rather than fabricating a sparsity.
+                Err(_) => param.shape().dims().iter().product::<usize>(),
+            })
+            .sum()
     }
 
     /// Estimate FLOPS reduction from pruning.
@@ -523,33 +411,69 @@ impl ModelPruner {
             + Send
             + Sync
             + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
-        let mut masks = Vec::new();
-
-        // Generate masks based on pruning strategy and scope
+        // Generate masks based on pruning strategy and scope. Masks are derived
+        // from the model's real weight values, not synthetic data.
         match self.config.strategy {
-            PruningStrategy::Magnitude => {
-                masks = self.generate_magnitude_masks(model)?;
-            }
-            PruningStrategy::Structured => {
-                masks = self.generate_structured_masks(model)?;
-            }
-            PruningStrategy::Random => {
-                masks = self.generate_random_masks(model)?;
-            }
-            _ => {
-                // For other strategies, use magnitude as fallback
-                masks = self.generate_magnitude_masks(model)?;
-            }
+            PruningStrategy::Magnitude => self.generate_magnitude_masks(model),
+            PruningStrategy::Random => self.generate_random_masks(model),
+            PruningStrategy::Structured => Err(TensorError::not_implemented_simple(
+                "structured mask generation requires per-architecture channel/neuron analysis \
+                 and is not supported through the generic Sequential interface"
+                    .to_string(),
+            )),
+            // Gradual and LotteryTicket reduce to repeated magnitude masking; the
+            // single-shot mask is the magnitude mask at the target sparsity.
+            _ => self.generate_magnitude_masks(model),
         }
-
-        Ok(masks)
     }
 
-    /// Generate magnitude-based pruning masks.
+    /// Build a binary keep/prune mask tensor for a parameter from real weights.
+    ///
+    /// A mask value of `1.0` keeps the weight and `0.0` prunes it. Weights whose
+    /// absolute value is below `threshold` are pruned.
+    fn magnitude_mask_for_param<T>(
+        &self,
+        param: &Tensor<T>,
+        threshold: f32,
+    ) -> Result<Tensor<f32>, TensorError>
+    where
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
+            + 'static
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
+    {
+        let shape = param.shape().dims().to_vec();
+        let mask_data: Vec<f32> = param
+            .to_vec()?
+            .into_iter()
+            .map(|value| {
+                let magnitude = value.abs().to_f32().unwrap_or(0.0);
+                if magnitude < threshold {
+                    0.0
+                } else {
+                    1.0
+                }
+            })
+            .collect();
+
+        Tensor::from_vec(mask_data, &shape)
+    }
+
+    /// Generate magnitude-based pruning masks from the real model weights.
     fn generate_magnitude_masks<T>(
         &self,
         model: &Sequential<T>,
@@ -560,6 +484,9 @@ impl ModelPruner {
             + Send
             + Sync
             + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::Float
+            + scirs2_core::num_traits::Signed
+            + scirs2_core::num_traits::ToPrimitive
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable,
@@ -568,82 +495,39 @@ impl ModelPruner {
 
         match self.config.scope {
             PruningScope::Global => {
-                // Global magnitude pruning: collect all weights, find global threshold
-                let mut all_magnitudes = Vec::new();
-                let param_info: Vec<(usize, Vec<usize>)> = model
-                    .parameters()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, param)| (i, param.shape().dims().to_vec()))
-                    .collect();
-
-                // Simulate collecting global weight magnitudes
-                for (layer_idx, shape) in &param_info {
-                    let total_weights: usize = shape.iter().product();
-                    for weight_idx in 0..total_weights {
-                        // Simulate weight value
-                        let weight = ((layer_idx + weight_idx) as f32 * 0.001).sin();
-                        all_magnitudes.push(weight.abs());
+                // Global magnitude pruning: a single threshold over all weights.
+                let mut all_magnitudes: Vec<f32> = Vec::new();
+                for param in model.parameters() {
+                    for value in param.to_vec()? {
+                        all_magnitudes.push(value.abs().to_f32().unwrap_or(0.0));
                     }
                 }
+                let global_threshold =
+                    self.magnitude_threshold(all_magnitudes, self.config.target_sparsity);
 
-                // Find global threshold
-                all_magnitudes.sort_by(|a, b| {
-                    a.partial_cmp(b)
-                        .expect("partial_cmp should not return None for valid values")
-                });
-                let threshold_index =
-                    (all_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
-                let global_threshold = if threshold_index < all_magnitudes.len() {
-                    all_magnitudes[threshold_index]
-                } else {
-                    0.0
-                };
-
-                // Create masks for each layer based on global threshold
-                for (layer_idx, shape) in param_info {
-                    let layer_name = format!("layer_{layer_idx}");
-                    let mask_tensor =
-                        self.create_magnitude_mask_tensor(&shape, global_threshold)?;
-                    let mask =
-                        PruningMask::new(layer_name, mask_tensor, self.config.target_sparsity);
-                    masks.push(mask);
+                for (i, param) in model.parameters().iter().enumerate() {
+                    let layer_name = format!("layer_{i}");
+                    let mask_tensor = self.magnitude_mask_for_param(param, global_threshold)?;
+                    let actual_sparsity = Self::mask_sparsity(&mask_tensor);
+                    masks.push(PruningMask::new(layer_name, mask_tensor, actual_sparsity));
                 }
             }
 
             PruningScope::LayerWise => {
-                // Layer-wise magnitude pruning: independent threshold per layer
+                // Layer-wise magnitude pruning: an independent threshold per layer.
                 for (i, param) in model.parameters().iter().enumerate() {
                     let layer_name = format!("layer_{i}");
-                    let shape = param.shape().dims();
+                    let layer_magnitudes: Vec<f32> = param
+                        .to_vec()?
+                        .into_iter()
+                        .map(|value| value.abs().to_f32().unwrap_or(0.0))
+                        .collect();
+                    let layer_threshold =
+                        self.magnitude_threshold(layer_magnitudes, self.config.target_sparsity);
 
-                    // Compute layer-specific threshold
-                    let total_weights: usize = shape.iter().product();
-                    let mut layer_magnitudes = Vec::new();
-
-                    for weight_idx in 0..total_weights {
-                        // Simulate weight value for this layer
-                        let weight = ((i + weight_idx) as f32 * 0.001).cos();
-                        layer_magnitudes.push(weight.abs());
-                    }
-
-                    // Find layer-specific threshold
-                    layer_magnitudes.sort_by(|a, b| {
-                        a.partial_cmp(b)
-                            .expect("partial_cmp should not return None for valid values")
-                    });
-                    let threshold_index =
-                        (layer_magnitudes.len() as f32 * self.config.target_sparsity) as usize;
-                    let layer_threshold = if threshold_index < layer_magnitudes.len() {
-                        layer_magnitudes[threshold_index]
-                    } else {
-                        0.0
-                    };
-
-                    let mask_tensor = self.create_magnitude_mask_tensor(shape, layer_threshold)?;
-                    let mask =
-                        PruningMask::new(layer_name, mask_tensor, self.config.target_sparsity);
-                    masks.push(mask);
+                    let mask_tensor = self.magnitude_mask_for_param(param, layer_threshold)?;
+                    let actual_sparsity = Self::mask_sparsity(&mask_tensor);
+                    masks.push(PruningMask::new(layer_name, mask_tensor, actual_sparsity));
                 }
             }
 
@@ -657,75 +541,23 @@ impl ModelPruner {
         Ok(masks)
     }
 
-    /// Create a magnitude-based mask tensor given shape and threshold.
-    fn create_magnitude_mask_tensor(
-        &self,
-        shape: &[usize],
-        threshold: f32,
-    ) -> Result<Tensor<f32>, TensorError> {
-        let total_elements: usize = shape.iter().product();
-        let mut mask_data = Vec::with_capacity(total_elements);
-
-        // Generate mask values based on simulated weights vs threshold
-        for i in 0..total_elements {
-            // Simulate weight magnitude
-            let weight_magnitude = (i as f32 * 0.001).abs();
-
-            // Create binary mask: 1.0 to keep, 0.0 to prune
-            let mask_value = if weight_magnitude > threshold {
-                1.0
-            } else {
-                0.0
-            };
-            mask_data.push(mask_value);
+    /// Fraction of pruned (zero) entries in a mask tensor.
+    fn mask_sparsity(mask: &Tensor<f32>) -> f32 {
+        let total = mask.shape().dims().iter().product::<usize>();
+        if total == 0 {
+            return 0.0;
         }
-
-        Tensor::from_vec(mask_data, shape)
+        let pruned = match mask.to_vec() {
+            Ok(values) => values.iter().filter(|&&value| value == 0.0).count(),
+            Err(_) => 0,
+        };
+        pruned as f32 / total as f32
     }
 
-    /// Generate structured pruning masks.
-    fn generate_structured_masks<T>(
-        &self,
-        model: &Sequential<T>,
-    ) -> Result<Vec<PruningMask>, TensorError>
-    where
-        T: Clone
-            + Default
-            + Send
-            + Sync
-            + scirs2_core::num_traits::Zero
-            + 'static
-            + bytemuck::Pod
-            + bytemuck::Zeroable,
-    {
-        let mut masks = Vec::new();
-
-        for (i, _param) in model.parameters().iter().enumerate() {
-            let layer_name = format!("layer_{i}");
-
-            // Structured masks remove entire structural units
-            // Implementation depends on scope (channel, neuron, or layer)
-            let effective_sparsity = match self.config.scope {
-                PruningScope::ChannelWise => {
-                    // Channel pruning typically achieves higher effective sparsity
-                    self.config.target_sparsity * 1.2
-                }
-                PruningScope::NeuronWise => {
-                    // Neuron pruning
-                    self.config.target_sparsity
-                }
-                _ => self.config.target_sparsity,
-            };
-
-            let mask_tensor = Tensor::ones(&[10, 10]); // Placeholder
-            let mask = PruningMask::new(layer_name, mask_tensor, effective_sparsity.min(1.0));
-            masks.push(mask);
-        }
-
-        Ok(masks)
-    }
-
-    /// Generate random pruning masks (for baseline comparison).
+    /// Generate random pruning masks (for baseline comparison) from real shapes.
+    ///
+    /// Each mask matches its parameter's shape and zeroes a `target_sparsity`
+    /// fraction of entries chosen by a deterministically seeded RNG.
     fn generate_random_masks<T>(
         &self,
         model: &Sequential<T>,
@@ -740,16 +572,36 @@ impl ModelPruner {
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
+        use scirs2_core::random::{rngs::StdRng, Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0x4D61_736B_5247_4E02);
+        let sparsity = self.config.target_sparsity.clamp(0.0, 1.0);
         let mut masks = Vec::new();
 
-        for (i, _param) in model.parameters().iter().enumerate() {
+        for (i, param) in model.parameters().iter().enumerate() {
             let layer_name = format!("layer_{i}");
+            let shape = param.shape().dims().to_vec();
+            let total: usize = shape.iter().product();
 
-            // Random masks for baseline comparison
-            // In practice, this would generate random binary masks
-            let mask_tensor = Tensor::ones(&[10, 10]); // Placeholder
-            let mask = PruningMask::new(layer_name, mask_tensor, self.config.target_sparsity);
-            masks.push(mask);
+            let mut pruned = 0usize;
+            let mask_data: Vec<f32> = (0..total)
+                .map(|_| {
+                    if rng.random::<f32>() < sparsity {
+                        pruned += 1;
+                        0.0
+                    } else {
+                        1.0
+                    }
+                })
+                .collect();
+
+            let mask_tensor = Tensor::from_vec(mask_data, &shape)?;
+            let actual_sparsity = if total > 0 {
+                pruned as f32 / total as f32
+            } else {
+                0.0
+            };
+            masks.push(PruningMask::new(layer_name, mask_tensor, actual_sparsity));
         }
 
         Ok(masks)

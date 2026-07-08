@@ -46,9 +46,9 @@ where
     T: Float + Default + Send + Sync + 'static + ToPrimitive + bytemuck::Pod + bytemuck::Zeroable,
 {
     let start_time = Instant::now();
-    let config = STATS_CONFIG
-        .read()
-        .expect("read lock should not be poisoned");
+    let config = STATS_CONFIG.read().map_err(|_| {
+        TensorError::invalid_operation_simple("stats config lock poisoned".to_string())
+    })?;
 
     match &x.storage {
         TensorStorage::Cpu(arr) => {
@@ -425,7 +425,9 @@ where
             TensorError::device_error_simple(format!("GPU buffer async error: {:?}", e))
         })?;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().map_err(|e| {
+        TensorError::device_error_simple(format!("GPU buffer get_mapped_range error: {:?}", e))
+    })?;
     let hist_counts: Vec<u32> = bytemuck::cast_slice(&data).to_vec();
     drop(data);
     result_buffer.unmap();

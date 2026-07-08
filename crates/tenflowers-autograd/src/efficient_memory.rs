@@ -241,10 +241,9 @@ where
 
     /// Get the computed gradient, computing it if necessary
     pub fn get(&self) -> Result<Tensor<T>> {
-        let mut cached = self
-            .cached_result
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut cached = self.cached_result.lock().map_err(|_| {
+            TensorError::invalid_operation_simple("lazy gradient cache lock poisoned".to_string())
+        })?;
 
         if let Some(result) = &*cached {
             return Ok(result.clone());
@@ -261,7 +260,7 @@ where
     pub fn is_computed(&self) -> bool {
         self.cached_result
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .is_some()
     }
 
@@ -270,7 +269,7 @@ where
         *self
             .cached_result
             .lock()
-            .expect("lock should not be poisoned") = None;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 
     /// Check if this is an expensive computation

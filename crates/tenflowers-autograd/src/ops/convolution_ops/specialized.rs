@@ -1,8 +1,7 @@
 use super::conv2d::conv2d_backward;
 use super::types::Conv2dBackwardResult;
-use super::utils::slice_tensor_channels;
+use super::utils::{concatenate_tensors, slice_tensor_channels};
 use scirs2_core::numeric::{One, Zero};
-use tenflowers_core::ops::concat;
 use tenflowers_core::{Shape, Tensor, TensorError};
 
 /// Backward pass for Depthwise Convolution 2D
@@ -182,12 +181,12 @@ where
     // Concatenate results from all groups
     let grad_input_refs: Vec<&Tensor<T>> = grad_input_groups.iter().collect();
     let grad_weight_refs: Vec<&Tensor<T>> = grad_weight_groups.iter().collect();
-    let grad_input = concat(&grad_input_refs, 1)?; // Concatenate along channel axis
-    let grad_weight = concat(&grad_weight_refs, 0)?; // Concatenate along output channel axis
+    let grad_input = concatenate_tensors(&grad_input_refs, 1)?; // Concatenate along channel axis
+    let grad_weight = concatenate_tensors(&grad_weight_refs, 0)?; // Concatenate along output channel axis
 
     let grad_bias = if !grad_bias_groups.is_empty() {
         let grad_bias_refs: Vec<&Tensor<T>> = grad_bias_groups.iter().collect();
-        Some(concat(&grad_bias_refs, 0)?) // Concatenate along channel axis
+        Some(concatenate_tensors(&grad_bias_refs, 0)?) // Concatenate along channel axis
     } else {
         None
     };

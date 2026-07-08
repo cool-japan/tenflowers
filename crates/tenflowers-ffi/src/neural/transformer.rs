@@ -3,12 +3,98 @@
 //! This module provides transformer architecture components including encoder/decoder
 //! layers and positional encodings for sequence-to-sequence models.
 
+use crate::neural::attention::PyMultiheadAttention;
 use crate::tensor_ops::PyTensor;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use std::f32::consts::PI;
 use std::sync::Arc;
-use tenflowers_core::Tensor;
+use tenflowers_core::{Result as CoreResult, Tensor};
+
+/// Swap the first two axes of a 3-D tensor when not batch-first, converting
+/// between `[seq, batch, feature]` and `[batch, seq, feature]`.
+///
+/// The transform is its own inverse, so the same helper aligns into and out of
+/// batch-first layout.
+fn align_batch_first(t: &Tensor<f32>, batch_first: bool) -> CoreResult<Tensor<f32>> {
+    if batch_first {
+        Ok(t.clone())
+    } else {
+        tenflowers_core::ops::manipulation::transpose_axes(t, Some(&[1, 0, 2]))
+    }
+}
+
+/// Initialise a tensor with scaled standard-normal values.
+fn randn_scaled(shape: &[usize], scale: f32) -> CoreResult<Tensor<f32>> {
+    Tensor::randn(shape)?.multiply_scalar(scale)
+}
+
+/// Apply a linear projection `input @ weight^T (+ bias)` where `weight` is
+/// stored as `[out_features, in_features]`.
+fn linear_proj(
+    input: &Tensor<f32>,
+    weight: &Tensor<f32>,
+    bias: Option<&Tensor<f32>>,
+) -> CoreResult<Tensor<f32>> {
+    let weight_t = weight.transpose()?;
+    let projected = input.matmul(&weight_t)?;
+    match bias {
+        Some(b) => projected.add(b),
+        None => Ok(projected),
+    }
+}
+
+/// Position-wise feed-forward network: `linear2(activation(linear1(x)))`.
+fn feed_forward(
+    input: &Tensor<f32>,
+    w1: &Tensor<f32>,
+    b1: &Tensor<f32>,
+    w2: &Tensor<f32>,
+    b2: &Tensor<f32>,
+    activation: &str,
+) -> CoreResult<Tensor<f32>> {
+    let hidden = linear_proj(input, w1, Some(b1))?;
+    let activated = if activation == "gelu" {
+        hidden.gelu()?
+    } else {
+        hidden.relu()?
+    };
+    linear_proj(&activated, w2, Some(b2))
+}
+
+/// Apply layer normalization over the final (feature) dimension.
+fn apply_layer_norm(
+    input: &Tensor<f32>,
+    gamma: &Tensor<f32>,
+    beta: &Tensor<f32>,
+    d_model: usize,
+    eps: f32,
+) -> CoreResult<Tensor<f32>> {
+    tenflowers_core::ops::normalization::layer_norm(input, gamma, beta, &[d_model], eps)
+}
+
+/// Build a `PyMultiheadAttention` configured for batch-first input.
+fn build_attention(d_model: usize, nhead: usize) -> PyResult<PyMultiheadAttention> {
+    PyMultiheadAttention::new(
+        d_model,
+        nhead,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(true),
+    )
+}
+
+/// Wrap a tensor as a non-grad, non-pinned `PyTensor` for attention calls.
+fn wrap(tensor: Tensor<f32>) -> PyTensor {
+    PyTensor {
+        tensor: Arc::new(tensor),
+        requires_grad: false,
+        is_pinned: false,
+    }
+}
 
 /// Transformer Encoder Layer
 ///
@@ -30,6 +116,20 @@ pub struct PyTransformerEncoderLayer {
     pub batch_first: bool,
     /// Layer normalization epsilon
     pub layer_norm_eps: f32,
+    /// Multi-head self-attention sublayer
+    self_attn: PyMultiheadAttention,
+    /// Feed-forward weight 1: `[dim_feedforward, d_model]`
+    ff_w1: Tensor<f32>,
+    /// Feed-forward bias 1: `[dim_feedforward]`
+    ff_b1: Tensor<f32>,
+    /// Feed-forward weight 2: `[d_model, dim_feedforward]`
+    ff_w2: Tensor<f32>,
+    /// Feed-forward bias 2: `[d_model]`
+    ff_b2: Tensor<f32>,
+    /// LayerNorm gain `[d_model]`
+    ln_gamma: Tensor<f32>,
+    /// LayerNorm bias `[d_model]`
+    ln_beta: Tensor<f32>,
 }
 
 #[pymethods]
@@ -84,6 +184,22 @@ impl PyTransformerEncoderLayer {
             return Err(PyValueError::new_err("activation must be 'relu' or 'gelu'"));
         }
 
+        let self_attn = build_attention(d_model, nhead)?;
+        let init_err = |e: tenflowers_core::TensorError| {
+            PyRuntimeError::new_err(format!(
+                "Failed to initialize TransformerEncoderLayer: {}",
+                e
+            ))
+        };
+        let scale1 = 1.0_f32 / (d_model as f32).sqrt();
+        let scale2 = 1.0_f32 / (dim_feedforward as f32).sqrt();
+        let ff_w1 = randn_scaled(&[dim_feedforward, d_model], scale1).map_err(init_err)?;
+        let ff_b1 = Tensor::zeros(&[dim_feedforward]);
+        let ff_w2 = randn_scaled(&[d_model, dim_feedforward], scale2).map_err(init_err)?;
+        let ff_b2 = Tensor::zeros(&[d_model]);
+        let ln_gamma = Tensor::from_vec(vec![1.0f32; d_model], &[d_model]).map_err(init_err)?;
+        let ln_beta = Tensor::zeros(&[d_model]);
+
         Ok(PyTransformerEncoderLayer {
             d_model,
             nhead,
@@ -92,6 +208,13 @@ impl PyTransformerEncoderLayer {
             activation,
             batch_first,
             layer_norm_eps,
+            self_attn,
+            ff_w1,
+            ff_b1,
+            ff_w2,
+            ff_b2,
+            ln_gamma,
+            ln_beta,
         })
     }
 
@@ -106,6 +229,7 @@ impl PyTransformerEncoderLayer {
     /// # Returns
     ///
     /// Output tensor with same shape as input
+    #[pyo3(signature = (src, src_mask=None, src_key_padding_mask=None))]
     pub fn forward(
         &self,
         src: &PyTensor,
@@ -134,14 +258,63 @@ impl PyTransformerEncoderLayer {
             )));
         }
 
-        // For now, return placeholder output with same shape
-        let output_shape: Vec<usize> = src_shape.iter().copied().collect();
-        let output = Tensor::zeros(&output_shape);
+        let to_err = |e: tenflowers_core::TensorError| {
+            PyRuntimeError::new_err(format!("TransformerEncoderLayer forward failed: {}", e))
+        };
+
+        // Work in batch-first layout: [batch, seq, d_model].
+        let x = align_batch_first(&src.tensor, self.batch_first).map_err(to_err)?;
+
+        // Self-attention sublayer (post-norm): x = LayerNorm(x + SelfAttn(x)).
+        // `src_mask` is the [seq, seq] additive attention mask; `src_key_padding_mask`
+        // is the [batch, seq] key-padding mask (parameter order:
+        // query, key, value, key_padding_mask, need_weights, attn_mask, average).
+        let x_py = wrap(x.clone());
+        let (attn_py, _) = self.self_attn.forward(
+            &x_py,
+            &x_py,
+            &x_py,
+            src_key_padding_mask,
+            Some(false),
+            src_mask,
+            None,
+        )?;
+        let residual1 = x.add(attn_py.tensor.as_ref()).map_err(to_err)?;
+        let normed1 = apply_layer_norm(
+            &residual1,
+            &self.ln_gamma,
+            &self.ln_beta,
+            self.d_model,
+            self.layer_norm_eps,
+        )
+        .map_err(to_err)?;
+
+        // Feed-forward sublayer (post-norm): x = LayerNorm(x + FFN(x)).
+        let ff = feed_forward(
+            &normed1,
+            &self.ff_w1,
+            &self.ff_b1,
+            &self.ff_w2,
+            &self.ff_b2,
+            &self.activation,
+        )
+        .map_err(to_err)?;
+        let residual2 = normed1.add(&ff).map_err(to_err)?;
+        let normed2 = apply_layer_norm(
+            &residual2,
+            &self.ln_gamma,
+            &self.ln_beta,
+            self.d_model,
+            self.layer_norm_eps,
+        )
+        .map_err(to_err)?;
+
+        let output = align_batch_first(&normed2, self.batch_first).map_err(to_err)?;
 
         Ok(PyTensor {
             tensor: Arc::new(output),
             requires_grad: src.requires_grad,
-            is_pinned: false,
+            is_pinned: src.is_pinned,
         })
     }
 
@@ -173,6 +346,22 @@ pub struct PyTransformerDecoderLayer {
     pub batch_first: bool,
     /// Layer normalization epsilon
     pub layer_norm_eps: f32,
+    /// Multi-head self-attention sublayer
+    self_attn: PyMultiheadAttention,
+    /// Multi-head cross-attention sublayer (attends to encoder memory)
+    cross_attn: PyMultiheadAttention,
+    /// Feed-forward weight 1: `[dim_feedforward, d_model]`
+    ff_w1: Tensor<f32>,
+    /// Feed-forward bias 1: `[dim_feedforward]`
+    ff_b1: Tensor<f32>,
+    /// Feed-forward weight 2: `[d_model, dim_feedforward]`
+    ff_w2: Tensor<f32>,
+    /// Feed-forward bias 2: `[d_model]`
+    ff_b2: Tensor<f32>,
+    /// LayerNorm gain `[d_model]`
+    ln_gamma: Tensor<f32>,
+    /// LayerNorm bias `[d_model]`
+    ln_beta: Tensor<f32>,
 }
 
 #[pymethods]
@@ -217,6 +406,23 @@ impl PyTransformerDecoderLayer {
             return Err(PyValueError::new_err("activation must be 'relu' or 'gelu'"));
         }
 
+        let self_attn = build_attention(d_model, nhead)?;
+        let cross_attn = build_attention(d_model, nhead)?;
+        let init_err = |e: tenflowers_core::TensorError| {
+            PyRuntimeError::new_err(format!(
+                "Failed to initialize TransformerDecoderLayer: {}",
+                e
+            ))
+        };
+        let scale1 = 1.0_f32 / (d_model as f32).sqrt();
+        let scale2 = 1.0_f32 / (dim_feedforward as f32).sqrt();
+        let ff_w1 = randn_scaled(&[dim_feedforward, d_model], scale1).map_err(init_err)?;
+        let ff_b1 = Tensor::zeros(&[dim_feedforward]);
+        let ff_w2 = randn_scaled(&[d_model, dim_feedforward], scale2).map_err(init_err)?;
+        let ff_b2 = Tensor::zeros(&[d_model]);
+        let ln_gamma = Tensor::from_vec(vec![1.0f32; d_model], &[d_model]).map_err(init_err)?;
+        let ln_beta = Tensor::zeros(&[d_model]);
+
         Ok(PyTransformerDecoderLayer {
             d_model,
             nhead,
@@ -225,6 +431,14 @@ impl PyTransformerDecoderLayer {
             activation,
             batch_first,
             layer_norm_eps,
+            self_attn,
+            cross_attn,
+            ff_w1,
+            ff_b1,
+            ff_w2,
+            ff_b2,
+            ln_gamma,
+            ln_beta,
         })
     }
 
@@ -259,13 +473,93 @@ impl PyTransformerDecoderLayer {
             return Err(PyValueError::new_err("Expected 3D inputs"));
         }
 
-        let output_shape: Vec<usize> = tgt_shape.iter().copied().collect();
-        let output = Tensor::zeros(&output_shape);
+        if tgt_shape[2] != self.d_model || memory_shape[2] != self.d_model {
+            return Err(PyValueError::new_err(format!(
+                "Expected feature dimension {}",
+                self.d_model
+            )));
+        }
+
+        let to_err = |e: tenflowers_core::TensorError| {
+            PyRuntimeError::new_err(format!("TransformerDecoderLayer forward failed: {}", e))
+        };
+
+        // Work in batch-first layout.
+        let tgt_bf = align_batch_first(&tgt.tensor, self.batch_first).map_err(to_err)?;
+        let memory_bf = align_batch_first(&memory.tensor, self.batch_first).map_err(to_err)?;
+        let memory_py = wrap(memory_bf);
+
+        // Masked self-attention sublayer (post-norm). `tgt_mask` is the
+        // [tgt, tgt] attention mask; `tgt_key_padding_mask` is [batch, tgt].
+        let tgt_py = wrap(tgt_bf.clone());
+        let (sa_py, _) = self.self_attn.forward(
+            &tgt_py,
+            &tgt_py,
+            &tgt_py,
+            tgt_key_padding_mask,
+            Some(false),
+            tgt_mask,
+            None,
+        )?;
+        let residual1 = tgt_bf.add(sa_py.tensor.as_ref()).map_err(to_err)?;
+        let normed1 = apply_layer_norm(
+            &residual1,
+            &self.ln_gamma,
+            &self.ln_beta,
+            self.d_model,
+            self.layer_norm_eps,
+        )
+        .map_err(to_err)?;
+
+        // Cross-attention sublayer: query = decoder state, key/value = memory.
+        // `memory_mask` is the [tgt, src] attention mask; `memory_key_padding_mask`
+        // is [batch, src] where src is the memory sequence length.
+        let normed1_py = wrap(normed1.clone());
+        let (ca_py, _) = self.cross_attn.forward(
+            &normed1_py,
+            &memory_py,
+            &memory_py,
+            memory_key_padding_mask,
+            Some(false),
+            memory_mask,
+            None,
+        )?;
+        let residual2 = normed1.add(ca_py.tensor.as_ref()).map_err(to_err)?;
+        let normed2 = apply_layer_norm(
+            &residual2,
+            &self.ln_gamma,
+            &self.ln_beta,
+            self.d_model,
+            self.layer_norm_eps,
+        )
+        .map_err(to_err)?;
+
+        // Feed-forward sublayer.
+        let ff = feed_forward(
+            &normed2,
+            &self.ff_w1,
+            &self.ff_b1,
+            &self.ff_w2,
+            &self.ff_b2,
+            &self.activation,
+        )
+        .map_err(to_err)?;
+        let residual3 = normed2.add(&ff).map_err(to_err)?;
+        let normed3 = apply_layer_norm(
+            &residual3,
+            &self.ln_gamma,
+            &self.ln_beta,
+            self.d_model,
+            self.layer_norm_eps,
+        )
+        .map_err(to_err)?;
+
+        let output = align_batch_first(&normed3, self.batch_first).map_err(to_err)?;
 
         Ok(PyTensor {
             tensor: Arc::new(output),
             requires_grad: tgt.requires_grad || memory.requires_grad,
-            is_pinned: false,
+            is_pinned: tgt.is_pinned,
         })
     }
 
@@ -363,7 +657,7 @@ impl PyPositionalEncoding {
             )));
         }
 
-        let (seq_len, _batch, d_model) = if batch_first {
+        let (seq_len, batch, d_model) = if batch_first {
             (x_shape[1], x_shape[0], x_shape[2])
         } else {
             (x_shape[0], x_shape[1], x_shape[2])
@@ -383,20 +677,32 @@ impl PyPositionalEncoding {
             )));
         }
 
-        // For now, return input unchanged (positional encoding would be added)
+        // Add the precomputed sinusoidal positional encoding to the input.
         let x_data = x
             .tensor
             .to_vec()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to get tensor data: {}", e)))?;
 
+        let mut out_data = Vec::with_capacity(x_data.len());
+        for (idx, &value) in x_data.iter().enumerate() {
+            let feature = idx % d_model;
+            let position_block = idx / d_model;
+            let position = if batch_first {
+                position_block % seq_len
+            } else {
+                position_block / batch
+            };
+            out_data.push(value + self.pe[position * d_model + feature]);
+        }
+
         let output_shape: Vec<usize> = x_shape.iter().copied().collect();
-        let output = Tensor::from_vec(x_data, &output_shape)
+        let output = Tensor::from_vec(out_data, &output_shape)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create output: {}", e)))?;
 
         Ok(PyTensor {
             tensor: Arc::new(output),
             requires_grad: x.requires_grad,
-            is_pinned: false,
+            is_pinned: x.is_pinned,
         })
     }
 
@@ -487,4 +793,135 @@ pub fn create_padding_mask(lengths: Vec<usize>, max_len: usize) -> PyResult<PyTe
         requires_grad: false,
         is_pinned: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
+        let tensor = Tensor::from_vec(data, shape).expect("tensor construction");
+        PyTensor {
+            tensor: Arc::new(tensor),
+            requires_grad: false,
+            is_pinned: false,
+        }
+    }
+
+    fn ramp(n: usize) -> Vec<f32> {
+        (0..n).map(|i| (i as f32) * 0.05 - 0.5).collect()
+    }
+
+    #[test]
+    fn positional_encoding_modifies_input() {
+        let pe = PyPositionalEncoding::new(4, None, None).expect("pe construction");
+        let input = make_tensor(vec![1.0; 3 * 2 * 4], &[3, 2, 4]);
+        let out = pe.forward(&input, None).expect("forward");
+
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![3, 2, 4]);
+        let in_vec = input.tensor.to_vec().expect("in vec");
+        let out_vec = out.tensor.to_vec().expect("out vec");
+        assert!(
+            in_vec
+                .iter()
+                .zip(out_vec.iter())
+                .any(|(a, b)| (a - b).abs() > 1e-6),
+            "positional encoding must change the input"
+        );
+    }
+
+    #[test]
+    fn transformer_encoder_forward_is_real() {
+        let enc = PyTransformerEncoderLayer::new(8, 2, None, None, None, None, None).expect("enc");
+        let src = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
+        let out = enc.forward(&src, None, None).expect("forward");
+
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![3, 2, 8]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        assert!(
+            out_vec.iter().any(|&x| x != 0.0),
+            "encoder output must not be all zeros"
+        );
+    }
+
+    #[test]
+    fn transformer_decoder_forward_is_real() {
+        let dec = PyTransformerDecoderLayer::new(8, 2, None, None, None, None, None).expect("dec");
+        let tgt = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
+        let memory = make_tensor(ramp(4 * 2 * 8), &[4, 2, 8]);
+        let out = dec
+            .forward(&tgt, &memory, None, None, None, None)
+            .expect("forward");
+
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![3, 2, 8]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        assert!(
+            out_vec.iter().any(|&x| x != 0.0),
+            "decoder output must not be all zeros"
+        );
+    }
+
+    #[test]
+    fn transformer_encoder_forward_with_masks_succeeds() {
+        // Providing real masks previously returned an error; it must now succeed.
+        let enc = PyTransformerEncoderLayer::new(8, 2, None, None, None, None, None).expect("enc");
+        // Default batch_first=false: src is [seq=3, batch=2, d_model=8].
+        let src = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
+        // Causal [seq, seq] = [3, 3] additive attention mask.
+        let src_mask = generate_square_subsequent_mask(3).expect("square mask");
+        // key padding [batch, seq] = [2, 3]; mask position 2 for batch 0 only.
+        // (No row becomes fully masked, so softmax stays finite.)
+        let src_kpm = make_tensor(vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0], &[2, 3]);
+
+        let out = enc
+            .forward(&src, Some(&src_mask), Some(&src_kpm))
+            .expect("masked encoder forward must now succeed");
+
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![3, 2, 8]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        assert!(
+            out_vec.iter().all(|&x| x.is_finite()),
+            "masked encoder output must be finite (no NaN/inf)"
+        );
+        assert!(
+            out_vec.iter().any(|&x| x != 0.0),
+            "masked encoder output must not be all zeros"
+        );
+    }
+
+    #[test]
+    fn transformer_decoder_forward_with_masks_succeeds() {
+        // All four decoder mask parameters provided together must succeed.
+        let dec = PyTransformerDecoderLayer::new(8, 2, None, None, None, None, None).expect("dec");
+        // Default batch_first=false: tgt [tgt=3, batch=2, 8], memory [src=4, batch=2, 8].
+        let tgt = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
+        let memory = make_tensor(ramp(4 * 2 * 8), &[4, 2, 8]);
+        let tgt_mask = generate_square_subsequent_mask(3).expect("tgt mask"); // [3, 3]
+        let memory_mask = make_tensor(vec![0.0; 3 * 4], &[3, 4]); // [tgt=3, src=4]
+        let tgt_kpm = make_tensor(vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0], &[2, 3]); // [batch, tgt]
+                                                                                // [batch, src=4]; mask memory position 3 for batch 0 only.
+        let memory_kpm = make_tensor(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], &[2, 4]);
+
+        let out = dec
+            .forward(
+                &tgt,
+                &memory,
+                Some(&tgt_mask),
+                Some(&memory_mask),
+                Some(&tgt_kpm),
+                Some(&memory_kpm),
+            )
+            .expect("masked decoder forward must now succeed");
+
+        assert_eq!(out.tensor.shape().dims().to_vec(), vec![3, 2, 8]);
+        let out_vec = out.tensor.to_vec().expect("vec");
+        assert!(
+            out_vec.iter().all(|&x| x.is_finite()),
+            "masked decoder output must be finite (no NaN/inf)"
+        );
+        assert!(
+            out_vec.iter().any(|&x| x != 0.0),
+            "masked decoder output must not be all zeros"
+        );
+    }
 }

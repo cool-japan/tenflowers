@@ -18,7 +18,7 @@ use wgpu::util::DeviceExt;
 /// Transpose a tensor (reverse all dimensions)
 pub fn transpose<T>(tensor: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     transpose_axes(tensor, None)
 }
@@ -26,7 +26,7 @@ where
 /// Transpose a tensor with specified axis permutation
 pub fn transpose_axes<T>(tensor: &Tensor<T>, axes: Option<&[usize]>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let rank = tensor.shape().rank();
 
@@ -74,7 +74,7 @@ where
 /// Roll operation - roll tensor elements along specified axes
 pub fn roll<T>(tensor: &Tensor<T>, shift: isize, axis: Option<usize>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if let Some(axis) = axis {
         if axis >= tensor.shape().rank() {
@@ -215,7 +215,7 @@ fn gpu_transpose_dispatch<T>(
     axes: &[usize],
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     // Currently, we only support f32 for GPU operations
     let type_name = std::any::type_name::<T>();
@@ -260,7 +260,7 @@ where
 #[cfg(feature = "gpu")]
 fn gpu_roll_dispatch<T>(tensor: &Tensor<T>, shift: isize, axis: Option<usize>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let type_name = std::any::type_name::<T>();
 

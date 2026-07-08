@@ -119,38 +119,63 @@ pub fn tan(input: &PyTensor) -> PyResult<PyTensor> {
 
 /// Sum reduction
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn sum(input: &PyTensor, dim: Option<Vec<i32>>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
     let axes = dim.as_deref();
 
     match tenflowers_core::ops::sum(&input.tensor, axes, keep_dims) {
-        Ok(tensor) => Ok(PyTensor {
-            tensor: Arc::new(tensor),
-            requires_grad: input.requires_grad,
-            is_pinned: input.is_pinned,
-        }),
+        Ok(tensor) => {
+            let result = PyTensor {
+                tensor: Arc::new(tensor),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            };
+            crate::implicit_autograd::record_and_link_unary(
+                crate::implicit_autograd::UnaryOpKind::Sum {
+                    axes: dim,
+                    keepdims: keep_dims,
+                },
+                input,
+                &result,
+            )?;
+            Ok(result)
+        }
         Err(e) => Err(PyRuntimeError::new_err(format!("Sum failed: {}", e))),
     }
 }
 
 /// Mean reduction
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn mean(input: &PyTensor, dim: Option<Vec<i32>>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
     let axes = dim.as_deref();
 
     match tenflowers_core::ops::mean(&input.tensor, axes, keep_dims) {
-        Ok(tensor) => Ok(PyTensor {
-            tensor: Arc::new(tensor),
-            requires_grad: input.requires_grad,
-            is_pinned: input.is_pinned,
-        }),
+        Ok(tensor) => {
+            let result = PyTensor {
+                tensor: Arc::new(tensor),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            };
+            crate::implicit_autograd::record_and_link_unary(
+                crate::implicit_autograd::UnaryOpKind::Mean {
+                    axes: dim,
+                    keepdims: keep_dims,
+                },
+                input,
+                &result,
+            )?;
+            Ok(result)
+        }
         Err(e) => Err(PyRuntimeError::new_err(format!("Mean failed: {}", e))),
     }
 }
 
 /// Maximum reduction
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn max(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
 
@@ -172,6 +197,7 @@ pub fn max(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResul
 
 /// Minimum reduction
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn min(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
 
@@ -193,6 +219,7 @@ pub fn min(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResul
 
 /// Variance calculation
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None, unbiased=None))]
 pub fn var(
     input: &PyTensor,
     dim: Option<Vec<i32>>,
@@ -216,6 +243,7 @@ pub fn var(
 
 /// Standard deviation calculation
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None, unbiased=None))]
 pub fn standard_deviation(
     input: &PyTensor,
     dim: Option<Vec<i32>>,
@@ -243,6 +271,7 @@ pub fn standard_deviation(
 
 /// Alias for standard_deviation function to match PyTorch API
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None, unbiased=None))]
 pub fn std(
     input: &PyTensor,
     dim: Option<Vec<i32>>,
@@ -254,6 +283,7 @@ pub fn std(
 
 /// Clamp (clip) function
 #[pyfunction]
+#[pyo3(signature = (input, min_val=None, max_val=None))]
 pub fn clamp(input: &PyTensor, min_val: Option<f32>, max_val: Option<f32>) -> PyResult<PyTensor> {
     if min_val.is_none() && max_val.is_none() {
         return Err(PyValueError::new_err(
@@ -415,6 +445,7 @@ pub fn ge(input: &PyTensor, other: &PyTensor) -> PyResult<PyTensor> {
 
 /// Argmax function
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn argmax(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
 
@@ -441,6 +472,7 @@ pub fn argmax(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyRe
 
 /// Argmin function
 #[pyfunction]
+#[pyo3(signature = (input, dim=None, keepdim=None))]
 pub fn argmin(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyResult<PyTensor> {
     let keep_dims = keepdim.unwrap_or(false);
 
@@ -467,6 +499,7 @@ pub fn argmin(input: &PyTensor, dim: Option<i32>, keepdim: Option<bool>) -> PyRe
 
 /// Concatenate tensors along a dimension
 #[pyfunction]
+#[pyo3(signature = (tensors, dim=None))]
 pub fn cat(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> {
     let tensor_vec: Vec<PyRef<PyTensor>> = tensors
         .iter()
@@ -495,6 +528,7 @@ pub fn cat(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> 
 
 /// Stack tensors along a new dimension
 #[pyfunction]
+#[pyo3(signature = (tensors, dim=None))]
 pub fn stack(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor> {
     let tensor_vec: Vec<PyRef<PyTensor>> = tensors
         .iter()
@@ -521,6 +555,7 @@ pub fn stack(tensors: &Bound<'_, PyList>, dim: Option<i32>) -> PyResult<PyTensor
 
 /// Split tensor into chunks
 #[pyfunction]
+#[pyo3(signature = (input, split_size_or_sections, dim=None))]
 pub fn split(
     input: &PyTensor,
     split_size_or_sections: Vec<usize>,
@@ -547,6 +582,7 @@ pub fn split(
 
 /// Squeeze dimensions of size 1
 #[pyfunction]
+#[pyo3(signature = (input, dim=None))]
 pub fn squeeze(input: &PyTensor, dim: Option<Vec<usize>>) -> PyResult<PyTensor> {
     let result = if let Some(axes) = dim {
         tenflowers_core::ops::manipulation::squeeze(&input.tensor, Some(&axes))
@@ -580,6 +616,7 @@ pub fn unsqueeze(input: &PyTensor, dim: i32) -> PyResult<PyTensor> {
 
 /// Flatten tensor
 #[pyfunction]
+#[pyo3(signature = (input, start_dim=None, end_dim=None))]
 pub fn flatten(
     input: &PyTensor,
     start_dim: Option<i32>,

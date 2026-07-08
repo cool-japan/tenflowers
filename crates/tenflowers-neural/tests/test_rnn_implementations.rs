@@ -260,17 +260,19 @@ mod bahdanau_attention_tests {
 
     #[test]
     fn test_bahdanau_attention_layer_trait() -> Result<()> {
-        let attention = BahdanauAttention::<TestFloat>::new(64, 32, 48, true)?;
+        // The single-input `Layer` adapter derives the decoder query from the encoder
+        // outputs, so it requires encoder_hidden_size == decoder_hidden_size.
+        let attention = BahdanauAttention::<TestFloat>::new(64, 64, 48, true)?;
 
-        // Test Layer trait methods
-        let input = Tensor::zeros(&[2, 96]); // Dummy input
+        // Encoder outputs have shape [seq_len, batch_size, encoder_hidden_size].
+        let input = Tensor::zeros(&[3, 2, 64]);
         let output = attention.forward(&input)?;
 
-        // Should return tensor with correct first dimension
+        // The Bahdanau context vector is [batch_size, encoder_hidden_size].
         assert_eq!(
-            output.shape().dims()[0],
-            2,
-            "Output batch size should match input"
+            output.shape().dims(),
+            &[2, 64],
+            "Context should be [batch_size, encoder_hidden_size]"
         );
 
         // Test parameter access

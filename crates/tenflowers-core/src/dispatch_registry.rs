@@ -239,10 +239,11 @@ impl<T> DispatchRegistry<T> {
 
     /// Register a new operation
     pub fn register_operation(&self, descriptor: OperationDescriptor) -> Result<()> {
-        let mut ops = self
-            .operations
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut ops = self.operations.write().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "dispatch registry write lock poisoned".to_string(),
+            )
+        })?;
 
         if ops.contains_key(&descriptor.name) {
             return Err(TensorError::invalid_argument(format!(
@@ -264,10 +265,11 @@ impl<T> DispatchRegistry<T> {
         operation_name: &str,
         kernel: KernelImplementation<T>,
     ) -> Result<()> {
-        let mut ops = self
-            .operations
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut ops = self.operations.write().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "dispatch registry write lock poisoned".to_string(),
+            )
+        })?;
 
         let op = ops.get_mut(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -282,10 +284,11 @@ impl<T> DispatchRegistry<T> {
 
     /// Dispatch a unary operation
     pub fn dispatch_unary(&self, operation_name: &str, input: &Tensor<T>) -> Result<Tensor<T>> {
-        let ops = self
-            .operations
-            .read()
-            .expect("read lock should not be poisoned");
+        let ops = self.operations.read().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "dispatch registry read lock poisoned".to_string(),
+            )
+        })?;
 
         let op = ops.get(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -328,10 +331,11 @@ impl<T> DispatchRegistry<T> {
             ));
         }
 
-        let ops = self
-            .operations
-            .read()
-            .expect("read lock should not be poisoned");
+        let ops = self.operations.read().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "dispatch registry read lock poisoned".to_string(),
+            )
+        })?;
 
         let op = ops.get(operation_name).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -360,37 +364,36 @@ impl<T> DispatchRegistry<T> {
 
     /// Get operation descriptor
     pub fn get_operation(&self, name: &str) -> Option<OperationDescriptor> {
-        let ops = self
-            .operations
+        self.operations
             .read()
-            .expect("read lock should not be poisoned");
-        ops.get(name).map(|op| op.descriptor.clone())
+            .ok()?
+            .get(name)
+            .map(|op| op.descriptor.clone())
     }
 
     /// List all registered operations
     pub fn list_operations(&self) -> Vec<String> {
-        let ops = self
-            .operations
-            .read()
-            .expect("read lock should not be poisoned");
-        ops.keys().cloned().collect()
+        match self.operations.read() {
+            Ok(ops) => ops.keys().cloned().collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Get available backends for an operation
     pub fn available_backends(&self, operation_name: &str) -> Vec<BackendType> {
-        let ops = self
-            .operations
-            .read()
-            .expect("read lock should not be poisoned");
-
-        if let Some(op) = ops.get(operation_name) {
-            op.kernels
-                .iter()
-                .filter(|k| k.backend.is_available())
-                .map(|k| k.backend)
-                .collect()
-        } else {
-            Vec::new()
+        match self.operations.read() {
+            Ok(ops) => {
+                if let Some(op) = ops.get(operation_name) {
+                    op.kernels
+                        .iter()
+                        .filter(|k| k.backend.is_available())
+                        .map(|k| k.backend)
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            }
+            Err(_) => Vec::new(),
         }
     }
 }

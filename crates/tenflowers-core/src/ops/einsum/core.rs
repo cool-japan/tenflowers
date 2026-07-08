@@ -354,3 +354,85 @@ where
 
     Tensor::from_vec(diagonal_data, &[min_dim])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // These tests exercise `einsum` directly on CPU-resident tensors, with no
+    // dependency on the `gpu` feature. They exist because the GPU einsum
+    // wrappers in `gpu.rs` (`gpu_einsum_batched_matmul`, `gpu_einsum_transpose`,
+    // `gpu_einsum_diagonal`, `gpu_einsum_outer_product`, `gpu_einsum_trace`) now
+    // read GPU operands back to the host and delegate to this exact `einsum`
+    // entry point instead of running (broken) GPU kernels directly. These tests
+    // pin down the correctness of that delegate target, independent of GPU
+    // availability.
+
+    /// "bij,bjk->bik": batched matrix multiplication.
+    #[test]
+    fn einsum_batched_matmul_is_correct() {
+        // batch 0: [[1,2],[3,4]] @ [[5,6],[7,8]]   = [[19,22],[43,50]]
+        // batch 1: [[1,0],[0,1]] @ [[9,10],[11,12]] = [[9,10],[11,12]]
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 1.0, 0.0, 0.0, 1.0], &[2, 2, 2])
+            .expect("test: from_vec should succeed");
+        let b =
+            Tensor::<f32>::from_vec(vec![5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 2, 2])
+                .expect("test: from_vec should succeed");
+
+        let result = einsum("bij,bjk->bik", &[&a, &b]).expect("test: einsum should succeed");
+        assert_eq!(result.shape().dims(), &[2, 2, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![19.0, 22.0, 43.0, 50.0, 9.0, 10.0, 11.0, 12.0]);
+    }
+
+    /// "ij->ji": plain 2D transpose.
+    #[test]
+    fn einsum_transpose_is_correct() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: from_vec should succeed");
+
+        let result = einsum("ij->ji", &[&a]).expect("test: einsum should succeed");
+        assert_eq!(result.shape().dims(), &[3, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    }
+
+    /// "ii->i": diagonal extraction.
+    #[test]
+    fn einsum_diagonal_is_correct() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
+            .expect("test: from_vec should succeed");
+
+        let result = einsum("ii->i", &[&a]).expect("test: einsum should succeed");
+        assert_eq!(result.shape().dims(), &[3]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![1.0, 5.0, 9.0]);
+    }
+
+    /// "i,j->ij": outer product.
+    #[test]
+    fn einsum_outer_product_is_correct() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0], &[3])
+            .expect("test: from_vec should succeed");
+        let b =
+            Tensor::<f32>::from_vec(vec![10.0, 20.0], &[2]).expect("test: from_vec should succeed");
+
+        let result = einsum("i,j->ij", &[&a, &b]).expect("test: einsum should succeed");
+        assert_eq!(result.shape().dims(), &[3, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![10.0, 20.0, 20.0, 40.0, 30.0, 60.0]);
+    }
+
+    /// "ii->": trace (sum of diagonal elements only, not the whole matrix).
+    #[test]
+    fn einsum_trace_is_correct() {
+        let a = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
+            .expect("test: from_vec should succeed");
+
+        let result = einsum("ii->", &[&a]).expect("test: einsum should succeed");
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        // Trace = 1 + 5 + 9 = 15; must NOT equal the sum of all 9 entries (45),
+        // which is the bug the GPU kernel used to have.
+        assert_eq!(data, vec![15.0]);
+    }
+}

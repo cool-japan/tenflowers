@@ -50,7 +50,7 @@ impl<T> WorkStealingQueue<T> {
         {
             let mut queue = self.worker_queues[worker_id]
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             queue.push_back(item);
         }
 
@@ -58,7 +58,7 @@ impl<T> WorkStealingQueue<T> {
         self.total_tasks.fetch_add(1, Ordering::Relaxed);
         let (lock, cvar) = &*self.work_available;
         {
-            let mut available = lock.lock().expect("lock should not be poisoned");
+            let mut available = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             *available = true;
         }
         cvar.notify_all();
@@ -72,7 +72,7 @@ impl<T> WorkStealingQueue<T> {
 
         let mut queue = self.worker_queues[worker_id]
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let item = queue.pop_front();
         if item.is_some() {
             self.total_tasks.fetch_sub(1, Ordering::Relaxed);
@@ -97,7 +97,7 @@ impl<T> WorkStealingQueue<T> {
 
             let mut queue = self.worker_queues[target_worker]
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             // Steal from the back to minimize contention with the owner
             if let Some(item) = queue.pop_back() {
                 self.total_tasks.fetch_sub(1, Ordering::Relaxed);
@@ -133,7 +133,7 @@ impl<T> WorkStealingQueue<T> {
 
         // Wait for work to become available
         let (lock, cvar) = &*self.work_available;
-        let mut available = lock.lock().expect("lock should not be poisoned");
+        let mut available = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
         loop {
             // Check for shutdown signal
@@ -146,7 +146,7 @@ impl<T> WorkStealingQueue<T> {
             if let Some(item) = self.get_work(worker_id) {
                 return Some(item);
             }
-            available = lock.lock().expect("lock should not be poisoned");
+            available = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
             // If still no work and no tasks in the system, we're done
             if self.total_tasks.load(Ordering::Relaxed) == 0 {
@@ -174,7 +174,7 @@ impl<T> WorkStealingQueue<T> {
         self.shutdown.store(true, Ordering::Relaxed);
         let (lock, cvar) = &*self.work_available;
         {
-            let mut available = lock.lock().expect("lock should not be poisoned");
+            let mut available = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             *available = true;
         }
         cvar.notify_all();
@@ -194,7 +194,12 @@ impl<T> WorkStealingQueue<T> {
     pub fn queue_lengths(&self) -> Vec<usize> {
         self.worker_queues
             .iter()
-            .map(|queue| queue.lock().expect("lock should not be poisoned").len())
+            .map(|queue| {
+                queue
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .len()
+            })
             .collect()
     }
 

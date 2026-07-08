@@ -569,7 +569,12 @@ impl GpuLinalgContext {
             context: None,
         })?;
 
-        let data = buffer_slice.get_mapped_range();
+        let data = buffer_slice.get_mapped_range().map_err(|e| TensorError::ComputeError {
+            operation: "gpu_read_status".to_string(),
+            details: format!("Failed to map status buffer: {:?}", e),
+            retry_possible: true,
+            context: None,
+        })?;
         let status = bytemuck::from_bytes::<u32>(&data[..std::mem::size_of::<u32>()]);
 
         if *status != 0 {

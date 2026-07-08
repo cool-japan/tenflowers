@@ -264,7 +264,7 @@ where
     pub fn get_metrics(&self) -> PipelineMetrics {
         self.metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 }
@@ -365,7 +365,10 @@ impl PipelineScheduler {
             .retain(|&id| id != micro_batch_id);
 
         // Update metrics
-        let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let mut metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metrics.forward_passes += 1;
     }
 }

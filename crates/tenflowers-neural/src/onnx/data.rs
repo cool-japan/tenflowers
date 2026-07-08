@@ -6,7 +6,7 @@
 
 use super::types::OnnxDataType;
 use std::collections::HashMap;
-use tenflowers_core::Result;
+use tenflowers_core::{Result, TensorError};
 
 #[cfg(feature = "onnx")]
 use super::proto;
@@ -205,13 +205,45 @@ impl OnnxValueInfo {
 
     /// Convert from protobuf format
     pub fn from_protobuf(proto: &proto::ValueInfoProto) -> Result<Self> {
-        // Extract shape and type information from the complex TypeProto structure
-        // This is simplified - in a full implementation you'd need to traverse the type structure
+        use proto::tensor_shape_proto::dimension::Value as DimValue;
+        use proto::type_proto::Value as TypeValue;
+
+        let mut elem_type = OnnxDataType::Float32;
+        let mut shape = Vec::new();
+
+        if let Some(type_proto) = &proto.r#type {
+            if let Some(TypeValue::TensorType(tensor_type)) = &type_proto.value {
+                if let Some(code) = tensor_type.elem_type {
+                    // This simplified struct only distinguishes 4 dtypes; anything else
+                    // keeps the Float32 placeholder since OnnxDataType (onnx::types)
+                    // cannot structurally represent it (genuine representational limit).
+                    elem_type = match code {
+                        1 => OnnxDataType::Float32,
+                        6 => OnnxDataType::Int32,
+                        7 => OnnxDataType::Int64,
+                        11 => OnnxDataType::Float64,
+                        _ => OnnxDataType::Float32,
+                    };
+                }
+                if let Some(tensor_shape) = &tensor_type.shape {
+                    shape = tensor_shape
+                        .dim
+                        .iter()
+                        .map(|d| match &d.value {
+                            Some(DimValue::DimValue(v)) => *v,
+                            // Symbolic/dynamic dims have no representation in this Vec<i64>;
+                            // -1 is the conventional sentinel for "unknown/dynamic".
+                            Some(DimValue::DimParam(_)) | None => -1,
+                        })
+                        .collect();
+                }
+            }
+        }
 
         Ok(OnnxValueInfo {
             name: proto.name.clone().unwrap_or_else(|| "value".to_string()),
-            elem_type: OnnxDataType::Float32, // Default type for simplification
-            shape: vec![],                    // Simplified - would need to extract from TypeProto
+            elem_type,
+            shape,
         })
     }
 }
@@ -253,12 +285,22 @@ impl OnnxTensor {
 
     /// Convert from protobuf format
     pub fn from_protobuf(proto: &proto::TensorProto) -> Result<Self> {
-        let data_type = match proto.data_type.unwrap_or(1) {
+        let code = proto.data_type.unwrap_or(1);
+        let data_type = match code {
             1 => OnnxDataType::Float32,
             6 => OnnxDataType::Int32,
             7 => OnnxDataType::Int64,
             11 => OnnxDataType::Float64,
-            _ => OnnxDataType::Float32, // Default fallback
+            _ => {
+                let name = proto
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "<unnamed>".to_string());
+                return Err(TensorError::serialization_error_simple(format!(
+                    "Unsupported ONNX tensor element type code {code} for initializer '{name}': \
+                     only Float32(1)/Int32(6)/Int64(7)/Float64(11) are representable by this loader"
+                )));
+            }
         };
 
         let raw_data = proto.raw_data.clone().unwrap_or_default();
@@ -372,7 +414,13 @@ impl OnnxAttribute {
                     .collect();
                 Ok(OnnxAttribute::Strings(strings))
             }
-            _ => Ok(OnnxAttribute::Float(0.0)), // Default fallback
+            other => {
+                Err(TensorError::serialization_error_simple(format!(
+                "Unsupported ONNX attribute type code {other} for attribute '{}': tensor/graph/\
+                 sparse-tensor attribute values are not representable by this loader",
+                proto.name.clone().unwrap_or_else(|| "<unnamed>".to_string())
+            )))
+            }
         }
     }
 }

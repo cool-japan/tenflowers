@@ -50,25 +50,40 @@ pub struct AsyncBinaryOperationExecutor {
 }
 
 impl AsyncBinaryOperationExecutor {
-    /// Create a new async binary operation executor
+    /// Create a new async binary operation executor.
+    ///
+    /// When a usable GPU device is available, work is scheduled through the
+    /// CPU-GPU hybrid scheduler. When no GPU device can be created (headless /
+    /// sandboxed environments where `request_device` fails), this degrades
+    /// honestly to a CPU-only executor rather than erroring — `execute_async`
+    /// already runs a real CPU path when no scheduler is present. This mirrors
+    /// the fallback long used by [`global_async_executor`].
     #[cfg(feature = "gpu")]
     pub fn new(device_id: usize) -> Result<Self> {
-        // Create CPU executor
-        let cpu_executor = Arc::new(AsyncExecutor::new(Device::Cpu));
+        match crate::device::context::get_gpu_context(device_id) {
+            Ok(gpu_ctx) => {
+                // Create CPU executor
+                let cpu_executor = Arc::new(AsyncExecutor::new(Device::Cpu));
 
-        // Create GPU executor
-        let gpu_ctx = crate::device::context::get_gpu_context(device_id)?;
-        let gpu_executor = Arc::new(MultiStreamGpuExecutor::new(
-            gpu_ctx.device.clone(),
-            gpu_ctx.queue.clone(),
-        ));
+                // Create GPU executor
+                let gpu_executor = Arc::new(MultiStreamGpuExecutor::new(
+                    gpu_ctx.device.clone(),
+                    gpu_ctx.queue.clone(),
+                ));
 
-        // Create hybrid scheduler
-        let hybrid_scheduler = Arc::new(HybridWorkScheduler::new(cpu_executor, gpu_executor));
+                // Create hybrid scheduler
+                let hybrid_scheduler =
+                    Arc::new(HybridWorkScheduler::new(cpu_executor, gpu_executor));
 
-        Ok(Self {
-            hybrid_scheduler: Some(hybrid_scheduler),
-        })
+                Ok(Self {
+                    hybrid_scheduler: Some(hybrid_scheduler),
+                })
+            }
+            // No usable GPU device: honest CPU-only fallback.
+            Err(_) => Ok(Self {
+                hybrid_scheduler: None,
+            }),
+        }
     }
 
     /// Create a new async binary operation executor (CPU-only)

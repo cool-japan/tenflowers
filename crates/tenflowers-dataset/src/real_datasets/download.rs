@@ -26,7 +26,7 @@ impl Downloader {
             #[cfg(feature = "download")]
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(300)) // 5 minutes timeout
-                .user_agent("tenflowers-dataset/0.1.1")
+                .user_agent(concat!("tenflowers-dataset/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .unwrap_or_else(|_| Client::new()),
         }
@@ -399,18 +399,169 @@ pub fn get_file_size(path: &Path) -> Result<u64> {
     Ok(metadata.len())
 }
 
-/// Utility function to verify checksum (simplified)
+/// Verify the integrity of a downloaded file against an expected checksum.
+///
+/// The expected checksum may optionally carry an algorithm prefix of the form
+/// `"<algo>:<hex>"` (for example `"sha256:abc123..."`). When no prefix is
+/// present, the algorithm is inferred from the hexadecimal digest length:
+/// 64 hex characters is treated as SHA-256, and 8 hex characters is treated
+/// as CRC-32.
+///
+/// The function computes the *real* digest of the file's bytes and compares it
+/// (case-insensitively) against the expected value:
+/// - returns `Ok(true)` when the digest matches,
+/// - returns `Ok(false)` when the digest does not match,
+/// - returns `Ok(true)` when `expected_hash` is `None` (nothing to verify),
+/// - returns an honest `Err(...)` when the algorithm cannot be determined or is
+///   not supported, so callers are never told an unverifiable file is valid.
+///
+/// Only pure-Rust hashing is used (the `sha2` and `crc32fast` crates), in
+/// keeping with the project's pure-Rust dependency policy. CRC-32 support
+/// relies on the optional `crc32fast` dependency, which is wired to this
+/// crate's `tfrecord` feature (enabled by default); when that feature is
+/// disabled, CRC-32 verification returns an honest `Err(...)` instead of
+/// silently reporting success.
 pub fn verify_checksum(path: &Path, expected_hash: Option<&str>) -> Result<bool> {
-    if expected_hash.is_none() {
-        return Ok(true); // Skip verification if no hash provided
+    let expected = match expected_hash {
+        // Nothing was requested to be verified.
+        None => return Ok(true),
+        Some(value) => value.trim(),
+    };
+
+    if expected.is_empty() {
+        return Err(TensorError::invalid_argument(
+            "Checksum verification failed: an empty expected checksum was provided".to_string(),
+        ));
     }
 
-    // For now, just return true. In a real implementation, you would
-    // compute and verify the actual checksum (MD5, SHA256, etc.)
-    let _file_size = get_file_size(path)?;
+    // Split an optional "<algorithm>:<hex>" prefix.
+    let (algorithm, expected_hex) = match expected.split_once(':') {
+        Some((algo, hex)) => (algo.trim().to_ascii_lowercase(), hex.trim()),
+        None => (String::new(), expected),
+    };
 
-    println!("Checksum verification skipped (not implemented)");
-    Ok(true)
+    // Validate the expected digest is hexadecimal so we can compare reliably.
+    if expected_hex.is_empty() || !expected_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(TensorError::invalid_argument(format!(
+            "Checksum verification failed: expected checksum '{expected}' is not a valid hexadecimal digest"
+        )));
+    }
+
+    // Resolve the digest algorithm, inferring from length when unprefixed.
+    let resolved_algorithm = if algorithm.is_empty() {
+        match expected_hex.len() {
+            64 => "sha256",
+            8 => "crc32",
+            other => {
+                return Err(TensorError::invalid_argument(format!(
+                    "Checksum verification failed: cannot determine hash algorithm for a \
+                     {other}-character digest; prefix the expected checksum with an algorithm \
+                     (e.g. \"sha256:...\")"
+                )));
+            }
+        }
+    } else {
+        algorithm.as_str()
+    };
+
+    match resolved_algorithm {
+        "sha256" | "sha-256" => {
+            if expected_hex.len() != 64 {
+                return Err(TensorError::invalid_argument(format!(
+                    "Checksum verification failed: SHA-256 digest must be 64 hex characters, \
+                     got {} characters",
+                    expected_hex.len()
+                )));
+            }
+            let actual_hex = compute_sha256_hex(path)?;
+            Ok(actual_hex.eq_ignore_ascii_case(expected_hex))
+        }
+        "crc32" | "crc-32" => {
+            if expected_hex.len() != 8 {
+                return Err(TensorError::invalid_argument(format!(
+                    "Checksum verification failed: CRC-32 digest must be 8 hex characters, \
+                     got {} characters",
+                    expected_hex.len()
+                )));
+            }
+            let actual_hex = compute_crc32_hex(path)?;
+            Ok(actual_hex.eq_ignore_ascii_case(expected_hex))
+        }
+        other => Err(TensorError::invalid_argument(format!(
+            "Checksum verification failed: hash algorithm '{other}' is not supported \
+             (supported: sha256, crc32)"
+        ))),
+    }
+}
+
+/// Compute the SHA-256 digest of a file's contents, returned as a lowercase hex string.
+fn compute_sha256_hex(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+
+    let file = File::open(path)
+        .map_err(|e| error_utils::io_error_with_context(e, "Failed to open file for checksum"))?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let bytes_read = reader.read(&mut buffer).map_err(|e| {
+            error_utils::io_error_with_context(e, "Failed to read file while computing checksum")
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write as _;
+        // Writing to a String never fails; surface any unexpected error honestly.
+        write!(hex, "{byte:02x}").map_err(|e| {
+            TensorError::invalid_argument(format!("Failed to format checksum digest: {e}"))
+        })?;
+    }
+    Ok(hex)
+}
+
+/// Compute the CRC-32 (IEEE 802.3) checksum of a file's contents, returned as
+/// a lowercase 8-character hex string.
+///
+/// Uses the pure-Rust `crc32fast` crate, which is wired to this crate's
+/// `tfrecord` feature (enabled by default).
+#[cfg(feature = "tfrecord")]
+fn compute_crc32_hex(path: &Path) -> Result<String> {
+    use crc32fast::Hasher;
+
+    let file = File::open(path)
+        .map_err(|e| error_utils::io_error_with_context(e, "Failed to open file for checksum"))?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Hasher::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let bytes_read = reader.read(&mut buffer).map_err(|e| {
+            error_utils::io_error_with_context(e, "Failed to read file while computing checksum")
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    let checksum = hasher.finalize();
+    Ok(format!("{checksum:08x}"))
+}
+
+/// Compute the CRC-32 checksum when the `tfrecord` feature (which provides
+/// the `crc32fast` dependency) is disabled.
+#[cfg(not(feature = "tfrecord"))]
+fn compute_crc32_hex(_path: &Path) -> Result<String> {
+    Err(TensorError::invalid_argument(
+        "CRC-32 checksum verification requires the 'tfrecord' feature to be enabled.".to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -450,16 +601,157 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_checksum_with_hash() {
+    fn test_verify_checksum_invalid_hash_is_error() {
         let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let test_file = temp_dir.path().join("test.txt");
 
-        // Create a test file
         std::fs::write(&test_file, b"test").expect("test: write should succeed");
 
-        // For now, this should always return true
-        let result = verify_checksum(&test_file, Some("dummy_hash"))
-            .expect("test: operation should succeed");
-        assert!(result);
+        // A non-hex / unknown-length expected checksum can never be verified,
+        // so the function must report an honest error rather than success.
+        let result = verify_checksum(&test_file, Some("dummy_hash"));
+        assert!(
+            result.is_err(),
+            "an unverifiable checksum must not be reported as valid"
+        );
+    }
+
+    #[test]
+    fn test_verify_checksum_correct_sha256_returns_true() {
+        // Known SHA-256 of the bytes b"test".
+        const TEST_SHA256: &str =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+        let base = std::env::temp_dir().join(format!(
+            "tenflowers_checksum_ok_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let test_file = base.join("known.bin");
+        std::fs::write(&test_file, b"test").expect("test: write should succeed");
+
+        // Bare 64-hex digest is inferred as SHA-256.
+        let inferred =
+            verify_checksum(&test_file, Some(TEST_SHA256)).expect("test: verification should run");
+        assert!(inferred, "correct bare SHA-256 must verify as true");
+
+        // Explicit algorithm prefix is also accepted (any casing).
+        let prefixed = verify_checksum(&test_file, Some(&format!("sha256:{TEST_SHA256}")))
+            .expect("test: verification should run");
+        assert!(prefixed, "correct prefixed SHA-256 must verify as true");
+
+        let upper = verify_checksum(&test_file, Some(&TEST_SHA256.to_uppercase()))
+            .expect("test: verification should run");
+        assert!(upper, "case-insensitive SHA-256 must verify as true");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_verify_checksum_tampered_bytes_returns_false() {
+        // SHA-256 of b"test", but the file actually holds different (tampered) bytes.
+        const TEST_SHA256: &str =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+        let base = std::env::temp_dir().join(format!(
+            "tenflowers_checksum_bad_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let test_file = base.join("tampered.bin");
+        std::fs::write(&test_file, b"tampered").expect("test: write should succeed");
+
+        let result =
+            verify_checksum(&test_file, Some(TEST_SHA256)).expect("test: verification should run");
+        assert!(
+            !result,
+            "a file whose bytes do not match the expected hash must verify as false"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_verify_checksum_correct_crc32_returns_true() {
+        let base = std::env::temp_dir().join(format!(
+            "tenflowers_checksum_crc32_ok_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let test_file = base.join("known.bin");
+        std::fs::write(&test_file, b"test").expect("test: write should succeed");
+
+        // Compute the digest directly so this test is self-consistent without
+        // depending on a hand-copied known-answer constant.
+        let actual_hex =
+            compute_crc32_hex(&test_file).expect("test: crc32 computation should succeed");
+        assert_eq!(
+            actual_hex.len(),
+            8,
+            "CRC-32 hex digest must be 8 characters"
+        );
+
+        // Bare 8-hex digest is inferred as CRC-32.
+        let inferred =
+            verify_checksum(&test_file, Some(&actual_hex)).expect("test: verification should run");
+        assert!(inferred, "correct bare CRC-32 must verify as true");
+
+        // Explicit algorithm prefix is also accepted (any casing).
+        let prefixed = verify_checksum(&test_file, Some(&format!("crc32:{actual_hex}")))
+            .expect("test: verification should run");
+        assert!(prefixed, "correct prefixed CRC-32 must verify as true");
+
+        let upper = verify_checksum(&test_file, Some(&actual_hex.to_uppercase()))
+            .expect("test: verification should run");
+        assert!(upper, "case-insensitive CRC-32 must verify as true");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_verify_checksum_crc32_tampered_bytes_returns_false() {
+        let base = std::env::temp_dir().join(format!(
+            "tenflowers_checksum_crc32_bad_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+
+        // Digest of the *expected* content ("test"), computed independently
+        // of the tampered file below.
+        let expected_file = base.join("expected.bin");
+        std::fs::write(&expected_file, b"test").expect("test: write should succeed");
+        let expected_hex =
+            compute_crc32_hex(&expected_file).expect("test: crc32 computation should succeed");
+
+        // The actual file on disk holds different (tampered) bytes.
+        let tampered_file = base.join("tampered.bin");
+        std::fs::write(&tampered_file, b"tampered").expect("test: write should succeed");
+
+        let result = verify_checksum(&tampered_file, Some(&expected_hex))
+            .expect("test: verification should run");
+        assert!(
+            !result,
+            "a file whose bytes do not match the expected CRC-32 must verify as false"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_verify_checksum_unsupported_algorithm_is_error() {
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
+        let test_file = temp_dir.path().join("test.txt");
+        std::fs::write(&test_file, b"test").expect("test: write should succeed");
+
+        // md5 is valid hex but not supported by the pure-Rust hasher here.
+        let result = verify_checksum(&test_file, Some("md5:098f6bcd4621d373cade4e832627b4f6"));
+        assert!(
+            result.is_err(),
+            "unsupported algorithms must return an honest error, never Ok(true)"
+        );
     }
 }

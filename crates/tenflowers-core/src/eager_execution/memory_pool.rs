@@ -41,10 +41,11 @@ impl MemoryPool {
 
         // Try to find available block
         {
-            let mut blocks = self
-                .blocks
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut blocks = self.blocks.write().map_err(|_| {
+                crate::TensorError::invalid_operation_simple(
+                    "memory pool lock poisoned".to_string(),
+                )
+            })?;
             let device_blocks = blocks.entry(*device).or_default();
 
             for block in device_blocks.iter_mut() {
@@ -62,10 +63,11 @@ impl MemoryPool {
 
         // Add to pool
         {
-            let mut blocks = self
-                .blocks
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut blocks = self.blocks.write().map_err(|_| {
+                crate::TensorError::invalid_operation_simple(
+                    "memory pool lock poisoned".to_string(),
+                )
+            })?;
             let device_blocks = blocks.entry(*device).or_default();
             device_blocks.push(MemoryBlock {
                 ptr,
@@ -79,10 +81,9 @@ impl MemoryPool {
     }
 
     pub(super) fn deallocate(&self, device: &Device, ptr: *mut u8) -> Result<()> {
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            crate::TensorError::invalid_operation_simple("memory pool lock poisoned".to_string())
+        })?;
         if let Some(device_blocks) = blocks.get_mut(device) {
             for block in device_blocks.iter_mut() {
                 if block.ptr == ptr {
@@ -102,7 +103,7 @@ impl MemoryPool {
         let mut blocks = self
             .blocks
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for device_blocks in blocks.values_mut() {
             device_blocks.retain(|block| {
                 if block.available && now.duration_since(block.last_used) > threshold {
@@ -118,10 +119,9 @@ impl MemoryPool {
     /// Pre-warm memory pool by pre-allocating blocks of the required size
     pub(super) fn pre_warm(&self, device: &Device, size: usize, num_blocks: usize) -> Result<()> {
         let context = DEVICE_MANAGER.get_context(device)?;
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            crate::TensorError::invalid_operation_simple("memory pool lock poisoned".to_string())
+        })?;
         let device_blocks = blocks.entry(*device).or_default();
 
         // Pre-allocate the specified number of blocks

@@ -233,6 +233,61 @@ impl WasmTensorOps {
         Ok(())
     }
 
+    /// SIMD-optimized division.
+    ///
+    /// Follows standard IEEE-754 float division semantics, exactly like Rust's
+    /// native `f32` `/` operator: dividing by zero yields `+inf`/`-inf` (for a
+    /// nonzero numerator) or `NaN` (for `0.0 / 0.0`), rather than returning an
+    /// error. This is intentional and consistent with the other elementwise ops
+    /// in this module (`add_simd`, `mul_simd`, `sub_simd`), none of which
+    /// special-case edge values such as zero, infinity, or NaN either.
+    pub fn div_simd(&self, a: &[f32], b: &[f32], result: &mut [f32]) -> Result<()> {
+        if a.len() != b.len() || a.len() != result.len() {
+            return Err(TensorError::invalid_shape_simple(
+                "Array lengths must match".to_string(),
+            ));
+        }
+
+        #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+        {
+            self.div_simd_optimized(a, b, result)
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+        {
+            self.div_scalar(a, b, result)
+        }
+    }
+
+    /// SIMD-optimized division for WASM
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    fn div_simd_optimized(&self, a: &[f32], b: &[f32], result: &mut [f32]) -> Result<()> {
+        let len = a.len();
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let a_vec = v128_load(a.as_ptr().add(i) as *const v128);
+                let b_vec = v128_load(b.as_ptr().add(i) as *const v128);
+                let result_vec = f32x4_div(a_vec, b_vec);
+                v128_store(result.as_mut_ptr().add(i) as *mut v128, result_vec);
+            }
+        }
+
+        for i in simd_len..len {
+            result[i] = a[i] / b[i];
+        }
+
+        Ok(())
+    }
+
+    /// Scalar fallback for division
+    fn div_scalar(&self, a: &[f32], b: &[f32], result: &mut [f32]) -> Result<()> {
+        for (i, (a_val, b_val)) in a.iter().zip(b.iter()).enumerate() {
+            result[i] = a_val / b_val;
+        }
+        Ok(())
+    }
+
     /// SIMD-optimized activation functions
     pub fn relu_simd(&self, input: &[f32], result: &mut [f32]) -> Result<()> {
         if input.len() != result.len() {
@@ -462,7 +517,16 @@ impl WasmOpRegistry {
     }
 
     fn register_basic_ops(&mut self) {
-        let ops = WasmTensorOps::new();
+        // NOTE: each closure below constructs its own `WasmTensorOps::new()` rather
+        // than capturing one shared `ops` binding from this function's scope.
+        // `WasmTensorOps` is not `Clone`/`Copy` (it holds `Option<WebAssembly::Memory>`
+        // and `Option<Performance>` wasm-bindgen handles), and a `move` closure always
+        // captures by value, so a single shared binding can only be moved into the
+        // *first* closure that references it — every subsequent `.insert(...)` would
+        // fail to compile with "use of moved value". None of `add_simd`/`mul_simd`/
+        // `sub_simd`/`relu_simd`/`div_simd` read `self.memory` or `self.performance`,
+        // so constructing a fresh, independent instance per closure is behaviorally
+        // inert and simply sidesteps the move restriction.
 
         // Add operation with SIMD optimization
         self.operations.insert(
@@ -470,9 +534,10 @@ impl WasmOpRegistry {
             Box::new(move |a: &[f32], b: &[f32]| -> Result<Vec<f32>> {
                 if a.len() != b.len() {
                     return Err(TensorError::invalid_shape_simple(
-                        "Arrays must have same length",
+                        "Arrays must have same length".to_string(),
                     ));
                 }
+                let ops = WasmTensorOps::new();
                 let mut result = vec![0.0; a.len()];
                 ops.add_simd(a, b, &mut result)?;
                 Ok(result)
@@ -485,9 +550,10 @@ impl WasmOpRegistry {
             Box::new(move |a: &[f32], b: &[f32]| -> Result<Vec<f32>> {
                 if a.len() != b.len() {
                     return Err(TensorError::invalid_shape_simple(
-                        "Arrays must have same length",
+                        "Arrays must have same length".to_string(),
                     ));
                 }
+                let ops = WasmTensorOps::new();
                 let mut result = vec![0.0; a.len()];
                 ops.mul_simd(a, b, &mut result)?;
                 Ok(result)
@@ -500,11 +566,43 @@ impl WasmOpRegistry {
             Box::new(move |a: &[f32], b: &[f32]| -> Result<Vec<f32>> {
                 if a.len() != b.len() {
                     return Err(TensorError::invalid_shape_simple(
-                        "Arrays must have same length",
+                        "Arrays must have same length".to_string(),
                     ));
                 }
+                let ops = WasmTensorOps::new();
                 let mut result = vec![0.0; a.len()];
                 ops.sub_simd(a, b, &mut result)?;
+                Ok(result)
+            }),
+        );
+
+        // Divide operation with SIMD optimization. See `WasmTensorOps::div_simd`
+        // doc comment for division-by-zero semantics (standard IEEE-754 float
+        // behavior, not treated as an error).
+        self.operations.insert(
+            "div".to_string(),
+            Box::new(move |a: &[f32], b: &[f32]| -> Result<Vec<f32>> {
+                if a.len() != b.len() {
+                    return Err(TensorError::invalid_shape_simple(
+                        "Arrays must have same length".to_string(),
+                    ));
+                }
+                let ops = WasmTensorOps::new();
+                let mut result = vec![0.0; a.len()];
+                ops.div_simd(a, b, &mut result)?;
+                Ok(result)
+            }),
+        );
+
+        // ReLU activation. This is a unary op: the registry's closure type is
+        // fixed-binary (`Fn(&[f32], &[f32]) -> ...`), so the second argument is
+        // accepted but intentionally ignored, and relu is applied only to `a`.
+        self.operations.insert(
+            "relu".to_string(),
+            Box::new(move |a: &[f32], _b: &[f32]| -> Result<Vec<f32>> {
+                let ops = WasmTensorOps::new();
+                let mut result = vec![0.0; a.len()];
+                ops.relu_simd(a, &mut result)?;
                 Ok(result)
             }),
         );
@@ -514,7 +612,7 @@ impl WasmOpRegistry {
         if let Some(op) = self.operations.get(op_name) {
             op(a, b)
         } else {
-            Err(TensorError::unsupported_operation_simple(&format!(
+            Err(TensorError::unsupported_operation_simple(format!(
                 "Operation '{}' not supported in WASM",
                 op_name
             )))

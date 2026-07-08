@@ -38,15 +38,28 @@ pub struct UltraGradientConfig {
     pub optimization_threshold: usize,
 }
 
+/// A single gradient tensor serialized to raw element bytes plus its shape, so
+/// it can be faithfully reconstructed on a cache hit. `None` records a gradient
+/// slot that was absent (no gradient flowed to that source).
+#[derive(Debug, Clone)]
+struct SerializedGradient {
+    /// Shape of the original gradient tensor.
+    shape: Vec<usize>,
+    /// Raw little-endian element bytes (`bytemuck::cast_slice` of the data).
+    bytes: Vec<u8>,
+    /// Size in bytes of a single element of the original element type. Used to
+    /// reject deserialization against a mismatched element type.
+    element_size: usize,
+}
+
 /// Cached gradient computation for performance optimization
 #[derive(Debug, Clone)]
 struct CachedGradient {
     /// Gradient computation hash
-    #[allow(dead_code)]
     hash: u64,
-    /// Cached gradient tensors (as raw bytes to avoid type issues)
-    #[allow(dead_code)]
-    gradients: Vec<Vec<u8>>,
+    /// Cached gradients, one slot per source. Each slot is `Some` with the real
+    /// serialized gradient bytes, or `None` if no gradient existed for that source.
+    gradients: Vec<Option<SerializedGradient>>,
     /// Cache hit count for optimization
     hit_count: usize,
     /// Last access time for cache eviction
@@ -210,16 +223,16 @@ impl UltraGradientEngine {
     }
 
     /// Get comprehensive performance statistics
+    ///
+    /// Note: the timing fields (`total_time`, `gradient_compute_time`,
+    /// `memory_operation_time`) are NOT populated here — they are measured
+    /// per-invocation inside [`Self::compute_gradients_ultra`] and reported on its
+    /// returned [`UltraGradientResult`]. This accessor reports only the
+    /// cache-derived figures it can actually measure; the timing fields are left
+    /// at zero ("not measured") rather than filled with invented constants.
     pub fn get_performance_statistics(&self) -> Result<GradientPerformanceMetrics> {
-        // Aggregate performance statistics from profiler
+        // Aggregate performance statistics from the gradient cache.
         let mut metrics = GradientPerformanceMetrics::default();
-
-        if self.config.enable_performance_monitoring {
-            // Placeholder metrics since profiler API is simplified
-            metrics.total_time = std::time::Duration::from_millis(1);
-            metrics.gradient_compute_time = std::time::Duration::from_millis(1);
-            metrics.memory_operation_time = std::time::Duration::from_millis(1);
-        }
 
         // Get cache statistics
         if let Ok(cache) = self.gradient_cache.lock() {
@@ -294,42 +307,134 @@ impl UltraGradientEngine {
 
     fn try_get_from_cache<T>(&self, cache_key: &str) -> Result<Option<Vec<Option<Tensor<T>>>>>
     where
-        T: Clone + Default + Zero + One + Send + Sync + 'static + Float + FromPrimitive,
+        T: Clone
+            + Default
+            + Zero
+            + One
+            + Send
+            + Sync
+            + 'static
+            + Float
+            + FromPrimitive
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
-        if let Ok(mut cache) = self.gradient_cache.lock() {
-            if let Some(cached) = cache.get_mut(cache_key) {
-                cached.hit_count += 1;
-                cached.last_access = std::time::Instant::now();
+        let mut cache = match self.gradient_cache.lock() {
+            Ok(cache) => cache,
+            // A poisoned lock is not a cache miss; surface it honestly.
+            Err(_) => {
+                return Err(TensorError::compute_error_simple(
+                    "gradient cache lock poisoned".to_string(),
+                ))
+            }
+        };
 
-                // For simplicity, return None to avoid complex type conversion
-                // In a real implementation, we'd properly deserialize the cached gradients
-                return Ok(None);
+        let Some(cached) = cache.get_mut(cache_key) else {
+            return Ok(None);
+        };
+
+        // Defensive: confirm the stored entry was keyed by this exact key.
+        if cached.hash != self.hash_string(cache_key) {
+            return Ok(None);
+        }
+
+        cached.hit_count += 1;
+        cached.last_access = std::time::Instant::now();
+
+        let element_size = std::mem::size_of::<T>();
+        let mut gradients: Vec<Option<Tensor<T>>> = Vec::with_capacity(cached.gradients.len());
+
+        for slot in &cached.gradients {
+            match slot {
+                None => gradients.push(None),
+                Some(serialized) => {
+                    // Reject deserialization against an element type whose size
+                    // differs from the one the bytes were produced with.
+                    if serialized.element_size != element_size {
+                        return Err(TensorError::compute_error_simple(format!(
+                            "cached gradient element size {} does not match requested type size {}",
+                            serialized.element_size, element_size
+                        )));
+                    }
+                    if element_size == 0 || serialized.bytes.len() % element_size != 0 {
+                        return Err(TensorError::compute_error_simple(
+                            "cached gradient byte length is not a multiple of the element size"
+                                .to_string(),
+                        ));
+                    }
+                    let values: &[T] = bytemuck::cast_slice(&serialized.bytes);
+                    let tensor = Tensor::from_vec(values.to_vec(), &serialized.shape)?;
+                    gradients.push(Some(tensor));
+                }
             }
         }
 
-        Ok(None)
+        Ok(Some(gradients))
     }
 
-    fn cache_gradients<T>(&self, cache_key: &str, _gradients: &[Option<Tensor<T>>]) -> Result<()>
+    fn cache_gradients<T>(&self, cache_key: &str, gradients: &[Option<Tensor<T>>]) -> Result<()>
     where
-        T: Clone + Default + Zero + One + Send + Sync + 'static + Float + FromPrimitive,
+        T: Clone
+            + Default
+            + Zero
+            + One
+            + Send
+            + Sync
+            + 'static
+            + Float
+            + FromPrimitive
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
-        if let Ok(mut cache) = self.gradient_cache.lock() {
-            // For simplicity, store empty cache entry
-            // In a real implementation, we'd serialize the gradients
-            let cached_gradient = CachedGradient {
-                hash: self.hash_string(cache_key),
-                gradients: Vec::new(), // Simplified - would serialize actual gradients
-                hit_count: 1,
-                last_access: std::time::Instant::now(),
-            };
+        let element_size = std::mem::size_of::<T>();
 
-            cache.insert(cache_key.to_string(), cached_gradient);
-
-            // Cleanup old entries if cache is full
-            if cache.len() > self.config.gradient_cache_capacity {
-                self.cleanup_cache(&mut cache)?;
+        // Serialize the real gradients into raw element bytes plus shape so they
+        // can be reconstructed faithfully on a cache hit.
+        let mut serialized_gradients: Vec<Option<SerializedGradient>> =
+            Vec::with_capacity(gradients.len());
+        for gradient in gradients {
+            match gradient {
+                None => serialized_gradients.push(None),
+                Some(tensor) => {
+                    // Gradient data must be host-accessible to be serialized.
+                    let data = tensor.as_slice().ok_or_else(|| {
+                        TensorError::unsupported_operation_simple(
+                            "cannot cache a gradient whose data is not host-accessible \
+                             (move it to CPU before caching)"
+                                .to_string(),
+                        )
+                    })?;
+                    let bytes = bytemuck::cast_slice::<T, u8>(data).to_vec();
+                    serialized_gradients.push(Some(SerializedGradient {
+                        shape: tensor.shape().dims().to_vec(),
+                        bytes,
+                        element_size,
+                    }));
+                }
             }
+        }
+
+        let mut cache = match self.gradient_cache.lock() {
+            Ok(cache) => cache,
+            Err(_) => {
+                return Err(TensorError::compute_error_simple(
+                    "gradient cache lock poisoned".to_string(),
+                ))
+            }
+        };
+
+        let cached_gradient = CachedGradient {
+            hash: self.hash_string(cache_key),
+            gradients: serialized_gradients,
+            hit_count: 1,
+            last_access: std::time::Instant::now(),
+        };
+
+        cache.insert(cache_key.to_string(), cached_gradient);
+
+        // Cleanup old entries if cache is full
+        if cache.len() > self.config.gradient_cache_capacity {
+            self.cleanup_cache(&mut cache)?;
         }
 
         Ok(())
@@ -347,12 +452,29 @@ impl UltraGradientEngine {
     }
 
     fn collect_memory_stats(&self, memory_stats: &mut GradientMemoryStats) -> Result<()> {
-        // Collect memory statistics
-        memory_stats.total_memory_allocated = 1000000; // Placeholder
-        memory_stats.peak_memory_usage = 1200000; // Placeholder
-        memory_stats.memory_reused = 500000; // Placeholder
-        memory_stats.fragmentation_ratio = 0.1; // Low fragmentation
-        memory_stats.optimization_efficiency = 0.9; // High efficiency
+        // Pull REAL figures from the crate's gradient memory profiler rather than
+        // inventing constants. The profiler tracks live allocations, peak usage,
+        // pool reuse, fragmentation and pool efficiency.
+        let profiler = crate::memory_profiler::get_global_profiler();
+        let stats = {
+            let guard = profiler.lock().map_err(|_| {
+                TensorError::compute_error_simple(
+                    "gradient memory profiler lock poisoned".to_string(),
+                )
+            })?;
+            guard.get_stats()?
+        };
+
+        // Map measured quantities onto the gradient memory-stats fields.
+        // - peak_memory_usage: high-water mark of bytes in use.
+        // - total_memory_allocated: bytes currently allocated (live working set).
+        // - memory_reused: bytes served from buffer-pool reuse.
+        // - fragmentation_ratio / optimization_efficiency: as measured by the pool.
+        memory_stats.peak_memory_usage = stats.peak_memory as usize;
+        memory_stats.total_memory_allocated = stats.current_memory as usize;
+        memory_stats.memory_reused = stats.pool_statistics.pool_allocated as usize;
+        memory_stats.fragmentation_ratio = stats.fragmentation_ratio;
+        memory_stats.optimization_efficiency = stats.pool_statistics.efficiency_ratio;
 
         Ok(())
     }
@@ -559,5 +681,86 @@ mod tests {
 
         let insights = insights.expect("test: operation should succeed");
         assert!(!insights.recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_gradient_cache_round_trip_serializes_real_gradients() {
+        let engine = UltraGradientEngine::new(UltraGradientConfig::default())
+            .expect("test: engine creation should succeed");
+
+        // Real, distinct gradient tensors plus an absent slot.
+        let grad_a = Tensor::<f32>::from_vec(vec![1.0, -2.0, 3.5, 0.25], &[2, 2])
+            .expect("test: tensor construction should succeed");
+        let grad_b = Tensor::<f32>::from_vec(vec![10.0, 20.0, 30.0], &[3])
+            .expect("test: tensor construction should succeed");
+        let gradients: Vec<Option<Tensor<f32>>> =
+            vec![Some(grad_a.clone()), None, Some(grad_b.clone())];
+
+        let key = "test-key";
+        engine
+            .cache_gradients(key, &gradients)
+            .expect("test: caching real gradients should succeed");
+
+        let restored = engine
+            .try_get_from_cache::<f32>(key)
+            .expect("test: cache lookup should succeed")
+            .expect("test: a cached entry must be returned, not a silent None");
+
+        assert_eq!(restored.len(), 3);
+
+        // Slot 0: exact byte-faithful round trip.
+        let r0 = restored[0]
+            .as_ref()
+            .expect("test: slot 0 gradient should be present");
+        assert_eq!(r0.shape().dims(), &[2, 2]);
+        assert_eq!(
+            r0.as_slice().expect("test: host-accessible"),
+            grad_a.as_slice().expect("test: host-accessible")
+        );
+
+        // Slot 1: genuinely absent gradient stays absent.
+        assert!(restored[1].is_none());
+
+        // Slot 2: exact round trip with a different shape.
+        let r2 = restored[2]
+            .as_ref()
+            .expect("test: slot 2 gradient should be present");
+        assert_eq!(r2.shape().dims(), &[3]);
+        assert_eq!(
+            r2.as_slice().expect("test: host-accessible"),
+            grad_b.as_slice().expect("test: host-accessible")
+        );
+    }
+
+    #[test]
+    fn test_collect_memory_stats_are_not_fabricated_constants() {
+        let engine = UltraGradientEngine::new(UltraGradientConfig::default())
+            .expect("test: engine creation should succeed");
+
+        let mut stats = GradientMemoryStats::default();
+        engine
+            .collect_memory_stats(&mut stats)
+            .expect("test: collecting real memory stats should succeed");
+
+        // The previous implementation always reported these invented constants.
+        // Real profiler data must NOT reproduce that exact fabricated triple.
+        let is_old_fabrication = stats.total_memory_allocated == 1_000_000
+            && stats.peak_memory_usage == 1_200_000
+            && stats.memory_reused == 500_000
+            && (stats.fragmentation_ratio - 0.1).abs() < f64::EPSILON
+            && (stats.optimization_efficiency - 0.9).abs() < f64::EPSILON;
+        assert!(
+            !is_old_fabrication,
+            "memory stats must come from the real profiler, not hardcoded constants"
+        );
+
+        // And they must be internally consistent with the profiler's own readout.
+        let profiler = crate::memory_profiler::get_global_profiler();
+        let measured = {
+            let guard = profiler.lock().expect("test: profiler lock");
+            guard.get_stats().expect("test: profiler stats")
+        };
+        assert_eq!(stats.peak_memory_usage, measured.peak_memory as usize);
+        assert_eq!(stats.fragmentation_ratio, measured.fragmentation_ratio);
     }
 }

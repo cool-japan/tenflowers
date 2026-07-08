@@ -32,10 +32,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Simulate 5 layers; layers 0, 2, 4 will be checkpointed
     for layer_idx in 0..5_usize {
-        let should = manager.should_checkpoint(layer_idx, "relu", layer_idx);
+        let should = manager.should_checkpoint(layer_idx, "relu", layer_idx)?;
         println!("  layer {layer_idx}: checkpoint = {should}");
     }
-    println!("  Memory used by manager: {} bytes", manager.memory_usage());
+    println!(
+        "  Memory used by manager: {} bytes",
+        manager.memory_usage()?
+    );
     println!();
 
     // -------------------------------------------------------------------------

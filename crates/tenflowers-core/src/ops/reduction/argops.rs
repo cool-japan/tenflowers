@@ -265,7 +265,7 @@ where
 /// Returns (values, indices) where both have shape [..., k]
 pub fn topk<T>(x: &Tensor<T>, k: usize, axis: Option<i32>) -> Result<(Tensor<T>, Tensor<usize>)>
 where
-    T: Clone + Default + PartialOrd + Send + Sync + 'static,
+    T: Clone + Default + PartialOrd + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     match &x.storage {
         TensorStorage::Cpu(arr) => {

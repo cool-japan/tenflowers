@@ -1,5 +1,6 @@
 //! Vanilla RNN layer implementation
 
+use super::RnnNonlinearity;
 use crate::layers::Layer;
 use scirs2_core::num_traits::{Float, FromPrimitive, One, Zero};
 use scirs2_core::random::Random;
@@ -30,6 +31,7 @@ where
     batch_first: bool,
     dropout: f32,
     bidirectional: bool,
+    nonlinearity: RnnNonlinearity,
 
     // RNN parameters for each layer
     weight_ih: Vec<Tensor<T>>, // Input-to-hidden weights [input_size, hidden_size]
@@ -68,6 +70,7 @@ where
             batch_first: self.batch_first,
             dropout: self.dropout,
             bidirectional: self.bidirectional,
+            nonlinearity: self.nonlinearity,
             weight_ih: self.weight_ih.clone(),
             weight_hh: self.weight_hh.clone(),
             bias_ih: self.bias_ih.clone(),
@@ -103,6 +106,32 @@ where
         batch_first: bool,
         dropout: f32,
         bidirectional: bool,
+    ) -> Result<Self> {
+        Self::new_with_nonlinearity(
+            input_size,
+            hidden_size,
+            num_layers,
+            bias,
+            batch_first,
+            dropout,
+            bidirectional,
+            RnnNonlinearity::Tanh,
+        )
+    }
+
+    /// Construct an RNN with an explicit recurrent nonlinearity.
+    ///
+    /// [`RNN::new`] delegates here with [`RnnNonlinearity::Tanh`], preserving the
+    /// original 7-argument constructor for existing callers.
+    pub fn new_with_nonlinearity(
+        input_size: usize,
+        hidden_size: usize,
+        num_layers: usize,
+        bias: bool,
+        batch_first: bool,
+        dropout: f32,
+        bidirectional: bool,
+        nonlinearity: RnnNonlinearity,
     ) -> Result<Self> {
         if num_layers == 0 {
             return Err(TensorError::invalid_argument(
@@ -194,6 +223,7 @@ where
             batch_first,
             dropout,
             bidirectional,
+            nonlinearity,
             weight_ih,
             weight_hh,
             bias_ih,
@@ -219,6 +249,14 @@ where
             .collect();
 
         Tensor::from_data(values, shape)
+    }
+
+    /// Apply the configured recurrent nonlinearity to a pre-activation tensor.
+    fn apply_nonlinearity(&self, pre_activation: &Tensor<T>) -> Result<Tensor<T>> {
+        match self.nonlinearity {
+            RnnNonlinearity::Tanh => tenflowers_core::ops::activation::tanh(pre_activation),
+            RnnNonlinearity::Relu => tenflowers_core::ops::activation::relu(pre_activation),
+        }
     }
 
     /// Forward pass through the RNN
@@ -258,8 +296,8 @@ where
         let mut output = if self.batch_first {
             input.clone()
         } else {
-            // Transpose from [seq_len, batch, input_size] to [batch, seq_len, input_size]
-            input.transpose()?
+            // Reorder [seq_len, batch, input_size] -> [batch, seq_len, input_size].
+            Self::swap_time_batch(input)?
         };
 
         // Process each layer
@@ -273,11 +311,11 @@ where
             h = Self::update_hidden_slice(&h, &layer_hidden, start_idx, end_idx)?;
         }
 
-        // Transpose back if needed
+        // Reorder back to [seq_len, batch, hidden] if the caller used time-major input.
         let output = if self.batch_first {
             output
         } else {
-            output.transpose()?
+            Self::swap_time_batch(&output)?
         };
 
         Ok((output, h))
@@ -326,8 +364,8 @@ where
                 combined = tenflowers_core::ops::add(&combined, b_hh)?;
             }
 
-            // Apply activation function (tanh)
-            let h_t = tenflowers_core::ops::activation::tanh(&combined)?;
+            // Apply the configured nonlinearity (tanh or relu)
+            let h_t = self.apply_nonlinearity(&combined)?;
 
             outputs.push(h_t.clone());
             h_prev = h_t;
@@ -371,7 +409,7 @@ where
                     combined = tenflowers_core::ops::add(&combined, b_hh)?;
                 }
 
-                let h_t = tenflowers_core::ops::activation::tanh(&combined)?;
+                let h_t = self.apply_nonlinearity(&combined)?;
 
                 outputs_rev.push(h_t.clone());
                 h_prev_rev = h_t;
@@ -381,9 +419,12 @@ where
             outputs_rev.reverse();
             let output_rev = Self::stack_sequence_outputs(&outputs_rev)?;
 
-            // Concatenate forward and backward outputs
+            // Concatenate forward and backward outputs along the feature axis
+            // -> [batch, seq, 2 * hidden].
             let combined_output = Self::concatenate_tensors(&[&output, &output_rev], 2)?;
-            let combined_hidden = Self::concatenate_tensors(&[&h_prev, &h_prev_rev], 1)?;
+            // Stack the forward/backward final hidden states along a new direction axis
+            // -> [2, batch, hidden] so they map onto consecutive direction slots.
+            let combined_hidden = tenflowers_core::ops::stack(&[&h_prev, &h_prev_rev], 0)?;
 
             Ok((combined_output, combined_hidden))
         } else {
@@ -395,52 +436,134 @@ where
     fn extract_timestep(input: &Tensor<T>, timestep: usize) -> Result<Tensor<T>> {
         // Extract a specific timestep from [batch, seq, features] -> [batch, features]
         let input_shape = input.shape().dims();
+        if input_shape.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "extract_timestep expects a 3D tensor [batch, seq, features], got {input_shape:?}"
+            )));
+        }
         let batch_size = input_shape[0];
+        let seq_len = input_shape[1];
         let features = input_shape[2];
 
-        // Create slice indices
-        let mut result = Tensor::zeros(&[batch_size, features]);
+        if timestep >= seq_len {
+            return Err(TensorError::invalid_argument(format!(
+                "extract_timestep index {timestep} is out of range for sequence length {seq_len}"
+            )));
+        }
 
-        // This is a simplified implementation - in practice would use proper slicing
-        // For now, just return zeros as placeholder
-        Ok(result)
+        // Gather the [batch, features] slab for `timestep` along the time axis. Reading
+        // through `to_vec` materialises the elements in logical row-major order so this
+        // works regardless of the source tensor's memory layout, and `from_data` yields
+        // a fresh contiguous tensor for the recurrent math that follows.
+        let data = input.to_vec()?;
+        let mut step = Vec::with_capacity(batch_size * features);
+        for b in 0..batch_size {
+            let base = (b * seq_len + timestep) * features;
+            step.extend_from_slice(&data[base..base + features]);
+        }
+        Tensor::from_data(step, &[batch_size, features])
+    }
+
+    /// Reorder a 3D tensor by swapping the first two axes: `[a, b, c] -> [b, a, c]`.
+    ///
+    /// This produces a freshly-laid-out, contiguous tensor (unlike a lazy transpose
+    /// view), which keeps downstream operations that rely on standard-layout access
+    /// correct.
+    fn swap_time_batch(input: &Tensor<T>) -> Result<Tensor<T>> {
+        let dims = input.shape().dims();
+        if dims.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "swap_time_batch expects a 3D tensor, got {dims:?}"
+            )));
+        }
+        let (a, b, c) = (dims[0], dims[1], dims[2]);
+        let data = input.to_vec()?;
+
+        let mut reordered = vec![T::zero(); a * b * c];
+        for i in 0..a {
+            for j in 0..b {
+                let src = (i * b + j) * c;
+                let dst = (j * a + i) * c;
+                reordered[dst..dst + c].copy_from_slice(&data[src..src + c]);
+            }
+        }
+
+        Tensor::from_data(reordered, &[b, a, c])
     }
 
     fn stack_sequence_outputs(outputs: &[Tensor<T>]) -> Result<Tensor<T>> {
-        // Stack a sequence of tensors along a new dimension
+        // Stack a sequence of per-timestep [batch_size, hidden_size] tensors along a
+        // new time axis, producing the real [batch_size, seq_len, hidden_size] output.
         if outputs.is_empty() {
             return Err(TensorError::invalid_argument(
                 "Empty outputs sequence".to_string(),
             ));
         }
 
-        // Get the shape of individual outputs [batch_size, hidden_size]
-        let first_shape = outputs[0].shape().dims();
-        let batch_size = first_shape[0];
-        let hidden_size = first_shape[1];
+        let first = outputs[0].shape().dims();
+        if first.len() != 2 {
+            return Err(TensorError::invalid_argument(format!(
+                "stack_sequence_outputs expects per-step [batch, hidden] tensors, got {first:?}"
+            )));
+        }
+        let batch_size = first[0];
+        let hidden_size = first[1];
         let seq_len = outputs.len();
 
-        // Create output tensor with shape [batch_size, seq_len, hidden_size]
-        let mut result_data = Vec::new();
+        // Materialise every step in logical row-major order (layout independent).
+        let mut steps: Vec<Vec<T>> = Vec::with_capacity(seq_len);
+        for output in outputs {
+            let dims = output.shape().dims();
+            if dims.len() != 2 || dims[0] != batch_size || dims[1] != hidden_size {
+                return Err(TensorError::invalid_shape_simple(format!(
+                    "stack_sequence_outputs: inconsistent per-step shape {dims:?}, expected [{batch_size}, {hidden_size}]"
+                )));
+            }
+            steps.push(output.to_vec()?);
+        }
 
-        for batch_idx in 0..batch_size {
-            for seq_idx in 0..seq_len {
-                if let Some(output_data) = outputs[seq_idx].as_slice() {
-                    let start_idx = batch_idx * hidden_size;
-                    let end_idx = start_idx + hidden_size;
-                    result_data.extend_from_slice(&output_data[start_idx..end_idx]);
-                }
+        // Interleave into [batch, seq, hidden] row-major order -> contiguous output.
+        let mut result = Vec::with_capacity(batch_size * seq_len * hidden_size);
+        for b in 0..batch_size {
+            for step in steps.iter() {
+                let base = b * hidden_size;
+                result.extend_from_slice(&step[base..base + hidden_size]);
             }
         }
 
-        Tensor::from_vec(result_data, &[batch_size, seq_len, hidden_size])
+        Tensor::from_data(result, &[batch_size, seq_len, hidden_size])
     }
 
     fn extract_hidden_slice(hidden: &Tensor<T>, start: usize, end: usize) -> Result<Tensor<T>> {
-        // Extract a slice from the hidden state tensor
-        // This is a simplified implementation
+        // Extract a single layer/direction slice from the hidden state tensor
+        // [layers*dirs, batch, hidden] -> [batch, hidden].
         let shape = hidden.shape().dims();
-        Ok(Tensor::zeros(&[shape[1], shape[2]]))
+        if shape.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "extract_hidden_slice expects a 3D hidden state [layers*dirs, batch, hidden], got {shape:?}"
+            )));
+        }
+        if end != start + 1 {
+            return Err(TensorError::invalid_argument(format!(
+                "extract_hidden_slice only supports single-index slices (end == start + 1), got start={start}, end={end}"
+            )));
+        }
+        if end > shape[0] {
+            return Err(TensorError::invalid_argument(format!(
+                "extract_hidden_slice range [{start}, {end}) is out of range for {} layer/direction states",
+                shape[0]
+            )));
+        }
+        let batch_size = shape[1];
+        let hidden_size = shape[2];
+
+        // Layer/direction `start` occupies the contiguous logical block
+        // [start * batch * hidden, (start + 1) * batch * hidden) in [batch, hidden] order.
+        let data = hidden.to_vec()?;
+        let block = batch_size * hidden_size;
+        let base = start * block;
+        let slab = data[base..base + block].to_vec();
+        Tensor::from_data(slab, &[batch_size, hidden_size])
     }
 
     fn update_hidden_slice(
@@ -449,9 +572,50 @@ where
         start: usize,
         end: usize,
     ) -> Result<Tensor<T>> {
-        // Update a slice in the hidden state tensor
-        // This is a simplified implementation
-        Ok(hidden.clone())
+        // Write `new_slice` into the [start, end) layer/direction range of the hidden
+        // state tensor [layers*dirs, batch, hidden], returning the updated tensor.
+        // `new_slice` must have shape [end - start, batch, hidden].
+        let shape = hidden.shape().dims();
+        if shape.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "update_hidden_slice expects a 3D hidden state, got {shape:?}"
+            )));
+        }
+        let total = shape[0];
+        let batch_size = shape[1];
+        let hidden_size = shape[2];
+
+        if start > end || end > total {
+            return Err(TensorError::invalid_argument(format!(
+                "update_hidden_slice range [{start}, {end}) is invalid for {total} layer/direction states"
+            )));
+        }
+
+        let new_dims = new_slice.shape().dims();
+        if new_dims.len() != 3
+            || new_dims[0] != end - start
+            || new_dims[1] != batch_size
+            || new_dims[2] != hidden_size
+        {
+            return Err(TensorError::invalid_shape_simple(format!(
+                "update_hidden_slice new slice shape {new_dims:?} does not match expected [{}, {batch_size}, {hidden_size}]",
+                end - start
+            )));
+        }
+
+        // The layer/direction axis is outermost, so range [start, end) maps to the
+        // contiguous logical block [start * batch * hidden, end * batch * hidden).
+        // Reassemble left | new_slice | right -> fresh contiguous tensor.
+        let block = batch_size * hidden_size;
+        let hidden_data = hidden.to_vec()?;
+        let new_data = new_slice.to_vec()?;
+
+        let mut result = Vec::with_capacity(total * block);
+        result.extend_from_slice(&hidden_data[0..start * block]);
+        result.extend_from_slice(&new_data);
+        result.extend_from_slice(&hidden_data[end * block..total * block]);
+
+        Tensor::from_data(result, &[total, batch_size, hidden_size])
     }
 
     /// Helper function to concatenate tensors along a specified axis
@@ -466,44 +630,8 @@ where
             return Ok(tensors[0].clone());
         }
 
-        // Get shapes of all tensors
-        let shapes: Vec<_> = tensors.iter().map(|t| t.shape().dims()).collect();
-        let first_shape = shapes[0];
-
-        // Validate that all tensors have same number of dimensions
-        for (i, shape) in shapes.iter().enumerate() {
-            if shape.len() != first_shape.len() {
-                return Err(TensorError::invalid_argument(format!(
-                    "Tensor {} has {} dimensions, expected {}",
-                    i,
-                    shape.len(),
-                    first_shape.len()
-                )));
-            }
-        }
-
-        // Calculate output shape
-        let mut output_shape = first_shape.to_vec();
-        for shape in &shapes[1..] {
-            for (i, (&dim1, &dim2)) in first_shape.iter().zip(shape.iter()).enumerate() {
-                if i == axis {
-                    output_shape[i] += dim2;
-                } else if dim1 != dim2 {
-                    return Err(TensorError::invalid_argument(format!(
-                        "Dimension {} mismatch: {} vs {}",
-                        i, dim1, dim2
-                    )));
-                }
-            }
-        }
-
-        // Simple concatenation implementation
-        // For now, just return the first tensor as a placeholder
-        // In production, would properly concatenate along the specified axis
-        let total_elements = output_shape.iter().product::<usize>();
-        let output_data = vec![T::zero(); total_elements];
-
-        Tensor::from_data(output_data, &output_shape)
+        // Real concatenation along `axis` using the core manipulation op.
+        tenflowers_core::ops::concat(tensors, axis)
     }
 }
 
@@ -626,5 +754,203 @@ where
 
     fn clone_box(&self) -> Box<dyn Layer<T>> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ramp_tensor(shape: &[usize]) -> Tensor<f32> {
+        let n: usize = shape.iter().product();
+        let data: Vec<f32> = (0..n).map(|i| (i as f32) * 0.1 + 0.05).collect();
+        Tensor::from_data(data, shape).expect("failed to build test tensor")
+    }
+
+    // Read tensor elements in logical row-major order, independent of memory layout.
+    fn values(tensor: &Tensor<f32>) -> Vec<f32> {
+        tensor.to_vec().expect("to_vec")
+    }
+
+    fn has_nonzero(tensor: &Tensor<f32>) -> bool {
+        values(tensor).iter().any(|&v| v.abs() > 0.0)
+    }
+
+    #[test]
+    fn extract_timestep_returns_real_slice() {
+        // [batch = 2, seq = 3, feat = 2]
+        let input = ramp_tensor(&[2, 3, 2]);
+        let data = values(&input);
+
+        let x1 = RNN::<f32>::extract_timestep(&input, 1).expect("extract_timestep");
+        assert_eq!(x1.shape().dims(), &[2, 2]);
+
+        let got = values(&x1);
+        // batch 0, t = 1 -> flat indices [(0*3 + 1) * 2 ..] = data[2], data[3]
+        assert!((got[0] - data[2]).abs() < 1e-6);
+        assert!((got[1] - data[3]).abs() < 1e-6);
+        // batch 1, t = 1 -> flat indices [(1*3 + 1) * 2 ..] = data[8], data[9]
+        assert!((got[2] - data[8]).abs() < 1e-6);
+        assert!((got[3] - data[9]).abs() < 1e-6);
+        // A real slice of a ramp tensor cannot be all zeros.
+        assert!(has_nonzero(&x1));
+    }
+
+    #[test]
+    fn swap_time_batch_reorders_axes() {
+        // [seq = 2, batch = 3, feat = 2] -> [3, 2, 2]
+        let input = ramp_tensor(&[2, 3, 2]);
+        let data = values(&input);
+
+        let swapped = RNN::<f32>::swap_time_batch(&input).expect("swap_time_batch");
+        assert_eq!(swapped.shape().dims(), &[3, 2, 2]);
+
+        let got = values(&swapped);
+        // source (i = 0, j = 1) -> dest (j = 1, i = 0):
+        //   src flat (0*3 + 1) * 2 = data[2], data[3]
+        //   dst flat (1*2 + 0) * 2 = got[4], got[5]
+        assert!((got[4] - data[2]).abs() < 1e-6);
+        assert!((got[5] - data[3]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rnn_forward_produces_nonzero_output_with_correct_shape() {
+        let rnn = RNN::<f32>::new(3, 4, 1, true, true, 0.0, false).expect("rnn");
+        let input = ramp_tensor(&[2, 5, 3]);
+        let output = rnn.forward(&input).expect("forward");
+        assert_eq!(output.shape().dims(), &[2, 5, 4]);
+        assert!(has_nonzero(&output), "RNN output must not be all zeros");
+    }
+
+    #[test]
+    fn rnn_forward_with_hidden_propagates_state() {
+        let rnn = RNN::<f32>::new(3, 4, 1, true, true, 0.0, false).expect("rnn");
+        let input = ramp_tensor(&[2, 5, 3]);
+        let (output, hidden) = rnn.forward_with_hidden(&input, None).expect("forward");
+        assert_eq!(output.shape().dims(), &[2, 5, 4]);
+        assert_eq!(hidden.shape().dims(), &[1, 2, 4]);
+        assert!(has_nonzero(&output));
+        assert!(has_nonzero(&hidden));
+
+        // The returned final hidden state must equal the last timestep of the output,
+        // proving the per-timestep states were really assembled into the output.
+        let last = RNN::<f32>::extract_timestep(&output, 4).expect("last step"); // [2, 4]
+        let hidden2d = hidden.squeeze(Some(&[0])).expect("squeeze"); // [2, 4]
+        let a = values(&last);
+        let b = values(&hidden2d);
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert!(
+                (x - y).abs() < 1e-5,
+                "final hidden must match last output step"
+            );
+        }
+    }
+
+    #[test]
+    fn rnn_multilayer_forward_nonzero() {
+        let rnn = RNN::<f32>::new(3, 4, 2, true, true, 0.0, false).expect("rnn");
+        let input = ramp_tensor(&[2, 5, 3]);
+        let (output, hidden) = rnn.forward_with_hidden(&input, None).expect("forward");
+        assert_eq!(output.shape().dims(), &[2, 5, 4]);
+        assert_eq!(hidden.shape().dims(), &[2, 2, 4]);
+        assert!(has_nonzero(&output));
+        assert!(has_nonzero(&hidden));
+    }
+
+    #[test]
+    fn rnn_bidirectional_forward_shape_and_nonzero() {
+        let rnn = RNN::<f32>::new(3, 4, 1, true, true, 0.0, true).expect("rnn");
+        let input = ramp_tensor(&[2, 5, 3]);
+        let (output, hidden) = rnn.forward_with_hidden(&input, None).expect("forward");
+        // Bidirectional doubles the hidden feature dimension in the output.
+        assert_eq!(output.shape().dims(), &[2, 5, 8]);
+        assert_eq!(hidden.shape().dims(), &[2, 2, 4]);
+        assert!(has_nonzero(&output));
+        assert!(has_nonzero(&hidden));
+    }
+
+    #[test]
+    fn rnn_time_major_forward_shape_and_nonzero() {
+        // batch_first = false path must also yield a real, correctly shaped result.
+        let rnn = RNN::<f32>::new(3, 4, 1, true, false, 0.0, false).expect("rnn");
+        // time-major input: [seq = 5, batch = 2, input = 3]
+        let input = ramp_tensor(&[5, 2, 3]);
+        let output = rnn.forward(&input).expect("forward");
+        assert_eq!(output.shape().dims(), &[5, 2, 4]);
+        assert!(has_nonzero(&output));
+    }
+
+    /// Hand-set weights so the single-step pre-activation is `[-1.0, 1.5]` and
+    /// prove the nonlinearity branch is real: ReLU zeroes the negative entry
+    /// exactly, whereas Tanh (same weights) yields a strictly negative entry.
+    fn set_single_step_weights(rnn: &mut RNN<f32>) {
+        let mut params = rnn.parameters_mut();
+        // Order for 1 layer with bias: [w_ih, w_hh, b_ih, b_hh].
+        *params[0] = Tensor::from_data(vec![1.0, 1.0], &[1, 2]).expect("w_ih");
+        *params[1] = Tensor::from_data(vec![0.0, 0.0, 0.0, 0.0], &[2, 2]).expect("w_hh");
+        *params[2] = Tensor::from_data(vec![-2.0, 0.5], &[2]).expect("b_ih");
+        *params[3] = Tensor::from_data(vec![0.0, 0.0], &[2]).expect("b_hh");
+    }
+
+    #[test]
+    fn rnn_relu_nonlinearity_zeroes_negatives() {
+        // input_size = 1, hidden_size = 2, single layer, single timestep.
+        let mut relu_rnn = RNN::<f32>::new_with_nonlinearity(
+            1,
+            2,
+            1,
+            true,
+            true,
+            0.0,
+            false,
+            RnnNonlinearity::Relu,
+        )
+        .expect("relu rnn");
+        set_single_step_weights(&mut relu_rnn);
+
+        // batch_first input: [batch = 1, seq = 1, feat = 1]; h_0 defaults to zeros.
+        let input = Tensor::from_data(vec![1.0], &[1, 1, 1]).expect("input");
+        let relu_out = relu_rnn.forward(&input).expect("relu forward");
+        let relu_vals = values(&relu_out);
+        assert_eq!(relu_vals.len(), 2);
+        // relu([-1.0, 1.5]) = [0.0, 1.5].
+        assert!(
+            (relu_vals[0] - 0.0).abs() < 1e-6,
+            "relu must zero the negative pre-activation, got {}",
+            relu_vals[0]
+        );
+        assert!(
+            (relu_vals[1] - 1.5).abs() < 1e-5,
+            "relu must pass the positive pre-activation, got {}",
+            relu_vals[1]
+        );
+        assert!(
+            relu_vals.iter().all(|&v| v >= 0.0),
+            "relu output must be non-negative"
+        );
+
+        // Same weights with Tanh must produce a strictly negative first entry,
+        // proving the branch genuinely changes the computation.
+        let mut tanh_rnn = RNN::<f32>::new_with_nonlinearity(
+            1,
+            2,
+            1,
+            true,
+            true,
+            0.0,
+            false,
+            RnnNonlinearity::Tanh,
+        )
+        .expect("tanh rnn");
+        set_single_step_weights(&mut tanh_rnn);
+        let tanh_out = tanh_rnn.forward(&input).expect("tanh forward");
+        let tanh_vals = values(&tanh_out);
+        // tanh(-1.0) ~= -0.7616 < 0.
+        assert!(
+            tanh_vals[0] < 0.0,
+            "tanh must produce a negative entry where relu produced 0, got {}",
+            tanh_vals[0]
+        );
     }
 }

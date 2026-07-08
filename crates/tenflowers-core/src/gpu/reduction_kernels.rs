@@ -583,15 +583,24 @@ where
         .ok();
 
     if let Ok(Ok(())) = pollster::block_on(receiver) {
-        let data = buffer_slice.get_mapped_range();
-        let result_value: T = *bytemuck::from_bytes::<T>(&data[..std::mem::size_of::<T>()]);
-        drop(data);
-        staging_buffer.unmap();
+        match buffer_slice.get_mapped_range() {
+            Ok(data) => {
+                let result_value: T = *bytemuck::from_bytes::<T>(&data[..std::mem::size_of::<T>()]);
+                drop(data);
+                staging_buffer.unmap();
 
-        // Create result tensor
-        use scirs2_core::ndarray::Array;
-        let result_array = Array::from_elem(vec![], result_value).into_dyn();
-        Ok(Tensor::from_array(result_array))
+                // Create result tensor
+                use scirs2_core::ndarray::Array;
+                let result_array = Array::from_elem(vec![], result_value).into_dyn();
+                Ok(Tensor::from_array(result_array))
+            }
+            Err(e) => Err(TensorError::gpu_error(
+                "GPU reduction",
+                &format!("Failed to map GPU result buffer: {:?}", e),
+                Some(input.device().id()),
+                false,
+            )),
+        }
     } else {
         Err(TensorError::gpu_error(
             "GPU reduction",

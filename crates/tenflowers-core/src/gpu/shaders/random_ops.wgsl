@@ -2,7 +2,7 @@
 // These kernels implement various random number generation algorithms
 
 @group(0) @binding(0) var<storage, read_write> output: array<f32>;
-@group(0) @binding(1) var<storage, read> params: array<f32>; // [mean, std, seed_low, seed_high]
+@group(0) @binding(1) var<storage, read> params: array<f32>; // [mean, std_dev, seed_low, seed_high]
 
 // Simple Linear Congruential Generator state
 var<private> rng_state: u32;
@@ -25,7 +25,7 @@ fn next_f32() -> f32 {
 
 // Box-Muller transform for normal distribution
 // Returns two independent normal samples
-fn box_muller(mean: f32, std: f32) -> vec2<f32> {
+fn box_muller(mean: f32, std_dev: f32) -> vec2<f32> {
     let u1 = next_f32();
     let u2 = next_f32();
     
@@ -38,7 +38,7 @@ fn box_muller(mean: f32, std: f32) -> vec2<f32> {
     let z0 = r * cos(theta);
     let z1 = r * sin(theta);
     
-    return vec2<f32>(mean + std * z0, mean + std * z1);
+    return vec2<f32>(mean + std_dev * z0, mean + std_dev * z1);
 }
 
 // Normal distribution random number generation
@@ -52,7 +52,7 @@ fn random_normal(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
     
     let mean = params[0];
-    let std = params[1];
+    let std_dev = params[1];
     let seed_low = bitcast<u32>(params[2]);
     let seed_high = bitcast<u32>(params[3]);
     let seed = seed_low ^ (seed_high << 16u);
@@ -65,7 +65,7 @@ fn random_normal(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     if (is_first && (index + 1u) < total_elements) {
         // Generate pair of normal samples
-        let samples = box_muller(mean, std);
+        let samples = box_muller(mean, std_dev);
         output[index] = samples.x;
         output[index + 1u] = samples.y;
     } else if (!is_first) {
@@ -73,7 +73,7 @@ fn random_normal(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     } else {
         // Odd number of elements, generate single sample
-        let samples = box_muller(mean, std);
+        let samples = box_muller(mean, std_dev);
         output[index] = samples.x;
     }
 }

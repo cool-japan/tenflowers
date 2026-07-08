@@ -11,7 +11,28 @@ use std::sync::Arc;
 use tenflowers_core::Tensor;
 use tenflowers_neural::layers::{Dense, Layer};
 
-/// Python binding for Parameter (trainable tensor)
+/// A trainable parameter tensor (wraps a `Tensor<f32>` with a gradient flag).
+///
+/// `PyParameter` is the leaf node of the autograd graph — it represents a
+/// single learnable weight or bias.  When `requires_grad` is `True` (the
+/// default), gradient information is accumulated during the backward pass.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// w = tf.PyParameter(tf.ones([128, 64]))         # requires_grad=True by default
+/// b = tf.PyParameter(tf.zeros([64]), requires_grad=True)
+///
+/// print(w.shape())          # [128, 64]
+/// print(w.size())           # 8192
+/// print(w.requires_grad())  # True
+/// print(w.dtype())          # "f32"
+/// print(w.device())         # "cpu"
+///
+/// w.zero_grad()   # clear accumulated gradient buffer (no-op in v0.1.x)
+/// ```
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyParameter {
@@ -21,7 +42,14 @@ pub struct PyParameter {
 
 #[pymethods]
 impl PyParameter {
+    /// Construct a new parameter from an existing tensor.
+    ///
+    /// # Arguments
+    ///
+    /// * `tensor`       — initial value (typically from `tf.zeros` / `tf.ones` / `tf.rand`).
+    /// * `requires_grad` — whether to accumulate gradients (default: `True`).
     #[new]
+    #[pyo3(signature = (tensor, requires_grad=None))]
     pub fn new(tensor: PyTensor, requires_grad: Option<bool>) -> Self {
         Self {
             tensor: tensor.tensor,
@@ -96,7 +124,38 @@ impl PyParameter {
     }
 }
 
-/// Python binding for Dense layer
+/// A fully-connected (linear + optional activation) layer.
+///
+/// `PyDense` wraps a `tenflowers_neural::layers::Dense<f32>` and exposes it
+/// to Python with PyTorch-style hooks, training/eval mode, and parameter
+/// introspection.
+///
+/// Weights are initialised with Xavier (Glorot) uniform initialisation.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// # Create a 128→64 ReLU layer
+/// layer = tf.PyDense(128, 64, use_bias=True, activation='relu')
+/// x   = tf.ones([4, 128])
+/// out = layer.forward(x)
+/// print(out.shape())           # [4, 64]
+/// print(layer.input_dim())     # 128
+/// print(layer.output_dim())    # 64
+/// print(layer.has_bias())      # True
+/// print(layer.activation())    # "relu"
+/// print(layer.num_parameters()) # 128*64 + 64
+///
+/// # Training / eval mode
+/// layer.set_training(True)
+/// layer.set_training(False)
+///
+/// # Hook registration
+/// h = layer.register_forward_hook(lambda inp, out: None)
+/// h.remove()
+/// ```
 #[pyclass]
 #[derive(Debug)]
 pub struct PyDense {
@@ -117,7 +176,18 @@ impl Clone for PyDense {
 
 #[pymethods]
 impl PyDense {
+    /// Construct a dense (fully-connected) layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_dim`  — number of input features.
+    /// * `output_dim` — number of output features.
+    /// * `use_bias`   — whether to include a bias term (default: `True`).
+    /// * `activation` — optional activation name, e.g. `"relu"`, `"sigmoid"`, `"tanh"`.
+    ///
+    /// Weights are Xavier-uniform initialised; biases are zero-initialised.
     #[new]
+    #[pyo3(signature = (input_dim, output_dim, use_bias=None, activation=None))]
     pub fn new(
         input_dim: usize,
         output_dim: usize,
@@ -284,7 +354,38 @@ impl PyDense {
     }
 }
 
-/// PyTorch-style Sequential model for neural networks
+/// An ordered container of [`PyDense`] layers that are executed sequentially.
+///
+/// `PySequential` chains multiple dense layers so that the output of layer `i`
+/// becomes the input of layer `i+1`.  It supports the same hook API as
+/// `PyDense` and exposes aggregate parameter/training utilities.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+///
+/// model = tf.PySequential()
+/// model.add(tf.PyDense(784, 256, activation='relu'))
+/// model.add(tf.PyDense(256, 128, activation='relu'))
+/// model.add(tf.PyDense(128, 10,  activation=None))
+///
+/// model.train()          # set all layers to training mode
+/// out = model.forward(tf.ones([8, 784]))
+/// print(out.shape())     # [8, 10]
+/// print(model.num_parameters())
+///
+/// model.eval()           # switch to inference mode
+/// out = model.forward(tf.zeros([1, 784]))
+///
+/// # Layer access
+/// l0 = model.get_layer(0)
+/// model.insert(1, tf.PyDense(256, 256, activation='relu'))
+/// model.remove(1)
+/// model.clear()
+///
+/// print(model.is_empty())  # True
+/// ```
 #[pyclass]
 #[derive(Debug)]
 pub struct PySequential {
@@ -360,6 +461,7 @@ impl PySequential {
     }
 
     /// Set training mode for all layers
+    #[pyo3(signature = (training=None))]
     pub fn train(&mut self, training: Option<bool>) {
         let training_mode = training.unwrap_or(true);
         for layer in &mut self.layers {
@@ -473,24 +575,28 @@ impl Default for PySequential {
 
 /// Create a linear layer (alias for Dense)
 #[pyfunction]
+#[pyo3(signature = (input_dim, output_dim, bias=None))]
 pub fn linear(input_dim: usize, output_dim: usize, bias: Option<bool>) -> PyDense {
     PyDense::new(input_dim, output_dim, bias, None)
 }
 
 /// Create a ReLU dense layer
 #[pyfunction]
+#[pyo3(signature = (input_dim, output_dim, bias=None))]
 pub fn relu_linear(input_dim: usize, output_dim: usize, bias: Option<bool>) -> PyDense {
     PyDense::new(input_dim, output_dim, bias, Some("relu".to_string()))
 }
 
 /// Create a sigmoid dense layer
 #[pyfunction]
+#[pyo3(signature = (input_dim, output_dim, bias=None))]
 pub fn sigmoid_linear(input_dim: usize, output_dim: usize, bias: Option<bool>) -> PyDense {
     PyDense::new(input_dim, output_dim, bias, Some("sigmoid".to_string()))
 }
 
 /// Create a tanh dense layer
 #[pyfunction]
+#[pyo3(signature = (input_dim, output_dim, bias=None))]
 pub fn tanh_linear(input_dim: usize, output_dim: usize, bias: Option<bool>) -> PyDense {
     PyDense::new(input_dim, output_dim, bias, Some("tanh".to_string()))
 }

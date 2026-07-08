@@ -565,25 +565,47 @@ impl NumericalChecker {
         }
     }
 
-    /// Property-based gradient checking: test gradient at multiple random points
-    pub fn property_test<F>(&mut self, x: &Tensor<f32>, f: F) -> Result<Vec<GradientCheckResult>>
+    /// Property-based gradient checking: test analytical gradients against numerical
+    /// gradients at multiple random points.
+    ///
+    /// This validates that the analytical gradient function `f_grad` agrees with the
+    /// finite-difference (numerical) gradient of the forward function `f` over a set of
+    /// randomly sampled inputs sharing the same shape as `x`.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Reference tensor used only to determine the shape of the random samples.
+    /// * `f` - Forward function `y = f(x)`; its finite-difference gradient is the reference.
+    /// * `f_grad` - Analytical gradient function `g = ∂f/∂x` to be validated.
+    ///
+    /// # Returns
+    ///
+    /// One [`GradientCheckResult`] per sampled point, comparing the analytical gradient
+    /// against the numerical gradient at that point.
+    pub fn property_test<F, G>(
+        &mut self,
+        x: &Tensor<f32>,
+        f: F,
+        f_grad: G,
+    ) -> Result<Vec<GradientCheckResult>>
     where
         F: Fn(&Tensor<f32>) -> Result<Tensor<f32>>,
+        G: Fn(&Tensor<f32>) -> Result<Tensor<f32>>,
     {
         let mut results = Vec::with_capacity(self.config.num_samples);
 
         for _ in 0..self.config.num_samples {
-            // Generate random perturbation
+            // Sample a random input point with the same shape as `x`.
             let shape = x.shape().dims();
             let random_tensor = self.generate_random_tensor(shape)?;
 
-            // Compute numerical gradient
+            // Compute the numerical (finite-difference) gradient at this point.
             let epsilon = self.config.epsilon();
             let numerical = self.compute_numerical_gradient(&random_tensor, &f, epsilon)?;
 
-            // For property testing, we'd need the analytical gradient
-            // This is a placeholder - in practice, this would come from the actual gradient computation
-            let analytical = numerical.clone(); // Placeholder
+            // Compute the analytical gradient at the SAME point and compare against it.
+            // This is the real validation: analytical vs. numerical at identical inputs.
+            let analytical = f_grad(&random_tensor)?;
 
             let result = self.compare_gradients(&analytical, &numerical)?;
             results.push(result);
@@ -592,21 +614,15 @@ impl NumericalChecker {
         Ok(results)
     }
 
-    /// Generate random tensor with given shape
+    /// Generate a random tensor with the given shape.
+    ///
+    /// Samples each element uniformly from `[-1, 1)` using the checker's seeded
+    /// `scirs2_core::random::Random` generator, ensuring reproducibility when a seed
+    /// is configured (per the SCIRS2 policy — no hand-rolled RNGs).
     fn generate_random_tensor(&mut self, shape: &[usize]) -> Result<Tensor<f32>> {
-        // Use scirs2_autograd's ndarray with random module
-        use scirs2_core::ndarray;
-        use scirs2_core::ndarray::Array;
-
         let size: usize = shape.iter().product();
-        // Generate simple random data using a simple LCG for now
         let data: Vec<f32> = (0..size)
-            .enumerate()
-            .map(|(i, _)| {
-                // Simple linear congruential generator for reproducibility
-                let seed = (i * 1103515245 + 12345) % 2147483648;
-                ((seed as f64 / 2147483648.0) * 2.0 - 1.0) as f32
-            })
+            .map(|_| self.rng.random_range(-1.0_f32..1.0_f32))
             .collect();
 
         let array =
@@ -671,5 +687,89 @@ mod tests {
         let display = format!("{}", result);
         assert!(display.contains("PASS"));
         assert!(display.contains("Max Error"));
+    }
+
+    #[test]
+    fn test_property_test_correct_analytical_passes() {
+        // Use f(x) = 2x (linear), whose exact analytical gradient is the constant 2.
+        //
+        // A linear function has zero truncation error in central difference:
+        // central_diff(2x) = (2(x+ε) - 2(x-ε)) / (2ε) = 4ε / 2ε = 2 exactly.
+        //
+        // In f32 arithmetic, rounding error ≈ |f(x)| * eps_mach / ε.
+        // f32 machine epsilon ≈ 1.19e-7.  With |f(x)| ≤ 2 (inputs from [-1,1)):
+        //   rounding error ≈ 2 * 1.19e-7 / 5e-3 ≈ 4.8e-5  → well under atol=1e-3.
+        // We use ε=5e-3 (near optimal for f32 central difference: eps_mach^(1/3) ≈ 4.9e-3)
+        // to keep rounding error safely below atol while truncation error is exactly 0.
+        let config = CheckerConfig {
+            num_samples: 4,
+            seed: Some(7),
+            epsilon: Some(5e-3), // f32-safe epsilon; default 1e-6 is too close to f32 noise floor
+            rtol: 1e-2,
+            atol: 1e-3,
+            ..Default::default()
+        };
+        let mut checker = NumericalChecker::new(config);
+
+        let x = Tensor::<f32>::ones(&[3]);
+
+        // f(t) = 2t — computed as t + t to exercise the ops path, gradient is constant 2.
+        let f = |t: &Tensor<f32>| tenflowers_core::ops::add(t, t);
+        // Analytical gradient of 2t is the constant tensor [2, 2, 2].
+        let f_grad = |t: &Tensor<f32>| {
+            use scirs2_core::ndarray::ArrayD;
+            let ones = ArrayD::from_elem(t.shape().dims().to_vec(), 2.0_f32);
+            Ok::<_, tenflowers_core::TensorError>(Tensor::from_array(ones))
+        };
+
+        let results = checker
+            .property_test(&x, f, f_grad)
+            .expect("property_test should succeed");
+        assert_eq!(results.len(), 4);
+        for result in &results {
+            assert!(
+                result.is_valid,
+                "analytical gradient of f(x)=2x (constant 2) must validate against \
+                 the numerical gradient; max_error={:.3e}, mean_error={:.3e}",
+                result.max_error, result.mean_error
+            );
+        }
+    }
+
+    #[test]
+    fn test_property_test_wrong_analytical_fails() {
+        // Provide a deliberately WRONG analytical gradient (constant 5 instead of 2
+        // for f(x) = 2x). This proves the comparison is real: the old fabricated
+        // `analytical = numerical.clone()` would always pass, but a genuine comparison
+        // must reject a gradient that is 2.5× too large.
+        // Using the same f32-safe epsilon=5e-3 so the numerical baseline is accurate.
+        let config = CheckerConfig {
+            num_samples: 4,
+            seed: Some(11),
+            epsilon: Some(5e-3),
+            rtol: 1e-2,
+            atol: 1e-3,
+            ..Default::default()
+        };
+        let mut checker = NumericalChecker::new(config);
+
+        let x = Tensor::<f32>::ones(&[3]);
+        let f = |t: &Tensor<f32>| tenflowers_core::ops::add(t, t);
+        // Wrong gradient: 5 instead of 2. Absolute error 3 >> atol=1e-4, so every
+        // sample will be rejected by at least 95% of its elements.
+        let wrong_grad = |t: &Tensor<f32>| {
+            use scirs2_core::ndarray::ArrayD;
+            let fives = ArrayD::from_elem(t.shape().dims().to_vec(), 5.0_f32);
+            Ok::<_, tenflowers_core::TensorError>(Tensor::from_array(fives))
+        };
+
+        let results = checker
+            .property_test(&x, f, wrong_grad)
+            .expect("property_test should succeed");
+        assert!(
+            results.iter().any(|r| !r.is_valid),
+            "gradient constant 5 for f(x)=2x (true gradient 2) must be rejected; \
+             absolute error 3 >> atol=1e-4"
+        );
     }
 }

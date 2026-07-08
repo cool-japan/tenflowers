@@ -1382,12 +1382,14 @@ impl MmRegmean {
             for v in aug[col].iter_mut() {
                 *v *= inv_pivot;
             }
+            // `aug[col]` is loop-invariant across the `row` loop (only `aug[row]`
+            // is mutated and `row != col`); clone the pivot row once per column.
+            let pivot_row: Vec<f64> = aug[col].clone();
             for row in 0..n {
                 if row == col {
                     continue;
                 }
                 let factor = aug[row][col];
-                let pivot_row: Vec<f64> = aug[col].clone();
                 for (a, &p) in aug[row].iter_mut().zip(pivot_row.iter()) {
                     *a -= factor * p;
                 }

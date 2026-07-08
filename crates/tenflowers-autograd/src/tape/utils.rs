@@ -375,7 +375,7 @@ where
                     operation: "accumulate_gradient".to_string(),
                     expected: format!("{:?}", existing_grad.shape().dims()),
                     got: format!("{:?}", grad.shape().dims()),
-                    context: Some(tenflowers_core::error::ErrorContext {
+                    context: Some(Box::new(tenflowers_core::error::ErrorContext {
                         input_shapes: vec![
                             existing_grad.shape().dims().to_vec(),
                             grad.shape().dims().to_vec(),
@@ -386,7 +386,7 @@ where
                         thread_id: "main".to_string(),
                         stack_trace: None,
                         metadata: std::collections::HashMap::new(),
-                    }),
+                    })),
                 });
             }
 
@@ -396,7 +396,7 @@ where
                     operation: "gradient_accumulation".to_string(),
                     details: format!("Failed to accumulate gradients for tensor {}: {}", id, e),
                     retry_possible: false,
-                    context: Some(tenflowers_core::error::ErrorContext {
+                    context: Some(Box::new(tenflowers_core::error::ErrorContext {
                         input_shapes: vec![grad.shape().dims().to_vec()],
                         input_devices: vec![],
                         input_dtypes: vec![],
@@ -404,7 +404,7 @@ where
                         thread_id: "main".to_string(),
                         stack_trace: None,
                         metadata: std::collections::HashMap::new(),
-                    }),
+                    })),
                 }
             })?;
         }

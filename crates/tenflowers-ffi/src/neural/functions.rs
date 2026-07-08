@@ -16,11 +16,19 @@ use std::sync::Arc;
 #[pyfunction]
 pub fn relu(input: &PyTensor) -> PyResult<PyTensor> {
     match tenflowers_core::ops::relu(&input.tensor) {
-        Ok(tensor) => Ok(PyTensor {
-            tensor: Arc::new(tensor),
-            requires_grad: input.requires_grad,
-            is_pinned: input.is_pinned,
-        }),
+        Ok(tensor) => {
+            let result = PyTensor {
+                tensor: Arc::new(tensor),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            };
+            crate::implicit_autograd::record_and_link_unary(
+                crate::implicit_autograd::UnaryOpKind::Relu,
+                input,
+                &result,
+            )?;
+            Ok(result)
+        }
         Err(e) => Err(PyRuntimeError::new_err(format!("ReLU failed: {}", e))),
     }
 }
@@ -29,11 +37,19 @@ pub fn relu(input: &PyTensor) -> PyResult<PyTensor> {
 #[pyfunction]
 pub fn sigmoid(input: &PyTensor) -> PyResult<PyTensor> {
     match tenflowers_core::ops::sigmoid(&input.tensor) {
-        Ok(tensor) => Ok(PyTensor {
-            tensor: Arc::new(tensor),
-            requires_grad: input.requires_grad,
-            is_pinned: input.is_pinned,
-        }),
+        Ok(tensor) => {
+            let result = PyTensor {
+                tensor: Arc::new(tensor),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            };
+            crate::implicit_autograd::record_and_link_unary(
+                crate::implicit_autograd::UnaryOpKind::Sigmoid,
+                input,
+                &result,
+            )?;
+            Ok(result)
+        }
         Err(e) => Err(PyRuntimeError::new_err(format!("Sigmoid failed: {}", e))),
     }
 }
@@ -42,11 +58,19 @@ pub fn sigmoid(input: &PyTensor) -> PyResult<PyTensor> {
 #[pyfunction]
 pub fn tanh(input: &PyTensor) -> PyResult<PyTensor> {
     match tenflowers_core::ops::tanh(&input.tensor) {
-        Ok(tensor) => Ok(PyTensor {
-            tensor: Arc::new(tensor),
-            requires_grad: input.requires_grad,
-            is_pinned: input.is_pinned,
-        }),
+        Ok(tensor) => {
+            let result = PyTensor {
+                tensor: Arc::new(tensor),
+                requires_grad: input.requires_grad,
+                is_pinned: input.is_pinned,
+            };
+            crate::implicit_autograd::record_and_link_unary(
+                crate::implicit_autograd::UnaryOpKind::Tanh,
+                input,
+                &result,
+            )?;
+            Ok(result)
+        }
         Err(e) => Err(PyRuntimeError::new_err(format!("Tanh failed: {}", e))),
     }
 }
@@ -66,6 +90,7 @@ pub fn gelu(input: &PyTensor) -> PyResult<PyTensor> {
 
 /// Softmax activation function
 #[pyfunction]
+#[pyo3(signature = (input, dim=None))]
 pub fn softmax(input: &PyTensor, dim: Option<i32>) -> PyResult<PyTensor> {
     let axis = dim.unwrap_or(-1);
     match tenflowers_core::ops::softmax(&input.tensor, Some(axis)) {
@@ -80,6 +105,7 @@ pub fn softmax(input: &PyTensor, dim: Option<i32>) -> PyResult<PyTensor> {
 
 /// Log Softmax activation function with axis support
 #[pyfunction]
+#[pyo3(signature = (input, dim=None))]
 pub fn log_softmax(input: &PyTensor, dim: Option<i32>) -> PyResult<PyTensor> {
     let axis = dim.unwrap_or(-1);
     let tensor_shape = input.tensor.shape();
@@ -135,6 +161,7 @@ pub fn log_softmax(input: &PyTensor, dim: Option<i32>) -> PyResult<PyTensor> {
 
 /// Leaky ReLU activation function
 #[pyfunction]
+#[pyo3(signature = (input, negative_slope=None))]
 pub fn leaky_relu(input: &PyTensor, negative_slope: Option<f32>) -> PyResult<PyTensor> {
     let slope = negative_slope.unwrap_or(0.01);
     match tenflowers_core::ops::leaky_relu(&input.tensor, slope) {
@@ -149,6 +176,7 @@ pub fn leaky_relu(input: &PyTensor, negative_slope: Option<f32>) -> PyResult<PyT
 
 /// ELU activation function (Exponential Linear Unit)
 #[pyfunction]
+#[pyo3(signature = (input, alpha=None))]
 pub fn elu(input: &PyTensor, alpha: Option<f32>) -> PyResult<PyTensor> {
     let alpha_val = alpha.unwrap_or(1.0);
     match tenflowers_core::ops::elu(&input.tensor, alpha_val) {
@@ -219,6 +247,7 @@ pub fn hardswish(input: &PyTensor) -> PyResult<PyTensor> {
 
 /// Mean Squared Error loss function
 #[pyfunction]
+#[pyo3(signature = (input, target, reduction=None))]
 pub fn mse_loss(
     input: &PyTensor,
     target: &PyTensor,
@@ -262,6 +291,7 @@ pub fn mse_loss(
 
 /// Cross Entropy loss function
 #[pyfunction]
+#[pyo3(signature = (input, target, reduction=None))]
 pub fn cross_entropy_loss(
     input: &PyTensor,
     target: &PyTensor,
@@ -319,6 +349,7 @@ pub fn cross_entropy_loss(
 
 /// Binary Cross Entropy loss function
 #[pyfunction]
+#[pyo3(signature = (input, target, reduction=None))]
 pub fn binary_cross_entropy_loss(
     input: &PyTensor,
     target: &PyTensor,
@@ -433,6 +464,7 @@ pub fn binary_cross_entropy_loss(
 
 /// L1 Loss (Mean Absolute Error) function
 #[pyfunction]
+#[pyo3(signature = (input, target, reduction=None))]
 pub fn l1_loss(input: &PyTensor, target: &PyTensor, reduction: Option<&str>) -> PyResult<PyTensor> {
     let reduction_mode = reduction.unwrap_or("mean");
 
@@ -469,6 +501,7 @@ pub fn l1_loss(input: &PyTensor, target: &PyTensor, reduction: Option<&str>) -> 
 
 /// Smooth L1 Loss (Huber Loss) function
 #[pyfunction]
+#[pyo3(signature = (input, target, beta=None, reduction=None))]
 pub fn smooth_l1_loss(
     input: &PyTensor,
     target: &PyTensor,
@@ -515,6 +548,7 @@ pub fn smooth_l1_loss(
 
 /// Dropout operation
 #[pyfunction]
+#[pyo3(signature = (input, p=None, training=None))]
 pub fn dropout(input: &PyTensor, p: Option<f32>, training: Option<bool>) -> PyResult<PyTensor> {
     let prob = p.unwrap_or(0.5);
     let is_training = training.unwrap_or(true);
@@ -577,6 +611,7 @@ pub fn dropout(input: &PyTensor, p: Option<f32>, training: Option<bool>) -> PyRe
 
 /// Linear (fully connected) layer operation
 #[pyfunction]
+#[pyo3(signature = (input, weight, bias=None))]
 pub fn linear(input: &PyTensor, weight: &PyTensor, bias: Option<&PyTensor>) -> PyResult<PyTensor> {
     // Linear layer: output = input @ weight.T + bias
     let weight_t = weight.transpose(None)?;

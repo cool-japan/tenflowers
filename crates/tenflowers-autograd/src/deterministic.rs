@@ -161,7 +161,7 @@ impl DeterministicContext {
     pub fn new(seed: u64) -> Self {
         let mut state = DETERMINISTIC_STATE
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous_enabled = state.enabled;
         let previous_seed = state.global_seed;
 
@@ -179,7 +179,7 @@ impl DeterministicContext {
     pub fn with_config(config: DeterministicConfig) -> Self {
         let mut state = DETERMINISTIC_STATE
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous_enabled = state.enabled;
         let previous_seed = state.global_seed;
 
@@ -198,7 +198,7 @@ impl Drop for DeterministicContext {
     fn drop(&mut self) {
         let mut state = DETERMINISTIC_STATE
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.enabled = self.previous_enabled;
         state.global_seed = self.previous_seed;
         if !self.previous_enabled {
@@ -211,7 +211,7 @@ impl Drop for DeterministicContext {
 pub fn set_deterministic(enabled: bool, seed: Option<u64>) {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.enabled = enabled;
     state.global_seed = seed;
     if enabled {
@@ -223,7 +223,7 @@ pub fn set_deterministic(enabled: bool, seed: Option<u64>) {
 pub fn is_deterministic() -> bool {
     DETERMINISTIC_STATE
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .enabled
 }
 
@@ -231,7 +231,7 @@ pub fn is_deterministic() -> bool {
 pub fn get_global_seed() -> Option<u64> {
     DETERMINISTIC_STATE
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .global_seed
 }
 
@@ -239,7 +239,7 @@ pub fn get_global_seed() -> Option<u64> {
 pub fn set_global_seed(seed: u64) {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.global_seed = Some(seed);
     state.reset();
 }
@@ -248,7 +248,7 @@ pub fn set_global_seed(seed: u64) {
 pub fn get_operation_seed(operation_id: &str) -> Option<u64> {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if state.enabled {
         Some(state.get_or_create_operation_seed(operation_id))
     } else {
@@ -260,7 +260,7 @@ pub fn get_operation_seed(operation_id: &str) -> Option<u64> {
 pub fn set_operation_seed(operation_id: &str, seed: u64) {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.operation_seeds.insert(operation_id.to_string(), seed);
 }
 
@@ -268,7 +268,7 @@ pub fn set_operation_seed(operation_id: &str, seed: u64) {
 pub fn clear_operation_seeds() {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.operation_seeds.clear();
 }
 
@@ -276,7 +276,7 @@ pub fn clear_operation_seeds() {
 pub fn reset_deterministic_state() {
     let mut state = DETERMINISTIC_STATE
         .write()
-        .expect("write lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.reset();
 }
 
@@ -284,7 +284,7 @@ pub fn reset_deterministic_state() {
 pub fn get_seeded_operation_count() -> usize {
     DETERMINISTIC_STATE
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .operation_seeds
         .len()
 }
@@ -317,11 +317,17 @@ impl SeedManager {
 
     /// Get or create a seed for an operation
     pub fn get_seed(&self, operation_id: &str) -> u64 {
-        let mut seeds = self.seeds.lock().expect("lock should not be poisoned");
+        let mut seeds = self
+            .seeds
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(&seed) = seeds.get(operation_id) {
             seed
         } else {
-            let mut counter = self.counter.lock().expect("lock should not be poisoned");
+            let mut counter = self
+                .counter
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let seed = self.base_seed.wrapping_add(*counter);
             *counter = counter.wrapping_add(1);
             seeds.insert(operation_id.to_string(), seed);
@@ -331,7 +337,10 @@ impl SeedManager {
 
     /// Get the next sequential seed
     pub fn next_seed(&self) -> u64 {
-        let mut counter = self.counter.lock().expect("lock should not be poisoned");
+        let mut counter = self
+            .counter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let seed = self.base_seed.wrapping_add(*counter);
         *counter = counter.wrapping_add(1);
         seed
@@ -339,15 +348,24 @@ impl SeedManager {
 
     /// Reset the seed counter
     pub fn reset(&self) {
-        let mut counter = self.counter.lock().expect("lock should not be poisoned");
+        let mut counter = self
+            .counter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *counter = 0;
-        let mut seeds = self.seeds.lock().expect("lock should not be poisoned");
+        let mut seeds = self
+            .seeds
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         seeds.clear();
     }
 
     /// Get the number of seeds generated
     pub fn seed_count(&self) -> u64 {
-        *self.counter.lock().expect("lock should not be poisoned")
+        *self
+            .counter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -468,7 +486,7 @@ pub trait DeterministicOperation {
             Some(get_operation_seed(&self.operation_id()).unwrap_or_else(|| {
                 let mut state = DETERMINISTIC_STATE
                     .write()
-                    .expect("write lock should not be poisoned");
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 state.next_seed()
             }))
         } else {

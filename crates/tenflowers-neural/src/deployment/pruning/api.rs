@@ -16,6 +16,9 @@ where
         + Send
         + Sync
         + scirs2_core::num_traits::Zero
+        + scirs2_core::num_traits::Float
+        + scirs2_core::num_traits::Signed
+        + scirs2_core::num_traits::ToPrimitive
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,

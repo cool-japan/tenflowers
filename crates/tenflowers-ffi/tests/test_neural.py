@@ -7,8 +7,8 @@ import pytest
 
 def test_activation_functions():
     """Test neural network activation functions."""
-    import tenflowers.neural as nn
     import tenflowers as tf
+    import tenflowers as nn  # neural functions (relu, sigmoid, ...) live at the top-level module
 
     x = tf.ones([2, 2])
 
@@ -27,8 +27,8 @@ def test_activation_functions():
 
 def test_gelu_activation():
     """Test GELU activation function."""
-    import tenflowers.neural as nn
     import tenflowers as tf
+    import tenflowers as nn  # neural functions (relu, sigmoid, ...) live at the top-level module
 
     x = tf.randn([3, 3])
     result = nn.gelu(x)
@@ -37,8 +37,8 @@ def test_gelu_activation():
 
 def test_swish_activation():
     """Test Swish activation function."""
-    import tenflowers.neural as nn
     import tenflowers as tf
+    import tenflowers as nn  # neural functions (relu, sigmoid, ...) live at the top-level module
 
     x = tf.randn([3, 3])
     result = nn.swish(x)
@@ -47,8 +47,8 @@ def test_swish_activation():
 
 def test_mish_activation():
     """Test Mish activation function."""
-    import tenflowers.neural as nn
     import tenflowers as tf
+    import tenflowers as nn  # neural functions (relu, sigmoid, ...) live at the top-level module
 
     x = tf.randn([3, 3])
     result = nn.mish(x)

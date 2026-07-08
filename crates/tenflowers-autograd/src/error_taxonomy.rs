@@ -125,7 +125,7 @@ impl AutogradErrorBuilder {
             operation: self.operation,
             expected: expected.into(),
             got: got.into(),
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -136,7 +136,7 @@ impl AutogradErrorBuilder {
         TensorError::GradientNotEnabled {
             operation: self.operation,
             suggestion: suggestion.into(),
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -147,7 +147,7 @@ impl AutogradErrorBuilder {
         TensorError::InvalidOperation {
             operation: self.operation,
             reason: reason.into(),
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -163,7 +163,7 @@ impl AutogradErrorBuilder {
             operation: self.operation,
             details: details.into(),
             suggestions,
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -179,7 +179,7 @@ impl AutogradErrorBuilder {
             operation: self.operation,
             device1: device1.into(),
             device2: device2.into(),
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -195,7 +195,7 @@ impl AutogradErrorBuilder {
             operation: self.operation,
             reason: reason.into(),
             alternatives,
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 
@@ -207,7 +207,7 @@ impl AutogradErrorBuilder {
             operation: self.operation,
             details: details.into(),
             retry_possible,
-            context: Some(context),
+            context: Some(Box::new(context)),
         }
     }
 

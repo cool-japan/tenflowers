@@ -360,69 +360,69 @@ struct MixedPrecisionParams {
 @group(0) @binding(3) var<uniform> mp_params: MixedPrecisionParams;
 
 // Large matrix GEMM kernel optimized for matrices > 256x256
-const LARGE_TILE_SIZE: u32 = 32u;
-var<workgroup> large_tile_a: array<array<f32, 32>, 32>;
-var<workgroup> large_tile_b: array<array<f32, 32>, 32>;
+const GEMM_LARGE_TILE_SIZE: u32 = 32u;
+var<workgroup> gemm_large_tile_a: array<array<f32, 32>, 32>;
+var<workgroup> gemm_large_tile_b: array<array<f32, 32>, 32>;
 
 @compute @workgroup_size(32, 32)
 fn matmul_large_kernel(@builtin(global_invocation_id) global_id: vec3<u32>,
                        @builtin(local_invocation_id) local_id: vec3<u32>,
                        @builtin(workgroup_id) workgroup_id: vec3<u32>) {
-    
+
     let batch = global_id.z;
     if (batch >= params.batch_size) {
         return;
     }
-    
+
     let local_row = local_id.y;
     let local_col = local_id.x;
-    let global_row = workgroup_id.y * LARGE_TILE_SIZE + local_row;
-    let global_col = workgroup_id.x * LARGE_TILE_SIZE + local_col;
-    
+    let global_row = workgroup_id.y * GEMM_LARGE_TILE_SIZE + local_row;
+    let global_col = workgroup_id.x * GEMM_LARGE_TILE_SIZE + local_col;
+
     let batch_offset_a = batch * params.m * params.k;
     let batch_offset_b = batch * params.k * params.n;
     let batch_offset_result = batch * params.m * params.n;
-    
+
     var accumulator = 0.0;
-    let num_tiles = (params.k + LARGE_TILE_SIZE - 1u) / LARGE_TILE_SIZE;
-    
+    let num_tiles = (params.k + GEMM_LARGE_TILE_SIZE - 1u) / GEMM_LARGE_TILE_SIZE;
+
     // Iterate over tiles in the K dimension
     for (var tile_idx = 0u; tile_idx < num_tiles; tile_idx++) {
         // Load tile from matrix A into shared memory
         let a_tile_row = global_row;
-        let a_tile_col = tile_idx * LARGE_TILE_SIZE + local_col;
-        
+        let a_tile_col = tile_idx * GEMM_LARGE_TILE_SIZE + local_col;
+
         if (a_tile_row < params.m && a_tile_col < params.k) {
             let a_idx = batch_offset_a + a_tile_row * params.k + a_tile_col;
-            large_tile_a[local_row][local_col] = matrix_a[a_idx];
+            gemm_large_tile_a[local_row][local_col] = matrix_a[a_idx];
         } else {
-            large_tile_a[local_row][local_col] = 0.0;
+            gemm_large_tile_a[local_row][local_col] = 0.0;
         }
-        
+
         // Load tile from matrix B into shared memory
-        let b_tile_row = tile_idx * LARGE_TILE_SIZE + local_row;
+        let b_tile_row = tile_idx * GEMM_LARGE_TILE_SIZE + local_row;
         let b_tile_col = global_col;
-        
+
         if (b_tile_row < params.k && b_tile_col < params.n) {
             let b_idx = batch_offset_b + b_tile_row * params.n + b_tile_col;
-            large_tile_b[local_row][local_col] = matrix_b[b_idx];
+            gemm_large_tile_b[local_row][local_col] = matrix_b[b_idx];
         } else {
-            large_tile_b[local_row][local_col] = 0.0;
+            gemm_large_tile_b[local_row][local_col] = 0.0;
         }
-        
+
         workgroupBarrier();
-        
+
         // Compute partial dot product for this tile with loop unrolling
-        for (var k = 0u; k < LARGE_TILE_SIZE; k += 4u) {
-            accumulator += large_tile_a[local_row][k] * large_tile_b[k][local_col];
-            accumulator += large_tile_a[local_row][k + 1u] * large_tile_b[k + 1u][local_col];
-            accumulator += large_tile_a[local_row][k + 2u] * large_tile_b[k + 2u][local_col];
-            accumulator += large_tile_a[local_row][k + 3u] * large_tile_b[k + 3u][local_col];
+        for (var k = 0u; k < GEMM_LARGE_TILE_SIZE; k += 4u) {
+            accumulator += gemm_large_tile_a[local_row][k] * gemm_large_tile_b[k][local_col];
+            accumulator += gemm_large_tile_a[local_row][k + 1u] * gemm_large_tile_b[k + 1u][local_col];
+            accumulator += gemm_large_tile_a[local_row][k + 2u] * gemm_large_tile_b[k + 2u][local_col];
+            accumulator += gemm_large_tile_a[local_row][k + 3u] * gemm_large_tile_b[k + 3u][local_col];
         }
-        
+
         workgroupBarrier();
     }
-    
+
     // Write result to global memory
     if (global_row < params.m && global_col < params.n) {
         let result_idx = batch_offset_result + global_row * params.n + global_col;

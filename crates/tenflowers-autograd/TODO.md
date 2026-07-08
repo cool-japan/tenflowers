@@ -1,6 +1,60 @@
-# TenfloweRS Autograd TODO & Roadmap (v0.1.1)
+# TenfloweRS Autograd TODO & Roadmap (v0.1.2)
 
 v0.1.1 focus: automatic differentiation capabilities and forward development plan.
+
+## v0.1.2 — Honesty Hardening (2026-06-22)
+
+- Removed production lock-poison panics via signature-preserving recovery; a
+  poisoned lock no longer aborts the process.
+- `relu_mask` returned all-ones → real 0/1 mask (or honest error when the
+  tensor is host-inaccessible, e.g. on device).
+- Fused Mish returned `tanh` → real Mish; fused norm/linear/conv ops that
+  silently dropped the op → honest error.
+- Gradient cache stored empty data → real store/load round-trip.
+- Memory stats were hardcoded → real profiler values.
+
+## v0.1.2 — Second Honesty-Hardening Wave (2026-07-07 release)
+
+- `CrossDatacenterReplicator`/`DatacenterConnection` network-simulation
+  methods (`broadcast_prepare`/`broadcast_commit`, `aggregate_parameters*`,
+  `get_current_step`, `get_datacenter_steps`, `collect_all_parameters`,
+  `get_health`, `DatacenterConnection::new`, bandwidth/congestion/RTT
+  helpers) previously fabricated successful cross-datacenter coordination
+  (fake `PrepareResult`, pass-through "aggregation", hardcoded step
+  counters, always-healthy status) with no real network transport →
+  now return honest `NotImplemented` errors describing the missing
+  transport; several gained `Result` return types as a result (**breaking
+  change** for direct callers).
+- `numerical_checker::property_test` gained a required `f_grad` closure
+  parameter and now genuinely compares the analytical gradient against
+  it — previously the "analytical" value was just a clone of the
+  numerical estimate, so every property test trivially passed regardless
+  of correctness.
+- `kernel_fusion::FusableOp::Mish` fixed from a `tanh` approximation
+  (numerically wrong: `mish(2.0)` ≈ 1.944 vs. `tanh(2.0)` ≈ 0.964) to the
+  real `mish` op; `BatchNorm`/`LayerNorm`/`GroupNorm`/`Conv2D`/`Linear`/
+  `Scale`/`Bias` fused ops changed from silently passing input through
+  unchanged (fake identity) to an honest `Err`.
+- Conv2D/Conv3D backward gradients (`compute_conv2d_input_gradient`,
+  `compute_conv2d_weight_gradient`, `compute_conv3d_input_gradient`,
+  `compute_conv3d_weight_gradient` in `ops::convolution_ops::utils`) fixed
+  from zero-tensor placeholders to real, correct transposed-cross-correlation
+  implementations, validated by new finite-difference gradient-check tests.
+- `neural_integration::trainer::compute_accuracy` fixed from a hardcoded
+  `0.95` constant to a real argmax-based (multi-class) or
+  threshold-based (binary) accuracy computation.
+- New `distributed = ["tokio"]` feature flag gating the
+  `pub mod distributed_replication` re-export of
+  `cross_datacenter_replication`.
+- New `tenflowers_autograd::init()` entry point registers a real
+  `GradientExecutor` implementation (`AutogradGradientExecutor`,
+  supporting `add/sub/mul/div/matmul/pow`, `relu/sigmoid/tanh`, and
+  `"->"`-composed unary chains) with `tenflowers-core`'s
+  `gradient_validation_framework`, so `Finiteness`/`ZeroForConstants`/
+  `Linearity`/`ChainRule` checks can be genuinely verified instead of
+  honestly reporting "unverified" by default.
+- Verified 2026-07-07: `cargo nextest run -p tenflowers-autograd
+  --all-features` → **521 tests run: 521 passed, 5 skipped**.
 
 ## 1. Current Capabilities
 
@@ -24,7 +78,7 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 - **Ecosystem**: Seamless integration with broader SciRS2/NumRS2 scientific stack
 
 ### Testing & Quality
-- **Test Coverage**: 1400+ tests passing with 99.9% success rate
+- **Test Coverage**: 521 tests passing, 5 skipped (`cargo nextest run -p tenflowers-autograd --all-features`, verified 2026-07-07)
 - **Code Quality**: Zero compilation warnings, full clippy compliance maintained
 - **Memory Safety**: Comprehensive memory profiling with leak detection capabilities
 
@@ -43,7 +97,16 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 ### System Integration
 - **Deterministic Execution**: No deterministic seed propagation across forward/backward passes
 - **Graph Mode**: Graph-mode gradient integration pending graph optimizer readiness
-- **Distributed**: No distributed gradient aggregation for multi-GPU scenarios
+- **Distributed**: `distributed` feature flag and `distributed_replication` module scaffolding exist, but no real network transport is wired up — every cross-datacenter coordination call honestly errors rather than aggregating gradients across multi-GPU/multi-host scenarios (see Honest-error deferrals below)
+- **Custom-gradient backward wiring**: `CustomGradientOp::apply` runs the custom forward pass and records the output on the tape, but does not yet register the custom `backward` for traversal by `tape.gradient()` — full round-trip custom-gradient support is not yet complete
+
+### Honest-error deferrals (post-2026-06-22 sweep; fail loudly, not faked)
+- **`relu_mask` on host-inaccessible tensors**: returns an honest error rather than a fabricated all-ones mask (CPU path computes the real 0/1 mask).
+- **Fused norm/linear/conv ops**: paths that previously dropped the operation silently now return an honest error until the real fused kernel lands.
+
+### Honest-error deferrals (2026-07-07 sweep; fail loudly, not faked)
+- **`CrossDatacenterReplicator`/`DatacenterConnection`**: every network-simulation method (`broadcast_prepare`/`broadcast_commit`, `aggregate_parameters*`, `get_current_step`, `get_datacenter_steps`, `collect_all_parameters`, `get_health`, `DatacenterConnection::new`, bandwidth/congestion/RTT helpers) now returns an honest `NotImplemented` naming the missing transport, rather than fabricating successful cross-datacenter coordination. A real network transport implementation remains a deferred item (see Mid-Term Roadmap, Distributed Computing).
+- **`GradientExecutor` for `tenflowers-core`'s validation framework**: without calling `tenflowers_autograd::init()`, `gradient_validation_framework`'s `Finiteness`/`ZeroForConstants`/`Linearity`/`ChainRule` checks honestly report "unverified" rather than fabricating `passed: true`. Calling `init()` registers `AutogradGradientExecutor`, which covers `add/sub/mul/div/matmul/pow`, `relu/sigmoid/tanh`, and `"->"`-composed unary chains — other operations remain unverified even after `init()`.
 
 ## 3. Near-Term Roadmap
 
@@ -86,7 +149,7 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 
 ### Immediate Development Tasks
 - [x] **Coverage Matrix Generator**: Implement auto-generated gradient test matrix system ✓ Complete
-- [x] **Numerical Checker Harness**: Property-based gradient validation framework ✓ Complete
+- [x] **Numerical Checker Harness**: Property-based gradient validation framework ✓ Complete (hardened 2026-07-07: `property_test` now requires an explicit `f_grad` analytical-gradient closure and genuinely compares it against the finite-difference estimate — previously the "analytical" value was just a clone of the numerical one, so the harness trivially passed regardless of correctness)
 - [x] **Checkpoint API Draft**: Design activation recompute interface specification ✓ Complete
 - [x] **Hybrid Schedule Prototype**: Forward+reverse strategy implementation prototype ✓ Complete
 - [x] **Deterministic Seed Spec**: Specification for reproducible training across passes ✓ Complete
@@ -102,7 +165,7 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 - [x] **GPU Gradient Expansion**: Extend GPU gradient support to more operations ✓ Complete (planning)
 - [x] **Documentation**: Comprehensive autograd concepts and usage guide (done 2026-04-19: added mixed-precision, checkpointing, higher-order, custom-op sections; lib.rs docs ~180 lines)
 - [x] **Example Suite**: Comprehensive examples demonstrating advanced features (done 2026-04-19: mixed_precision.rs, gradient_checkpointing.rs, higher_order_grads.rs verified compiling; fixed type error in gradient_checkpointing.rs)
-- [x] **API Stabilization**: Prepare gradient APIs for stable release (done 2026-04-19: cargo clippy -D warnings clean, all 445 tests pass)
+- [x] **API Stabilization**: Prepare gradient APIs for stable release (done 2026-04-19: cargo clippy -D warnings clean, all 445 tests pass; re-verified 2026-07-07: 521 tests pass, 5 skipped, `--all-features`)
 
 ## 6. Advanced Research Areas
 
@@ -130,4 +193,4 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 
 ---
 
-**v0.1.1 Status**: Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization. Forward development focuses on gradient coverage audit and advanced features.
+**v0.1.2 Status** (2026-07-07): Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization; 521 tests passing, 5 skipped (`--all-features`), 0 clippy warnings. This cycle's focus was honesty hardening — replacing fabricated/placeholder results (cross-datacenter replication, fused Mish/norm ops, conv2d/conv3d backward gradients, training accuracy, numerical gradient property tests) with either real implementations or honest `NotImplemented` errors. Forward development still focuses on gradient coverage audit, real distributed-gradient transport, and advanced features.

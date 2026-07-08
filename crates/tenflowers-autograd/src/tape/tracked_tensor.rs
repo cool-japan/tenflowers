@@ -31,7 +31,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -54,7 +58,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -77,7 +85,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -100,7 +112,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -123,7 +139,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -146,7 +166,11 @@ where
                 lhs: self.id,
                 rhs: other.id,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -166,7 +190,11 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Relu { input: self.id };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -186,7 +214,11 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Sigmoid { input: self.id };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -206,7 +238,11 @@ where
         // Record the operation in the tape if we have one
         if let Some(tape_inner) = self.tape.upgrade() {
             let operation = Operation::Tanh { input: self.id };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -236,7 +272,11 @@ where
                 input: self.id,
                 axis,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -260,7 +300,11 @@ where
                 axes,
                 keepdims,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -280,7 +324,11 @@ where
     {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.mean(axes.as_deref(), keepdims)?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(
                 Operation::Mean {
                     input: self.id,
@@ -302,7 +350,11 @@ where
         if let Some(tape) = self.tape.upgrade() {
             let original_shape = self.tensor.shape().dims().to_vec();
             let result_tensor = self.tensor.reshape(new_shape)?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(
                 Operation::Reshape {
                     input: self.id,
@@ -323,7 +375,11 @@ where
     pub fn transpose(&self, axes: Option<Vec<usize>>) -> Result<TrackedTensor<T>> {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.transpose()?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(
                 Operation::Transpose {
                     input: self.id,
@@ -344,7 +400,11 @@ where
         if let Some(tape) = self.tape.upgrade() {
             let original_shape = self.tensor.shape().dims().to_vec();
             let result_tensor = self.tensor.squeeze(axes.as_deref())?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(
                 Operation::Squeeze {
                     input: self.id,
@@ -365,7 +425,11 @@ where
     pub fn unsqueeze(&self, axes: Vec<usize>) -> Result<TrackedTensor<T>> {
         if let Some(tape) = self.tape.upgrade() {
             let result_tensor = self.tensor.unsqueeze(&axes)?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(
                 Operation::Unsqueeze {
                     input: self.id,
@@ -416,7 +480,11 @@ where
                 stride,
                 padding: padding.to_string(),
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -460,7 +528,11 @@ where
                 epsilon,
                 training,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -498,7 +570,11 @@ where
                 normalized_shape,
                 epsilon,
             };
-            let mut tape_guard = tape_inner.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape_inner.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             let tracked = tape_guard.record_op(operation, result, &tape_inner);
             Ok(tracked)
         } else {
@@ -561,7 +637,11 @@ where
             };
 
             // Record in the tape
-            let mut inner = tape_arc.lock().expect("lock should not be poisoned");
+            let mut inner = tape_arc.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(inner.record_op(operation, result, &tape_arc))
         } else {
             // No gradient tracking needed
@@ -581,7 +661,11 @@ impl TrackedTensor<f32> {
         if let Some(tape) = self.tape.upgrade() {
             // Implement SVD-based pseudoinverse with gradient recording
             let result_tensor = self.compute_svd_pinv()?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(Operation::Pinv { input: self.id }, result_tensor, &tape))
         } else {
             // No tape available, perform operation without tracking
@@ -669,7 +753,11 @@ impl TrackedTensor<f64> {
         if let Some(tape) = self.tape.upgrade() {
             // Implement SVD-based pseudoinverse with gradient recording
             let result_tensor = self.compute_svd_pinv()?;
-            let mut tape_guard = tape.lock().expect("lock should not be poisoned");
+            let mut tape_guard = tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "tape lock poisoned".to_string(),
+                )
+            })?;
             Ok(tape_guard.record_op(Operation::Pinv { input: self.id }, result_tensor, &tape))
         } else {
             // No tape available, perform operation without tracking

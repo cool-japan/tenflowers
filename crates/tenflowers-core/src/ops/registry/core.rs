@@ -49,11 +49,14 @@ impl OpRegistry {
             version: op_def.version.clone(),
         };
 
-        let mut ops = self.ops.write().expect("write lock should not be poisoned");
-        let mut latest_versions = self
-            .latest_versions
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut ops = self.ops.write().map_err(|_| {
+            TensorError::invalid_operation_simple("op registry lock poisoned".to_string())
+        })?;
+        let mut latest_versions = self.latest_versions.write().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "op registry latest-versions lock poisoned".to_string(),
+            )
+        })?;
 
         // Check if this exact version already exists
         if ops.contains_key(&op_key) {
@@ -87,10 +90,11 @@ impl OpRegistry {
     ) -> Result<()> {
         // Get latest version
         let version = {
-            let latest_versions = self
-                .latest_versions
-                .read()
-                .expect("read lock should not be poisoned");
+            let latest_versions = self.latest_versions.read().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "op registry latest-versions lock poisoned".to_string(),
+                )
+            })?;
             latest_versions.get(op_name).cloned().ok_or_else(|| {
                 TensorError::invalid_argument(format!("Operation '{op_name}' not registered"))
             })?
@@ -110,7 +114,9 @@ impl OpRegistry {
     ) -> Result<()> {
         // Check if op version exists
         {
-            let ops = self.ops.read().expect("read lock should not be poisoned");
+            let ops = self.ops.read().map_err(|_| {
+                TensorError::invalid_operation_simple("op registry lock poisoned".to_string())
+            })?;
             let op_key = OpKey {
                 name: op_name.to_string(),
                 version: version.clone(),
@@ -129,10 +135,9 @@ impl OpRegistry {
             dtype,
         };
 
-        let mut kernels = self
-            .kernels
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut kernels = self.kernels.write().map_err(|_| {
+            TensorError::invalid_operation_simple("kernel registry lock poisoned".to_string())
+        })?;
         if kernels.contains_key(&key) {
             return Err(TensorError::invalid_argument(format!(
                 "Kernel for '{op_name}' v{version} on {device:?} with {dtype:?} already registered"
@@ -153,7 +158,7 @@ impl OpRegistry {
             let cache = self
                 .op_cache
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(cached_op) = cache.get(name) {
                 self.metrics.cache_hit_ratio.observe(1.0);
                 return Some((**cached_op).clone());
@@ -166,7 +171,7 @@ impl OpRegistry {
             let latest_versions = self
                 .latest_versions
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             latest_versions.get(name).cloned()?
         };
 
@@ -177,7 +182,7 @@ impl OpRegistry {
             let mut cache = self
                 .op_cache
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             cache.insert(name.to_string(), Arc::new(op_def.clone()));
         }
 
@@ -186,7 +191,10 @@ impl OpRegistry {
 
     /// Get operation definition for specific version
     pub fn get_op_version(&self, name: &str, version: &OpVersion) -> Option<OpDef> {
-        let ops = self.ops.read().expect("read lock should not be poisoned");
+        let ops = self
+            .ops
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let op_key = OpKey {
             name: name.to_string(),
             version: version.clone(),
@@ -197,7 +205,10 @@ impl OpRegistry {
     /// Get operation definition with version resolution
     /// Finds the highest compatible version >= required_version
     pub fn get_op_compatible(&self, name: &str, required_version: &OpVersion) -> Option<OpDef> {
-        let ops = self.ops.read().expect("read lock should not be poisoned");
+        let ops = self
+            .ops
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Find all versions of this operation
         let mut compatible_versions: Vec<_> = ops
@@ -233,7 +244,7 @@ impl OpRegistry {
             let cache = self
                 .kernel_cache
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(cached_kernel) = cache.get(&cache_key) {
                 self.metrics.cache_hit_ratio.observe(1.0);
                 // Track hot operations for adaptive optimization
@@ -248,7 +259,7 @@ impl OpRegistry {
             let latest_versions = self
                 .latest_versions
                 .read()
-                .expect("read lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             latest_versions.get(op_name).cloned()?
         };
 
@@ -259,7 +270,7 @@ impl OpRegistry {
             let mut cache = self
                 .kernel_cache
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             cache.insert(cache_key, kernel.clone());
         }
 
@@ -284,7 +295,7 @@ impl OpRegistry {
         let kernels = self
             .kernels
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         kernels.get(&key).cloned()
     }
 
@@ -299,7 +310,7 @@ impl OpRegistry {
         let kernels = self
             .kernels
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Find all compatible kernel versions
         let mut compatible_kernels: Vec<_> = kernels
@@ -322,13 +333,16 @@ impl OpRegistry {
         let latest_versions = self
             .latest_versions
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         latest_versions.keys().cloned().collect()
     }
 
     /// List all versions of an operation
     pub fn list_op_versions(&self, name: &str) -> Vec<OpVersion> {
-        let ops = self.ops.read().expect("read lock should not be poisoned");
+        let ops = self
+            .ops
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut versions: Vec<_> = ops
             .keys()
             .filter(|key| key.name == name)
@@ -343,7 +357,7 @@ impl OpRegistry {
         let latest_versions = self
             .latest_versions
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         latest_versions.get(name).cloned()
     }
 
@@ -388,7 +402,7 @@ impl OpRegistry {
         let mut scheduler = self
             .scheduler
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         scheduler
             .hot_operations
             .entry(op_name.to_string())
@@ -414,7 +428,7 @@ impl OpRegistry {
         let scheduler = self
             .scheduler
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let hot_ops: HashMap<String, u64> = scheduler
             .hot_operations
             .iter()
@@ -442,7 +456,7 @@ impl OpRegistry {
         let scheduler = self
             .scheduler
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Analyze hot operations
         for (op_name, count) in scheduler.hot_operations.iter() {
@@ -473,14 +487,14 @@ impl OpRegistry {
             let mut op_cache = self
                 .op_cache
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             op_cache.clear();
         }
         {
             let mut kernel_cache = self
                 .kernel_cache
                 .write()
-                .expect("write lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             kernel_cache.clear();
         }
     }

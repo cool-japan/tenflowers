@@ -132,6 +132,7 @@ impl GpuContext {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
                     force_fallback_adapter: false,
+                    apply_limit_buckets: false,
                 })
                 .await
                 .map_err(|_e| {
@@ -183,6 +184,25 @@ impl GpuContext {
             .as_ref()
             .map_err(|e| e.clone())
     }
+}
+
+/// Runtime probe: can a *usable* GPU device actually be created right now?
+///
+/// This is deliberately stronger than `wgpu::Instance::request_adapter()`
+/// succeeding. `request_adapter` returns an adapter whenever *any* ICD merely
+/// enumerates one — including headless / sandboxed environments that list an
+/// adapter (e.g. through GL/EGL) but have no working Vulkan loader, where the
+/// subsequent `request_device` immediately fails with "Parent device is lost".
+///
+/// Callers and tests that need to run *real* GPU work (buffer upload, compute,
+/// readback) must gate on this, not on adapter enumeration alone, so they skip
+/// honestly when no device can be created instead of panicking on the first op.
+///
+/// The result is cached for the process lifetime via [`GpuContext::global`],
+/// which performs the exact adapter + `request_device` creation the rest of the
+/// crate's GPU paths use, so a `true` here means those paths will also succeed.
+pub fn gpu_device_available() -> bool {
+    GpuContext::global().is_ok()
 }
 
 /// Helper macro for including shaders - directly include to avoid scoping issues
@@ -509,17 +529,88 @@ pub trait GpuOps {
         Self: Sized;
 }
 
-/// Helper function to cast values to f32 for GPU shaders
+/// Helper function to cast a scalar of a numeric type into `f32` for GPU shaders.
+///
+/// This dispatches on the concrete runtime type of `T` (via [`TypeId`](std::any::TypeId)) and performs
+/// a value-preserving (lossless where the target permits) numeric conversion. For the
+/// floating-point and integer primitives supported by the GPU backend this returns the
+/// exact mathematical value cast to `f32`. For genuinely unknown types it returns
+/// [`f32::NAN`] as an honest, loud signal rather than a plausible-but-fake constant.
 fn cast_to_f32<T>(value: T) -> f32
 where
     T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static,
 {
-    // Safe casting implementation
-    42.0 // Placeholder - implement proper casting based on type
+    use std::any::TypeId;
+
+    let id = TypeId::of::<T>();
+
+    if id == TypeId::of::<f32>() {
+        // SAFETY: `id` equals `TypeId::of::<f32>()`, so `T` is exactly `f32` and the
+        // reinterpret-read below is reading an `f32` from an `f32`.
+        unsafe { *(&value as *const T as *const f32) }
+    } else if id == TypeId::of::<f64>() {
+        // SAFETY: `T` is `f64` (TypeId checked above).
+        let v: f64 = unsafe { *(&value as *const T as *const f64) };
+        v as f32
+    } else if id == TypeId::of::<half::f16>() {
+        // SAFETY: `T` is `half::f16` (TypeId checked above).
+        let v: half::f16 = unsafe { *(&value as *const T as *const half::f16) };
+        v.to_f32()
+    } else if id == TypeId::of::<half::bf16>() {
+        // SAFETY: `T` is `half::bf16` (TypeId checked above).
+        let v: half::bf16 = unsafe { *(&value as *const T as *const half::bf16) };
+        v.to_f32()
+    } else if id == TypeId::of::<i8>() {
+        // SAFETY: `T` is `i8` (TypeId checked above).
+        let v: i8 = unsafe { *(&value as *const T as *const i8) };
+        v as f32
+    } else if id == TypeId::of::<u8>() {
+        // SAFETY: `T` is `u8` (TypeId checked above).
+        let v: u8 = unsafe { *(&value as *const T as *const u8) };
+        v as f32
+    } else if id == TypeId::of::<i16>() {
+        // SAFETY: `T` is `i16` (TypeId checked above).
+        let v: i16 = unsafe { *(&value as *const T as *const i16) };
+        v as f32
+    } else if id == TypeId::of::<u16>() {
+        // SAFETY: `T` is `u16` (TypeId checked above).
+        let v: u16 = unsafe { *(&value as *const T as *const u16) };
+        v as f32
+    } else if id == TypeId::of::<i32>() {
+        // SAFETY: `T` is `i32` (TypeId checked above).
+        let v: i32 = unsafe { *(&value as *const T as *const i32) };
+        v as f32
+    } else if id == TypeId::of::<u32>() {
+        // SAFETY: `T` is `u32` (TypeId checked above).
+        let v: u32 = unsafe { *(&value as *const T as *const u32) };
+        v as f32
+    } else if id == TypeId::of::<i64>() {
+        // SAFETY: `T` is `i64` (TypeId checked above).
+        let v: i64 = unsafe { *(&value as *const T as *const i64) };
+        v as f32
+    } else if id == TypeId::of::<u64>() {
+        // SAFETY: `T` is `u64` (TypeId checked above).
+        let v: u64 = unsafe { *(&value as *const T as *const u64) };
+        v as f32
+    } else {
+        // Genuinely unknown numeric type: emit NaN so a downstream consumer sees a loud,
+        // unmistakable signal instead of a silently fabricated value.
+        f32::NAN
+    }
 }
 
-/// GPU comparison operation dispatch function
-/// Returns a `GpuBuffer<u8>` where 0 represents false and 1 represents true
+/// GPU comparison operation dispatch function.
+///
+/// Computes the element-wise comparison of two GPU buffers and returns a
+/// `GpuBuffer<u8>` where `0` represents `false` and `1` represents `true`.
+///
+/// The element type `T` is only constrained to be `bytemuck::Pod`, which does not
+/// expose an ordering trait, so this function dispatches on the concrete runtime type
+/// (via [`TypeId`](std::any::TypeId)) to perform a genuine per-element comparison with the correct
+/// numeric semantics. The operands are read back from device memory, compared on the
+/// host, and the boolean result is uploaded to a fresh device buffer. Unsupported
+/// element types produce an honest [`TensorError`] rather than a fabricated all-true
+/// result.
 pub fn gpu_comparison_op_dispatch<T>(
     input_a: &GpuBuffer<T>,
     input_b: &GpuBuffer<T>,
@@ -528,7 +619,8 @@ pub fn gpu_comparison_op_dispatch<T>(
 where
     T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static,
 {
-    // Fallback implementation - delegate to comparison_ops module
+    use std::any::TypeId;
+
     let device_id = match input_a.device_enum() {
         Device::Gpu(id) => id,
         _ => {
@@ -541,13 +633,128 @@ where
         }
     };
 
-    // For now, return a simple u8 buffer (1 = true, 0 = false)
-    let result_data = vec![1u8; input_a.len()];
+    let len = input_a.len();
+    if input_b.len() != len {
+        return Err(TensorError::invalid_argument(format!(
+            "gpu_comparison_op_dispatch: operand lengths differ ({} vs {})",
+            len,
+            input_b.len()
+        )));
+    }
+
+    // Read both operands back from device memory so the comparison operates on the
+    // actual stored values rather than a constant.
+    let host_a: Vec<T> = input_a.to_cpu()?;
+    let host_b: Vec<T> = input_b.to_cpu()?;
+
+    // Helper performing the per-element comparison for a concrete, ordered type.
+    fn compare_elements<U: PartialOrd + PartialEq>(
+        lhs: &[U],
+        rhs: &[U],
+        operation: self::ops::ComparisonOp,
+    ) -> Vec<u8> {
+        lhs.iter()
+            .zip(rhs.iter())
+            .map(|(l, r)| {
+                let truthy = match operation {
+                    self::ops::ComparisonOp::Eq => l == r,
+                    self::ops::ComparisonOp::Ne => l != r,
+                    self::ops::ComparisonOp::Lt => l < r,
+                    self::ops::ComparisonOp::Le => l <= r,
+                    self::ops::ComparisonOp::Gt => l > r,
+                    self::ops::ComparisonOp::Ge => l >= r,
+                };
+                u8::from(truthy)
+            })
+            .collect()
+    }
+
+    // Reinterpret the host vectors as the concrete element type. The `TypeId` guard
+    // guarantees the layouts are identical, so the slice view is sound.
+    let id = TypeId::of::<T>();
+    let result_data: Vec<u8> = if id == TypeId::of::<f32>() {
+        // SAFETY: `T` is `f32`; the slices have identical layout and length.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const f32, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const f32, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<f64>() {
+        // SAFETY: `T` is `f64`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const f64, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const f64, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<i32>() {
+        // SAFETY: `T` is `i32`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const i32, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const i32, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<u32>() {
+        // SAFETY: `T` is `u32`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const u32, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const u32, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<i64>() {
+        // SAFETY: `T` is `i64`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const i64, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const i64, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<u64>() {
+        // SAFETY: `T` is `u64`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const u64, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const u64, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<i16>() {
+        // SAFETY: `T` is `i16`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const i16, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const i16, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<u16>() {
+        // SAFETY: `T` is `u16`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const u16, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const u16, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<i8>() {
+        // SAFETY: `T` is `i8`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const i8, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const i8, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<u8>() {
+        // SAFETY: `T` is `u8`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const u8, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const u8, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<half::f16>() {
+        // SAFETY: `T` is `half::f16`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const half::f16, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const half::f16, len) };
+        compare_elements(lhs, rhs, operation)
+    } else if id == TypeId::of::<half::bf16>() {
+        // SAFETY: `T` is `half::bf16`.
+        let lhs = unsafe { std::slice::from_raw_parts(host_a.as_ptr() as *const half::bf16, len) };
+        let rhs = unsafe { std::slice::from_raw_parts(host_b.as_ptr() as *const half::bf16, len) };
+        compare_elements(lhs, rhs, operation)
+    } else {
+        return Err(TensorError::unsupported_operation_simple(format!(
+            "gpu_comparison_op_dispatch does not support element type {}",
+            std::any::type_name::<T>()
+        )));
+    };
+
     GpuBuffer::from_slice(&result_data, &Device::Gpu(device_id))
 }
 
-/// Execute embedding lookup operation on GPU
-/// This is a stub implementation that will be properly implemented later
+/// Execute an embedding lookup (row gather) operation on GPU buffers.
+///
+/// Gathers `total_indices` rows from the embedding table `weights`, shaped
+/// `[num_embeddings, embedding_dim]`, using the integer positions stored in `indices`.
+/// The result is a buffer of length `total_indices * embedding_dim` laid out as
+/// `[total_indices, embedding_dim]`.
+///
+/// The operands are read back from device memory, the gather is computed on the host
+/// with full bounds checking, and the gathered rows are uploaded to a fresh device
+/// buffer. The index buffer is interpreted according to the concrete runtime type of
+/// `T` (the supported integer types are `u32`, `i32`, `u64`, `i64`, `u16`, `i16`,
+/// `u8`, `i8`); any other index type, an out-of-range index, or a buffer-size mismatch
+/// yields an honest [`TensorError`] rather than a fabricated zero buffer.
 pub fn execute_embedding_lookup<T>(
     indices: &GpuBuffer<T>,
     weights: &GpuBuffer<T>,
@@ -558,11 +765,11 @@ pub fn execute_embedding_lookup<T>(
 where
     T: bytemuck::Pod + bytemuck::Zeroable + Clone + Send + Sync + 'static + Default,
 {
-    // For now, create a stub output buffer with the correct size
-    // NOTE(v0.2): Implement proper GPU embedding lookup using WGSL shaders
+    use std::any::TypeId;
+
     let output_size = total_indices * embedding_dim;
 
-    // Get device from indices buffer
+    // Get device from indices buffer.
     let device_id = match indices.device_enum() {
         Device::Gpu(id) => id,
         _ => {
@@ -575,7 +782,133 @@ where
         }
     };
 
-    // Create output buffer with zeros for now (stub implementation)
-    let result_data = vec![T::default(); output_size];
+    // Validate the declared geometry against the actual buffer lengths.
+    if indices.len() < total_indices {
+        return Err(TensorError::invalid_argument(format!(
+            "execute_embedding_lookup: index buffer holds {} elements but {} were requested",
+            indices.len(),
+            total_indices
+        )));
+    }
+    let expected_weight_len = num_embeddings * embedding_dim;
+    if weights.len() != expected_weight_len {
+        return Err(TensorError::invalid_argument(format!(
+            "execute_embedding_lookup: weight buffer holds {} elements, expected {} ({} x {})",
+            weights.len(),
+            expected_weight_len,
+            num_embeddings,
+            embedding_dim
+        )));
+    }
+
+    // Read both operands back from device memory.
+    let host_indices: Vec<T> = indices.to_cpu()?;
+    let host_weights: Vec<T> = weights.to_cpu()?;
+
+    // Decode the index buffer into host `usize` positions, dispatching on the concrete
+    // runtime element type. Returns an error for unsupported (non-integer) index types.
+    let positions: Vec<usize> = {
+        let id = TypeId::of::<T>();
+        let decode = |raw: i128| -> Result<usize> {
+            if raw < 0 {
+                return Err(TensorError::invalid_argument(format!(
+                    "execute_embedding_lookup: negative embedding index {}",
+                    raw
+                )));
+            }
+            usize::try_from(raw).map_err(|_| {
+                TensorError::invalid_argument(format!(
+                    "execute_embedding_lookup: embedding index {} does not fit in usize",
+                    raw
+                ))
+            })
+        };
+
+        if id == TypeId::of::<u32>() {
+            // SAFETY: `T` is `u32`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const u32, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<i32>() {
+            // SAFETY: `T` is `i32`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const i32, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<u64>() {
+            // SAFETY: `T` is `u64`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const u64, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<i64>() {
+            // SAFETY: `T` is `i64`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const i64, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<u16>() {
+            // SAFETY: `T` is `u16`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const u16, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<i16>() {
+            // SAFETY: `T` is `i16`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const i16, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<u8>() {
+            // SAFETY: `T` is `u8`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const u8, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else if id == TypeId::of::<i8>() {
+            // SAFETY: `T` is `i8`.
+            let raw = unsafe {
+                std::slice::from_raw_parts(host_indices.as_ptr() as *const i8, total_indices)
+            };
+            raw.iter()
+                .map(|&v| decode(v as i128))
+                .collect::<Result<_>>()?
+        } else {
+            return Err(TensorError::unsupported_operation_simple(format!(
+                "execute_embedding_lookup expects an integer index type, got {}",
+                std::any::type_name::<T>()
+            )));
+        }
+    };
+
+    // Gather the embedding rows. Each position selects a contiguous `embedding_dim`
+    // slice of the weight table; out-of-range positions are a hard error.
+    let mut result_data: Vec<T> = Vec::with_capacity(output_size);
+    for &position in &positions {
+        if position >= num_embeddings {
+            return Err(TensorError::invalid_argument(format!(
+                "execute_embedding_lookup: index {} out of range for {} embeddings",
+                position, num_embeddings
+            )));
+        }
+        let start = position * embedding_dim;
+        result_data.extend_from_slice(&host_weights[start..start + embedding_dim]);
+    }
+
     GpuBuffer::from_slice(&result_data, &Device::Gpu(device_id))
 }

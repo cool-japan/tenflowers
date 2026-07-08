@@ -390,6 +390,18 @@ where
 
 // GPU implementations
 
+// `execute_fractional_pooling_op`'s `shader_entry_point` dispatch (in
+// `crate::gpu::ops::pooling_ops`) only has real kernels for
+// `PoolingOp::{MaxPool2D, GlobalMaxPool, AvgPool2D, GlobalAvgPool}`; passing
+// `PoolingOp::FractionalMaxPool2D` / `FractionalAvgPool2D` would always fall
+// through to its wildcard arm and return an honest error. Rather than call a
+// non-existent kernel, read the operand(s) back to the host (a real
+// device->host transfer, or a no-op clone if already CPU-resident) and
+// delegate to the CPU implementation, which is known-correct. Both `input`
+// AND `random_samples` (when present) must be brought to the host: the CPU
+// implementation's `generate_pooling_regions_deterministic` reads
+// `random_samples` via `.as_slice()`, which returns `None` for GPU-resident
+// storage.
 #[cfg(feature = "gpu")]
 fn fractional_max_pool2d_gpu<T>(
     input: &Tensor<T>,
@@ -409,46 +421,17 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    if let TensorStorage::Gpu(gpu_buffer) = &input.storage {
-        let input_shape = input.shape().dims();
-        if input_shape.len() != 4 {
-            return Err(TensorError::invalid_shape_simple(
-                "Fractional max pool input must be 4D (NCHW format)".to_string(),
-            ));
-        }
-
-        let batch_size = input_shape[0];
-        let channels = input_shape[1];
-        let input_height = input_shape[2];
-        let input_width = input_shape[3];
-
-        // Calculate output dimensions based on pooling ratio
-        let output_height = (input_height as f32 * pooling_ratio.0).round() as usize;
-        let output_width = (input_width as f32 * pooling_ratio.1).round() as usize;
-        let output_shape = vec![batch_size, channels, output_height, output_width];
-
-        let pooling_ratio_slice = &[pooling_ratio.0, pooling_ratio.1];
-        let output_len = output_shape.iter().product();
-
-        let result_gpu = crate::gpu::ops::execute_fractional_pooling_op(
-            gpu_buffer,
-            crate::gpu::ops::PoolingOp::FractionalMaxPool2D,
-            pooling_ratio_slice,
-            false, // pseudo_random
-            false, // overlapping
-            input_shape,
-            output_len,
-        )?;
-
-        let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape));
-        result.set_requires_grad(input.requires_grad());
-        Ok(result)
-    } else {
-        // Fallback to CPU implementation for non-GPU tensors
-        fractional_max_pool2d_cpu(input, pooling_ratio, random_samples)
-    }
+    let cpu_input = input.to_cpu()?;
+    let cpu_samples = random_samples.map(|s| s.to_cpu()).transpose()?;
+    let result = fractional_max_pool2d_cpu(&cpu_input, pooling_ratio, cpu_samples.as_ref())?;
+    result.to_device(input.device().clone())
 }
 
+// See the comment on `fractional_max_pool2d_gpu` above: `PoolingOp::
+// FractionalAvgPool2D` never matches a real kernel in `execute_fractional_
+// pooling_op`'s shader dispatch either, so this delegates to the CPU
+// implementation after bringing both `input` and `random_samples` (when
+// present) to the host.
 #[cfg(feature = "gpu")]
 fn fractional_avg_pool2d_gpu<T>(
     input: &Tensor<T>,
@@ -467,42 +450,114 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    if let TensorStorage::Gpu(gpu_buffer) = &input.storage {
-        let input_shape = input.shape().dims();
-        if input_shape.len() != 4 {
-            return Err(TensorError::invalid_shape_simple(
-                "Fractional avg pool input must be 4D (NCHW format)".to_string(),
-            ));
-        }
+    let cpu_input = input.to_cpu()?;
+    let cpu_samples = random_samples.map(|s| s.to_cpu()).transpose()?;
+    let result = fractional_avg_pool2d_cpu(&cpu_input, pooling_ratio, cpu_samples.as_ref())?;
+    result.to_device(input.device().clone())
+}
 
-        let batch_size = input_shape[0];
-        let channels = input_shape[1];
-        let input_height = input_shape[2];
-        let input_width = input_shape[3];
+// GPU delegate correctness tests: verify fractional_max_pool2d_gpu/
+// fractional_avg_pool2d_gpu round-trip GPU-resident input (and, when
+// present, a GPU-resident `random_samples` tensor) through the host and
+// delegate to the known-correct CPU implementation, instead of erroring via
+// execute_fractional_pooling_op (whose FractionalMaxPool2D/FractionalAvgPool2D
+// op values never match any of that dispatcher's shader_entry_point arms).
+//
+// These also regression-test a separate bug: the old GPU wrapper accepted
+// `random_samples: Option<&Tensor<T>>` in its signature but never forwarded
+// it to the CPU implementation, so a GPU-resident samples tensor would fail
+// `generate_pooling_regions_deterministic`'s `.as_slice()` call. The fix
+// converts `random_samples` to CPU too, alongside the primary input.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_delegate_tests {
+    use super::*;
+    use crate::Device;
 
-        // Calculate output dimensions based on pooling ratio
-        let output_height = (input_height as f32 * pooling_ratio.0).round() as usize;
-        let output_width = (input_width as f32 * pooling_ratio.1).round() as usize;
-        let output_shape = vec![batch_size, channels, output_height, output_width];
+    #[test]
+    fn gpu_fractional_max_pool2d_with_random_samples_matches_cpu_reference() {
+        let input_data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input = Tensor::<f32>::from_vec(input_data, &[1, 1, 4, 4])
+            .expect("test: from_vec should succeed");
+        let samples_data = vec![0.25f32, 0.75, 0.1, 0.9]; // output_height(2) + output_width(2)
+        let cpu_samples =
+            Tensor::<f32>::from_vec(samples_data, &[4]).expect("test: from_vec should succeed");
 
-        let pooling_ratio_slice = &[pooling_ratio.0, pooling_ratio.1];
-        let output_len = output_shape.iter().product();
+        let cpu_result = fractional_max_pool2d(&cpu_input, (0.5, 0.5), Some(&cpu_samples))
+            .expect("test: CPU fractional_max_pool2d should succeed");
 
-        let result_gpu = crate::gpu::ops::execute_fractional_pooling_op(
-            gpu_buffer,
-            crate::gpu::ops::PoolingOp::FractionalAvgPool2D,
-            pooling_ratio_slice,
-            false, // pseudo_random
-            false, // overlapping
-            input_shape,
-            output_len,
-        )?;
+        let (gpu_input, gpu_samples) =
+            match (cpu_input.to(Device::Gpu(0)), cpu_samples.to(Device::Gpu(0))) {
+                (Ok(i), Ok(s)) => (i, s),
+                _ => return, // No GPU adapter available in this environment; skip.
+            };
 
-        let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape));
-        result.set_requires_grad(input.requires_grad());
-        Ok(result)
-    } else {
-        // Fallback to CPU implementation for non-GPU tensors
-        fractional_avg_pool2d_cpu(input, pooling_ratio, random_samples)
+        let gpu_result = fractional_max_pool2d(&gpu_input, (0.5, 0.5), Some(&gpu_samples)).expect(
+            "test: GPU fractional_max_pool2d with random_samples must succeed \
+             (regression test: random_samples must not be silently dropped)",
+        );
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_fractional_avg_pool2d_with_random_samples_matches_cpu_reference() {
+        let input_data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input = Tensor::<f32>::from_vec(input_data, &[1, 1, 4, 4])
+            .expect("test: from_vec should succeed");
+        let samples_data = vec![0.25f32, 0.75, 0.1, 0.9];
+        let cpu_samples =
+            Tensor::<f32>::from_vec(samples_data, &[4]).expect("test: from_vec should succeed");
+
+        let cpu_result = fractional_avg_pool2d(&cpu_input, (0.5, 0.5), Some(&cpu_samples))
+            .expect("test: CPU fractional_avg_pool2d should succeed");
+
+        let (gpu_input, gpu_samples) =
+            match (cpu_input.to(Device::Gpu(0)), cpu_samples.to(Device::Gpu(0))) {
+                (Ok(i), Ok(s)) => (i, s),
+                _ => return,
+            };
+
+        let gpu_result = fractional_avg_pool2d(&gpu_input, (0.5, 0.5), Some(&gpu_samples)).expect(
+            "test: GPU fractional_avg_pool2d with random_samples must succeed \
+             (regression test: random_samples must not be silently dropped)",
+        );
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_fractional_max_pool2d_without_samples_succeeds() {
+        let input_data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input = Tensor::<f32>::from_vec(input_data, &[1, 1, 4, 4])
+            .expect("test: from_vec should succeed");
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = fractional_max_pool2d(&gpu_input, (0.5, 0.5), None).expect(
+            "test: GPU fractional_max_pool2d without samples should succeed via CPU-delegate fallback",
+        );
+        assert_eq!(gpu_result.shape().dims(), &[1, 1, 2, 2]);
+    }
+
+    #[test]
+    fn gpu_fractional_avg_pool2d_without_samples_succeeds() {
+        let input_data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input = Tensor::<f32>::from_vec(input_data, &[1, 1, 4, 4])
+            .expect("test: from_vec should succeed");
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = fractional_avg_pool2d(&gpu_input, (0.5, 0.5), None).expect(
+            "test: GPU fractional_avg_pool2d without samples should succeed via CPU-delegate fallback",
+        );
+        assert_eq!(gpu_result.shape().dims(), &[1, 1, 2, 2]);
     }
 }

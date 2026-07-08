@@ -680,72 +680,15 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    let shape = input.shape();
-    if shape.rank() != 5 {
-        return Err(TensorError::InvalidShape {
-            operation: "max_pool3d".to_string(),
-            reason: format!("MaxPool3D expects 5D input, got {}D", shape.rank()),
-            shape: Some(shape.dims().to_vec()),
-            context: None,
-        });
-    }
-
-    // GPU assumes NCDHW format
-    let batch_size = shape.dims()[0];
-    let channels = shape.dims()[1];
-    let input_depth = shape.dims()[2];
-    let input_height = shape.dims()[3];
-    let input_width = shape.dims()[4];
-
-    // Calculate output dimensions
-    let (output_depth, output_height, output_width) = if padding == "valid" {
-        (
-            (input_depth - kernel_size.0) / stride.0 + 1,
-            (input_height - kernel_size.1) / stride.1 + 1,
-            (input_width - kernel_size.2) / stride.2 + 1,
-        )
-    } else {
-        // "same" padding
-        (
-            (input_depth + stride.0 - 1) / stride.0,
-            (input_height + stride.1 - 1) / stride.1,
-            (input_width + stride.2 - 1) / stride.2,
-        )
-    };
-
-    let input_shape = &[batch_size, channels, input_depth, input_height, input_width];
-    let output_shape = &[
-        batch_size,
-        channels,
-        output_depth,
-        output_height,
-        output_width,
-    ];
-
-    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
-        return Err(TensorError::unsupported_operation_simple(
-            "Internal error: max_pool3d_gpu called with non-GPU tensor".to_string(),
-        ));
-    };
-
-    let kernel_size_slice = &[kernel_size.0, kernel_size.1];
-    let stride_slice = &[stride.0, stride.1];
-    let padding_slice = &[0, 0];
-    let output_len = output_shape.iter().product();
-
-    let result_gpu = crate::gpu::ops::execute_pooling_op(
-        gpu_buffer,
-        crate::gpu::ops::PoolingOp::MaxPool3D,
-        kernel_size_slice,
-        stride_slice,
-        padding_slice,
-        input_shape,
-        output_len,
-    )?;
-
-    let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape.to_vec()));
-    result.set_requires_grad(input.requires_grad());
-    Ok(result)
+    // `execute_pooling_op`'s `shader_entry_point` match has no MaxPool3D arm
+    // (only MaxPool2D/AvgPool2D/GlobalMaxPool/GlobalAvgPool are native), so it
+    // always returns an honest error for this op. Read the GPU-resident input
+    // back to the host (a real device->host transfer) and delegate to the CPU
+    // implementation, which is known-correct and already performs its own
+    // rank check and output-shape computation.
+    let cpu_input = input.to_cpu()?;
+    let result = max_pool3d_cpu(&cpu_input, kernel_size, stride, padding)?;
+    result.to_device(input.device().clone())
 }
 
 #[cfg(feature = "gpu")]
@@ -767,68 +710,62 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    let shape = input.shape();
-    if shape.rank() != 5 {
-        return Err(TensorError::invalid_shape_simple(format!(
-            "AvgPool3D expects 5D input, got {}D",
-            shape.rank()
-        )));
+    let cpu_input = input.to_cpu()?;
+    let result = avg_pool3d_cpu(&cpu_input, kernel_size, stride, padding)?;
+    result.to_device(input.device().clone())
+}
+
+// GPU delegate correctness tests: verify max_pool3d_gpu/avg_pool3d_gpu
+// round-trip GPU-resident input through the host and delegate to the
+// known-correct CPU implementation, instead of erroring via
+// execute_pooling_op (which has no MaxPool3D/AvgPool3D shader_entry_point
+// arm — only MaxPool2D/AvgPool2D/GlobalMaxPool/GlobalAvgPool are native).
+// MaxPool2D/AvgPool2D (2D) already have real native GPU kernels and are
+// intentionally not touched or tested here.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_delegate_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_max_pool3d_matches_cpu_reference() {
+        let data: Vec<f32> = (0..64).map(|v| v as f32).collect();
+        let cpu_input =
+            Tensor::<f32>::from_vec(data, &[1, 1, 4, 4, 4]).expect("test: from_vec should succeed");
+        let cpu_result = max_pool3d(&cpu_input, (2, 2, 2), (2, 2, 2), "valid")
+            .expect("test: CPU max_pool3d should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+        let gpu_result = max_pool3d(&gpu_input, (2, 2, 2), (2, 2, 2), "valid")
+            .expect("test: GPU max_pool3d should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
     }
 
-    // GPU assumes NCDHW format
-    let batch_size = shape.dims()[0];
-    let channels = shape.dims()[1];
-    let input_depth = shape.dims()[2];
-    let input_height = shape.dims()[3];
-    let input_width = shape.dims()[4];
+    #[test]
+    fn gpu_avg_pool3d_matches_cpu_reference() {
+        let data: Vec<f32> = (0..64).map(|v| v as f32).collect();
+        let cpu_input =
+            Tensor::<f32>::from_vec(data, &[1, 1, 4, 4, 4]).expect("test: from_vec should succeed");
+        let cpu_result = avg_pool3d(&cpu_input, (2, 2, 2), (2, 2, 2), "valid")
+            .expect("test: CPU avg_pool3d should succeed");
 
-    // Calculate output dimensions
-    let (output_depth, output_height, output_width) = if padding == "valid" {
-        (
-            (input_depth - kernel_size.0) / stride.0 + 1,
-            (input_height - kernel_size.1) / stride.1 + 1,
-            (input_width - kernel_size.2) / stride.2 + 1,
-        )
-    } else {
-        // "same" padding
-        (
-            (input_depth + stride.0 - 1) / stride.0,
-            (input_height + stride.1 - 1) / stride.1,
-            (input_width + stride.2 - 1) / stride.2,
-        )
-    };
-
-    let input_shape = &[batch_size, channels, input_depth, input_height, input_width];
-    let output_shape = &[
-        batch_size,
-        channels,
-        output_depth,
-        output_height,
-        output_width,
-    ];
-
-    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
-        return Err(TensorError::unsupported_operation_simple(
-            "Internal error: avg_pool3d_gpu called with non-GPU tensor".to_string(),
-        ));
-    };
-
-    let kernel_size_slice = &[kernel_size.0, kernel_size.1];
-    let stride_slice = &[stride.0, stride.1];
-    let padding_slice = &[0, 0];
-    let output_len = output_shape.iter().product();
-
-    let result_gpu = crate::gpu::ops::execute_pooling_op(
-        gpu_buffer,
-        crate::gpu::ops::PoolingOp::AvgPool3D,
-        kernel_size_slice,
-        stride_slice,
-        padding_slice,
-        input_shape,
-        output_len,
-    )?;
-
-    let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape.to_vec()));
-    result.set_requires_grad(input.requires_grad());
-    Ok(result)
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = avg_pool3d(&gpu_input, (2, 2, 2), (2, 2, 2), "valid")
+            .expect("test: GPU avg_pool3d should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
 }

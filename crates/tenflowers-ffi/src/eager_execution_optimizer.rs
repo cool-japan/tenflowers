@@ -289,7 +289,7 @@ impl PyEagerExecutionOptimizer {
             self.optimization_config.target_overhead_microseconds = value.extract::<f64>()?;
             self.performance_tracker
                 .lock()
-                .expect("Mutex should not be poisoned")
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .target_overhead_microseconds = value.extract::<f64>()?;
         }
 
@@ -316,14 +316,12 @@ impl PyEagerExecutionOptimizer {
         inputs: &Bound<'_, PyList>,
     ) -> PyResult<Py<PyAny>> {
         let start_time = Instant::now();
-        let mut optimizer = self
-            .inner
-            .write()
-            .expect("write lock should not be poisoned");
-        let mut tracker = self
-            .performance_tracker
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut optimizer = self.inner.write().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("eager optimizer lock poisoned")
+        })?;
+        let mut tracker = self.performance_tracker.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("performance tracker lock poisoned")
+        })?;
 
         // Extract input information
         let input_shapes: Vec<Vec<usize>> = inputs
@@ -447,11 +445,12 @@ impl PyEagerExecutionOptimizer {
 
     /// Get comprehensive performance statistics
     pub fn get_performance_statistics(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let optimizer = self.inner.read().expect("read lock should not be poisoned");
-        let tracker = self
-            .performance_tracker
-            .lock()
-            .expect("lock should not be poisoned");
+        let optimizer = self.inner.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("eager optimizer lock poisoned")
+        })?;
+        let tracker = self.performance_tracker.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("performance tracker lock poisoned")
+        })?;
         let py_dict = PyDict::new(py);
 
         // Overhead statistics
@@ -531,7 +530,7 @@ impl PyEagerExecutionOptimizer {
 
         for iteration in 0..iterations {
             for (op_idx, operation) in operations.iter().enumerate() {
-                let op_dict = operation.downcast::<PyDict>()?;
+                let op_dict = operation.cast::<PyDict>()?;
                 let op_type: String = op_dict
                     .get_item("type")
                     .and_then(|item| item.map(|i| i.extract::<String>()).transpose())
@@ -544,7 +543,7 @@ impl PyEagerExecutionOptimizer {
                     .unwrap_or("unknown".to_string());
 
                 let inputs: Bound<'_, PyList> = match op_dict.get_item("inputs") {
-                    Ok(Some(item)) => match item.downcast::<PyList>() {
+                    Ok(Some(item)) => match item.cast::<PyList>() {
                         Ok(list) => list.clone(),
                         Err(_) => PyList::empty(py),
                     },
@@ -577,10 +576,9 @@ impl PyEagerExecutionOptimizer {
 
         // Update tracker
         {
-            let mut tracker = self
-                .performance_tracker
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut tracker = self.performance_tracker.lock().map_err(|_| {
+                pyo3::exceptions::PyRuntimeError::new_err("performance tracker lock poisoned")
+            })?;
             tracker.current_average_overhead_microseconds = avg_overhead_per_op;
             tracker.overhead_measurements.push(avg_overhead_per_op);
             tracker.throughput_measurements.push(throughput);
@@ -626,11 +624,12 @@ impl PyEagerExecutionOptimizer {
 
     /// Get optimization recommendations for improving eager execution performance
     pub fn get_optimization_recommendations(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let optimizer = self.inner.read().expect("read lock should not be poisoned");
-        let tracker = self
-            .performance_tracker
-            .lock()
-            .expect("lock should not be poisoned");
+        let optimizer = self.inner.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("eager optimizer lock poisoned")
+        })?;
+        let tracker = self.performance_tracker.lock().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("performance tracker lock poisoned")
+        })?;
         let mut recommendations = Vec::new();
 
         let current_overhead = tracker.current_average_overhead_microseconds;

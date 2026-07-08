@@ -98,7 +98,7 @@ impl BinaryOpRegistry {
             let mut counters = self
                 .op_counters
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             counters
                 .entry(op_name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
@@ -131,7 +131,7 @@ impl BinaryOpRegistry {
         let counters = self
             .op_counters
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let op_counts: std::collections::HashMap<String, u64> = counters
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))

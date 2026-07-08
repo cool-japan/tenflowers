@@ -1,3 +1,4 @@
+use crate::ops::utils::normalize_index;
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -103,12 +104,20 @@ impl AdvancedIndexer {
             // Calculate how many dimensions the ellipsis should represent
             let ellipsis_dims = original_ndim - non_ellipsis_dims;
 
-            // Build resolved indices
+            // Build resolved indices, tracking a running dimension-index counter so
+            // Index/IntArray conversion can look up the correct original dimension
+            // size for negative-index normalization. NewAxis entries insert a new
+            // dimension and therefore do not consume (advance) dim_idx.
             let mut resolved = Vec::new();
+            let mut dim_idx = 0usize;
 
             // Add indices before ellipsis
             for idx in &self.indices[..ellipsis_idx] {
-                resolved.push(self.convert_index_spec(idx.clone())?);
+                let consumes_dim = !matches!(idx, IndexSpec::NewAxis);
+                resolved.push(self.convert_index_spec(idx.clone(), dim_idx)?);
+                if consumes_dim {
+                    dim_idx += 1;
+                }
             }
 
             // Add full slices for ellipsis dimensions
@@ -118,28 +127,46 @@ impl AdvancedIndexer {
                     stop: usize::MAX,
                     step: 1,
                 });
+                dim_idx += 1;
             }
 
             // Add indices after ellipsis
             for idx in &self.indices[ellipsis_idx + 1..] {
-                resolved.push(self.convert_index_spec(idx.clone())?);
+                let consumes_dim = !matches!(idx, IndexSpec::NewAxis);
+                resolved.push(self.convert_index_spec(idx.clone(), dim_idx)?);
+                if consumes_dim {
+                    dim_idx += 1;
+                }
             }
 
             self.resolved_indices = resolved;
         } else {
-            // No ellipsis, just convert all indices
-            self.resolved_indices = self
-                .indices
-                .iter()
-                .map(|idx| self.convert_index_spec(idx.clone()))
-                .collect::<Result<Vec<_>>>()?;
+            // No ellipsis: convert all indices in order, tracking dim_idx the same
+            // way as above so negative-index normalization sees the correct
+            // original dimension size.
+            let mut resolved = Vec::with_capacity(self.indices.len());
+            let mut dim_idx = 0usize;
+            for idx in &self.indices {
+                let consumes_dim = !matches!(idx, IndexSpec::NewAxis);
+                resolved.push(self.convert_index_spec(idx.clone(), dim_idx)?);
+                if consumes_dim {
+                    dim_idx += 1;
+                }
+            }
+            self.resolved_indices = resolved;
         }
 
         Ok(())
     }
 
     /// Convert IndexSpec to ResolvedIndex
-    fn convert_index_spec(&self, spec: IndexSpec) -> Result<ResolvedIndex> {
+    ///
+    /// `dim_idx` is the index (into `self.original_shape`) of the original
+    /// dimension this spec applies to. It is used to resolve negative indices
+    /// (Python-style: `-1` means the last element along that dimension) via
+    /// `normalize_index`. `NewAxis` specs do not consume an original dimension,
+    /// so callers must not advance `dim_idx` for them (see `resolve_indices`).
+    fn convert_index_spec(&self, spec: IndexSpec, dim_idx: usize) -> Result<ResolvedIndex> {
         match spec {
             IndexSpec::Slice { start, stop, step } => {
                 let step = step.unwrap_or(1);
@@ -163,34 +190,43 @@ impl AdvancedIndexer {
                 })
             }
             IndexSpec::Index(idx) => {
-                let resolved_idx = if idx < 0 {
-                    // Negative indexing is not yet supported in this basic implementation
-                    return Err(TensorError::invalid_argument(
-                        "Negative indexing not yet supported".to_string(),
-                    ));
-                } else {
-                    idx as usize
-                };
+                let dim_size = *self.original_shape.get(dim_idx).ok_or_else(|| {
+                    TensorError::invalid_argument(format!(
+                        "Too many indices for array: array is {}-dimensional, but an index was given for dimension {dim_idx}",
+                        self.original_shape.len()
+                    ))
+                })?;
+                let resolved_idx = normalize_index(idx as isize, dim_size)?;
                 Ok(ResolvedIndex::Index(resolved_idx))
             }
             IndexSpec::Ellipsis => {
-                unreachable!("Ellipsis should be handled in resolve_indices")
+                // An ellipsis spans zero-or-more dimensions and can only be
+                // expanded with knowledge of the full index list and the source
+                // rank (done in `resolve_indices`). `convert_index_spec` handles a
+                // single index in isolation and has no such context, so it cannot
+                // turn an ellipsis into concrete `ResolvedIndex` values. Reaching
+                // here means an un-expanded ellipsis was passed in directly;
+                // `IndexSpec::Ellipsis` is publicly constructible, so we return an
+                // honest, recoverable error instead of panicking via `unreachable!`.
+                Err(TensorError::invalid_argument(
+                    "ellipsis (...) must be expanded against the tensor rank before \
+                     conversion; pass index specifications through AdvancedIndexer so the \
+                     ellipsis is resolved to concrete slices first"
+                        .to_string(),
+                ))
             }
             IndexSpec::NewAxis => Ok(ResolvedIndex::NewAxis),
             IndexSpec::BoolMask(mask) => Ok(ResolvedIndex::BoolMask(mask)),
             IndexSpec::IntArray(indices) => {
+                let dim_size = *self.original_shape.get(dim_idx).ok_or_else(|| {
+                    TensorError::invalid_argument(format!(
+                        "Too many indices for array: array is {}-dimensional, but an index array was given for dimension {dim_idx}",
+                        self.original_shape.len()
+                    ))
+                })?;
                 let resolved: Vec<usize> = indices
                     .into_iter()
-                    .map(|i| {
-                        if i < 0 {
-                            // For now, don't support negative indexing
-                            Err(TensorError::invalid_argument(
-                                "Negative indexing not yet supported".to_string(),
-                            ))
-                        } else {
-                            Ok(i as usize)
-                        }
-                    })
+                    .map(|i| normalize_index(i as isize, dim_size))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(ResolvedIndex::IntArray(resolved))
             }
@@ -428,5 +464,177 @@ mod tests {
         let indexer =
             AdvancedIndexer::new(shape, indices).expect("test: construction should succeed");
         assert_eq!(indexer.output_shape(), &[3, 3]); // Selected 3 elements from first dim
+    }
+
+    #[test]
+    fn test_convert_index_spec_ellipsis_returns_error_not_panic() {
+        // A stray, un-expanded ellipsis passed directly to convert_index_spec must
+        // produce an honest, recoverable error rather than panicking via
+        // unreachable!(). IndexSpec::Ellipsis is publicly constructible.
+        let indexer = AdvancedIndexer::new(
+            vec![3, 4],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let result = indexer.convert_index_spec(IndexSpec::Ellipsis, 0);
+        assert!(
+            result.is_err(),
+            "an un-expanded ellipsis must yield an honest Err, not a panic"
+        );
+    }
+
+    #[test]
+    fn test_ellipsis_resolution_still_succeeds_through_public_api() {
+        // The normal path (ellipsis expanded inside resolve_indices) must remain
+        // unaffected by the convert_index_spec hardening.
+        let indexer = AdvancedIndexer::new(
+            vec![2, 3, 4, 5],
+            vec![
+                IndexSpec::Index(0),
+                IndexSpec::Ellipsis,
+                IndexSpec::Index(2),
+            ],
+        )
+        .expect("test: ellipsis should resolve through resolve_indices");
+        assert_eq!(indexer.output_shape(), &[3, 4]);
+    }
+
+    #[test]
+    fn test_convert_index_spec_negative_index_boundary_last_element() {
+        // shape [5]; -1 must resolve to the last valid index, 4.
+        let indexer = AdvancedIndexer::new(
+            vec![5],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let resolved = indexer
+            .convert_index_spec(IndexSpec::Index(-1), 0)
+            .expect("test: -1 should normalize to the last element");
+        match resolved {
+            ResolvedIndex::Index(v) => assert_eq!(v, 4),
+            other => panic!("expected ResolvedIndex::Index(4), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_index_spec_negative_index_wraps_to_first_element() {
+        // shape [5]; -5 must resolve to index 0.
+        let indexer = AdvancedIndexer::new(
+            vec![5],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let resolved = indexer
+            .convert_index_spec(IndexSpec::Index(-5), 0)
+            .expect("test: -5 on a size-5 dim should normalize to 0");
+        match resolved {
+            ResolvedIndex::Index(v) => assert_eq!(v, 0),
+            other => panic!("expected ResolvedIndex::Index(0), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_index_spec_negative_index_out_of_range_errors() {
+        // shape [5]; -6 has no valid positive mapping (5 + (-6) = -1 < 0) -> Err, not a panic.
+        let indexer = AdvancedIndexer::new(
+            vec![5],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let result = indexer.convert_index_spec(IndexSpec::Index(-6), 0);
+        assert!(
+            result.is_err(),
+            "-6 on a size-5 dimension must be an honest Err"
+        );
+    }
+
+    #[test]
+    fn test_negative_index_through_public_api_various_dim_sizes() {
+        // shape [7, 5]; dim 0 (size 7) fully sliced, dim 1 (size 5) indexed with -1 -> last element.
+        let indexer = AdvancedIndexer::new(
+            vec![7, 5],
+            vec![
+                IndexSpec::Slice {
+                    start: None,
+                    stop: None,
+                    step: None,
+                },
+                IndexSpec::Index(-1),
+            ],
+        )
+        .expect("test: negative index should resolve through the public constructor");
+        assert_eq!(indexer.output_shape(), &[7]);
+    }
+
+    #[test]
+    fn test_negative_index_array_various_dim_sizes() {
+        // shape [5]; IntArray([-1, -2, 0]) -> [4, 3, 0].
+        let indexer = AdvancedIndexer::new(
+            vec![5],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let resolved = indexer
+            .convert_index_spec(IndexSpec::IntArray(vec![-1, -2, 0]), 0)
+            .expect("test: negative indices in IntArray should normalize");
+        match resolved {
+            ResolvedIndex::IntArray(values) => assert_eq!(values, vec![4, 3, 0]),
+            other => panic!("expected ResolvedIndex::IntArray([4,3,0]), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_negative_index_array_preserves_per_element_errors() {
+        // shape [5]; IntArray([-1, -10]): -1 is valid (-> 4), but -10 has no valid mapping.
+        let indexer = AdvancedIndexer::new(
+            vec![5],
+            vec![IndexSpec::Slice {
+                start: None,
+                stop: None,
+                step: None,
+            }],
+        )
+        .expect("test: construction should succeed");
+
+        let result = indexer.convert_index_spec(IndexSpec::IntArray(vec![-1, -10]), 0);
+        assert!(
+            result.is_err(),
+            "an out-of-range element anywhere in the array must fail the whole conversion"
+        );
+    }
+
+    #[test]
+    fn test_negative_index_array_through_public_api() {
+        // shape [6]; select indices [-1, -3, 2] -> output shape [3].
+        let indexer = AdvancedIndexer::new(vec![6], vec![IndexSpec::IntArray(vec![-1, -3, 2])])
+            .expect(
+                "test: negative IntArray indices should resolve through the public constructor",
+            );
+        assert_eq!(indexer.output_shape(), &[3]);
     }
 }

@@ -17,7 +17,7 @@ pub struct DefaultCollate;
 
 impl<T> CollateFn<T> for DefaultCollate
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     fn collate(&self, batch: Vec<(Tensor<T>, Tensor<T>)>) -> Result<(Tensor<T>, Tensor<T>)> {
         if batch.is_empty() {
@@ -59,7 +59,7 @@ pub struct PaddingCollate<T> {
 
 impl<T> PaddingCollate<T>
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     /// Create a new padding collate function
     pub fn new(padding_value: T, padding_strategy: PaddingStrategy) -> Self {
@@ -146,7 +146,7 @@ where
 
 impl<T> CollateFn<T> for PaddingCollate<T>
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     fn collate(&self, batch: Vec<(Tensor<T>, Tensor<T>)>) -> Result<(Tensor<T>, Tensor<T>)> {
         if batch.is_empty() {
@@ -224,7 +224,7 @@ where
 
 impl<T> CollateFn<T> for BucketCollate<T>
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     fn collate(&self, batch: Vec<(Tensor<T>, Tensor<T>)>) -> Result<(Tensor<T>, Tensor<T>)> {
         if batch.is_empty() {

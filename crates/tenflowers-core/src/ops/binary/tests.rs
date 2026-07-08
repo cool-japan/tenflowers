@@ -9,6 +9,7 @@ mod tests {
     use super::super::convenience::*;
     use crate::tensor::TensorStorage;
     use crate::Tensor;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_add_same_shape() {
@@ -57,12 +58,13 @@ mod tests {
             .expect("test: from_vec should succeed");
 
         let c = pow(&a, &b).expect("test: pow should succeed");
-        let expected = vec![4.0, 9.0, 16.0];
+        let expected = [4.0, 9.0, 16.0];
 
         if let TensorStorage::Cpu(arr) = &c.storage {
-            assert_eq!(
+            assert_relative_eq!(
                 arr.as_slice().expect("tensor should be contiguous"),
-                &expected
+                &expected[..],
+                epsilon = 1e-6
             );
         }
 
@@ -70,12 +72,13 @@ mod tests {
         let scalar =
             Tensor::<f32>::from_vec(vec![3.0], &[1]).expect("test: from_vec should succeed");
         let d = pow(&a, &scalar).expect("test: pow should succeed");
-        let expected = vec![8.0, 27.0, 64.0];
+        let expected = [8.0, 27.0, 64.0];
 
         if let TensorStorage::Cpu(arr) = &d.storage {
-            assert_eq!(
+            assert_relative_eq!(
                 arr.as_slice().expect("tensor should be contiguous"),
-                &expected
+                &expected[..],
+                epsilon = 1e-6
             );
         }
     }

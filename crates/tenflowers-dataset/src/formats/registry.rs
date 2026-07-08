@@ -8,7 +8,7 @@ use crate::formats::unified_reader::{FormatDetection, FormatFactory, FormatReade
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock, RwLock};
-use tenflowers_core::Result;
+use tenflowers_core::{Result, TensorError};
 
 /// Global format registry singleton
 static GLOBAL_REGISTRY: OnceLock<GlobalFormatRegistry> = OnceLock::new();
@@ -76,7 +76,7 @@ impl GlobalFormatRegistry {
         let mut factories = self
             .factories
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.insert(format_name, factory);
     }
 
@@ -85,7 +85,7 @@ impl GlobalFormatRegistry {
         let mut factories = self
             .factories
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.remove(format_name).is_some()
     }
 
@@ -94,7 +94,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.keys().cloned().collect()
     }
 
@@ -103,7 +103,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut extensions = Vec::new();
 
         for factory in factories.values() {
@@ -120,10 +120,9 @@ impl GlobalFormatRegistry {
 
     /// Detect the best format for a given file
     pub fn detect_format(&self, path: &Path) -> Result<FormatDetection> {
-        let factories = self
-            .factories
-            .read()
-            .expect("read lock should not be poisoned");
+        let factories = self.factories.read().map_err(|_| {
+            TensorError::invalid_operation_simple("factories lock poisoned".to_string())
+        })?;
 
         if factories.is_empty() {
             return Err(error_helpers::invalid_configuration(
@@ -161,10 +160,9 @@ impl GlobalFormatRegistry {
 
     /// Create a reader for a specific format
     pub fn create_reader(&self, format_name: &str, path: &Path) -> Result<Box<dyn FormatReader>> {
-        let factories = self
-            .factories
-            .read()
-            .expect("read lock should not be poisoned");
+        let factories = self.factories.read().map_err(|_| {
+            TensorError::invalid_operation_simple("factories lock poisoned".to_string())
+        })?;
 
         let factory = factories.get(format_name).ok_or_else(|| {
             error_helpers::invalid_configuration(
@@ -200,7 +198,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.get(format_name).map(|f| {
             // Clone the Arc wrapper, not the factory itself
             // This is a workaround since we can't clone trait objects
@@ -215,7 +213,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.contains_key(format_name)
     }
 
@@ -224,7 +222,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories.get(format_name).map(|factory| FormatInfo {
             name: factory.format_name().to_string(),
             extensions: factory
@@ -240,7 +238,7 @@ impl GlobalFormatRegistry {
         let factories = self
             .factories
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         factories
             .values()
             .map(|factory| FormatInfo {

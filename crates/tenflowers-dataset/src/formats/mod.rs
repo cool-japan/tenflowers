@@ -25,6 +25,8 @@ pub mod arrow;
 pub mod arrow_advanced;
 #[cfg(feature = "audio")]
 pub mod audio;
+#[cfg(feature = "compression")]
+pub mod blosc;
 pub mod common;
 pub mod cross_format;
 pub mod csv;
@@ -32,6 +34,7 @@ pub mod csv;
 pub mod csv_format_reader;
 #[cfg(feature = "hdf5")]
 pub mod hdf5;
+pub mod hdf5_advanced;
 #[cfg(feature = "hdf5")]
 pub mod hdf5_format_reader;
 pub mod image;
@@ -41,6 +44,7 @@ pub mod json;
 pub mod json_format_reader;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod parquet_advanced;
 #[cfg(feature = "parquet")]
 pub mod parquet_format_reader;
 pub mod registry;
@@ -48,6 +52,7 @@ pub mod schema_validator;
 pub mod text;
 #[cfg(feature = "tfrecord")]
 pub mod tfrecord;
+pub mod tfrecord_advanced;
 pub mod unified_reader;
 #[cfg(feature = "webdataset")]
 pub mod webdataset;
@@ -110,3 +115,26 @@ pub use hdf5_format_reader::{HDF5FormatFactory, HDF5FormatReader};
 pub use json_format_reader::{JsonFormatFactory, JsonFormatReader};
 #[cfg(feature = "parquet")]
 pub use parquet_format_reader::{ParquetFormatFactory, ParquetFormatReader};
+
+// Re-export advanced HDF5 types (stubs always available)
+pub use hdf5_advanced::{
+    CompressionKind, DatasetInfo, Hdf5AttributeReader, Hdf5AttributeValue, Hdf5ChunkedReader,
+    Hdf5SliceReader, Hdf5TreeWalker, TreeNode,
+};
+
+// Re-export advanced Parquet types (stubs always available)
+pub use parquet_advanced::{
+    inspect_schema, read_columns, read_filtered, ColumnDtype, ColumnInfo, FilterPredicate,
+    ParquetRowGroupReader, ParquetSchemaInfo, RowGroupBatch,
+};
+
+// Re-export advanced TFRecord types (stubs always available)
+#[cfg(feature = "tfrecord")]
+pub use tfrecord_advanced::parse_feature_proto;
+// `SequenceExample`/`SequenceStep` embed the `Feature` type from the base
+// `tfrecord` module, so they only exist when that feature is enabled.
+pub use tfrecord_advanced::{
+    masked_crc32, verify_masked_crc32, RawTfRecord, TfRecordRawReader, TfRecordSequenceReader,
+};
+#[cfg(feature = "tfrecord")]
+pub use tfrecord_advanced::{SequenceExample, SequenceStep};

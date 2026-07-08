@@ -77,3 +77,5 @@ criterion/
 .claude/*
 # Rustc ICE dumps
 rustc-ice-*.txt
+
+target

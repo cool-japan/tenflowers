@@ -2,7 +2,7 @@
 
 High-level neural network APIs for TenfloweRS, providing layers, models, optimizers, training utilities, and domain-specific architectures for deep learning in Rust.
 
-> Stable (v0.1.1 -- 2026-04-24) | 11,537 tests passing | 0 clippy warnings
+> Stable (v0.1.2 -- 2026-07-08) | 11,596 tests passing (8 skipped) | 0 clippy warnings
 
 ## Overview
 
@@ -14,7 +14,7 @@ High-level neural network APIs for TenfloweRS, providing layers, models, optimiz
 - **Optimizers**: SGD, Adam, AdamW, LAMB, Lion, Muon, with LR schedulers
 - **Loss Functions**: Common losses for classification, regression, and contrastive learning
 - **Training Utilities**: Checkpointing, early stopping, callbacks, mixed precision
-- **Deployment**: Quantization, pruning (unstructured and structured), compression
+- **Deployment**: Quantization, magnitude/random pruning, compression (structured/gradual/lottery-ticket pruning strategies honestly report not-yet-implemented rather than fabricating results)
 
 ## Domain Coverage
 
@@ -235,8 +235,9 @@ for epoch in 0..num_epochs {
 - `default`: Standard neural network functionality
 - `gpu`: GPU-accelerated layer operations
 - `serialize`: Model serialization and checkpointing
-- `onnx`: ONNX model import/export
+- `onnx`: ONNX model import/export (real `prost`-based protobuf decode/encode)
 - `gloo`: Distributed training communication
+- `gzip`: Gzip compression for weight/checkpoint serialization (via `oxiarc-archive`)
 
 ## Integration with TenfloweRS Ecosystem
 

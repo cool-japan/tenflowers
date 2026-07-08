@@ -679,7 +679,8 @@ where
         + 'static
         + FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     // Simple wrapper that calls the appropriate reduction function
     match op {
@@ -691,10 +692,33 @@ where
         super::gpu_kernels::ReductionOp::Variance => {
             variance(tensor, Some(&[axis as i32]), keep_dims, 0)
         }
-        _ => Err(TensorError::not_implemented_simple(format!(
-            "Reduction operation {:?} not implemented for CPU",
-            op
-        ))),
+        super::gpu_kernels::ReductionOp::StdDev => {
+            // StdDev = sqrt(Variance), mirrors the composition used in
+            // gpu_kernels::gpu_reduce_axis for the GPU-resident case.
+            let var = variance(tensor, Some(&[axis as i32]), keep_dims, 0)?;
+            var.sqrt()
+        }
+        super::gpu_kernels::ReductionOp::L1Norm => {
+            // L1 norm = sum of absolute values.
+            let abs_t = tensor.abs()?;
+            sum(&abs_t, Some(&[axis as i32]), keep_dims)
+        }
+        super::gpu_kernels::ReductionOp::L2Norm => {
+            // L2 norm = sqrt(sum of squares).
+            let sq = crate::ops::numpy_compat::square(tensor)?;
+            let summed = sum(&sq, Some(&[axis as i32]), keep_dims)?;
+            summed.sqrt()
+        }
+        // Any/All (boolean reductions) are intentionally left unimplemented here:
+        // defining a "nonzero-as-true" convention for a generic float `T` is a
+        // real design decision that this change does not want to guess at.
+        // Open question for follow-up.
+        super::gpu_kernels::ReductionOp::Any | super::gpu_kernels::ReductionOp::All => {
+            Err(TensorError::not_implemented_simple(format!(
+                "Reduction operation {:?} not implemented for CPU",
+                op
+            )))
+        }
     }
 }
 
@@ -710,7 +734,8 @@ where
         + 'static
         + FromPrimitive
         + scirs2_core::num_traits::ops::mul_add::MulAdd
-        + scirs2_core::ndarray::ScalarOperand,
+        + scirs2_core::ndarray::ScalarOperand
+        + scirs2_core::num_traits::Signed,
 {
     let result = match op {
         super::gpu_kernels::ReductionOp::Sum => sum(tensor, None, false)?,
@@ -718,7 +743,24 @@ where
         super::gpu_kernels::ReductionOp::Max => max(tensor, None, false)?,
         super::gpu_kernels::ReductionOp::Min => min(tensor, None, false)?,
         super::gpu_kernels::ReductionOp::Prod => prod(tensor, None, false)?,
-        _ => {
+        super::gpu_kernels::ReductionOp::StdDev => variance(tensor, None, false, 0)?.sqrt()?,
+        super::gpu_kernels::ReductionOp::L1Norm => {
+            let abs_t = tensor.abs()?;
+            sum(&abs_t, None, false)?
+        }
+        super::gpu_kernels::ReductionOp::L2Norm => {
+            let sq = crate::ops::numpy_compat::square(tensor)?;
+            sum(&sq, None, false)?.sqrt()?
+        }
+        // Variance is intentionally NOT wired up here (pre-existing asymmetry vs.
+        // reduce_axis_cpu, out of scope for this change). Any/All (boolean
+        // reductions) are intentionally left unimplemented: defining a
+        // "nonzero-as-true" convention for a generic float `T` is a real design
+        // decision that this change does not want to guess at. Open question
+        // for follow-up.
+        super::gpu_kernels::ReductionOp::Variance
+        | super::gpu_kernels::ReductionOp::Any
+        | super::gpu_kernels::ReductionOp::All => {
             return Err(TensorError::not_implemented_simple(format!(
                 "Reduction operation {:?} not implemented for CPU",
                 op
@@ -732,5 +774,161 @@ where
         Ok(T::default())
     } else {
         Ok(data[0])
+    }
+}
+
+#[cfg(feature = "gpu")]
+#[cfg(test)]
+mod tests {
+    use super::super::gpu_kernels::ReductionOp;
+    use super::*;
+
+    /// Absolute tolerance used for float comparisons in this module's tests.
+    const TOL: f32 = 1e-4;
+
+    /// Fixed 2x3 f32 tensor shared by the tests below:
+    /// ```text
+    /// [[ 1.0, -2.0,  3.0],
+    ///  [-4.0,  5.0, -6.0]]
+    /// ```
+    fn test_tensor() -> Tensor<f32> {
+        Tensor::from_vec(vec![1.0f32, -2.0, 3.0, -4.0, 5.0, -6.0], &[2, 3])
+            .expect("failed to build fixed 2x3 test tensor")
+    }
+
+    // ---- reduce_axis_cpu, axis = 1 (reduces each row of 3 elements to 1) ----
+    //
+    // row0 = [ 1, -2,  3]
+    // row1 = [-4,  5, -6]
+
+    #[test]
+    fn test_reduce_axis_cpu_l1_norm() {
+        let t = test_tensor();
+        let result = reduce_axis_cpu(&t, 1, ReductionOp::L1Norm, false)
+            .expect("L1Norm axis reduction should succeed");
+        let data = result.data();
+        // row0: |1| + |-2| + |3|  =  6
+        // row1: |-4| + |5| + |-6| = 15
+        assert_eq!(data.len(), 2);
+        assert!(
+            (data[0] - 6.0).abs() < TOL,
+            "row0 L1 norm: got {}, expected 6.0",
+            data[0]
+        );
+        assert!(
+            (data[1] - 15.0).abs() < TOL,
+            "row1 L1 norm: got {}, expected 15.0",
+            data[1]
+        );
+    }
+
+    #[test]
+    fn test_reduce_axis_cpu_l2_norm() {
+        let t = test_tensor();
+        let result = reduce_axis_cpu(&t, 1, ReductionOp::L2Norm, false)
+            .expect("L2Norm axis reduction should succeed");
+        let data = result.data();
+        // row0: sqrt(1^2 + 2^2 + 3^2) = sqrt(14) ~= 3.74166
+        // row1: sqrt(4^2 + 5^2 + 6^2) = sqrt(77) ~= 8.77496
+        assert_eq!(data.len(), 2);
+        assert!(
+            (data[0] - 3.74166).abs() < TOL,
+            "row0 L2 norm: got {}, expected sqrt(14) ~= 3.74166",
+            data[0]
+        );
+        assert!(
+            (data[1] - 8.77496).abs() < TOL,
+            "row1 L2 norm: got {}, expected sqrt(77) ~= 8.77496",
+            data[1]
+        );
+    }
+
+    #[test]
+    fn test_reduce_axis_cpu_std_dev() {
+        let t = test_tensor();
+        let result = reduce_axis_cpu(&t, 1, ReductionOp::StdDev, false)
+            .expect("StdDev axis reduction should succeed");
+        let data = result.data();
+        // row0: mean = 2/3;  population variance (ddof=0) = 38/9 ~= 4.22222
+        //       stddev = sqrt(4.22222) ~= 2.05480
+        // row1: mean = -5/3; population variance (ddof=0) = 206/9 ~= 22.88889
+        //       stddev = sqrt(22.88889) ~= 4.78423
+        assert_eq!(data.len(), 2);
+        assert!(
+            (data[0] - 2.05480).abs() < TOL,
+            "row0 stddev: got {}, expected ~= 2.05480",
+            data[0]
+        );
+        assert!(
+            (data[1] - 4.78423).abs() < TOL,
+            "row1 stddev: got {}, expected ~= 4.78423",
+            data[1]
+        );
+    }
+
+    // ---- reduce_all_cpu (whole-tensor scalar reduction over all 6 elements) ----
+
+    #[test]
+    fn test_reduce_all_cpu_l1_norm() {
+        let t = test_tensor();
+        let result =
+            reduce_all_cpu(&t, ReductionOp::L1Norm).expect("L1Norm full reduction should succeed");
+        // |1| + |-2| + |3| + |-4| + |5| + |-6| = 1+2+3+4+5+6 = 21
+        assert!(
+            (result - 21.0).abs() < TOL,
+            "whole-tensor L1 norm: got {}, expected 21.0",
+            result
+        );
+    }
+
+    #[test]
+    fn test_reduce_all_cpu_l2_norm() {
+        let t = test_tensor();
+        let result =
+            reduce_all_cpu(&t, ReductionOp::L2Norm).expect("L2Norm full reduction should succeed");
+        // sqrt(1+4+9+16+25+36) = sqrt(91) ~= 9.53939
+        assert!(
+            (result - 9.53939).abs() < TOL,
+            "whole-tensor L2 norm: got {}, expected sqrt(91) ~= 9.53939",
+            result
+        );
+    }
+
+    #[test]
+    fn test_reduce_all_cpu_std_dev() {
+        let t = test_tensor();
+        let result =
+            reduce_all_cpu(&t, ReductionOp::StdDev).expect("StdDev full reduction should succeed");
+        // mean = -3/6 = -0.5; population variance (ddof=0) = 89.5/6 ~= 14.91667
+        // stddev = sqrt(14.91667) ~= 3.86221
+        assert!(
+            (result - 3.86221).abs() < TOL,
+            "whole-tensor stddev: got {}, expected ~= 3.86221",
+            result
+        );
+    }
+
+    // ---- Any/All: intentionally unimplemented (open design question) ----
+    //
+    // These lock in current, deliberate behavior: a boolean "nonzero-as-true"
+    // reduction convention for a generic float `T` needs a real design
+    // decision that is out of scope here, so both ops must keep erroring
+    // instead of silently guessing at semantics.
+
+    #[test]
+    fn test_reduce_axis_cpu_any_all_not_implemented() {
+        let t = test_tensor();
+        assert!(reduce_axis_cpu(&t, 1, ReductionOp::Any, false).is_err());
+        assert!(reduce_axis_cpu(&t, 1, ReductionOp::All, false).is_err());
+    }
+
+    #[test]
+    fn test_reduce_all_cpu_variance_any_all_not_implemented() {
+        let t = test_tensor();
+        // Variance is intentionally not wired up in reduce_all_cpu (pre-existing
+        // asymmetry vs. reduce_axis_cpu; out of scope for this change).
+        assert!(reduce_all_cpu(&t, ReductionOp::Variance).is_err());
+        assert!(reduce_all_cpu(&t, ReductionOp::Any).is_err());
+        assert!(reduce_all_cpu(&t, ReductionOp::All).is_err());
     }
 }

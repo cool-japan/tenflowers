@@ -199,11 +199,10 @@ impl MemoryPool {
         let mut free_blocks = self
             .free_blocks
             .lock()
-            .expect("lock should not be poisoned");
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+            .map_err(|_| TensorError::invalid_operation_simple("pool lock poisoned".to_string()))?;
+        let mut blocks = self.blocks.write().map_err(|_| {
+            TensorError::invalid_operation_simple("pool write lock poisoned".to_string())
+        })?;
 
         // Find suitable free block using best-fit strategy
         let mut best_block_idx = None;
@@ -240,10 +239,9 @@ impl MemoryPool {
             free_blocks.retain(|&idx| idx != block_idx);
 
             // Track allocation for analytics
-            let mut history = self
-                .allocation_history
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut history = self.allocation_history.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("pool lock poisoned".to_string())
+            })?;
             history.insert(
                 block_idx,
                 AllocationTracker {
@@ -279,14 +277,13 @@ impl MemoryPool {
     /// Deallocate memory back to the pool (reference counting aware)
     #[cfg(feature = "gpu")]
     pub(crate) fn deallocate(&self, block_idx: usize) -> Result<()> {
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            TensorError::invalid_operation_simple("pool write lock poisoned".to_string())
+        })?;
         let mut free_blocks = self
             .free_blocks
             .lock()
-            .expect("lock should not be poisoned");
+            .map_err(|_| TensorError::invalid_operation_simple("pool lock poisoned".to_string()))?;
 
         let block = &mut blocks[block_idx];
         if block.is_free {
@@ -306,7 +303,7 @@ impl MemoryPool {
         let mut history = self
             .allocation_history
             .lock()
-            .expect("lock should not be poisoned");
+            .map_err(|_| TensorError::invalid_operation_simple("pool lock poisoned".to_string()))?;
         if let Some(_tracker) = history.remove(&block_idx) {
             // Tracker removed from history - could store in a completed allocations log for further analysis
         }
@@ -324,10 +321,9 @@ impl MemoryPool {
     /// Returns true if the buffer was successfully shared
     #[cfg(feature = "gpu")]
     pub fn share_buffer(&self, block_idx: usize) -> Result<bool> {
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            TensorError::invalid_operation_simple("pool write lock poisoned".to_string())
+        })?;
 
         if block_idx >= blocks.len() {
             return Err(TensorError::invalid_argument(format!(
@@ -351,14 +347,13 @@ impl MemoryPool {
     /// Returns true if the buffer was actually freed (reference count reached 0)
     #[cfg(feature = "gpu")]
     pub fn release_buffer(&self, block_idx: usize) -> Result<bool> {
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            TensorError::invalid_operation_simple("pool write lock poisoned".to_string())
+        })?;
         let mut free_blocks = self
             .free_blocks
             .lock()
-            .expect("lock should not be poisoned");
+            .map_err(|_| TensorError::invalid_operation_simple("pool lock poisoned".to_string()))?;
 
         if block_idx >= blocks.len() {
             return Err(TensorError::invalid_argument(format!(
@@ -380,10 +375,9 @@ impl MemoryPool {
             free_blocks.push_back(block_idx);
 
             // Update allocation tracking
-            let mut history = self
-                .allocation_history
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut history = self.allocation_history.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("pool lock poisoned".to_string())
+            })?;
             if let Some(_tracker) = history.remove(&block_idx) {
                 // Tracker removed from history - could store in a separate history if needed for analysis
             }
@@ -400,10 +394,9 @@ impl MemoryPool {
     /// Get the current reference count for a buffer
     #[cfg(feature = "gpu")]
     pub fn get_buffer_ref_count(&self, block_idx: usize) -> Result<usize> {
-        let blocks = self
-            .blocks
-            .read()
-            .expect("read lock should not be poisoned");
+        let blocks = self.blocks.read().map_err(|_| {
+            TensorError::invalid_operation_simple("pool read lock poisoned".to_string())
+        })?;
 
         if block_idx >= blocks.len() {
             return Err(TensorError::invalid_argument(format!(
@@ -465,7 +458,10 @@ impl MemoryPool {
     /// Enhanced statistics update with advanced analytics
     #[allow(dead_code)]
     fn update_enhanced_stats(&self, blocks: &[MemoryBlock]) {
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.blocks_allocated = 0;
         stats.blocks_free = 0;
         stats.total_allocated = 0;
@@ -515,12 +511,15 @@ impl MemoryPool {
     #[cfg(feature = "gpu")]
     #[allow(dead_code)]
     fn maybe_auto_defrag(&self) {
-        let stats = self.stats.lock().expect("lock should not be poisoned");
+        let stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if stats.fragmentation_ratio > self.auto_defrag_threshold {
             let mut last_run = self
                 .defrag_last_run
                 .lock()
-                .expect("lock should not be poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if last_run.elapsed() >= self.defrag_min_interval {
                 drop(stats); // Release lock before defragmentation
                 self.defragment();
@@ -536,11 +535,11 @@ impl MemoryPool {
         let mut blocks = self
             .blocks
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut free_blocks = self
             .free_blocks
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Sort blocks by offset to enable merging
         blocks.sort_by_key(|block| block.offset);
@@ -558,14 +557,20 @@ impl MemoryPool {
 
         // Update statistics
         self.update_enhanced_stats(&blocks);
-        let mut stats = self.stats.lock().expect("lock should not be poisoned");
+        let mut stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         stats.defragmentation_count += 1;
     }
 
     /// Get current memory pressure level
     #[allow(dead_code)]
     pub fn memory_pressure_level(&self) -> MemoryPressureLevel {
-        let stats = self.stats.lock().expect("lock should not be poisoned");
+        let stats = self
+            .stats
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match stats.memory_pressure {
             p if p < 0.5 => MemoryPressureLevel::Low,
             p if p < 0.8 => MemoryPressureLevel::Medium,
@@ -578,14 +583,13 @@ impl MemoryPool {
     #[cfg(feature = "gpu")]
     #[allow(dead_code)]
     pub fn aggressive_cleanup(&self, min_block_size: usize) -> Result<usize> {
-        let mut blocks = self
-            .blocks
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut blocks = self.blocks.write().map_err(|_| {
+            TensorError::invalid_operation_simple("pool write lock poisoned".to_string())
+        })?;
         let mut free_blocks = self
             .free_blocks
             .lock()
-            .expect("lock should not be poisoned");
+            .map_err(|_| TensorError::invalid_operation_simple("pool lock poisoned".to_string()))?;
 
         let mut removed_count = 0;
 
@@ -621,7 +625,7 @@ impl MemoryPool {
     pub fn stats(&self) -> MemoryPoolStats {
         self.stats
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 

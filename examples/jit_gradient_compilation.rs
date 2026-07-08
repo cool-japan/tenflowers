@@ -60,16 +60,24 @@ async fn basic_jit_example() -> Result<()> {
     println!("   Memory bound ratio: {:.1}%", 
         compiled_kernel.estimated_performance.memory_bound_ratio * 100.0);
     
-    // Execute the compiled kernel
-    let gradients = jit_context.execute_jit_gradient(
-        "add_backward",
-        &inputs,
-        &grad_output,
-        &compiled_kernel
-    ).await?;
-    
-    println!("✅ Executed gradient computation, got {} gradients", gradients.len());
-    
+    // Execute the compiled kernel. Kernel *execution* is not yet wired to a real
+    // backward pass (no tape context here), so this currently returns an honest error
+    // instead of fabricated zero gradients. Report the status without aborting the demo.
+    match jit_context
+        .execute_jit_gradient("add_backward", &inputs, &grad_output, &compiled_kernel)
+        .await
+    {
+        Ok(gradients) => {
+            println!(
+                "✅ Executed gradient computation, got {} gradients",
+                gradients.len()
+            );
+        }
+        Err(e) => {
+            println!("ℹ️  Kernel execution not yet available: {e}");
+        }
+    }
+
     Ok(())
 }
 
@@ -94,22 +102,24 @@ async fn performance_comparison_example() -> Result<()> {
         let grad_output: Tensor<f32> = Tensor::ones(&shape)?;
         
         let inputs = vec![&a, &b];
-        
-        // Benchmark JIT vs regular computation
-        let (jit_time, regular_time) = jit_utils::benchmark_jit_performance(
-            "mul_backward",
-            &inputs,
-            &grad_output,
-            10 // iterations
-        ).await?;
-        
-        let speedup = regular_time / jit_time;
         let shape_str = format!("{}x{}", shape[0], shape[1]);
-        
-        println!("| {} | {:.1} | {:.1} | {:.2}x |", 
-            shape_str, jit_time, regular_time, speedup);
+
+        // Benchmark JIT vs regular computation. Until kernel execution is wired to a real
+        // backward pass, this returns an honest error rather than timings for a no-op.
+        match jit_utils::benchmark_jit_performance("mul_backward", &inputs, &grad_output, 10).await {
+            Ok((jit_time, regular_time)) => {
+                let speedup = regular_time / jit_time;
+                println!(
+                    "| {} | {:.1} | {:.1} | {:.2}x |",
+                    shape_str, jit_time, regular_time, speedup
+                );
+            }
+            Err(e) => {
+                println!("| {} | n/a | n/a | execution pending: {} |", shape_str, e);
+            }
+        }
     }
-    
+
     Ok(())
 }
 
@@ -221,22 +231,24 @@ async fn advanced_jit_features() -> Result<()> {
     
     for operation in operations {
         let start = Instant::now();
-        
-        let compiled_kernel = jit_context.compile_gradient_kernel(
-            operation,
-            &inputs,
-            grad_output.shape().dims()
-        ).await?;
-        
-        let _gradients = jit_context.execute_jit_gradient(
-            operation,
-            &inputs,
-            &grad_output,
-            &compiled_kernel
-        ).await?;
-        
-        let total_time = start.elapsed().as_micros();
-        println!("  {} completed in {}μs", operation, total_time);
+
+        let compiled_kernel = jit_context
+            .compile_gradient_kernel(operation, &inputs, grad_output.shape().dims())
+            .await?;
+
+        // Execution returns an honest error until wired to a real backward pass.
+        match jit_context
+            .execute_jit_gradient(operation, &inputs, &grad_output, &compiled_kernel)
+            .await
+        {
+            Ok(_gradients) => {
+                let total_time = start.elapsed().as_micros();
+                println!("  {} completed in {}μs", operation, total_time);
+            }
+            Err(e) => {
+                println!("  {} compiled; execution pending: {}", operation, e);
+            }
+        }
     }
     
     // Show performance report

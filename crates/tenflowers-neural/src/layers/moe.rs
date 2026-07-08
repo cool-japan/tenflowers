@@ -148,15 +148,76 @@ where
         // Compute gating logits
         let gate_logits = self.gate.forward(input)?;
 
-        // Apply softmax to get probabilities
+        // Apply softmax to get per-token routing probabilities over experts.
+        // gate_probs shape: [num_tokens, num_experts].
         let gate_probs = tenflowers_core::ops::softmax(&gate_logits, Some(-1))?;
 
-        // For now, return simplified routing - proper Top-K routing would require more complex tensor operations
-        // This is a basic implementation that can be enhanced with more sophisticated routing
-        let load_balance_loss = T::zero(); // Placeholder for load balancing loss
+        let probs_dims = gate_probs.shape().dims().to_vec();
+        let num_experts = *probs_dims.last().ok_or_else(|| {
+            tenflowers_core::TensorError::invalid_argument(
+                "gate_probs must have at least one dimension".to_string(),
+            )
+        })?;
+        // Number of routed tokens is the product of all leading dimensions
+        // (handles both [num_tokens, num_experts] and higher-rank inputs).
+        let num_tokens: usize = probs_dims[..probs_dims.len() - 1].iter().product();
 
-        // Simple routing: select top-k experts (this would need proper tensor operations for production)
-        let expert_indices = Tensor::zeros(&[input.shape().dims()[0], self.k]);
+        // Real Top-K routing: select the k highest-probability experts per token.
+        // expert_indices shape: [num_tokens..., k]; values are expert ids in [0, num_experts).
+        let (_top_values, expert_indices) =
+            tenflowers_core::ops::reduction::topk(&gate_probs, self.k, Some(-1))?;
+
+        // Switch Transformer auxiliary load-balancing loss (GShard / Switch formulation):
+        //   P_i = mean over tokens of gate_probs[:, i]      (router mass on expert i)
+        //   f_i = (tokens dispatched to expert i) / num_tokens
+        //   aux = coeff * num_experts * sum_i (f_i * P_i)
+        // For k == 1 this is exactly the Switch Transformer loss; for k > 1 each
+        // token contributes to its k selected experts (GShard generalization).
+        let load_balance_loss = if num_tokens == 0 {
+            T::zero()
+        } else {
+            let probs_vec = gate_probs.to_vec()?;
+            let index_vec = expert_indices.to_vec()?;
+
+            let num_tokens_t = T::from(num_tokens).ok_or_else(|| {
+                tenflowers_core::TensorError::invalid_argument(
+                    "failed to convert num_tokens to tensor element type".to_string(),
+                )
+            })?;
+            let num_experts_t = T::from(num_experts).ok_or_else(|| {
+                tenflowers_core::TensorError::invalid_argument(
+                    "failed to convert num_experts to tensor element type".to_string(),
+                )
+            })?;
+
+            // P_i: mean router probability per expert (column means of gate_probs).
+            let mut prob_mass = vec![T::zero(); num_experts];
+            for token_idx in 0..num_tokens {
+                let row = token_idx * num_experts;
+                for (expert_idx, mass) in prob_mass.iter_mut().enumerate() {
+                    *mass = *mass + probs_vec[row + expert_idx];
+                }
+            }
+
+            // f_i: fraction of tokens dispatched to each expert (from top-k indices).
+            let mut dispatch_count = vec![T::zero(); num_experts];
+            for &expert_idx in &index_vec {
+                if expert_idx < num_experts {
+                    dispatch_count[expert_idx] = dispatch_count[expert_idx] + T::one();
+                }
+            }
+
+            // sum_i (f_i * P_i) with f_i = count_i / num_tokens, P_i = mass_i / num_tokens.
+            let mut accum = T::zero();
+            for expert_idx in 0..num_experts {
+                let fraction = dispatch_count[expert_idx] / num_tokens_t;
+                let mean_prob = prob_mass[expert_idx] / num_tokens_t;
+                accum = accum + fraction * mean_prob;
+            }
+
+            self.load_balance_loss_coeff * num_experts_t * accum
+        };
+
         Ok((gate_probs, expert_indices, load_balance_loss))
     }
 
@@ -250,22 +311,87 @@ where
         self
     }
 
-    /// Forward pass through the MoE layer
+    /// Forward pass through the MoE layer.
+    ///
+    /// Implements dense computation of sparse top-k routing: each expert is
+    /// evaluated on the full batch, then every token's output is assembled as a
+    /// weighted sum over only its top-k selected experts. The combination
+    /// weights are the router probabilities of the selected experts,
+    /// renormalized to sum to 1 per token (standard top-k MoE combination).
     pub fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
-        // Get routing decisions
-        let (expert_weights, expert_indices, _load_balance_loss) = self.router.forward(input)?;
+        if self.experts.is_empty() {
+            return Err(tenflowers_core::TensorError::invalid_argument(
+                "MixtureOfExperts must contain at least one expert".to_string(),
+            ));
+        }
 
-        // For simplicity in this initial implementation, we'll route all tokens to the first expert
-        // A full implementation would require complex tensor operations for proper routing and combining
-        let output = self.experts[0].forward(input)?;
+        // Routing: gate_probs [num_tokens, num_experts], expert_indices [num_tokens, k].
+        let (gate_probs, expert_indices, _load_balance_loss) = self.router.forward(input)?;
 
-        // In a full implementation, we would:
-        // 1. Route tokens to different experts based on router decisions
-        // 2. Apply expert capacity constraints
-        // 3. Combine expert outputs weighted by routing probabilities
-        // 4. Add load balancing loss to training loss
+        // Evaluate every expert on the full input. Each output is
+        // [num_tokens, output_dim].
+        let mut expert_outputs = Vec::with_capacity(self.experts.len());
+        for expert in &self.experts {
+            expert_outputs.push(expert.forward(input)?);
+        }
 
-        Ok(output)
+        let output_dims = expert_outputs[0].shape().dims().to_vec();
+        let output_dim = *output_dims.last().ok_or_else(|| {
+            tenflowers_core::TensorError::invalid_argument(
+                "expert output must have at least one dimension".to_string(),
+            )
+        })?;
+        let num_tokens: usize = output_dims[..output_dims.len() - 1].iter().product();
+
+        let probs_vec = gate_probs.to_vec()?;
+        let index_vec = expert_indices.to_vec()?;
+        let mut expert_output_vecs = Vec::with_capacity(expert_outputs.len());
+        for expert_output in &expert_outputs {
+            expert_output_vecs.push(expert_output.to_vec()?);
+        }
+
+        let num_experts = self.num_experts;
+        let k = self.router.k;
+        let mut combined = vec![T::zero(); num_tokens * output_dim];
+
+        for token_idx in 0..num_tokens {
+            let prob_row = token_idx * num_experts;
+            let index_row = token_idx * k;
+
+            // Sum of router probabilities over the selected top-k experts, used
+            // to renormalize the combination weights for this token.
+            let mut weight_sum = T::zero();
+            for slot in 0..k {
+                let expert_idx = index_vec[index_row + slot];
+                if expert_idx < num_experts {
+                    weight_sum = weight_sum + probs_vec[prob_row + expert_idx];
+                }
+            }
+
+            for slot in 0..k {
+                let expert_idx = index_vec[index_row + slot];
+                if expert_idx >= num_experts {
+                    continue;
+                }
+                let raw_weight = probs_vec[prob_row + expert_idx];
+                let weight = if weight_sum > T::zero() {
+                    raw_weight / weight_sum
+                } else {
+                    // Degenerate all-zero gate: fall back to uniform top-k weighting.
+                    T::one() / T::from(k).unwrap_or_else(T::one)
+                };
+
+                let source = &expert_output_vecs[expert_idx];
+                let out_base = token_idx * output_dim;
+                let src_base = token_idx * output_dim;
+                for feature in 0..output_dim {
+                    combined[out_base + feature] =
+                        combined[out_base + feature] + weight * source[src_base + feature];
+                }
+            }
+        }
+
+        Tensor::from_vec(combined, &output_dims)
     }
 
     /// Get load balancing loss for training
@@ -278,11 +404,32 @@ where
     pub fn routing_stats(&self, input: &Tensor<T>) -> Result<RoutingStats<T>> {
         let (weights, indices, loss) = self.router.forward(input)?;
 
+        // Real per-expert utilization: fraction of all dispatched token-slots
+        // (num_tokens * k) routed to each expert, derived from the top-k indices.
+        let index_vec = indices.to_vec()?;
+        let mut counts = vec![T::zero(); self.num_experts];
+        for &expert_idx in &index_vec {
+            if expert_idx < self.num_experts {
+                counts[expert_idx] = counts[expert_idx] + T::one();
+            }
+        }
+        let total_slots = index_vec.len();
+        let expert_utilization = if total_slots == 0 {
+            vec![T::zero(); self.num_experts]
+        } else {
+            let total_slots_t = T::from(total_slots).ok_or_else(|| {
+                tenflowers_core::TensorError::invalid_argument(
+                    "failed to convert dispatched slot count to tensor element type".to_string(),
+                )
+            })?;
+            counts.into_iter().map(|c| c / total_slots_t).collect()
+        };
+
         Ok(RoutingStats {
             expert_weights: weights,
             expert_indices: indices,
             load_balance_loss: loss,
-            expert_utilization: vec![T::zero(); self.num_experts], // Placeholder
+            expert_utilization,
         })
     }
 }
@@ -449,5 +596,70 @@ mod tests {
             .load_balance_loss(&input)
             .expect("test: load should succeed");
         assert!(loss.is_finite());
+    }
+
+    /// The Switch/GShard auxiliary loss must be finite and strictly positive
+    /// whenever the dispatch is unequal across experts. With several tokens and
+    /// top-k=2 over 4 experts, only a subset of experts receive tokens, so the
+    /// loss must not be zero (the old placeholder always returned 0.0).
+    #[test]
+    fn test_load_balance_loss_nonzero_unequal_routing() {
+        let router =
+            TopKRouter::<f32>::new(4, 4, 2).expect("test: TopKRouter creation should succeed");
+        // 3 tokens, input_dim 4.
+        let input = Tensor::from_vec(
+            vec![
+                0.1f32, 0.2, 0.3, 0.4, 1.0, -1.0, 0.5, 2.0, -0.5, 0.25, -2.0, 1.5,
+            ],
+            &[3, 4],
+        )
+        .expect("test: tensor creation should succeed");
+
+        let (gate_probs, expert_indices, loss) = router
+            .forward(&input)
+            .expect("test: routing should succeed");
+
+        // Routing produced real top-k indices, not a fabricated all-zeros tensor.
+        assert_eq!(expert_indices.shape().dims(), &[3, 2]);
+        // gate_probs rows are valid distributions.
+        assert_eq!(gate_probs.shape().dims(), &[3, 4]);
+
+        assert!(loss.is_finite(), "load balance loss must be finite");
+        assert!(
+            loss > 0.0,
+            "load balance loss must be strictly positive under unequal routing, got {loss}"
+        );
+
+        // Analytical check for this configuration. With zero-initialized gate
+        // weights gate_probs are uniform (0.25 each), top-2 picks experts 0 and 1
+        // for every token, so f_0 = f_1 = 1, f_2 = f_3 = 0 and P_i = 0.25.
+        //   aux = coeff(0.01) * num_experts(4) * sum_i f_i * P_i
+        //       = 0.01 * 4 * (1*0.25 + 1*0.25) = 0.02
+        let expected = 0.01f32 * 4.0 * 0.5;
+        assert!(
+            (loss - expected).abs() < 1e-6,
+            "expected aux loss {expected}, got {loss}"
+        );
+    }
+
+    /// The expert indices returned by the router must be genuine argmax-style
+    /// top-k selections, not the fabricated zero tensor the placeholder returned.
+    #[test]
+    fn test_router_topk_indices_are_real() {
+        let router =
+            TopKRouter::<f32>::new(4, 4, 1).expect("test: TopKRouter creation should succeed");
+        let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[1, 4])
+            .expect("test: tensor creation should succeed");
+        let (_probs, indices, _loss) = router
+            .forward(&input)
+            .expect("test: routing should succeed");
+        assert_eq!(indices.shape().dims(), &[1, 1]);
+        let idx_vec = indices.to_vec().expect("test: to_vec should succeed");
+        // The selected top-1 expert id must be a valid expert index.
+        assert!(
+            idx_vec[0] < 4,
+            "top-1 expert id out of range: {}",
+            idx_vec[0]
+        );
     }
 }

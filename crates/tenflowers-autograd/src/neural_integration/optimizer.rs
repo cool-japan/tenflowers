@@ -128,11 +128,12 @@ where
     ) -> Result<Vec<Tensor<T>>> {
         if let Some(ref accumulator) = self.accumulator {
             // Use gradient accumulation
-            accumulator.accumulate(
-                &self.tape.lock().expect("lock should not be poisoned"),
-                loss,
-                parameters,
-            )?;
+            let tape_guard = self.tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "optimizer tape lock poisoned".to_string(),
+                )
+            })?;
+            accumulator.accumulate(&tape_guard, loss, parameters)?;
 
             let mut gradients = Vec::new();
             for param in parameters {
@@ -145,7 +146,11 @@ where
             Ok(gradients)
         } else {
             // Direct gradient computation
-            let tape_guard = self.tape.lock().expect("lock should not be poisoned");
+            let tape_guard = self.tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "optimizer tape lock poisoned".to_string(),
+                )
+            })?;
             let targets = vec![loss.clone()];
             let sources: Vec<TrackedTensor<T>> = parameters.iter().map(|&p| p.clone()).collect();
             let computed_grads = tape_guard.gradient(&targets, &sources)?;
@@ -204,14 +209,22 @@ where
                         .add(&grad.mul_scalar(self.learning_rate)?)?;
 
                     let new_param = param.tensor.sub(&new_momentum)?;
-                    let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+                    let tape_ref = self.tape.lock().map_err(|_| {
+                        tenflowers_core::TensorError::invalid_operation_simple(
+                            "optimizer tape lock poisoned".to_string(),
+                        )
+                    })?;
                     *param = tape_ref.watch(new_param);
 
                     self.optimizer_state.insert(momentum_key, new_momentum);
                 } else {
                     let momentum_tensor = grad.mul_scalar(self.learning_rate)?;
                     let new_param = param.tensor.sub(&momentum_tensor)?;
-                    let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+                    let tape_ref = self.tape.lock().map_err(|_| {
+                        tenflowers_core::TensorError::invalid_operation_simple(
+                            "optimizer tape lock poisoned".to_string(),
+                        )
+                    })?;
                     *param = tape_ref.watch(new_param);
 
                     self.optimizer_state.insert(momentum_key, momentum_tensor);
@@ -220,7 +233,11 @@ where
                 // Simple SGD
                 let update = grad.mul_scalar(self.learning_rate)?;
                 let new_param = param.tensor.sub(&update)?;
-                let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+                let tape_ref = self.tape.lock().map_err(|_| {
+                    tenflowers_core::TensorError::invalid_operation_simple(
+                        "optimizer tape lock poisoned".to_string(),
+                    )
+                })?;
                 *param = tape_ref.watch(new_param);
             }
         }
@@ -279,7 +296,11 @@ where
             let update = m_hat.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+            let tape_ref = self.tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "optimizer tape lock poisoned".to_string(),
+                )
+            })?;
             *param = tape_ref.watch(new_param);
 
             // Store updated moments
@@ -322,7 +343,11 @@ where
             let update = grad.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+            let tape_ref = self.tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "optimizer tape lock poisoned".to_string(),
+                )
+            })?;
             *param = tape_ref.watch(new_param);
 
             // Store updated accumulator
@@ -360,7 +385,11 @@ where
             let update = grad.div(&denominator)?.mul_scalar(self.learning_rate)?;
             let new_param = param.tensor.sub(&update)?;
 
-            let tape_ref = self.tape.lock().expect("lock should not be poisoned");
+            let tape_ref = self.tape.lock().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "optimizer tape lock poisoned".to_string(),
+                )
+            })?;
             *param = tape_ref.watch(new_param);
 
             // Store updated accumulator

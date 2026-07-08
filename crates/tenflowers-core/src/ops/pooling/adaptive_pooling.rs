@@ -215,42 +215,9 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
-        return Err(TensorError::unsupported_operation_simple(
-            "Internal error: adaptive_avg_pool2d_gpu called with non-GPU tensor".to_string(),
-        ));
-    };
-
-    let input_shape = input.shape().dims();
-    if input_shape.len() != 4 {
-        return Err(TensorError::invalid_shape_simple(
-            "Adaptive avg pool input must be 4D (NCHW format)".to_string(),
-        ));
-    }
-
-    let batch_size = input_shape[0];
-    let channels = input_shape[1];
-    let (out_height, out_width) = output_size;
-    let output_shape = vec![batch_size, channels, out_height, out_width];
-
-    let kernel_size = &[output_size.0, output_size.1];
-    let stride = &[1, 1];
-    let padding = &[0, 0];
-    let output_len = output_shape.iter().product();
-
-    let result_gpu = crate::gpu::ops::execute_pooling_op(
-        gpu_buffer,
-        crate::gpu::ops::PoolingOp::AdaptiveAvgPool2D,
-        kernel_size,
-        stride,
-        padding,
-        input_shape,
-        output_len,
-    )?;
-
-    let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape));
-    result.set_requires_grad(input.requires_grad());
-    Ok(result)
+    let cpu_input = input.to_cpu()?;
+    let result = adaptive_avg_pool2d_cpu(&cpu_input, output_size)?;
+    result.to_device(input.device().clone())
 }
 
 #[cfg(feature = "gpu")]
@@ -266,40 +233,60 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    let TensorStorage::Gpu(gpu_buffer) = &input.storage else {
-        return Err(TensorError::unsupported_operation_simple(
-            "Internal error: adaptive_max_pool2d_gpu called with non-GPU tensor".to_string(),
-        ));
-    };
+    let cpu_input = input.to_cpu()?;
+    let result = adaptive_max_pool2d_cpu(&cpu_input, output_size)?;
+    result.to_device(input.device().clone())
+}
 
-    let input_shape = input.shape().dims();
-    if input_shape.len() != 4 {
-        return Err(TensorError::invalid_shape_simple(
-            "Adaptive max pool input must be 4D (NCHW format)".to_string(),
-        ));
+// GPU delegate correctness tests: verify adaptive_avg_pool2d_gpu/
+// adaptive_max_pool2d_gpu round-trip GPU-resident input through the host and
+// delegate to the known-correct CPU implementation, instead of erroring via
+// execute_pooling_op (which has no AdaptiveAvgPool2D/AdaptiveMaxPool2D
+// shader_entry_point arm).
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_delegate_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_adaptive_avg_pool2d_matches_cpu_reference() {
+        let data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input =
+            Tensor::<f32>::from_vec(data, &[1, 1, 4, 4]).expect("test: from_vec should succeed");
+        let cpu_result = adaptive_avg_pool2d(&cpu_input, (2, 2))
+            .expect("test: CPU adaptive_avg_pool2d should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+        let gpu_result = adaptive_avg_pool2d(&gpu_input, (2, 2))
+            .expect("test: GPU adaptive_avg_pool2d should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
     }
 
-    let batch_size = input_shape[0];
-    let channels = input_shape[1];
-    let (out_height, out_width) = output_size;
-    let output_shape = vec![batch_size, channels, out_height, out_width];
+    #[test]
+    fn gpu_adaptive_max_pool2d_matches_cpu_reference() {
+        let data: Vec<f32> = (0..16).map(|v| v as f32).collect();
+        let cpu_input =
+            Tensor::<f32>::from_vec(data, &[1, 1, 4, 4]).expect("test: from_vec should succeed");
+        let cpu_result = adaptive_max_pool2d(&cpu_input, (2, 2))
+            .expect("test: CPU adaptive_max_pool2d should succeed");
 
-    let kernel_size = &[output_size.0, output_size.1];
-    let stride = &[1, 1];
-    let padding = &[0, 0];
-    let output_len = output_shape.iter().product();
-
-    let result_gpu = crate::gpu::ops::execute_pooling_op(
-        gpu_buffer,
-        crate::gpu::ops::PoolingOp::AdaptiveMaxPool2D,
-        kernel_size,
-        stride,
-        padding,
-        input_shape,
-        output_len,
-    )?;
-
-    let mut result = Tensor::from_gpu_buffer(result_gpu, crate::Shape::new(output_shape));
-    result.set_requires_grad(input.requires_grad());
-    Ok(result)
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = adaptive_max_pool2d(&gpu_input, (2, 2))
+            .expect("test: GPU adaptive_max_pool2d should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
 }

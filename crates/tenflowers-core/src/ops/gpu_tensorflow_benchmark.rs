@@ -224,6 +224,12 @@ impl GpuTensorFlowBenchmark {
             throughput_comparison.insert("tensorflow".to_string(), tf_throughput);
         }
 
+        // Compute memory efficiency before moving gpu_metrics into the result struct.
+        // On error (no transfer data recorded), fall back to 0.0 to signal "not measured".
+        let memory_efficiency = self
+            .calculate_memory_efficiency(&tenflowers_result, &gpu_metrics)
+            .unwrap_or(0.0);
+
         Ok(GpuBenchmarkResult {
             operation: operation.to_string(),
             input_shapes: input_shapes.to_vec(),
@@ -233,7 +239,7 @@ impl GpuTensorFlowBenchmark {
             tensorflow_gpu_time,
             pytorch_gpu_time,
             performance_ratio,
-            memory_efficiency: self.calculate_memory_efficiency(&tenflowers_result)?,
+            memory_efficiency,
             throughput_comparison,
             bottlenecks_identified,
             optimization_suggestions,
@@ -591,11 +597,34 @@ print(f"{{elapsed_ns:.0f}}")
         Ok(Vec::new())
     }
 
-    /// Calculate memory efficiency
-    fn calculate_memory_efficiency(&self, _result: &Tensor<f32>) -> Result<f64> {
-        // Simplified memory efficiency calculation
-        // In a real implementation, this would analyze memory usage patterns
-        Ok(0.85) // Placeholder efficiency score
+    /// Calculate memory efficiency as the ratio of output bytes (useful payload) to
+    /// total bytes transferred by the operation as recorded by the GPU profiler.
+    ///
+    /// `result`  — the operation output tensor (lower bound on useful data moved).
+    /// `metrics` — profiling data collected via `record_memory_transfer`; if
+    ///             `memory_usage` is zero (no transfer was recorded), returns `Err`
+    ///             rather than fabricating a number.
+    fn calculate_memory_efficiency(
+        &self,
+        result: &Tensor<f32>,
+        metrics: &crate::gpu::performance_optimizer::GpuOpMetrics,
+    ) -> Result<f64> {
+        let output_bytes =
+            result.shape().dims().iter().product::<usize>() * std::mem::size_of::<f32>();
+        if output_bytes == 0 {
+            return Err(TensorError::invalid_argument(
+                "calculate_memory_efficiency: result tensor is empty".to_string(),
+            ));
+        }
+        let total_transferred = metrics.memory_usage;
+        if total_transferred == 0 {
+            return Err(TensorError::other(
+                "calculate_memory_efficiency: no memory-transfer data was recorded by the GPU \
+                 profiler for this operation; call record_memory_transfer before finish_profiling"
+                    .to_string(),
+            ));
+        }
+        Ok((output_bytes as f64 / total_transferred as f64).min(1.0))
     }
 
     /// Print comprehensive benchmark summary

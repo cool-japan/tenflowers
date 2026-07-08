@@ -38,8 +38,36 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tenflowers_core::{Device, Result, Tensor, TensorError};
+
+/// On-disk representation of a single named weight tensor.
+///
+/// The JSON weight format stores, for every parameter, its logical shape and a
+/// flat (row-major) buffer of values. This is intentionally simple and
+/// human-readable; binary formats are recommended for large production models.
+#[cfg(feature = "serialize")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredTensor<T> {
+    /// Logical dimensions of the tensor.
+    shape: Vec<usize>,
+    /// Flat row-major data buffer.
+    data: Vec<T>,
+}
+
+/// Top-level on-disk document for the JSON weight format.
+#[cfg(feature = "serialize")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct WeightDocument<T> {
+    /// Format version for forward-compatibility checks.
+    version: u32,
+    /// Map of weight name to its stored tensor.
+    tensors: HashMap<String, StoredTensor<T>>,
+}
+
+/// Current version tag written into the JSON weight format header.
+#[cfg(feature = "serialize")]
+const JSON_WEIGHT_FORMAT_VERSION: u32 = 1;
 
 /// Weight format for serialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,22 +306,48 @@ impl WeightLoader {
         }
     }
 
-    /// Load weights from file with default configuration
+    /// Load weights from file with default configuration.
+    ///
+    /// Requires the `serialize` feature for the JSON text format. Binary,
+    /// SafeTensors, and NumPy formats are not yet supported and return an
+    /// explicit error rather than silently producing an empty result.
+    #[cfg(feature = "serialize")]
     pub fn load_from_file<T>(&self, path: impl AsRef<Path>) -> Result<LoadResult<T>>
     where
-        T: Clone + Default + 'static,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         self.load_with_config(path, self.default_config.clone())
     }
 
-    /// Load weights from file with custom configuration
+    /// Load weights from file with custom configuration.
+    #[cfg(feature = "serialize")]
     pub fn load_with_config<T>(
         &self,
         path: impl AsRef<Path>,
         config: LoadConfig,
     ) -> Result<LoadResult<T>>
     where
-        T: Clone + Default + 'static,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
         let path = path.as_ref();
 
@@ -301,68 +355,176 @@ impl WeightLoader {
         let format = WeightFormat::from_path(path);
 
         match format {
-            WeightFormat::Json => self.load_json(path, config),
-            WeightFormat::Binary => self.load_binary(path, config),
-            WeightFormat::SafeTensors => self.load_safetensors(path, config),
-            WeightFormat::NumPy => self.load_numpy(path, config),
-            WeightFormat::Auto => {
-                // Try each format
-                Err(TensorError::serialization_error_simple(
-                    "Auto-detection not yet implemented".to_string(),
-                ))
-            }
+            // The JSON document is self-describing, so an auto-detected file is
+            // routed through the JSON loader.
+            WeightFormat::Json | WeightFormat::Auto => self.load_json(path, config),
+            WeightFormat::Binary => Err(TensorError::not_implemented_simple(
+                "binary weight loading is not implemented; use the JSON format".to_string(),
+            )),
+            WeightFormat::SafeTensors => Err(TensorError::not_implemented_simple(
+                "SafeTensors weight loading requires the `safetensors` crate dependency; \
+                 use the JSON format"
+                    .to_string(),
+            )),
+            WeightFormat::NumPy => Err(TensorError::not_implemented_simple(
+                "NumPy (.npz/.npy) weight loading requires a NumPy reader dependency; \
+                 use the JSON format"
+                    .to_string(),
+            )),
         }
     }
 
-    /// Load weights from JSON format
-    fn load_json<T>(&self, _path: &Path, _config: LoadConfig) -> Result<LoadResult<T>>
+    /// Load weights from file (no-`serialize` build): returns an explicit error.
+    #[cfg(not(feature = "serialize"))]
+    pub fn load_from_file<T>(&self, _path: impl AsRef<Path>) -> Result<LoadResult<T>>
     where
         T: Clone + Default + 'static,
     {
-        // Placeholder implementation
-        let weights = HashMap::new();
-        let mut result = LoadResult::new(weights);
-        result.add_warning("JSON loading not yet fully implemented".to_string());
-        Ok(result)
+        Err(TensorError::not_implemented_simple(
+            "weight loading requires the `serialize` feature to be enabled".to_string(),
+        ))
     }
 
-    /// Load weights from binary format
-    fn load_binary<T>(&self, _path: &Path, _config: LoadConfig) -> Result<LoadResult<T>>
+    /// Load weights with config (no-`serialize` build): returns an explicit error.
+    #[cfg(not(feature = "serialize"))]
+    pub fn load_with_config<T>(
+        &self,
+        _path: impl AsRef<Path>,
+        _config: LoadConfig,
+    ) -> Result<LoadResult<T>>
     where
         T: Clone + Default + 'static,
     {
-        // Placeholder implementation
-        let weights = HashMap::new();
-        let mut result = LoadResult::new(weights);
-        result.add_warning("Binary loading not yet fully implemented".to_string());
-        Ok(result)
+        Err(TensorError::not_implemented_simple(
+            "weight loading requires the `serialize` feature to be enabled".to_string(),
+        ))
     }
 
-    /// Load weights from SafeTensors format
-    fn load_safetensors<T>(&self, _path: &Path, _config: LoadConfig) -> Result<LoadResult<T>>
+    /// Load weights from the JSON text format.
+    ///
+    /// Deserializes a [`WeightDocument`], reconstructs each [`Tensor`] from its
+    /// shape and flat buffer, and applies the configured name transformation and
+    /// include/exclude filtering. In strict mode, a structurally invalid file
+    /// (e.g. a buffer whose length does not match its shape) is a hard error.
+    #[cfg(feature = "serialize")]
+    fn load_json<T>(&self, path: &Path, config: LoadConfig) -> Result<LoadResult<T>>
     where
-        T: Clone + Default + 'static,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
-        // Placeholder implementation
-        let weights = HashMap::new();
+        let file = std::fs::File::open(path).map_err(|e| {
+            TensorError::io_error_simple(format!(
+                "failed to open weight file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+        let reader = std::io::BufReader::new(file);
+
+        let document: WeightDocument<T> = serde_json::from_reader(reader).map_err(|e| {
+            TensorError::serialization_error_simple(format!(
+                "failed to deserialize JSON weights from {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
+        if document.version != JSON_WEIGHT_FORMAT_VERSION {
+            return Err(TensorError::serialization_error_simple(format!(
+                "unsupported JSON weight format version {} (expected {})",
+                document.version, JSON_WEIGHT_FORMAT_VERSION
+            )));
+        }
+
+        let mut weights: HashMap<String, Tensor<T>> = HashMap::new();
+        let mut warnings: Vec<String> = Vec::new();
+        let mut num_skipped = 0usize;
+        let mut total_bytes = 0usize;
+
+        for (raw_name, stored) in document.tensors {
+            if !config.should_include(&raw_name) {
+                num_skipped += 1;
+                continue;
+            }
+
+            let name = config.transform_name(&raw_name);
+
+            let expected: usize = stored.shape.iter().product();
+            if stored.data.len() != expected {
+                let message = format!(
+                    "weight '{}' has {} values but shape {:?} requires {}",
+                    raw_name,
+                    stored.data.len(),
+                    stored.shape,
+                    expected
+                );
+                if config.strict {
+                    return Err(TensorError::serialization_error_simple(message));
+                }
+                warnings.push(message);
+                num_skipped += 1;
+                continue;
+            }
+
+            total_bytes += stored.data.len() * std::mem::size_of::<T>();
+
+            let tensor = Tensor::from_vec(stored.data, &stored.shape)?;
+
+            // Place on the requested device when GPU support is compiled in.
+            let tensor = self.place_on_device(tensor, &config.device)?;
+
+            weights.insert(name, tensor);
+        }
+
         let mut result = LoadResult::new(weights);
-        result.add_warning("SafeTensors loading not yet fully implemented".to_string());
+        result.num_skipped = num_skipped;
+        result.total_bytes = total_bytes;
+        for warning in warnings {
+            result.add_warning(warning);
+        }
         Ok(result)
     }
 
-    /// Load weights from NumPy format
-    fn load_numpy<T>(&self, _path: &Path, _config: LoadConfig) -> Result<LoadResult<T>>
+    /// Move a freshly loaded tensor onto the configured device.
+    ///
+    /// On CPU-only builds the tensor is already in the right place; when GPU or
+    /// ROCm support is compiled in, non-CPU targets trigger a device transfer.
+    #[cfg(feature = "serialize")]
+    fn place_on_device<T>(&self, tensor: Tensor<T>, device: &Device) -> Result<Tensor<T>>
     where
-        T: Clone + Default + 'static,
+        T: Clone + Default + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
     {
-        // Placeholder implementation
-        let weights = HashMap::new();
-        let mut result = LoadResult::new(weights);
-        result.add_warning("NumPy loading not yet fully implemented".to_string());
-        Ok(result)
+        if device.is_cpu() {
+            return Ok(tensor);
+        }
+
+        #[cfg(feature = "gpu")]
+        {
+            tensor.to(*device)
+        }
+
+        #[cfg(not(feature = "gpu"))]
+        {
+            // No non-CPU device variants exist in this build configuration.
+            Ok(tensor)
+        }
     }
 
-    /// Save weights to file
+    /// Save weights to file.
+    ///
+    /// Requires the `serialize` feature for the JSON text format. Binary,
+    /// SafeTensors, and NumPy formats are not yet supported and return an
+    /// explicit error rather than silently claiming success without writing.
+    #[cfg(feature = "serialize")]
     pub fn save_to_file<T>(
         &self,
         weights: &HashMap<String, Tensor<T>>,
@@ -370,55 +532,117 @@ impl WeightLoader {
         format: WeightFormat,
     ) -> Result<()>
     where
-        T: Clone + Default + 'static,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
-        let _path = path.as_ref();
+        let path = path.as_ref();
 
         match format {
-            WeightFormat::Json => self.save_json(weights, _path),
-            WeightFormat::Binary => self.save_binary(weights, _path),
-            WeightFormat::SafeTensors => self.save_safetensors(weights, _path),
-            WeightFormat::NumPy => self.save_numpy(weights, _path),
-            WeightFormat::Auto => {
-                // Use binary as default
-                self.save_binary(weights, _path)
-            }
+            WeightFormat::Json | WeightFormat::Auto => self.save_json(weights, path),
+            WeightFormat::Binary => Err(TensorError::not_implemented_simple(
+                "binary weight saving is not implemented; use the JSON format".to_string(),
+            )),
+            WeightFormat::SafeTensors => Err(TensorError::not_implemented_simple(
+                "SafeTensors weight saving requires the `safetensors` crate dependency; \
+                 use the JSON format"
+                    .to_string(),
+            )),
+            WeightFormat::NumPy => Err(TensorError::not_implemented_simple(
+                "NumPy (.npz/.npy) weight saving requires a NumPy writer dependency; \
+                 use the JSON format"
+                    .to_string(),
+            )),
         }
     }
 
-    /// Save weights to JSON format
-    fn save_json<T>(&self, _weights: &HashMap<String, Tensor<T>>, _path: &Path) -> Result<()>
+    /// Save weights to file (no-`serialize` build): returns an explicit error.
+    #[cfg(not(feature = "serialize"))]
+    pub fn save_to_file<T>(
+        &self,
+        _weights: &HashMap<String, Tensor<T>>,
+        _path: impl AsRef<Path>,
+        _format: WeightFormat,
+    ) -> Result<()>
     where
         T: Clone + Default + 'static,
     {
-        // Placeholder implementation
-        Ok(())
+        Err(TensorError::not_implemented_simple(
+            "weight saving requires the `serialize` feature to be enabled".to_string(),
+        ))
     }
 
-    /// Save weights to binary format
-    fn save_binary<T>(&self, _weights: &HashMap<String, Tensor<T>>, _path: &Path) -> Result<()>
+    /// Save weights to the JSON text format.
+    ///
+    /// Serializes every tensor as a shape plus a flat row-major buffer into a
+    /// [`WeightDocument`] and writes it to `path`. The file is always written
+    /// (or an error is returned); it never silently succeeds without writing.
+    #[cfg(feature = "serialize")]
+    fn save_json<T>(&self, weights: &HashMap<String, Tensor<T>>, path: &Path) -> Result<()>
     where
-        T: Clone + Default + 'static,
+        T: Clone
+            + Default
+            + Send
+            + Sync
+            + 'static
+            + scirs2_core::num_traits::Zero
+            + scirs2_core::num_traits::One
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + bytemuck::Pod
+            + bytemuck::Zeroable,
     {
-        // Placeholder implementation
-        Ok(())
-    }
+        let mut tensors: HashMap<String, StoredTensor<T>> = HashMap::with_capacity(weights.len());
 
-    /// Save weights to SafeTensors format
-    fn save_safetensors<T>(&self, _weights: &HashMap<String, Tensor<T>>, _path: &Path) -> Result<()>
-    where
-        T: Clone + Default + 'static,
-    {
-        // Placeholder implementation
-        Ok(())
-    }
+        for (name, tensor) in weights {
+            let shape = tensor.shape().dims().to_vec();
+            let data = tensor.to_vec()?;
+            tensors.insert(name.clone(), StoredTensor { shape, data });
+        }
 
-    /// Save weights to NumPy format
-    fn save_numpy<T>(&self, _weights: &HashMap<String, Tensor<T>>, _path: &Path) -> Result<()>
-    where
-        T: Clone + Default + 'static,
-    {
-        // Placeholder implementation
+        let document = WeightDocument {
+            version: JSON_WEIGHT_FORMAT_VERSION,
+            tensors,
+        };
+
+        // Ensure the parent directory exists before writing.
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    TensorError::io_error_simple(format!(
+                        "failed to create directory {}: {}",
+                        parent.display(),
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        let file = std::fs::File::create(path).map_err(|e| {
+            TensorError::io_error_simple(format!(
+                "failed to create weight file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+        let writer = std::io::BufWriter::new(file);
+
+        serde_json::to_writer_pretty(writer, &document).map_err(|e| {
+            TensorError::serialization_error_simple(format!(
+                "failed to serialize JSON weights to {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
         Ok(())
     }
 }
@@ -555,5 +779,103 @@ mod tests {
     fn test_loader_helper() {
         let loader = loader();
         assert!(loader.default_config.strict);
+    }
+
+    #[cfg(feature = "serialize")]
+    #[test]
+    fn test_json_save_load_roundtrip() {
+        let loader = WeightLoader::new();
+
+        let mut weights: HashMap<String, Tensor<f32>> = HashMap::new();
+        weights.insert(
+            "layer1.weight".to_string(),
+            Tensor::from_vec(vec![1.0_f32, 2.0, 3.0, 4.0], &[2, 2])
+                .expect("test: tensor creation should succeed"),
+        );
+        weights.insert(
+            "layer1.bias".to_string(),
+            Tensor::from_vec(vec![0.5_f32, -0.5], &[2])
+                .expect("test: tensor creation should succeed"),
+        );
+
+        let path = std::env::temp_dir().join("tenflowers_weight_loader_roundtrip.json");
+
+        loader
+            .save_to_file(&weights, &path, WeightFormat::Json)
+            .expect("test: saving weights should succeed");
+
+        // The file must actually exist and be non-empty.
+        let metadata = std::fs::metadata(&path).expect("test: saved file should exist");
+        assert!(metadata.len() > 0, "saved weight file should not be empty");
+
+        let result: LoadResult<f32> = loader
+            .load_from_file(&path)
+            .expect("test: loading weights should succeed");
+
+        assert_eq!(result.num_loaded, 2);
+
+        let weight = result
+            .get("layer1.weight")
+            .expect("test: weight should be present");
+        assert_eq!(weight.shape().dims(), &[2, 2]);
+        assert_eq!(
+            weight.to_vec().expect("test: to_vec should succeed"),
+            vec![1.0_f32, 2.0, 3.0, 4.0]
+        );
+
+        let bias = result
+            .get("layer1.bias")
+            .expect("test: bias should be present");
+        assert_eq!(bias.shape().dims(), &[2]);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(feature = "serialize")]
+    #[test]
+    fn test_json_load_respects_include_filter() {
+        let loader = WeightLoader::with_config(LoadConfig::new().include("weight".to_string()));
+
+        let mut weights: HashMap<String, Tensor<f32>> = HashMap::new();
+        weights.insert(
+            "conv.weight".to_string(),
+            Tensor::from_vec(vec![1.0_f32, 2.0], &[2]).expect("test: creation should succeed"),
+        );
+        weights.insert(
+            "conv.bias".to_string(),
+            Tensor::from_vec(vec![3.0_f32], &[1]).expect("test: creation should succeed"),
+        );
+
+        let path = std::env::temp_dir().join("tenflowers_weight_loader_filter.json");
+        loader
+            .save_to_file(&weights, &path, WeightFormat::Json)
+            .expect("test: saving should succeed");
+
+        let result: LoadResult<f32> = loader
+            .load_from_file(&path)
+            .expect("test: loading should succeed");
+
+        assert_eq!(result.num_loaded, 1);
+        assert_eq!(result.num_skipped, 1);
+        assert!(result.get("conv.weight").is_some());
+        assert!(result.get("conv.bias").is_none());
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[cfg(feature = "serialize")]
+    #[test]
+    fn test_binary_save_returns_honest_error() {
+        let loader = WeightLoader::new();
+        let weights: HashMap<String, Tensor<f32>> = HashMap::new();
+        let path = std::env::temp_dir().join("tenflowers_weight_loader_binary.bin");
+
+        let outcome = loader.save_to_file(&weights, &path, WeightFormat::Binary);
+        assert!(
+            outcome.is_err(),
+            "binary save must return an error instead of silently succeeding"
+        );
+        // No file should have been created.
+        assert!(!path.exists());
     }
 }

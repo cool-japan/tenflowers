@@ -39,10 +39,11 @@ impl ShapeInferenceRegistry {
         inference_fn: ShapeInferenceFn,
         description: &str,
     ) -> Result<()> {
-        let mut ops = self
-            .operations
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut ops = self.operations.write().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "shape inference registry lock poisoned".to_string(),
+            )
+        })?;
 
         if ops.contains_key(name) {
             return Err(TensorError::invalid_argument(format!(
@@ -71,10 +72,11 @@ impl ShapeInferenceRegistry {
         inputs: &[Shape],
         metadata: &OperationMetadata,
     ) -> Result<Shape> {
-        let ops = self
-            .operations
-            .read()
-            .expect("read lock should not be poisoned");
+        let ops = self.operations.read().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "shape inference registry lock poisoned".to_string(),
+            )
+        })?;
 
         let op = ops.get(operation).ok_or_else(|| {
             TensorError::invalid_argument(format!(
@@ -103,7 +105,7 @@ impl ShapeInferenceRegistry {
         let ops = self
             .operations
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut names: Vec<String> = ops.keys().cloned().collect();
         names.sort();
         names
@@ -114,7 +116,7 @@ impl ShapeInferenceRegistry {
         let ops = self
             .operations
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut names: Vec<String> = ops
             .values()
             .filter(|op| op.category == category)

@@ -6,11 +6,46 @@ with comprehensive Python bindings for ease of use.
 """
 
 from .tenflowers import *  # Import all Rust-defined functions and classes
+from .tenflowers import __version__  # explicit import bypasses import*'s leading-underscore exclusion
 
-__version__ = "0.1.0"
+# Dtype constants (float32, int64, bool, ...) are set on the compiled module via
+# plain `m.setattr(...)` rather than `add_function`/`add_class`, so PyO3's
+# auto-generated `__all__` for the compiled submodule never lists them and
+# `import *` above silently skips them. Re-import explicitly, as for __version__.
+from .tenflowers import (
+    float32,
+    float64,
+    float16,
+    bfloat16,
+    int8,
+    int16,
+    int32,
+    int64,
+    uint8,
+    uint16,
+    uint32,
+    uint64,
+    bool,
+)
+
 __all__ = [
     # Version
     "__version__",
+
+    # Dtype constants
+    "float32",
+    "float64",
+    "float16",
+    "bfloat16",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "bool",
 
     # Core tensor operations
     "PyTensor",

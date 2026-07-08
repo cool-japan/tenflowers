@@ -75,19 +75,53 @@ mod tests {
 
     #[test]
     fn test_sequential_pruning() {
-        let model = Sequential::new(vec![
-            Box::new(Dense::<f32>::new(10, 20, true)),
-            Box::new(Dense::<f32>::new(20, 1, true)),
-        ]);
+        // Build layers with deterministic, non-zero weights so magnitude pruning
+        // has a real spread of values to act on. Dense::new initializes weights
+        // to zero, which would leave nothing to prune, so we set them explicitly.
+        let mut dense1 = Dense::<f32>::new(4, 4, true);
+        let weight1: Vec<f32> = (1..=16).map(|i| i as f32).collect();
+        dense1.set_weight(
+            Tensor::from_vec(weight1, &[4, 4]).expect("test: weight tensor should build"),
+        );
 
-        let result = prune_model(&model, None);
+        let mut dense2 = Dense::<f32>::new(4, 2, true);
+        let weight2: Vec<f32> = (1..=8).map(|i| i as f32).collect();
+        dense2.set_weight(
+            Tensor::from_vec(weight2, &[4, 2]).expect("test: weight tensor should build"),
+        );
+
+        let model = Sequential::new(vec![Box::new(dense1), Box::new(dense2)]);
+
+        // Sanity check on the original (non-zero) parameter count.
+        let original_nonzero = 16 + 8; // weights only; biases are zero-initialized
+
+        let result = prune_model(&model, None); // default: magnitude, global, 50% sparsity
         assert!(result.is_ok());
 
-        let (_pruned_model, stats) = result.expect("test: result should be valid");
+        let (pruned_model, stats) = result.expect("test: result should be valid");
+
+        // Real pruning must have actually zeroed weights.
         assert!(stats.layers_pruned > 0);
         assert!(stats.achieved_sparsity > 0.0);
         assert!(stats.param_reduction_ratio() > 0.0);
         assert!(stats.inference_speedup >= 1.0);
+
+        // Verify the pruned model genuinely has more zeros than the original.
+        let remaining_nonzero: usize = pruned_model
+            .parameters()
+            .iter()
+            .map(|p| {
+                p.to_vec()
+                    .expect("test: param readable")
+                    .iter()
+                    .filter(|v| **v != 0.0)
+                    .count()
+            })
+            .sum();
+        assert!(
+            remaining_nonzero < original_nonzero,
+            "pruning should reduce the number of non-zero weights"
+        );
     }
 
     #[test]

@@ -226,33 +226,70 @@ where
             }
             #[cfg(feature = "gpu")]
             TensorStorage::Gpu(buffer) => {
-                // Handle GPU case manually to avoid double borrow
-                if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>()
-                    || std::any::TypeId::of::<T>() == std::any::TypeId::of::<f64>()
-                {
-                    // For f32/f64, convert to CPU, apply operation, and convert back
-                    let mut cpu_array = buffer.to_cpu_array()?;
-                    cpu_array.mapv_inplace(|x| f(&x));
-                    let device_id = match self.device {
-                        crate::Device::Gpu(id) => id,
-                        _ => {
-                            return Err(crate::TensorError::device_error_simple(
-                                "Expected GPU device".to_string(),
-                            ))
-                        }
-                    };
-                    let new_gpu_buffer =
-                        crate::gpu::buffer::GpuBuffer::from_cpu_array(&cpu_array, device_id)?;
-                    *buffer = new_gpu_buffer;
-                    Ok(())
-                } else {
-                    // Fallback: not supported for this type
-                    Err(crate::TensorError::unsupported_operation_simple(format!(
-                        "GPU map_inplace not supported for type {}",
-                        std::any::type_name::<T>()
-                    )))
-                }
+                // Handle GPU case manually to avoid double borrow. Round-trip
+                // through the host: read the buffer back, apply `f` on the
+                // CPU, then write the result back into the same GPU-resident
+                // buffer. `GpuBuffer::to_cpu_array`/`from_cpu_array` are
+                // already generic over any
+                // `T: bytemuck::Pod + Zeroable + Clone + Send + Sync + 'static`
+                // — exactly the bound this impl block already requires —
+                // so this is not restricted to f32/f64.
+                let mut cpu_array = buffer.to_cpu_array()?;
+                cpu_array.mapv_inplace(|x| f(&x));
+                let device_id = match self.device {
+                    crate::Device::Gpu(id) => id,
+                    _ => {
+                        return Err(crate::TensorError::device_error_simple(
+                            "Expected GPU device".to_string(),
+                        ))
+                    }
+                };
+                let new_gpu_buffer =
+                    crate::gpu::buffer::GpuBuffer::from_cpu_array(&cpu_array, device_id)?;
+                *buffer = new_gpu_buffer;
+                Ok(())
             }
         }
+    }
+}
+
+// GPU-resident correctness test for the `map_inplace()` fix: deleting the
+// artificial `TypeId::of::<T>() == f32 || f64` gate must not change behavior
+// for f32/f64 (already worked) but must now ALSO work for any other
+// `bytemuck::Pod` type, e.g. i32, which previously hit the "not supported"
+// error branch even though the underlying GPU buffer round-trip is fully
+// generic. Skips gracefully (without failing the suite) if no GPU adapter is
+// available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_map_inplace_non_f32_f64_type_matches_cpu_reference() {
+        let mut src =
+            Tensor::<i32>::from_vec(vec![1, 2, 3, 4], &[4]).expect("test: from_vec should succeed");
+
+        let mut src_gpu = match src.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        src_gpu
+            .map_inplace(|x: &i32| *x * 10)
+            .expect("test: gpu map_inplace should succeed with a real adapter for i32");
+        let gpu_result = src_gpu.to_cpu().expect("test: to_cpu should succeed");
+        let gpu_data = gpu_result
+            .as_slice()
+            .expect("map_inplace result must be contiguous");
+
+        src.map_inplace(|x: &i32| *x * 10)
+            .expect("test: cpu map_inplace should succeed");
+        let cpu_data = src
+            .as_slice()
+            .expect("map_inplace result must be contiguous");
+
+        assert_eq!(gpu_data, cpu_data);
+        assert_eq!(gpu_data, &[10, 20, 30, 40]);
     }
 }

@@ -9,8 +9,25 @@ use tenflowers_autograd::{
 };
 use tenflowers_core::Tensor;
 
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+/// Serializes every test in this binary that mutates the process-wide
+/// deterministic state. Without this guard the tests race on the shared
+/// global `DeterministicState`, producing flaky assertion failures when the
+/// binary runs concurrently with the rest of the workspace test suite.
+fn deterministic_test_guard() -> MutexGuard<'static, ()> {
+    static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+    // Recover from a poisoned mutex: a panic in one test must not cascade into
+    // spurious failures for the others.
+    match TEST_MUTEX.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 #[test]
 fn test_deterministic_mode_toggle() {
+    let _guard = deterministic_test_guard();
     println!("Test: Deterministic mode toggle");
 
     reset_deterministic_state();
@@ -28,6 +45,7 @@ fn test_deterministic_mode_toggle() {
 
 #[test]
 fn test_global_seed_setting() {
+    let _guard = deterministic_test_guard();
     println!("Test: Global seed configuration");
 
     set_global_seed(42);
@@ -43,6 +61,7 @@ fn test_global_seed_setting() {
 
 #[test]
 fn test_operation_specific_seeds() {
+    let _guard = deterministic_test_guard();
     println!("Test: Operation-specific seed management");
 
     reset_deterministic_state();
@@ -64,6 +83,7 @@ fn test_operation_specific_seeds() {
 
 #[test]
 fn test_seed_clearing() {
+    let _guard = deterministic_test_guard();
     println!("Test: Seed clearing");
 
     reset_deterministic_state();
@@ -85,6 +105,7 @@ fn test_seed_clearing() {
 
 #[test]
 fn test_deterministic_state_reset() {
+    let _guard = deterministic_test_guard();
     println!("Test: Deterministic state reset API");
 
     // Test that reset_deterministic_state() can be called
@@ -111,6 +132,7 @@ fn test_deterministic_state_reset() {
 
 #[test]
 fn test_seeded_operation_counter() {
+    let _guard = deterministic_test_guard();
     println!("Test: Seeded operation counter");
 
     reset_deterministic_state();
@@ -142,6 +164,7 @@ fn test_seeded_operation_counter() {
 
 #[test]
 fn test_deterministic_config() {
+    let _guard = deterministic_test_guard();
     println!("Test: DeterministicConfig creation and usage");
 
     let config = DeterministicConfig::with_seed(12345);
@@ -157,6 +180,7 @@ fn test_deterministic_config() {
 
 #[test]
 fn test_reproducibility_same_seed() {
+    let _guard = deterministic_test_guard();
     println!("Test: Reproducibility with same seed");
 
     let tape1 = GradientTape::new();
@@ -184,6 +208,7 @@ fn test_reproducibility_same_seed() {
 
 #[test]
 fn test_different_seeds_different_results() {
+    let _guard = deterministic_test_guard();
     println!("Test: Different seeds produce different sequences");
 
     // This test verifies that different seeds would produce different
@@ -205,6 +230,7 @@ fn test_different_seeds_different_results() {
 
 #[test]
 fn test_non_deterministic_mode() {
+    let _guard = deterministic_test_guard();
     println!("Test: Non-deterministic mode behavior");
 
     reset_deterministic_state();
@@ -222,6 +248,7 @@ fn test_non_deterministic_mode() {
 
 #[test]
 fn test_operation_seed_isolation() {
+    let _guard = deterministic_test_guard();
     println!("Test: Operation seed isolation");
 
     reset_deterministic_state();
@@ -238,6 +265,7 @@ fn test_operation_seed_isolation() {
 
 #[test]
 fn test_deterministic_mode_with_gradient_computation() {
+    let _guard = deterministic_test_guard();
     println!("Test: Deterministic mode in gradient computation");
 
     reset_deterministic_state();
@@ -254,6 +282,7 @@ fn test_deterministic_mode_with_gradient_computation() {
 
 #[test]
 fn test_seed_persistence_across_operations() {
+    let _guard = deterministic_test_guard();
     println!("Test: Seed persistence across multiple operations");
 
     reset_deterministic_state();
@@ -279,6 +308,7 @@ fn test_seed_persistence_across_operations() {
 
 #[test]
 fn test_deterministic_config_builder() {
+    let _guard = deterministic_test_guard();
     println!("Test: DeterministicConfig builder pattern");
 
     let config = DeterministicConfig::with_seed(42).strict().no_warnings();
@@ -291,6 +321,7 @@ fn test_deterministic_config_builder() {
 /// Integration test: Full deterministic training workflow
 #[test]
 fn test_deterministic_training_workflow() {
+    let _guard = deterministic_test_guard();
     println!("Integration Test: Deterministic Training Workflow");
     println!("==================================================");
 

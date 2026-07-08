@@ -40,7 +40,7 @@ pub use rope::{RopeConfig, RopeEmbedding, RotaryInterpolation};
 pub use transformer::{TransformerDecoder, TransformerEncoder};
 pub use utils::{
     analyze_attention_patterns, apply_attention_mask, apply_rotary_position_embedding,
-    create_causal_mask, create_padding_mask, scaled_dot_product_attention,
+    combine_attention_masks, create_causal_mask, create_padding_mask, scaled_dot_product_attention,
     sinusoidal_positional_encoding, AttentionStats,
 };
 

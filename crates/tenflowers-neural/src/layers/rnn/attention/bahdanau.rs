@@ -408,18 +408,60 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    /// Standard forward pass that takes encoder and decoder states
-    /// Input tensor should be concatenated [encoder_outputs, decoder_hidden]
+    /// Standard forward pass (single-input `Layer` adapter).
+    ///
+    /// `input` is interpreted as the encoder hidden states with shape
+    /// `[seq_len, batch_size, encoder_hidden_size]`. The decoder query is taken as the
+    /// final source position, so this adapter computes the real Bahdanau attention
+    /// context `[batch_size, encoder_hidden_size]` for the last step attending over the
+    /// whole source sequence.
+    ///
+    /// Because the single tensor supplies the query, this adapter requires
+    /// `encoder_hidden_size == decoder_hidden_size`; for the general case with differing
+    /// sizes call [`BahdanauAttention::forward_with_weights`] with an explicit decoder
+    /// hidden state.
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
-        // This is a simplified interface for the Layer trait
-        // In practice, attention layers usually need separate encoder/decoder inputs
-
         let input_shape = input.shape().dims();
-        let batch_size = input_shape[0];
+        if input_shape.len() != 3 {
+            return Err(TensorError::invalid_argument(format!(
+                "BahdanauAttention::forward expects encoder outputs of shape \
+                 [seq_len, batch_size, encoder_hidden_size], got {input_shape:?}"
+            )));
+        }
+        let seq_len = input_shape[0];
+        let batch_size = input_shape[1];
+        let encoder_dim = input_shape[2];
 
-        // Return zeros for now as placeholder
-        // In real usage, would split input into encoder and decoder parts
-        Ok(Tensor::zeros(&[batch_size, self.encoder_hidden_size]))
+        if encoder_dim != self.encoder_hidden_size {
+            return Err(TensorError::invalid_argument(format!(
+                "Expected encoder hidden size {}, got {encoder_dim}",
+                self.encoder_hidden_size
+            )));
+        }
+        if self.encoder_hidden_size != self.decoder_hidden_size {
+            return Err(TensorError::invalid_argument(format!(
+                "BahdanauAttention::forward (single-input Layer interface) requires \
+                 encoder_hidden_size == decoder_hidden_size (got {} and {}); use \
+                 forward_with_weights with an explicit decoder hidden state otherwise",
+                self.encoder_hidden_size, self.decoder_hidden_size
+            )));
+        }
+        if seq_len == 0 {
+            return Err(TensorError::invalid_argument(
+                "BahdanauAttention::forward requires seq_len >= 1".to_string(),
+            ));
+        }
+
+        // Use the final source position as the decoder query:
+        // [batch_size, encoder_hidden_size] == [batch_size, decoder_hidden_size].
+        let query = tenflowers_core::ops::slice(
+            input,
+            &[seq_len - 1..seq_len, 0..batch_size, 0..encoder_dim],
+        )?
+        .squeeze(Some(&[0]))?;
+
+        let (context, _attention_weights) = self.forward_with_weights(input, &query)?;
+        Ok(context)
     }
 
     fn parameters(&self) -> Vec<&Tensor<T>> {
@@ -464,5 +506,83 @@ where
 
     fn clone_box(&self) -> Box<dyn Layer<T>> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seq_tensor(shape: &[usize]) -> Tensor<f32> {
+        let n: usize = shape.iter().product();
+        let data: Vec<f32> = (0..n).map(|i| ((i % 5) as f32) * 0.25 - 0.4).collect();
+        Tensor::from_data(data, shape).expect("failed to build test tensor")
+    }
+
+    fn values(tensor: &Tensor<f32>) -> Vec<f32> {
+        tensor.to_vec().expect("to_vec")
+    }
+
+    fn has_nonzero(tensor: &Tensor<f32>) -> bool {
+        values(tensor).iter().any(|&v| v.abs() > 0.0)
+    }
+
+    fn assert_rows_sum_to_one(weights: &Tensor<f32>, batch_size: usize, seq_len: usize) {
+        // weights: [batch_size, seq_len]
+        assert_eq!(weights.shape().dims(), &[batch_size, seq_len]);
+        let w = values(weights);
+        for b in 0..batch_size {
+            let sum: f32 = (0..seq_len).map(|t| w[b * seq_len + t]).sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "attention row {b} sums to {sum}, expected ~1"
+            );
+        }
+    }
+
+    #[test]
+    fn bahdanau_weights_sum_to_one_and_context_nonzero() {
+        // Differing encoder/decoder sizes exercise the general additive attention path.
+        let attn = BahdanauAttention::<f32>::new(4, 5, 6, true).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]); // [seq, batch, enc_hidden]
+        let decoder = seq_tensor(&[2, 5]); // [batch, dec_hidden]
+        let (context, weights) = attn
+            .forward_with_weights(&encoder, &decoder)
+            .expect("forward_with_weights");
+        assert_eq!(context.shape().dims(), &[2, 4]);
+        assert!(has_nonzero(&context), "context must not be all zeros");
+        assert_rows_sum_to_one(&weights, 2, 3);
+    }
+
+    #[test]
+    fn bahdanau_no_bias_weights_sum_to_one() {
+        let attn = BahdanauAttention::<f32>::new(4, 4, 4, false).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        let decoder = seq_tensor(&[2, 4]);
+        let (_context, weights) = attn
+            .forward_with_weights(&encoder, &decoder)
+            .expect("forward_with_weights");
+        assert_rows_sum_to_one(&weights, 2, 3);
+    }
+
+    #[test]
+    fn bahdanau_layer_forward_equal_sizes_nonzero() {
+        let attn = BahdanauAttention::<f32>::new(4, 4, 5, true).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        let out = attn.forward(&encoder).expect("forward");
+        assert_eq!(out.shape().dims(), &[2, 4]);
+        assert!(
+            has_nonzero(&out),
+            "Bahdanau forward output must not be all zeros"
+        );
+    }
+
+    #[test]
+    fn bahdanau_layer_forward_unequal_sizes_errors() {
+        // The single-input Layer adapter cannot supply a differently-sized decoder query,
+        // so it must return an honest error rather than fabricate a result.
+        let attn = BahdanauAttention::<f32>::new(4, 5, 6, true).expect("attn");
+        let encoder = seq_tensor(&[3, 2, 4]);
+        assert!(attn.forward(&encoder).is_err());
     }
 }

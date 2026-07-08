@@ -76,19 +76,50 @@ impl<T: Clone + Default> Tensor<T> {
         }
     }
 
-    /// Create a tensor filled with random values from normal distribution
+    /// Create a tensor filled with random values from the standard normal
+    /// distribution N(0, 1).
+    ///
+    /// Samples are drawn from a true Gaussian distribution (mean = 0,
+    /// variance = 1) using the `scirs2_core` random facilities, so the result
+    /// is suitable for random weight initialisation. A non-deterministic seed
+    /// is derived from the system clock; use [`Tensor::randn_with_seed`] for a
+    /// reproducible sequence.
     pub fn randn(shape: &[usize]) -> Result<Self>
     where
         T: Clone + Default + From<f32>,
     {
-        let total_elements: usize = shape.iter().product();
-        let mut data = Vec::with_capacity(total_elements);
+        let seed = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0)
+        };
+        Self::randn_with_seed(shape, seed)
+    }
 
-        // Simple random number generation (placeholder for proper implementation)
-        for i in 0..total_elements {
-            // Use a simple pseudo-random approach for now
-            let val = ((i as f32 * 17.0 + 7.0).sin() * 10000.0).fract() - 0.5;
-            data.push(T::from(val));
+    /// Create a tensor filled with values drawn from the standard normal
+    /// distribution N(0, 1) using a fixed `seed` for reproducibility.
+    pub fn randn_with_seed(shape: &[usize], seed: u64) -> Result<Self>
+    where
+        T: Clone + Default + From<f32>,
+    {
+        use scirs2_core::random::rand_distributions::{Distribution, Normal};
+        use scirs2_core::random::rand_prelude::{SeedableRng, StdRng};
+
+        let total_elements: usize = shape.iter().product();
+
+        // Standard normal: mean 0, standard deviation 1.
+        let normal = Normal::new(0.0_f32, 1.0_f32).map_err(|e| {
+            TensorError::invalid_argument(format!(
+                "Failed to construct standard normal distribution: {e}"
+            ))
+        })?;
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let mut data = Vec::with_capacity(total_elements);
+        for _ in 0..total_elements {
+            data.push(T::from(normal.sample(&mut rng)));
         }
 
         Self::from_data(data, shape)
@@ -117,8 +148,11 @@ impl<T: Clone + Default> Tensor<T> {
     /// Create a tensor from a GPU buffer
     #[cfg(feature = "gpu")]
     pub fn from_gpu_buffer(buffer: crate::gpu::buffer::GpuBuffer<T>, shape: Shape) -> Self {
-        // Default to GPU device 0 - in a full implementation, this should be passed as parameter
-        let device = crate::Device::Gpu(0);
+        // Derive the device from the buffer's own device info rather than
+        // hardcoding device 0 - a buffer may live on any GPU device id.
+        // `GpuBuffer::device_enum()` is a plain metadata accessor available
+        // for any T (see gpu/buffer.rs), so no extra bound is needed here.
+        let device = buffer.device_enum();
         Self {
             storage: TensorStorage::Gpu(buffer),
             shape,
@@ -265,5 +299,51 @@ impl<T: Clone + Default> Tensor<T> {
         }
 
         Self::from_vec(data, &[steps])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `randn` must produce samples from the true standard normal N(0, 1):
+    /// sample mean ~ 0 and sample variance ~ 1. The OLD broken implementation
+    /// returned a shifted uniform with mean ~ -0.5 and variance ~ 1/3, so we
+    /// also assert we are NOT in that regime.
+    #[test]
+    fn test_randn_is_standard_normal() {
+        let n = 100_000;
+        let tensor =
+            Tensor::<f32>::randn_with_seed(&[n], 0xC0FFEE).expect("randn_with_seed should succeed");
+        let data = tensor.as_slice().expect("randn tensor must be contiguous");
+        assert_eq!(data.len(), n);
+
+        let sum: f64 = data.iter().map(|&x| x as f64).sum();
+        let mean = sum / n as f64;
+        let var: f64 = data.iter().map(|&x| (x as f64 - mean).powi(2)).sum::<f64>() / n as f64;
+
+        // True N(0, 1): mean in [-0.05, 0.05], variance in [0.9, 1.1].
+        assert!(
+            (-0.05..=0.05).contains(&mean),
+            "randn sample mean {mean} not in [-0.05, 0.05] (expected ~0 for N(0,1))"
+        );
+        assert!(
+            (0.9..=1.1).contains(&var),
+            "randn sample variance {var} not in [0.9, 1.1] (expected ~1 for N(0,1))"
+        );
+
+        // Guard against regression to the OLD shifted-uniform bug (mean ~ -0.5).
+        assert!(
+            (mean - (-0.5)).abs() > 0.1,
+            "randn sample mean {mean} matches the OLD broken distribution (~ -0.5)"
+        );
+    }
+
+    /// A fixed seed must reproduce the exact same draw.
+    #[test]
+    fn test_randn_with_seed_is_deterministic() {
+        let a = Tensor::<f32>::randn_with_seed(&[64], 7).expect("randn_with_seed should succeed");
+        let b = Tensor::<f32>::randn_with_seed(&[64], 7).expect("randn_with_seed should succeed");
+        assert_eq!(a.as_slice(), b.as_slice());
     }
 }

@@ -570,11 +570,53 @@ impl Tensor<u8> {
             }
             #[cfg(feature = "gpu")]
             TensorStorage::Gpu(_) => {
-                // For now, GPU u8->bool casting not implemented
-                Err(crate::TensorError::unsupported_operation_simple(
-                    "GPU u8 to bool casting not yet implemented".to_string(),
-                ))
+                // No native GPU u8->bool cast kernel exists. Read the tensor
+                // back to the host (a real device->host transfer) and
+                // recurse into the CPU arm above, which is known-correct.
+                let cpu_self = self.to_cpu()?;
+                cpu_self.cast_to_bool()
             }
         }
+    }
+}
+
+// GPU-resident correctness test for the readback+delegate fix in
+// `cast_to_bool()`'s GPU arm. Note: the result is `Tensor<bool>`, and `bool`
+// does not implement `bytemuck::Pod` (restricted valid bit patterns), so
+// `to_vec()` (which requires `Pod`-adjacent numeric bounds) cannot be used
+// on the result - use `as_slice()` instead, which carries no such bound.
+// Skips gracefully (without failing the suite) if no GPU adapter is
+// available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_cast_to_bool_matches_cpu_reference() {
+        // Element count is a multiple of 4 (`wgpu::COPY_BUFFER_ALIGNMENT`):
+        // `u8` is 1 byte wide, so an unaligned element count (e.g. 5, giving
+        // a 5-byte copy) trips a pre-existing `COPY_BUFFER_ALIGNMENT`
+        // validation error inside `GpuBuffer::to_cpu()`'s host readback -
+        // a limitation of the shared buffer-transfer machinery, not of the
+        // `cast_to_bool` readback+delegate fix under test here (every other
+        // GPU test in this PR happens to use `f32`, whose 4-byte width keeps
+        // any element count aligned, which is why only this `u8` test needs
+        // to pick its size deliberately).
+        let src = Tensor::<u8>::from_vec(vec![0, 1, 2, 0, 5, 255, 3, 0], &[8])
+            .expect("test: from_vec should succeed");
+
+        let src_gpu = match src.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = src_gpu
+            .cast_to_bool()
+            .expect("test: gpu cast_to_bool should succeed with a real adapter");
+        let data = result
+            .as_slice()
+            .expect("cast_to_bool result must be CPU-resident and contiguous");
+        assert_eq!(data, &[false, true, true, false, true, true, true, false]);
     }
 }

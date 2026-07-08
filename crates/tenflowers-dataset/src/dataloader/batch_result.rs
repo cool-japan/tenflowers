@@ -18,7 +18,7 @@ pub enum BatchResult<T> {
 
 impl<T> BatchResult<T>
 where
-    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static,
+    T: Clone + Default + scirs2_core::numeric::Zero + Send + Sync + 'static + bytemuck::Pod,
 {
     /// Get the batch size (number of samples)
     pub fn len(&self) -> usize {

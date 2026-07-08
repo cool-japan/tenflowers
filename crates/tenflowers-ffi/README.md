@@ -2,13 +2,14 @@
 
 Foreign Function Interface for TenfloweRS, providing Python bindings and C API for seamless integration with other languages and frameworks.
 
-> v0.1.1 (2026-04-24) | 48 tests passing | 0 clippy warnings
+> v0.1.2 (2026-07-08) | 185 tests passing | 0 clippy warnings
 > Python bindings are functional. Build from source via maturin.
 
 ## Overview
 
 `tenflowers-ffi` implements:
 - **Python Bindings**: PyO3-based Python API for tensor operations, neural network layers, and optimizers
+- **Eager Autograd (PyTorch-style)**: `PyTensor.set_requires_grad()` / `.backward()` / `.grad()` — a thread-local, auto-activating implicit gradient tape (`implicit_autograd`) layered on the existing explicit `GradientTape` engine, so `x.backward(); x.grad()` works without ever constructing a tape object by hand
 - **C API**: C FFI bindings for cross-language compatibility
 - **NumPy Integration**: Tensor conversion with NumPy arrays
 - **Visualization**: Gradient flow analysis and visualization utilities
@@ -18,11 +19,15 @@ Foreign Function Interface for TenfloweRS, providing Python bindings and C API f
 - **Structured Error Mapping**: Exhaustive `TensorError` → `TenflowersError` mapping covering all 23 variants
 - **Rich Tensor Repr**: `PyTensor.__repr__` shows actual dtype; `__len__`, `.ndim`, `.numel()` properties added
 - **C Header Generation**: `build.rs` regenerates `tenflowers.h` when `TENFLOWERS_REGENERATE_C_HEADER=1` is set
+- **Gradient Parity Checking**: standalone finite-difference gradient checker (`gradient_parity`) for validating analytical gradients against numerical ones
+- **Profiling**: session-based `PyProfiler` for per-op timing/memory tracking
+- **Stable API Surface**: `stable_api` module cataloguing the stability guarantees of the public Python/C surface
 
 ## Features
 
 - **Zero-Copy Interop**: Efficient data exchange with Python/NumPy where possible
 - **Pythonic API**: Familiar interface for Python users
+- **PyTorch-Familiar Autograd**: eager `.backward()` / `.grad()` on `PyTensor`, in addition to the explicit `GradientTape` API — no need to learn a TensorFlow-style tape-first workflow just to get a gradient
 - **Type Safety**: Automatic type conversions with safety checks
 - **Error Handling**: Exhaustive Rust→Python exception mapping (all 23 `TensorError` variants)
 - **GPU Support**: Tensor operations on GPU from Python via `PyDevice`
@@ -103,21 +108,30 @@ for epoch in range(10):
 
 ### Autograd Integration
 
+Eager, PyTorch-style autograd is available directly on `PyTensor` via a
+thread-local implicit gradient tape — no explicit tape object required:
+
 ```python
 import tenflowers as tf
 
-# Enable gradient tracking
-x = tf.tensor([2.0], requires_grad=True)
-y = tf.tensor([3.0], requires_grad=True)
+# Enable gradient tracking on each leaf tensor
+x = tf.ones([2])
+x.set_requires_grad(True)
+y = tf.ones([2])
+y.set_requires_grad(True)
 
-# Compute function
-z = x * x + y * y
+# Compute function: z = sum(x * x + y * y)
+z = tf.sum(tf.add(tf.mul(x, x), tf.mul(y, y)))
 
 # Compute gradients
 z.backward()
-print(f"dz/dx = {x.grad}")  # 4.0
-print(f"dz/dy = {y.grad}")  # 6.0
+print(x.grad())  # dz/dx = 2x -> [2.0, 2.0]
+print(y.grad())  # dz/dy = 2y -> [2.0, 2.0]
 ```
+
+The explicit `GradientTape` API (`tenflowers.nn.GradientTape` /
+`neural::gradient_tape`) is still available for TensorFlow-style workflows and
+is what the implicit tape is layered on top of internally.
 
 ## C API Usage
 

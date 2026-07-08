@@ -159,7 +159,7 @@ impl MemoryAliasDetector {
         let active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(views) = active_views.get(&buffer_id) {
             for &(view_offset, view_size) in views {
@@ -184,7 +184,7 @@ impl MemoryAliasDetector {
         let mut active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         active_views
             .entry(buffer_id)
             .or_default()
@@ -196,7 +196,7 @@ impl MemoryAliasDetector {
         let mut active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(views) = active_views.get_mut(&buffer_id) {
             views.retain(|&(view_offset, view_size)| view_offset != offset || view_size != size);
             if views.is_empty() {
@@ -215,7 +215,7 @@ impl MemoryAliasDetector {
         let active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut aliases = Vec::new();
 
         if let Some(views) = active_views.get(&buffer_id) {
@@ -243,7 +243,7 @@ impl MemoryAliasDetector {
         let active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Some(views) = active_views.get(&buffer_id) {
             for &(view_offset, view_size) in views {
@@ -274,7 +274,7 @@ impl MemoryAliasDetector {
         let active_views = self
             .active_views
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let total_buffers = active_views.len();
         let total_views: usize = active_views.values().map(|v| v.len()).sum();
         (total_buffers, total_views)

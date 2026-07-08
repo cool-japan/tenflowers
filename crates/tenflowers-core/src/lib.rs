@@ -177,7 +177,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tenflowers-core = { version = "0.1.1", features = ["gpu"] }
+//! tenflowers-core = { version = "0.1.2", features = ["gpu"] }
 //! ```
 //!
 //! ## Safety and Correctness
@@ -211,7 +211,6 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(clippy::result_large_err)]
 // Allow common patterns in GPU code that clippy flags
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::redundant_closure)]
@@ -244,6 +243,7 @@ pub mod gpu_memory_metrics;
 pub mod gpu_stub;
 pub mod gradient_clipping;
 pub mod gradient_coverage_audit;
+pub mod gradient_executor;
 pub mod gradient_validation_framework;
 pub mod graph;
 pub mod half_precision;
@@ -508,3 +508,4 @@ mod tests {
     }
 }
 pub mod shape_inference_helpers;
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

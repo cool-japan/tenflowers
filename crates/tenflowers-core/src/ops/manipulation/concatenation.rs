@@ -13,7 +13,7 @@ use scirs2_core::numeric::Zero;
 /// Slice a tensor along specified ranges
 pub fn slice<T>(tensor: &Tensor<T>, ranges: &[std::ops::Range<usize>]) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let shape = tensor.shape();
 
@@ -123,7 +123,7 @@ where
 /// Concatenate tensors along a specified axis
 pub fn concat<T>(tensors: &[&Tensor<T>], axis: usize) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if tensors.is_empty() {
         return Err(TensorError::invalid_argument(
@@ -171,41 +171,20 @@ where
             Ok(Tensor::from_array(concatenated))
         }
         #[cfg(feature = "gpu")]
-        TensorStorage::Gpu(gpu_a) => {
-            // Check if we're concatenating exactly two tensors and have proper GPU support
-            if tensors.len() != 2 {
-                return Err(TensorError::unsupported_operation_simple(
-                    "GPU concatenate currently only supports exactly 2 tensors".to_string(),
-                ));
-            }
-
-            // Check that the second tensor is also on GPU
-            let gpu_b = match &tensors[1].storage {
-                #[cfg(feature = "gpu")]
-                TensorStorage::Gpu(gpu_b) => gpu_b,
-                _ => {
-                    return Err(TensorError::device_error_simple(
-                        "All tensors must be on the same device for GPU concatenation".to_string(),
-                    ))
-                }
-            };
-
-            // Check type compatibility
-            let type_name = std::any::type_name::<T>();
-            match type_name {
-                "f32" | "f64" | "i32" | "i64" => {
-                    // NOTE(v0.2): Implement GPU concatenation
-                    // For now, fallback to CPU implementation
-                    Err(TensorError::unsupported_operation_simple(
-                        "GPU concatenation not yet implemented".to_string()
-                    ))
-                },
-                _ => {
-                    Err(TensorError::unsupported_operation_simple(
-                        format!("GPU concatenate not implemented for type {}. Supported types: f32, f64, i32, i64", type_name)
-                    ))
-                }
-            }
+        TensorStorage::Gpu(_) => {
+            // No native GPU concatenation kernel is correct here for an
+            // arbitrary axis or an arbitrary number of tensors: the
+            // lower-level `execute_concatenate` kernel silently ignores its
+            // `axis` parameter and always flat-appends buffers, which is
+            // only correct for axis 0. Read every operand back to the host
+            // (a real device->host transfer) and delegate to the CPU
+            // implementation above, which is known-correct (backed by
+            // `scirs2_core::ndarray::concatenate`) for any axis and any
+            // number of tensors.
+            let cpu_tensors: Result<Vec<Tensor<T>>> = tensors.iter().map(|t| t.to_cpu()).collect();
+            let cpu_tensors = cpu_tensors?;
+            let cpu_refs: Vec<&Tensor<T>> = cpu_tensors.iter().collect();
+            concat(&cpu_refs, axis)
         }
     }
 }
@@ -213,7 +192,7 @@ where
 /// Add a dimension of size 1 at the specified axis
 pub fn expand_dims<T>(tensor: &Tensor<T>, axis: usize) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let mut new_shape = tensor.shape().dims().to_vec();
 
@@ -235,11 +214,14 @@ where
             Ok(Tensor::from_array(expanded))
         }
         #[cfg(feature = "gpu")]
-        TensorStorage::Gpu(_) => {
-            // GPU operations require T: Pod + Zeroable which isn't guaranteed for generic T
-            Err(TensorError::unsupported_operation_simple(
-                "GPU expand_dims not implemented for this type. Only f32 is currently supported."
-                    .to_string(),
+        TensorStorage::Gpu(gpu_buffer) => {
+            // Inserting a size-1 axis is pure metadata: `GpuBuffer<T>` and
+            // `Shape` carry no strides, so no device round-trip is needed —
+            // just clone the buffer handle (an `Arc::clone`) and attach the
+            // new shape.
+            Ok(Tensor::from_gpu_buffer(
+                gpu_buffer.clone(),
+                crate::Shape::from_slice(&new_shape),
             ))
         }
     }
@@ -248,7 +230,7 @@ where
 /// Stack tensors along a new axis
 pub fn stack<T>(tensors: &[&Tensor<T>], axis: usize) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if tensors.is_empty() {
         return Err(TensorError::invalid_argument(
@@ -287,7 +269,7 @@ where
 /// Split a tensor into multiple tensors along an axis
 pub fn split<T>(tensor: &Tensor<T>, num_splits: usize, axis: usize) -> Result<Vec<Tensor<T>>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let shape = tensor.shape();
 
@@ -321,7 +303,7 @@ where
 /// Tile operation - construct a tensor by repeating the input multiple times
 pub fn tile<T>(tensor: &Tensor<T>, multiples: &[usize]) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if multiples.len() != tensor.shape().rank() {
         return Err(TensorError::invalid_argument(format!(
@@ -389,7 +371,7 @@ where
 /// Repeat operation - repeat elements of a tensor
 pub fn repeat<T>(tensor: &Tensor<T>, repeats: usize, axis: Option<usize>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if let Some(axis) = axis {
         if axis >= tensor.shape().rank() {
@@ -490,7 +472,7 @@ fn gpu_slice_dispatch<T>(
     ranges: &[std::ops::Range<usize>],
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     // Currently, we only support f32 for GPU operations
     let type_name = std::any::type_name::<T>();
@@ -544,7 +526,7 @@ where
 #[cfg(feature = "gpu")]
 fn gpu_tile_dispatch<T>(tensor: &Tensor<T>, multiples: &[usize]) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let type_name = std::any::type_name::<T>();
 
@@ -607,7 +589,7 @@ fn gpu_repeat_dispatch<T>(
     axis: Option<usize>,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let type_name = std::any::type_name::<T>();
 
@@ -660,5 +642,67 @@ where
             "GPU repeat only supports f32, got {}",
             std::any::type_name::<T>()
         )))
+    }
+}
+
+// GPU-resident correctness tests for the readback+delegate fixes in this
+// file: `concat()`'s GPU arm (now arbitrary axis / arbitrary tensor count,
+// not just axis-0 pairs) and the private `expand_dims()` used by `stack()`
+// (pure metadata `Arc::clone`, exercised end-to-end here). Skips gracefully
+// (without failing the suite) if no GPU adapter is available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_concat_axis1_three_tensors_matches_cpu_reference() {
+        // Regression test: the old GPU path only flat-appended buffers
+        // (silently ignoring `axis`) and was restricted to exactly 2
+        // tensors.
+        let a_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+        let b_cpu = Tensor::<f32>::from_vec(vec![5.0, 6.0], &[2, 1])
+            .expect("test: from_vec should succeed");
+        let c_cpu = Tensor::<f32>::from_vec(vec![7.0, 8.0, 9.0, 10.0], &[2, 2])
+            .expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu, c_gpu) = match (
+            a_cpu.to(Device::Gpu(0)),
+            b_cpu.to(Device::Gpu(0)),
+            c_cpu.to(Device::Gpu(0)),
+        ) {
+            (Ok(a), Ok(b), Ok(c)) => (a, b, c),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = concat(&[&a_gpu, &b_gpu, &c_gpu], 1)
+            .expect("test: gpu concat should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[2, 5]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(
+            data,
+            vec![1.0, 2.0, 5.0, 7.0, 8.0, 3.0, 4.0, 6.0, 9.0, 10.0]
+        );
+    }
+
+    #[test]
+    fn gpu_stack_matches_cpu_reference() {
+        // Exercises the private `expand_dims` used internally by `stack`.
+        let a_cpu =
+            Tensor::<f32>::from_vec(vec![1.0, 2.0], &[2]).expect("test: from_vec should succeed");
+        let b_cpu =
+            Tensor::<f32>::from_vec(vec![3.0, 4.0], &[2]).expect("test: from_vec should succeed");
+
+        let (a_gpu, b_gpu) = match (a_cpu.to(Device::Gpu(0)), b_cpu.to(Device::Gpu(0))) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result = stack(&[&a_gpu, &b_gpu], 0)
+            .expect("test: gpu stack should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[2, 2]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0]);
     }
 }

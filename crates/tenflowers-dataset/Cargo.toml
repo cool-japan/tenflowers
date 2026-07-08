@@ -19,6 +19,7 @@ workspace = true
 [dependencies]
 tenflowers-core = { workspace = true }
 scirs2-core = { workspace = true, features = ["random"] }
+thiserror = { workspace = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -31,7 +32,11 @@ regex = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 oxiarc-archive = { workspace = true, optional = true }
+oxiarc-lz4 = { workspace = true, optional = true }
+oxiarc-deflate = { workspace = true, optional = true }
+oxiarc-snappy = { workspace = true, optional = true }
 crc32fast = { workspace = true, optional = true }
+sha2 = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 hdf5 = { workspace = true, optional = true }
 symphonia = { workspace = true, optional = true }
@@ -83,4 +88,4 @@ gpu = ["tenflowers-core/gpu", "dep:wgpu", "dep:futures", "dep:pollster", "dep:to
 numa = ["dep:libc"]
 distributed = ["dep:tokio", "dep:futures", "dep:async-trait", "serialize"]
 cloud = ["dep:reqwest", "dep:tokio", "dep:futures", "serialize"]
-compression = ["dep:oxiarc-archive"]
+compression = ["dep:oxiarc-archive", "dep:oxiarc-lz4", "dep:oxiarc-deflate", "dep:oxiarc-snappy"]

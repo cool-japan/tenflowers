@@ -45,6 +45,7 @@ where
         + Default
         + Zero
         + One
+        + std::iter::Sum
         + Send
         + Sync
         + 'static
@@ -77,6 +78,7 @@ where
         + Default
         + Zero
         + One
+        + std::iter::Sum
         + Send
         + Sync
         + 'static
@@ -195,8 +197,11 @@ where
             scores
         };
 
-        // Apply softmax to get attention weights (simplified)
-        let attention_weights = scores.clone(); // Placeholder - would need proper softmax
+        // Apply numerically stable softmax along the key axis (last axis, seq_k)
+        // to convert the scaled, masked scores into a proper attention distribution.
+        // `softmax` internally subtracts the per-row max before exponentiating, so
+        // the resulting weights are non-negative and sum to 1 along seq_k.
+        let attention_weights = scores.softmax(Some(-1))?;
 
         // Apply attention to values: weights @ V
         let context = tenflowers_core::ops::matmul(&attention_weights, &v)?;
@@ -205,6 +210,15 @@ where
         let context = tenflowers_core::ops::manipulation::transpose::transpose_axes(
             &context,
             Some(&[0, 2, 1, 3]),
+        )?;
+
+        // `transpose_axes` produces a tensor with permuted (non-contiguous)
+        // strides; a direct `reshape` would fail with an incompatible-layout
+        // error. Materialize the elements in logical (row-major) order so the
+        // following merge of the head and head_dim axes is on contiguous data.
+        let context = Tensor::from_vec(
+            context.to_vec()?,
+            &[batch_size, seq_len, self.num_heads, self.head_dim],
         )?;
 
         // Reshape to [batch, seq_len, embed_dim]
@@ -231,6 +245,7 @@ where
         + Default
         + Zero
         + One
+        + std::iter::Sum
         + Send
         + Sync
         + 'static
@@ -296,5 +311,93 @@ where
 
     fn clone_box(&self) -> Box<dyn Layer<T>> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The attention weights produced inside `forward_with_cache` must form a
+    /// proper probability distribution over the key axis: every row of the
+    /// `[batch, heads, seq_q, seq_k]` tensor must sum to 1.0. This is exactly
+    /// the invariant that the previous `scores.clone()` placeholder violated.
+    #[test]
+    fn test_mqa_softmax_sums_to_one() {
+        // 4 query heads, embed_dim 4 -> head_dim 1, single shared K/V head.
+        let mqa = MultiQueryAttention::<f32>::new(4, 4, false, 0.0, "mqa_test".to_string())
+            .expect("test: MultiQueryAttention creation should succeed");
+
+        // Small input: batch=1, seq_len=2, embed_dim=4.
+        let input = Tensor::from_vec(
+            vec![0.5f32, -1.0, 2.0, 0.25, -0.75, 1.5, 0.0, 3.0],
+            &[1, 2, 4],
+        )
+        .expect("test: tensor creation should succeed");
+
+        // Replicate the exact pre-softmax score computation used by the layer,
+        // then verify the softmax it applies yields rows summing to 1.
+        let batch_size = input.shape().dims()[0];
+        let seq_len = input.shape().dims()[1];
+
+        let q = tenflowers_core::ops::matmul(&input, &mqa.query_weight)
+            .expect("test: q projection should succeed");
+        let k = tenflowers_core::ops::matmul(&input, &mqa.key_weight)
+            .expect("test: k projection should succeed");
+
+        let q = q
+            .reshape(&[batch_size, seq_len, mqa.num_heads, mqa.head_dim])
+            .expect("test: reshape q");
+        let k = k
+            .reshape(&[batch_size, seq_len, 1, mqa.head_dim])
+            .expect("test: reshape k");
+
+        let q =
+            tenflowers_core::ops::manipulation::transpose::transpose_axes(&q, Some(&[0, 2, 1, 3]))
+                .expect("test: transpose q");
+        let k =
+            tenflowers_core::ops::manipulation::transpose::transpose_axes(&k, Some(&[0, 2, 1, 3]))
+                .expect("test: transpose k");
+        let k = tenflowers_core::ops::tile(&k, &[1, mqa.num_heads, 1, 1]).expect("test: tile k");
+
+        let k_t =
+            tenflowers_core::ops::manipulation::transpose::transpose_axes(&k, Some(&[0, 1, 3, 2]))
+                .expect("test: transpose k_t");
+        let scores =
+            tenflowers_core::ops::matmul(&q, &k_t).expect("test: scores matmul should succeed");
+
+        let attention_weights = scores
+            .softmax(Some(-1))
+            .expect("test: softmax should succeed");
+
+        // Shape must be preserved: [batch, heads, seq_q, seq_k].
+        assert_eq!(attention_weights.shape().dims(), &[1, 4, 2, 2]);
+
+        // Sum over the last axis (seq_k) must be 1.0 for every (batch, head, q) row.
+        let summed = attention_weights
+            .sum(Some(&[-1]), false)
+            .expect("test: sum over key axis should succeed");
+        for value in summed.to_vec().expect("test: to_vec should succeed") {
+            assert!(
+                (value - 1.0).abs() < 1e-5,
+                "softmax row sum should be 1.0, got {value}"
+            );
+        }
+    }
+
+    /// End-to-end forward pass must run and preserve the [batch, seq, embed] shape.
+    #[test]
+    fn test_mqa_forward_shape() {
+        let mqa = MultiQueryAttention::<f32>::new(8, 4, false, 0.0, "mqa_shape".to_string())
+            .expect("test: MultiQueryAttention creation should succeed");
+        let input = Tensor::from_vec(
+            (0..3 * 2 * 8).map(|i| i as f32 * 0.1).collect::<Vec<_>>(),
+            &[3, 2, 8],
+        )
+        .expect("test: tensor creation should succeed");
+        let output = mqa
+            .forward(&input)
+            .expect("test: forward pass should succeed");
+        assert_eq!(output.shape().dims(), &[3, 2, 8]);
     }
 }

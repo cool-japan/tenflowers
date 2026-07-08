@@ -99,7 +99,10 @@ where
     pub fn iter(&self) -> DataLoaderIterator<T, D, S> {
         let dataset_len = self.dataset.len();
         let indices = {
-            let sampler = self.sampler.lock().expect("lock should not be poisoned");
+            let sampler = self
+                .sampler
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             sampler.sample_indices(dataset_len).collect::<Vec<_>>()
         };
 
@@ -314,7 +317,9 @@ where
             // Wait if prefetch queue is full
             loop {
                 {
-                    let queue = prefetch_queue.lock().expect("lock should not be poisoned");
+                    let queue = prefetch_queue
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     if queue.len() < max_prefetch_size {
                         break;
                     }
@@ -352,7 +357,9 @@ where
 
             // Add to prefetch queue
             {
-                let mut queue = prefetch_queue.lock().expect("lock should not be poisoned");
+                let mut queue = prefetch_queue
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 queue.push_back(batch_result);
             }
         }
@@ -386,7 +393,7 @@ where
                     let mut queue = self
                         .prefetch_queue
                         .lock()
-                        .expect("lock should not be poisoned");
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
                     if let Some(batch_result) = queue.pop_front() {
                         self.current_batch += 1;
                         return Some(batch_result);

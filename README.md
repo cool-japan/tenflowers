@@ -2,16 +2,22 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.1.1-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
-[![Tests](https://img.shields.io/badge/tests-13484%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
-[![Security](https://img.shields.io/badge/vulnerabilities-0-brightgreen)](https://github.com/cool-japan/tenflowers)
+[![Tests](https://img.shields.io/badge/tests-14289%2B%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
+[![Security](https://img.shields.io/badge/advisories-3-yellow)](https://github.com/cool-japan/tenflowers)
 
-> **v0.1.1 (2026-04-24)**
+> **v0.1.2 (2026-07-08)**
 >
-> TenfloweRS v0.1.1 is the latest release, with 13,484 tests passing across 6 crates,
-> zero clippy warnings, zero security vulnerabilities, and comprehensive documentation.
+> TenfloweRS v0.1.2 adds unified error handling, structured logging, and platform introspection
+> to the meta-crate; session-based Python profiling and implicit PyTorch-style autograd in the
+> FFI crate; advanced HDF5/Parquet readers, a from-scratch pure-Rust Blosc codec, and real
+> Symphonia-backed audio decoding in the dataset crate; real ONNX protobuf import/export,
+> N-D segment reductions, GPU-einsum CPU fallbacks, real wgpu device-capability queries, and
+> graph-optimizer wiring into `Session` in the core crate; plus a wide honesty-hardening sweep
+> replacing fabricated results with real computation or honest errors across every crate.
+> 14,289+ tests passing across 6 crates, zero clippy warnings, zero rustdoc warnings.
 
 ## Overview
 
@@ -51,33 +57,31 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 - **ONNX Support**: Import and export models for cross-framework compatibility
 - **Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
 - **150+ Research Domains**: From transformers and diffusion models to quantum ML and protein structure prediction
-- **Production Ready**: 13,484 tests passing, 0 security vulnerabilities, comprehensive docs
+- **Production Ready**: 14,289+ tests passing, 3 known advisories (all upstream-blocked, none directly exploitable), comprehensive docs
 
 ## Project Status
 
-**Current Version: 0.1.1** (Released 2026-04-24)
+**Current Version: 0.1.2** (Released 2026-07-08)
 
-First release with full-featured ML capabilities across all 6 crates.
+### v0.1.2 Quality Metrics
 
-### v0.1.1 Quality Metrics
-
-- **Tests:** 13,484 passing, 41 skipped (100% pass rate)
-- **Code:** 1,465 Rust files, ~643K SLoC (~772K total Rust lines)
-- **Security:** 0 vulnerabilities
-- **Clippy:** 0 warnings, 0 errors
-- **Rustdoc:** Builds clean with `-D warnings`
-- **TODO markers:** 3 remaining (stubs in autograd/neural)
+- **Tests:** 14,289+ passing, 39 skipped (last verified full-workspace run; 0.1.2 adds real ONNX import/export, N-D segment reductions, GPU-einsum CPU fallbacks, real device-capability queries, graph-optimizer wiring, a pure-Rust Blosc codec, real audio decoding, and implicit PyTorch-style autograd in the FFI crate)
+- **Code:** 1,515+ Rust files, ~677K SLoC (~805K total Rust lines)
+- **Security:** 3 known advisories, all transitive and tracked (RUSTSEC-2026-0204 `crossbeam-epoch` via `scirs2-core`; RUSTSEC-2024-0384 `instant` via `hdf5`; RUSTSEC-2024-0436 `paste` via `rav1e`/`parquet`/`metal` — none directly exploitable; fixes pending upstream). The prior pyo3 advisories (RUSTSEC-2026-0176/0177) were resolved this release via the pyo3 0.28 → 0.29 upgrade.
+- **Clippy:** 0 warnings, 0 errors (verified)
+- **Rustdoc:** Builds clean with `-D warnings` (verified)
+- **Format:** `cargo fmt` clean (verified)
 
 ### Published Crates
 
 | Crate | Tests | Status | Description |
 |-------|-------|--------|-------------|
-| tenflowers-core | 936 | Stable | Core tensor operations and GPU support |
-| tenflowers-autograd | 455 | Stable | Automatic differentiation engine |
-| tenflowers-neural | 11,537 | Stable | Neural network layers, models, and 150+ research domains |
-| tenflowers-dataset | 504 | Stable | Data loading and preprocessing |
-| tenflowers-ffi | 48 | Stable | Python bindings via PyO3 |
-| tenflowers | 13 (doc) | Stable | Unified API and prelude |
+| tenflowers-core | 1,171 | Stable | Core tensor operations and GPU support |
+| tenflowers-autograd | 521 | Stable | Automatic differentiation engine |
+| tenflowers-neural | 11,596 | Stable | Neural network layers, models, and 150+ research domains |
+| tenflowers-dataset | 660 | Stable | Data loading and preprocessing |
+| tenflowers-ffi | 185 | Stable | Python bindings via PyO3 |
+| tenflowers | 156 | Stable | Unified API and prelude |
 
 ### What Is Included
 
@@ -88,13 +92,13 @@ First release with full-featured ML capabilities across all 6 crates.
 - Data loading pipeline with multi-format support
 - GPU acceleration via WGPU (cross-platform)
 - SciRS2/NumRS2 ecosystem integration
-- Python bindings with PyO3 (48 tests passing)
-- Security hardening (zero vulnerabilities)
+- Python bindings with PyO3 (185 tests passing), including implicit PyTorch-style `.backward()`/`.grad()` autograd
+- Security hardening (3 known transitive advisories — upstream fixes pending)
 - Comprehensive documentation
 
 ### tenflowers-neural Feature Coverage
 
-The neural crate alone has 11,537 tests covering:
+The neural crate alone has 11,596 tests covering:
 
 **Core architectures:** attention mechanisms (multi-head, flash, ALiBi, RoPE), RNN (LSTM, GRU, bidirectional), transformers (encoder, decoder, efficient variants including RetNet, Mamba-2, GQA), CNN, graph neural networks (GCN, GAT, GraphSAGE, GIN, and advanced variants)
 
@@ -114,20 +118,20 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.1.1"
-tenflowers-neural = "0.1.1"
+tenflowers-core = "0.1.2"
+tenflowers-neural = "0.1.2"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.1", features = ["gpu"] }
+tenflowers-core = { version = "0.1.2", features = ["gpu"] }
 ```
 
 For the unified API:
 ```toml
 [dependencies]
-tenflowers = "0.1.1"
+tenflowers = "0.1.2"
 ```
 
 ## Quick Start
@@ -343,6 +347,19 @@ Key areas where we need help:
 
 ## Roadmap
 
+### v0.1.2 (Released 2026-07-08)
+- Meta-crate: `error`, `logging`, `utils`, `platform`, `version_check` modules
+- FFI: session-based `PyProfiler` / `PyProfileReport` profiling API; new `implicit_autograd` module giving `PyTensor` PyTorch-style eager `.backward()`/`.grad()` on top of the existing `GradientTape` engine; standalone `gradient_parity` finite-difference gradient checker
+- Dataset: `hdf5_advanced` and `parquet_advanced` modules with chunked/filtered readers; from-scratch pure-Rust `formats::blosc` Blosc decoder (all 5 inner codecs + byte/bit-shuffle) wired into Zarr; real Symphonia-backed `formats::audio` decoding (WAV/MP3/FLAC); `formats::tfrecord_advanced` `SequenceExample` reader with real masked-CRC32 verification; new GPU image transforms (affine/perspective/elastic/histogram-equalize)
+- Core: real ONNX protobuf import/export (`onnx_interop`) for the core graph representation, covering `Add/Sub/Mul/Div/Relu/Sigmoid/Tanh/MatMul/Reshape/Transpose/Identity/Concat/Softmax/Flatten/Gemm`; `session::SessionConfig::enable_graph_optimization` (default on) wires constant-folding/CSE/algebraic-simplification/strength-reduction/DCE/scheduling into real `Session` execution; N-D (`[N,d1,d2,...]`) segment reductions for all of `segment_max/min/prod/any/all`; GPU-einsum batched-matmul/transpose/diagonal/outer/trace now correctly delegate to CPU instead of honest-erroring; real `device::GpuAdapterCapabilities` from the live `wgpu::Adapter` (no more fabricated vendor/capability guessing); real LAPACK-backed `ops::lapack_f64` (inverse/determinant/SVD/solve)
+- CUDA/ROCm/OpenCL feature flags documented with inline explanations
+- Dependencies: numrs2 0.4.0, scirs2 0.6.0, oxicode 0.2.4, oxiarc-archive 0.3.4, oxifft 0.3.2, wgpu 30.0, pyo3 0.29, arrow/parquet 59.0; new oxiarc-lz4/oxiarc-deflate/oxiarc-snappy (Blosc inner codecs)
+- Lock-poisoning `.expect()` calls replaced with `Result` propagation across `CheckpointManager`, `CrossDatacenterReplicator`, and `DeterministicContext`
+- NCCL/Gloo/MPI/thread collective backends return honest `NotImplemented` errors (previously fabricated/simulated data); `DataParallelTrainer::train_step` now computes real gradients via finite differences instead of simulating the backward pass
+- Two real GPU-path crash bugs fixed (`Tensor::from_storage` panic on GPU storage; hardcoded `Device::Gpu(0)` regardless of actual buffer device); a Miri-confirmed alignment UB fixed in `tenflowers-dataset`'s `MemoryPool`
+- Security: resolved RUSTSEC-2026-0176/0177 (pyo3, via the 0.29 upgrade); 3 new/tracked transitive advisories (crossbeam-epoch, instant, paste — see Security section of CHANGELOG.md)
+- 14,289+ tests, 39 skipped, 0 clippy warnings, 0 rustdoc warnings, 3 known transitive advisories (upstream-blocked, none directly exploitable)
+
 ### v0.1.1 (Released 2026-04-24)
 - Core tensor operations and autograd
 - 150+ neural network research domains
@@ -351,11 +368,11 @@ Key areas where we need help:
 - 13,484 tests, 41 skipped, 0 warnings, 0 vulnerabilities
 
 ### v0.2.0 (Planned)
-- Graph optimization passes (constant folding, operator fusion, dead code elimination)
-- Expanded GPU kernel coverage
+- Expanded GPU kernel coverage (native GPU compute for currently CPU-fallback ops)
 - Performance benchmarking suite with CI gates
-- ONNX import/export finalization
-- Multi-GPU orchestration improvements
+- Wider ONNX operator coverage beyond the current core subset; TensorFlow SavedModel protobuf import
+- Multi-GPU orchestration improvements; real NCCL/Gloo/MPI collective-communications backend
+- Zarr Blosc *encoder* (decoder landed in 0.1.2)
 - API stability improvements toward 1.0
 
 ### v1.0.0 (Future)

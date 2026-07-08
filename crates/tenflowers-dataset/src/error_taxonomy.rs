@@ -214,7 +214,7 @@ impl DatasetErrorBuilder {
                     operation: self.operation,
                     details,
                     path: path_str,
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::PermissionDenied => {
@@ -228,13 +228,13 @@ impl DatasetErrorBuilder {
                     operation: self.operation,
                     details: format!("Permission denied: {}", self.message),
                     path: path_str,
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::DataCorruption => TensorError::InvalidArgument {
                 operation: self.operation,
                 reason: format!("Data corruption: {}", self.message),
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::SchemaMismatch => {
                 let reason = if let (Some(expected), Some(actual)) =
@@ -252,7 +252,7 @@ impl DatasetErrorBuilder {
                     operation: self.operation,
                     reason,
                     shape: None,
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::IndexOutOfBounds => {
@@ -268,7 +268,7 @@ impl DatasetErrorBuilder {
                 TensorError::InvalidArgument {
                     operation: self.operation,
                     reason,
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::ResourceExhaustion => TensorError::ResourceExhausted {
@@ -276,7 +276,7 @@ impl DatasetErrorBuilder {
                 resource: self.message.clone(),
                 current_usage: None,
                 limit: None,
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::NetworkError => {
                 let path_str = self
@@ -289,41 +289,41 @@ impl DatasetErrorBuilder {
                     operation: self.operation,
                     details: format!("Network error: {}", self.message),
                     path: path_str,
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::CacheFailure => TensorError::CacheError {
                 operation: self.operation,
                 details: self.message.clone(),
                 recoverable: true,
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::TransformError => TensorError::InvalidOperation {
                 operation: self.operation,
                 reason: format!("Transform error: {}", self.message),
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::SerializationError => TensorError::SerializationError {
                 operation: self.operation,
                 details: self.message.clone(),
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::ConfigurationError => TensorError::InvalidArgument {
                 operation: self.operation,
                 reason: format!("Configuration error: {}", self.message),
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
             DatasetErrorCategory::Timeout => {
                 TensorError::Timeout {
                     operation: self.operation,
                     duration_ms: 0, // Would need to be passed in context
-                    context: Some(self.context.to_core_context()),
+                    context: Some(Box::new(self.context.to_core_context())),
                 }
             }
             DatasetErrorCategory::Other => TensorError::Other {
                 operation: self.operation,
                 details: self.message.clone(),
-                context: Some(self.context.to_core_context()),
+                context: Some(Box::new(self.context.to_core_context())),
             },
         }
     }

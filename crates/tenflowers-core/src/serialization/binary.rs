@@ -265,7 +265,7 @@ impl BinarySerializer {
         R: Read,
     {
         // Read and validate header
-        let (shape, dtype, device, data_size) = Self::read_header(reader)?;
+        let (shape, dtype, _device, data_size, stored_checksum) = Self::read_header(reader)?;
 
         // Validate dtype matches T
         let expected_dtype = dtype_from_type::<T>();
@@ -282,6 +282,21 @@ impl BinarySerializer {
 
         // Read data
         let data = Self::read_data::<T, R>(reader, data_size)?;
+
+        // Verify integrity: the FNV-1a hash of the payload bytes must match the
+        // checksum recorded in the header at serialize time. This is the same
+        // function used by `compute_checksum`, so a clean round-trip passes and a
+        // flipped byte is detected.
+        let computed_checksum = fnv1a_hash(bytemuck::cast_slice::<T, u8>(&data));
+        if computed_checksum != stored_checksum {
+            return Err(TensorError::SerializationError {
+                operation: "deserialize".to_string(),
+                details: format!(
+                    "Checksum mismatch: header recorded {stored_checksum:#010x} but payload hashes to {computed_checksum:#010x} (data corruption detected)"
+                ),
+                context: None,
+            });
+        }
 
         // Create tensor
         let tensor = Tensor::from_data(data, &shape)?;
@@ -363,7 +378,7 @@ impl BinarySerializer {
     }
 
     /// Read header
-    fn read_header<R>(reader: &mut R) -> Result<(Vec<usize>, DType, Device, usize)>
+    fn read_header<R>(reader: &mut R) -> Result<(Vec<usize>, DType, Device, usize, u32)>
     where
         R: Read,
     {
@@ -483,8 +498,17 @@ impl BinarySerializer {
             header[offset + 6],
             header[offset + 7],
         ]) as usize;
+        offset += 8;
 
-        Ok((shape, dtype, device, data_size))
+        // Checksum (FNV-1a of the data payload), verified once the data is read.
+        let checksum = u32::from_le_bytes([
+            header[offset],
+            header[offset + 1],
+            header[offset + 2],
+            header[offset + 3],
+        ]);
+
+        Ok((shape, dtype, device, data_size, checksum))
     }
 
     /// Write tensor data
@@ -631,15 +655,42 @@ impl BinarySerializer {
         TensorMetadata::from_json(&json)
     }
 
-    /// Compute simple checksum
-    fn compute_checksum<T>(_tensor: &Tensor<T>) -> Result<u32>
+    /// Compute an FNV-1a checksum over the tensor's raw payload bytes.
+    ///
+    /// The byte layout hashed here is exactly the layout written by
+    /// [`Self::write_data`], so the value produced at serialize time is
+    /// reproduced bit-for-bit at deserialize time. This makes a clean
+    /// round-trip verify successfully while a single flipped byte is detected.
+    fn compute_checksum<T>(tensor: &Tensor<T>) -> Result<u32>
     where
         T: Clone + bytemuck::Pod + bytemuck::Zeroable + Send + Sync + 'static,
     {
-        // Simplified checksum - in production would use CRC32
-        // For now, just return 0 as placeholder
-        Ok(0)
+        let data = tensor
+            .as_slice()
+            .ok_or_else(|| TensorError::SerializationError {
+                operation: "serialize".to_string(),
+                details: "Cannot compute checksum for a non-contiguous or GPU tensor".to_string(),
+                context: None,
+            })?;
+        Ok(fnv1a_hash(bytemuck::cast_slice::<T, u8>(data)))
     }
+}
+
+/// Compute a 32-bit FNV-1a hash over a byte slice.
+///
+/// FNV-1a is a fast, deterministic, non-cryptographic hash used here as an
+/// integrity checksum for serialized tensor payloads: identical bytes always
+/// hash to the same value, and changing any single byte changes the result.
+fn fnv1a_hash(bytes: &[u8]) -> u32 {
+    const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
+    const FNV_PRIME: u32 = 0x0100_0193;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for &byte in bytes {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 #[cfg(test)]
@@ -754,5 +805,45 @@ mod tests {
         let mut cursor = Cursor::new(buffer);
         let result: Result<(Tensor<f32>, _)> = BinarySerializer::deserialize(&mut cursor);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checksum_round_trip_then_detects_corruption() {
+        let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let tensor = Tensor::from_data(data, &[2, 3]).expect("test: from_data should succeed");
+
+        let mut buffer = Vec::new();
+        BinarySerializer::serialize(&tensor, &mut buffer, None)
+            .expect("test: serialize should succeed");
+
+        // A clean round-trip must verify successfully (checksum matches).
+        let mut clean = Cursor::new(buffer.clone());
+        let (roundtrip, _): (Tensor<f32>, _) = BinarySerializer::deserialize(&mut clean)
+            .expect("test: clean deserialize should succeed");
+        assert_eq!(
+            tensor.as_slice().expect("tensor should be contiguous"),
+            roundtrip.as_slice().expect("tensor should be contiguous")
+        );
+
+        // Flip a single byte in the data payload (the header is HEADER_SIZE bytes).
+        let mut corrupted = buffer;
+        corrupted[HEADER_SIZE] ^= 0xFF;
+
+        let mut cursor = Cursor::new(corrupted);
+        let result: Result<(Tensor<f32>, _)> = BinarySerializer::deserialize(&mut cursor);
+        assert!(
+            result.is_err(),
+            "deserializing data with a flipped byte must fail the checksum check"
+        );
+    }
+
+    #[test]
+    fn test_fnv1a_hash_is_real_and_distinguishing() {
+        // Not the old fabricated zero: non-trivial input hashes to a non-zero value.
+        assert_ne!(fnv1a_hash(&[1u8, 2, 3, 4, 5]), 0);
+        // Deterministic: same input -> same hash.
+        assert_eq!(fnv1a_hash(&[7u8, 8, 9]), fnv1a_hash(&[7u8, 8, 9]));
+        // Sensitive: a single different byte changes the hash.
+        assert_ne!(fnv1a_hash(&[1u8, 2, 3]), fnv1a_hash(&[1u8, 2, 4]));
     }
 }

@@ -25,7 +25,7 @@ impl MatrixOps {
                 operation: "SIMD blocked matmul".to_string(),
                 expected: format!("matrices A({m}x{k}), B({k}x{n}), C({m}x{n})"),
                 got: format!("A: {}, B: {}, C: {}", a.len(), b.len(), c.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -80,7 +80,7 @@ impl MatrixOps {
                 operation: "SIMD dot product".to_string(),
                 expected: format!("vectors of length {}", a.len()),
                 got: format!("a: {}, b: {}", a.len(), b.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -182,7 +182,7 @@ impl MatrixOps {
                 operation: "SIMD matvec".to_string(),
                 expected: format!("matrix with {} elements", rows * cols),
                 got: format!("matrix with {} elements", matrix.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -191,7 +191,7 @@ impl MatrixOps {
                 operation: "SIMD matvec".to_string(),
                 expected: format!("vector with {} elements", cols),
                 got: format!("vector with {} elements", vector.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -200,7 +200,7 @@ impl MatrixOps {
                 operation: "SIMD matvec".to_string(),
                 expected: format!("result vector with {} elements", rows),
                 got: format!("result vector with {} elements", result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -221,7 +221,7 @@ impl MatrixOps {
                 operation: "SIMD transpose".to_string(),
                 expected: format!("matrices with {} elements", rows * cols),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -253,7 +253,7 @@ impl MatrixOps {
                 operation: "SIMD outer product".to_string(),
                 expected: format!("result matrix with {} elements", m * n),
                 got: format!("result matrix with {} elements", result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -292,7 +292,7 @@ impl MatrixOps {
                 operation: "SIMD matrix add".to_string(),
                 expected: format!("matrices of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -313,7 +313,7 @@ impl MatrixOps {
                 operation: "SIMD matrix scale".to_string(),
                 expected: format!("matrices of length {}", matrix.len()),
                 got: format!("matrix: {}, result: {}", matrix.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 

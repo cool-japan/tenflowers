@@ -96,7 +96,7 @@ lazy_static::lazy_static! {
 pub fn get_stats_config() -> StatsConfig {
     STATS_CONFIG
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
 }
 
@@ -111,7 +111,7 @@ pub fn set_stats_config(config: StatsConfig) {
 pub fn get_performance_metrics() -> Vec<StatisticalMetrics> {
     PERFORMANCE_METRICS
         .read()
-        .expect("read lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
 }
 

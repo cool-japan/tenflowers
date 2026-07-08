@@ -138,7 +138,9 @@ impl LargeModelOptimizer {
 
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("large model stats lock poisoned".to_string())
+            })?;
             stats.total_parameters = total_parameters;
         }
 
@@ -177,10 +179,11 @@ impl LargeModelOptimizer {
         };
 
         // Store partitions
-        *self
-            .partitions
-            .write()
-            .expect("write lock should not be poisoned") = partitions;
+        *self.partitions.write().map_err(|_| {
+            TensorError::invalid_operation_simple(
+                "model partitions write lock poisoned".to_string(),
+            )
+        })? = partitions;
 
         Ok(plan)
     }
@@ -371,12 +374,16 @@ impl LargeModelOptimizer {
 
         self.checkpoints
             .write()
-            .expect("checkpoints write lock should not be poisoned")
+            .map_err(|_| {
+                TensorError::invalid_operation_simple("checkpoints write lock poisoned".to_string())
+            })?
             .insert(layer_index, checkpoint);
 
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("large model stats lock poisoned".to_string())
+            })?;
             stats.memory_saved_by_checkpointing_mb += memory_usage * 0.7; // Estimate 70% savings
         }
 
@@ -408,12 +415,18 @@ impl LargeModelOptimizer {
 
         self.offloaded_parameters
             .write()
-            .expect("offloaded parameters write lock should not be poisoned")
+            .map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "offloaded parameters write lock poisoned".to_string(),
+                )
+            })?
             .insert(name.to_string(), offloaded);
 
         // Update stats
         {
-            let mut stats = self.stats.lock().expect("lock should not be poisoned");
+            let mut stats = self.stats.lock().map_err(|_| {
+                TensorError::invalid_operation_simple("large model stats lock poisoned".to_string())
+            })?;
             stats.memory_saved_by_offloading_mb += memory_size;
         }
 
@@ -422,10 +435,7 @@ impl LargeModelOptimizer {
 
     /// Get optimization statistics
     pub fn get_optimization_stats(&self) -> MemoryOptimizationStats {
-        self.stats
-            .lock()
-            .expect("lock should not be poisoned")
-            .clone()
+        self.stats.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Generate optimization report
@@ -434,17 +444,17 @@ impl LargeModelOptimizer {
         let partitions = self
             .partitions
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .clone();
         let checkpoint_count = self
             .checkpoints
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .len();
         let offloaded_count = self
             .offloaded_parameters
             .read()
-            .expect("read lock should not be poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .len();
 
         let total_memory_saved_mb = stats.memory_saved_by_checkpointing_mb

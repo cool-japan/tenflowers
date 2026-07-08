@@ -274,7 +274,7 @@ struct OptimizationStats {
 fn record_operation_analytics(a_shape: &[usize], b_shape: &[usize]) {
     let mut analytics = PERFORMANCE_ANALYTICS
         .lock()
-        .expect("lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if analytics.is_none() {
         *analytics = Some(PerformanceAnalytics {
             operation_counts: HashMap::new(),
@@ -312,7 +312,7 @@ fn record_performance_result(
 pub fn get_performance_analytics() -> Option<String> {
     let analytics = PERFORMANCE_ANALYTICS
         .lock()
-        .expect("lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     (*analytics).as_ref().map(|analytics| {
         format!(
             "Ultra-MatMul V3 Analytics:\n\
@@ -330,7 +330,7 @@ pub fn get_performance_analytics() -> Option<String> {
 pub fn clear_performance_analytics() {
     let mut analytics = PERFORMANCE_ANALYTICS
         .lock()
-        .expect("lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     *analytics = None;
 }
 

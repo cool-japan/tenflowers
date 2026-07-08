@@ -206,7 +206,10 @@ impl MemoryDiagnostics {
         device_id: usize,
         source: Option<String>,
     ) -> u64 {
-        let mut next_id = self.next_id.lock().expect("lock should not be poisoned");
+        let mut next_id = self
+            .next_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let id = *next_id;
         *next_id += 1;
         drop(next_id);
@@ -220,12 +223,18 @@ impl MemoryDiagnostics {
             source,
         );
 
-        let mut events = self.events.lock().expect("lock should not be poisoned");
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let event_idx = events.len();
         events.push(event);
         drop(events);
 
-        let mut active = self.active.lock().expect("lock should not be poisoned");
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         active.insert(id, event_idx);
 
         id
@@ -233,11 +242,17 @@ impl MemoryDiagnostics {
 
     /// Record a deallocation
     pub fn record_deallocation(&self, id: u64) {
-        let mut active = self.active.lock().expect("lock should not be poisoned");
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(event_idx) = active.remove(&id) {
             drop(active);
 
-            let mut events = self.events.lock().expect("lock should not be poisoned");
+            let mut events = self
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(event) = events.get_mut(event_idx) {
                 event.mark_deallocated();
             }
@@ -246,8 +261,14 @@ impl MemoryDiagnostics {
 
     /// Get current allocation statistics
     pub fn get_statistics(&self) -> AllocationStats {
-        let events = self.events.lock().expect("lock should not be poisoned");
-        let active = self.active.lock().expect("lock should not be poisoned");
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let mut stats = AllocationStats {
             active_allocations: active.len(),
@@ -304,7 +325,10 @@ impl MemoryDiagnostics {
 
     /// Detect memory leaks (allocations alive longer than threshold)
     pub fn detect_leaks(&self, age_threshold: Duration) -> LeakReport {
-        let events = self.events.lock().expect("lock should not be poisoned");
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let now = Instant::now();
 
         let mut leaks = Vec::new();
@@ -343,7 +367,10 @@ impl MemoryDiagnostics {
 
     /// Get allocation size distribution
     pub fn get_size_distribution(&self) -> Vec<SizeBucket> {
-        let events = self.events.lock().expect("lock should not be poisoned");
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Define size buckets (in bytes)
         let bucket_ranges = [
@@ -381,7 +408,10 @@ impl MemoryDiagnostics {
 
     /// Get allocation timeline (for visualization)
     pub fn get_timeline(&self, bucket_duration: Duration) -> Vec<(Instant, usize, usize)> {
-        let events = self.events.lock().expect("lock should not be poisoned");
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if events.is_empty() {
             return Vec::new();
@@ -422,7 +452,10 @@ impl MemoryDiagnostics {
 
     /// Clear old events to manage memory
     pub fn cleanup_old_events(&self, retention_duration: Duration) {
-        let mut events = self.events.lock().expect("lock should not be poisoned");
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let now = Instant::now();
 
         events.retain(|event| {
@@ -445,7 +478,7 @@ impl MemoryDiagnostics {
         let mut metadata = self
             .session_metadata
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metadata.insert(key, value);
     }
 
@@ -454,21 +487,30 @@ impl MemoryDiagnostics {
         let metadata = self
             .session_metadata
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metadata.get(key).cloned()
     }
 
     /// Reset all diagnostics
     pub fn reset(&self) {
-        let mut events = self.events.lock().expect("lock should not be poisoned");
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         events.clear();
         drop(events);
 
-        let mut active = self.active.lock().expect("lock should not be poisoned");
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         active.clear();
         drop(active);
 
-        let mut next_id = self.next_id.lock().expect("lock should not be poisoned");
+        let mut next_id = self
+            .next_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *next_id = 0;
     }
 

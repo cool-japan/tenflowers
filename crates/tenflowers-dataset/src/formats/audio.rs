@@ -43,14 +43,32 @@ use std::fs;
 #[cfg(feature = "audio")]
 use std::path::{Path, PathBuf};
 
-// Symphonia audio types - removed unused imports
-// Symphonia codec types - removed unused imports
-// Symphonia error types - removed unused imports
-// Symphonia format types - removed unused imports
-// Symphonia IO types - removed unused imports
-// Symphonia metadata types - removed unused imports
-// Symphonia probe types - removed unused imports
-// Rubato resampler types - removed unused imports
+// Rubato: offline/batch sinc resampler used to convert decoded audio to the
+// dataset's configured target sample rate.
+#[cfg(feature = "audio")]
+use rubato::audioadapter_buffers::direct::InterleavedSlice;
+#[cfg(feature = "audio")]
+use rubato::{
+    Async as RubatoAsyncResampler, FixedAsync, Resampler as RubatoResamplerTrait,
+    SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
+
+// Symphonia: container probing (format auto-detection) and audio decoding
+// for WAV, FLAC, MP3 and Ogg/Vorbis.
+#[cfg(feature = "audio")]
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+#[cfg(feature = "audio")]
+use symphonia::core::codecs::CodecParameters;
+#[cfg(feature = "audio")]
+use symphonia::core::errors::Error as SymphoniaError;
+#[cfg(feature = "audio")]
+use symphonia::core::formats::probe::Hint;
+#[cfg(feature = "audio")]
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
+#[cfg(feature = "audio")]
+use symphonia::core::io::MediaSourceStream;
+#[cfg(feature = "audio")]
+use symphonia::core::meta::MetadataOptions;
 
 #[cfg(feature = "audio")]
 use tenflowers_core::{Result, Tensor, TensorError};
@@ -531,27 +549,53 @@ fn discover_audio_files(directory: &Path, config: &AudioConfig) -> Result<Vec<Au
     Ok(file_info)
 }
 
-/// Get information about an audio file
+/// Get information about an audio file.
+///
+/// `sample_rate`, `channels`, `duration` and `num_samples` are real,
+/// decoder-derived values: the container is probed via Symphonia to read
+/// its codec parameters. When the container records a frame count in its
+/// headers (e.g. WAV, FLAC), that is used directly, avoiding a full decode.
+/// When it does not (e.g. some MP3 streams without a Xing/VBRI header), the
+/// file is fully decoded so that `duration`/`num_samples` are never
+/// fabricated or left silently wrong.
 #[cfg(feature = "audio")]
 fn get_audio_info(path: &Path, config: &AudioConfig) -> Result<AudioInfo> {
     let file_size = fs::metadata(path)
         .map_err(|e| TensorError::invalid_argument(format!("Failed to get file metadata: {e}")))?
         .len();
 
-    // For now, return basic info without actually decoding the audio
-    // In a full implementation, you would decode to get accurate duration and format info
-    let sample_rate = config.sample_rate;
-    let channels = 1; // Assume mono for simplicity
-    let duration = 1.0; // Placeholder duration
-    let num_samples = (sample_rate as f32 * duration) as usize;
     let format = path
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("unknown")
         .to_string();
 
-    // Extract label based on strategy
+    // Extract label based on strategy (purely path-based, fully real).
     let label = extract_label(path, &config.label_strategy, &config.label_mapping);
+
+    let probed = probe_audio_track(path)?;
+    let (sample_rate, channels, num_samples, duration) = match probed.num_frames {
+        Some(frames) => {
+            let num_samples = frames as usize * probed.channels;
+            let duration = frames as f32 / probed.sample_rate as f32;
+            (probed.sample_rate, probed.channels, num_samples, duration)
+        }
+        None => {
+            // The container doesn't record a frame count in its headers, so
+            // the only honest way to know the real duration is to decode
+            // the whole file and count the decoded samples.
+            let decoded = decode_audio_track(path)?;
+            let channels = decoded.channels.max(1);
+            let frames = decoded.samples.len() / channels;
+            let duration = frames as f32 / decoded.sample_rate as f32;
+            (
+                decoded.sample_rate,
+                decoded.channels,
+                decoded.samples.len(),
+                duration,
+            )
+        }
+    };
 
     Ok(AudioInfo {
         path: path.to_path_buf(),
@@ -597,30 +641,318 @@ fn extract_label(
     }
 }
 
-/// Load and process an audio file
+/// Track properties obtainable from container/codec headers alone, without
+/// decoding any audio packets.
 #[cfg(feature = "audio")]
-fn load_audio_file(_path: &Path, config: &AudioConfig) -> Result<Vec<f32>> {
-    // For now, return a simple sine wave as placeholder
-    // In a full implementation, you would use Symphonia to decode the audio file
-    let duration = config.max_duration.unwrap_or(1.0);
-    let sample_rate = config.sample_rate as f32;
-    let num_samples = (duration * sample_rate) as usize;
+struct ProbedAudioTrack {
+    /// Sample rate in Hz, as reported by the codec parameters.
+    sample_rate: u32,
+    /// Number of channels, as reported by the codec parameters.
+    channels: usize,
+    /// Total number of frames, if the container records it in its headers
+    /// (e.g. WAV, FLAC). `None` when only a full decode can determine it
+    /// (e.g. some MP3 streams without a Xing/VBRI header).
+    num_frames: Option<u64>,
+}
 
-    let mut audio_data = Vec::with_capacity(num_samples);
-    let frequency = 440.0; // A4 note
+/// Fully decoded audio: interleaved samples plus the sample rate and channel
+/// count actually reported by the decoder (i.e. the file's native values,
+/// before any resampling).
+#[cfg(feature = "audio")]
+struct DecodedAudio {
+    /// Interleaved samples (`channels` values per frame).
+    samples: Vec<f32>,
+    sample_rate: u32,
+    channels: usize,
+}
 
-    for i in 0..num_samples {
-        let t = i as f32 / sample_rate;
-        let sample = (2.0 * std::f32::consts::PI * frequency * t).sin();
-        audio_data.push(sample);
+/// A probed container/track, ready for either cheap metadata inspection or
+/// full packet-by-packet decoding.
+#[cfg(feature = "audio")]
+struct ProbedFormat {
+    /// The format reader, positioned to read packets from the start.
+    reader: Box<dyn FormatReader>,
+    /// The id of the located audio track (packets carry this id).
+    track_id: u32,
+    /// The audio track's codec parameters (sample rate, channels, codec, ...).
+    audio_params: symphonia::core::codecs::audio::AudioCodecParameters,
+    /// The track's frame count, if the container records one in its headers.
+    num_frames: Option<u64>,
+}
+
+/// Open `path`, probe its container format (by content, not just file
+/// extension, though the extension is passed along as a hint), and locate
+/// its first audio track.
+#[cfg(feature = "audio")]
+fn probe_audio_format(path: &Path) -> Result<ProbedFormat> {
+    let file = fs::File::open(path).map_err(|e| {
+        TensorError::io_error_simple(format!(
+            "Failed to open audio file '{}': {e}",
+            path.display()
+        ))
+    })?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+        hint.with_extension(ext);
     }
 
-    // Apply normalization if requested
+    let format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| {
+            TensorError::invalid_argument(format!(
+                "Could not recognize audio format for '{}': {e}. \
+                 Supported containers/codecs: WAV, FLAC, MP3, Ogg/Vorbis (PCM/ADPCM).",
+                path.display()
+            ))
+        })?;
+
+    let (track_id, audio_params, num_frames) = {
+        let track = format.first_track(TrackType::Audio).ok_or_else(|| {
+            TensorError::invalid_argument(format!("No audio track found in '{}'", path.display()))
+        })?;
+
+        let audio_params = match &track.codec_params {
+            Some(CodecParameters::Audio(params)) => params.clone(),
+            _ => {
+                return Err(TensorError::invalid_argument(format!(
+                    "Track has no audio codec parameters in '{}'",
+                    path.display()
+                )));
+            }
+        };
+
+        (track.id, audio_params, track.num_frames)
+    };
+
+    Ok(ProbedFormat {
+        reader: format,
+        track_id,
+        audio_params,
+        num_frames,
+    })
+}
+
+/// Probe an audio file's track metadata without decoding any samples.
+#[cfg(feature = "audio")]
+fn probe_audio_track(path: &Path) -> Result<ProbedAudioTrack> {
+    let probed = probe_audio_format(path)?;
+
+    let sample_rate = probed.audio_params.sample_rate.ok_or_else(|| {
+        TensorError::invalid_argument(format!(
+            "Unknown sample rate for audio file '{}'",
+            path.display()
+        ))
+    })?;
+    let channels = probed
+        .audio_params
+        .channels
+        .as_ref()
+        .map(symphonia::core::audio::Channels::count)
+        .unwrap_or(1);
+
+    Ok(ProbedAudioTrack {
+        sample_rate,
+        channels,
+        num_frames: probed.num_frames,
+    })
+}
+
+/// Fully decode an audio file to interleaved `f32` samples at its native
+/// sample rate. No resampling or normalization is applied here.
+#[cfg(feature = "audio")]
+fn decode_audio_track(path: &Path) -> Result<DecodedAudio> {
+    let ProbedFormat {
+        reader: mut format,
+        track_id,
+        audio_params,
+        num_frames: _,
+    } = probe_audio_format(path)?;
+
+    let sample_rate = audio_params.sample_rate.ok_or_else(|| {
+        TensorError::invalid_argument(format!(
+            "Unknown sample rate for audio file '{}'",
+            path.display()
+        ))
+    })?;
+    let channels = audio_params
+        .channels
+        .as_ref()
+        .map(symphonia::core::audio::Channels::count)
+        .unwrap_or(1);
+
+    let dec_opts = AudioDecoderOptions::default();
+    let mut decoder = symphonia::default::get_codecs()
+        .make_audio_decoder(&audio_params, &dec_opts)
+        .map_err(|e| {
+            TensorError::not_implemented_simple(format!(
+                "No decoder available for the codec used by '{}': {e}",
+                path.display()
+            ))
+        })?;
+
+    let mut samples: Vec<f32> = Vec::new();
+    let mut chunk: Vec<f32> = Vec::new();
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            Err(SymphoniaError::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(SymphoniaError::ResetRequired) => continue,
+            Err(e) => {
+                return Err(TensorError::invalid_argument(format!(
+                    "Failed to read audio packet from '{}': {e}",
+                    path.display()
+                )));
+            }
+        };
+
+        if packet.track_id != track_id {
+            continue;
+        }
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(SymphoniaError::IoError(_)) => break,
+            Err(SymphoniaError::DecodeError(_)) => continue,
+            Err(e) => {
+                return Err(TensorError::invalid_argument(format!(
+                    "Failed to decode audio from '{}': {e}",
+                    path.display()
+                )));
+            }
+        };
+
+        decoded.copy_to_vec_interleaved::<f32>(&mut chunk);
+        samples.extend_from_slice(&chunk);
+    }
+
+    if samples.is_empty() {
+        return Err(TensorError::invalid_argument(format!(
+            "No audio samples could be decoded from '{}'",
+            path.display()
+        )));
+    }
+
+    Ok(DecodedAudio {
+        samples,
+        sample_rate,
+        channels,
+    })
+}
+
+/// Resample interleaved audio from `from_rate` to `to_rate` using a
+/// high-quality sinc-interpolation resampler. This favors offline/batch
+/// quality (cubic sinc interpolation) over realtime throughput, which is
+/// appropriate for dataset preprocessing.
+///
+/// Returns the input unchanged (cloned) if the rates already match.
+#[cfg(feature = "audio")]
+fn resample_interleaved(
+    samples: &[f32],
+    channels: usize,
+    from_rate: u32,
+    to_rate: u32,
+) -> Result<Vec<f32>> {
+    if channels == 0 {
+        return Err(TensorError::invalid_argument(
+            "Cannot resample audio with zero channels".to_string(),
+        ));
+    }
+    if from_rate == to_rate {
+        return Ok(samples.to_vec());
+    }
+    if from_rate == 0 || to_rate == 0 {
+        return Err(TensorError::invalid_argument(
+            "Cannot resample audio with a zero sample rate".to_string(),
+        ));
+    }
+
+    let frames_in = samples.len() / channels;
+    if frames_in == 0 {
+        return Ok(Vec::new());
+    }
+
+    // A solid general-purpose quality preset: cubic sinc interpolation with
+    // a moderately long filter. Good enough for ML preprocessing without
+    // the CPU cost of the largest filter sizes.
+    let params = SincInterpolationParameters {
+        sinc_len: 128,
+        f_cutoff: 0.95,
+        interpolation: SincInterpolationType::Cubic,
+        oversampling_factor: 256,
+        window: WindowFunction::BlackmanHarris2,
+    };
+    let ratio = f64::from(to_rate) / f64::from(from_rate);
+    let chunk_size = 1024usize;
+
+    let mut resampler = RubatoAsyncResampler::<f32>::new_sinc(
+        ratio,
+        1.0,
+        &params,
+        chunk_size,
+        channels,
+        FixedAsync::Input,
+    )
+    .map_err(|e| {
+        TensorError::compute_error_simple(format!("Failed to construct audio resampler: {e}"))
+    })?;
+
+    let output_capacity_frames = resampler.process_all_needed_output_len(frames_in);
+    let mut out_data = vec![0.0f32; output_capacity_frames * channels];
+
+    let input_adapter = InterleavedSlice::new(samples, channels, frames_in).map_err(|e| {
+        TensorError::compute_error_simple(format!("Invalid resampler input buffer: {e}"))
+    })?;
+    let mut output_adapter =
+        InterleavedSlice::new_mut(&mut out_data, channels, output_capacity_frames).map_err(
+            |e| TensorError::compute_error_simple(format!("Invalid resampler output buffer: {e}")),
+        )?;
+
+    let (_frames_read, frames_written) = resampler
+        .process_all_into_buffer(&input_adapter, &mut output_adapter, frames_in, None)
+        .map_err(|e| TensorError::compute_error_simple(format!("Audio resampling failed: {e}")))?;
+
+    out_data.truncate(frames_written * channels);
+    Ok(out_data)
+}
+
+/// Load and process an audio file: decode it (WAV/FLAC/MP3/Ogg-Vorbis via
+/// Symphonia), resample to `config.sample_rate` if needed (via Rubato), and
+/// normalize if configured. Channels are kept at the file's native layout
+/// (interleaved); `AudioConfig` has no downmix option, so none is applied.
+#[cfg(feature = "audio")]
+fn load_audio_file(path: &Path, config: &AudioConfig) -> Result<Vec<f32>> {
+    let decoded = decode_audio_track(path)?;
+    let channels = decoded.channels.max(1);
+
+    let mut samples = if config.sample_rate != 0 && config.sample_rate != decoded.sample_rate {
+        resample_interleaved(
+            &decoded.samples,
+            channels,
+            decoded.sample_rate,
+            config.sample_rate,
+        )?
+    } else {
+        decoded.samples
+    };
+
     if config.normalize {
-        normalize_audio(&mut audio_data);
+        normalize_audio(&mut samples);
     }
 
-    Ok(audio_data)
+    Ok(samples)
 }
 
 /// Normalize audio to [-1, 1] range
@@ -666,6 +998,39 @@ pub enum AudioLabelStrategy {
 mod tests {
     use super::*;
 
+    /// Hand-construct a minimal valid 16-bit PCM WAV file (RIFF/WAVE header
+    /// with `fmt ` and `data` chunks) from known sample values, for
+    /// exercising the real decoder without depending on any external test
+    /// fixture files.
+    fn build_pcm16_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
+        let bits_per_sample: u16 = 16;
+        let block_align = channels * (bits_per_sample / 8);
+        let byte_rate = sample_rate * u32::from(block_align);
+        let data_bytes = (samples.len() * 2) as u32;
+
+        let mut buf = Vec::with_capacity(44 + samples.len() * 2);
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size (PCM)
+        buf.extend_from_slice(&1u16.to_le_bytes()); // audio format = PCM
+        buf.extend_from_slice(&channels.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        buf.extend_from_slice(&byte_rate.to_le_bytes());
+        buf.extend_from_slice(&block_align.to_le_bytes());
+        buf.extend_from_slice(&bits_per_sample.to_le_bytes());
+
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&data_bytes.to_le_bytes());
+        for &s in samples {
+            buf.extend_from_slice(&s.to_le_bytes());
+        }
+
+        buf
+    }
+
     #[test]
     fn test_audio_config_default() {
         let config = AudioConfig::default();
@@ -710,6 +1075,152 @@ mod tests {
         // Should be normalized so max absolute value is 1.0
         let max_abs = audio.iter().map(|&x| x.abs()).fold(0.0f32, |a, b| a.max(b));
         assert!((max_abs - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_load_audio_file_errors_on_invalid_data() {
+        // Audio decoding is implemented (Symphonia), but garbage bytes are
+        // not valid audio in any supported container/codec. Loading must
+        // report an honest error rather than fabricating samples or
+        // panicking.
+        let base =
+            std::env::temp_dir().join(format!("tenflowers_audio_load_{}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let fake_audio = base.join("fake.wav");
+        std::fs::write(&fake_audio, b"not really audio").expect("test: write should succeed");
+
+        let config = AudioConfig::default();
+        let result = load_audio_file(&fake_audio, &config);
+        assert!(
+            result.is_err(),
+            "load_audio_file must not fabricate samples for invalid input; it must error"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_get_audio_info_errors_on_invalid_data() {
+        // Probing must also fail honestly (not panic, not report fabricated
+        // metadata) for bytes that aren't a recognizable audio container.
+        let base =
+            std::env::temp_dir().join(format!("tenflowers_audio_info_bad_{}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let fake_audio = base.join("clip.wav");
+        std::fs::write(&fake_audio, b"0123456789").expect("test: write should succeed");
+
+        let config = AudioConfig::default();
+        let result = get_audio_info(&fake_audio, &config);
+        assert!(
+            result.is_err(),
+            "get_audio_info must not fabricate metadata for invalid input; it must error"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_load_audio_file_decodes_real_wav_samples() {
+        // Decode a hand-crafted, genuinely valid WAV file and verify the
+        // returned samples are the real decoded values (not fabricated),
+        // within the float tolerance expected from i16 -> f32 conversion.
+        let base = std::env::temp_dir().join(format!(
+            "tenflowers_audio_wav_decode_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let wav_path = base.join("tone.wav");
+
+        let sample_rate = 8000u32;
+        let raw_samples: Vec<i16> = (0..40i16).map(|i| (i - 20) * 500).collect();
+        let wav_bytes = build_pcm16_wav(sample_rate, 1, &raw_samples);
+        std::fs::write(&wav_path, &wav_bytes).expect("test: write should succeed");
+
+        // Match the config's target rate to the file's native rate so no
+        // resampling is applied, and disable normalization, so the decoded
+        // samples are a direct conversion of the raw PCM values.
+        let config = AudioConfig::default()
+            .with_sample_rate(sample_rate)
+            .with_normalize(false);
+
+        let decoded = load_audio_file(&wav_path, &config).expect("test: decode should succeed");
+
+        assert_eq!(decoded.len(), raw_samples.len());
+        for (decoded_sample, &raw_sample) in decoded.iter().zip(raw_samples.iter()) {
+            let expected = f32::from(raw_sample) / 32_768.0;
+            assert!(
+                (decoded_sample - expected).abs() < 1e-5,
+                "decoded {decoded_sample} != expected {expected}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_get_audio_info_reports_real_values() {
+        // get_audio_info now reports real, decoder/header-derived values
+        // instead of the historical honest-zero placeholders.
+        let base =
+            std::env::temp_dir().join(format!("tenflowers_audio_wav_info_{}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let wav_path = base.join("clip.wav");
+
+        let sample_rate = 8000u32;
+        let raw_samples: Vec<i16> = vec![0; 32];
+        let wav_bytes = build_pcm16_wav(sample_rate, 1, &raw_samples);
+        std::fs::write(&wav_path, &wav_bytes).expect("test: write should succeed");
+
+        let config = AudioConfig::default();
+        let info = get_audio_info(&wav_path, &config).expect("test: probing should succeed");
+
+        // Real, filesystem-derivable values are still populated.
+        assert_eq!(info.file_size, wav_bytes.len() as u64);
+        assert_eq!(info.format, "wav");
+        // Decode/header-derived values are now real, not fabricated zeros.
+        assert_eq!(info.sample_rate, sample_rate);
+        assert_eq!(info.channels, 1);
+        assert_eq!(info.num_samples, raw_samples.len());
+        let expected_duration = raw_samples.len() as f32 / sample_rate as f32;
+        assert!(
+            (info.duration - expected_duration).abs() < 1e-6,
+            "duration {} != expected {}",
+            info.duration,
+            expected_duration
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_load_audio_file_resamples_to_target_rate() {
+        // Decode at the file's native rate but request a different target
+        // rate, and verify Rubato resampling produces the expected output
+        // length. `process_all_into_buffer` guarantees the output is
+        // trimmed/padded to exactly `ceil(ratio * input_frames)` frames.
+        let base =
+            std::env::temp_dir().join(format!("tenflowers_audio_resample_{}", std::process::id()));
+        std::fs::create_dir_all(&base).expect("test: temp dir creation should succeed");
+        let wav_path = base.join("tone.wav");
+
+        let native_rate = 8000u32;
+        let target_rate = 16000u32; // exact 2x upsample
+        let raw_samples: Vec<i16> = (0..50i16).map(|i| (i - 25) * 300).collect();
+        let wav_bytes = build_pcm16_wav(native_rate, 1, &raw_samples);
+        std::fs::write(&wav_path, &wav_bytes).expect("test: write should succeed");
+
+        let config = AudioConfig::default()
+            .with_sample_rate(target_rate)
+            .with_normalize(false);
+
+        let decoded =
+            load_audio_file(&wav_path, &config).expect("test: decode+resample should succeed");
+
+        let ratio = f64::from(target_rate) / f64::from(native_rate);
+        let expected_frames = ((raw_samples.len() as f64) * ratio).ceil() as usize;
+        assert_eq!(decoded.len(), expected_frames);
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // Note: Full integration tests would require actual audio files

@@ -290,19 +290,21 @@ impl AdvancedKernelManager {
         match device {
             #[cfg(feature = "gpu")]
             Device::Gpu(gpu_device) => {
-                // Query GPU properties through appropriate APIs
-                let vendor = Self::detect_gpu_vendor()?;
-                let compute_capability = Self::query_compute_capability(&vendor)?;
+                // Fetch a real snapshot of the live `wgpu::Adapter`'s capabilities. This
+                // is the ONLY place genuine hardware data enters `DeviceCapabilities`:
+                // every field below is either a pure mapping of this real data, or (where
+                // wgpu simply has no API for the question) an honest error.
+                let caps = crate::device::get_gpu_adapter_capabilities(*gpu_device)?;
 
                 Ok(DeviceCapabilities {
-                    vendor,
-                    compute_capability,
+                    vendor: Self::detect_gpu_vendor(&caps.info),
+                    compute_capability: Self::query_compute_capability(&caps.info),
                     memory_bandwidth: Self::measure_memory_bandwidth()?,
                     compute_units: Self::query_compute_units()?,
                     has_tensor_cores: Self::detect_tensor_cores()?,
-                    max_threads_per_block: Self::query_max_threads_per_block()?,
-                    shared_memory_size: Self::query_shared_memory_size()?,
-                    supports_fp16: Self::test_fp16_support()?,
+                    max_threads_per_block: Self::query_max_threads_per_block(&caps.limits),
+                    shared_memory_size: Self::query_shared_memory_size(&caps.limits),
+                    supports_fp16: Self::test_fp16_support(caps.features),
                     supports_bf16: Self::test_bf16_support()?,
                     supports_coop_groups: Self::test_cooperative_groups()?,
                 })
@@ -608,54 +610,113 @@ impl AdvancedKernelManager {
         })
     }
 
-    // Helper methods for device detection and kernel management
-    fn detect_gpu_vendor() -> Result<GpuVendor> {
-        // Implementation would query GPU vendor through appropriate APIs
-        // This is a placeholder returning Unknown for now
-        Ok(GpuVendor::Unknown)
+    // Device-capability queries.
+    //
+    // `detect_device_capabilities` threads a real `wgpu::Adapter` snapshot
+    // (`GpuAdapterCapabilities`, fetched via `crate::device::get_gpu_adapter_capabilities`)
+    // into these queries. Each one falls into exactly one of two honest categories:
+    //
+    //   1. wgpu genuinely exposes the data (`AdapterInfo`/`Limits`/`Features`):
+    //      `detect_gpu_vendor`, `query_compute_capability`, `query_max_threads_per_block`,
+    //      `query_shared_memory_size`, and `test_fp16_support` map that real data through
+    //      the pure, independently unit-tested helpers below (`map_vendor`,
+    //      `compute_capability_from_info`, `threads_from_limits`, `shared_mem_from_limits`,
+    //      `fp16_from_features`) and cannot fail.
+    //
+    //   2. wgpu has no API surface for the question at all, on any backend, with or
+    //      without a live adapter (`measure_memory_bandwidth`, `query_compute_units`,
+    //      `detect_tensor_cores`, `test_bf16_support`, `test_cooperative_groups`). Rather
+    //      than fabricate a hardcoded literal dressed up as a measurement (which would
+    //      silently mislead the strategy selector), each of these returns an honest error
+    //      naming precisely which vendor-specific runtime would be required instead.
+
+    /// Real GPU vendor, mapped from `wgpu::Adapter::get_info()`.
+    fn detect_gpu_vendor(info: &wgpu::AdapterInfo) -> GpuVendor {
+        map_vendor(info)
     }
 
-    fn query_compute_capability(vendor: &GpuVendor) -> Result<String> {
-        match vendor {
-            GpuVendor::Nvidia => Ok("7.5".to_string()), // Example: RTX 2080
-            GpuVendor::AMD => Ok("gfx906".to_string()), // Example: RX 5700 XT
-            GpuVendor::Apple => Ok("M1".to_string()),   // Example: M1/M2
-            _ => Ok("unknown".to_string()),
-        }
+    /// Best-effort architecture/"compute capability" descriptor, built only from real
+    /// `wgpu::AdapterInfo` fields (see [`compute_capability_from_info`] for why this is
+    /// not a CUDA-style version number).
+    fn query_compute_capability(info: &wgpu::AdapterInfo) -> String {
+        compute_capability_from_info(info)
     }
 
+    /// wgpu has no API for memory bandwidth (GB/s) on `Adapter` or `Device` — neither
+    /// `AdapterInfo`, `Limits`, nor `Features` carries a bandwidth figure, on any backend.
+    /// Real numbers require vendor-specific tooling outside wgpu's portable abstraction
+    /// (e.g. NVML for NVIDIA, ROCm-SMI for AMD, IOKit performance counters on macOS), none
+    /// of which this crate links against.
     fn measure_memory_bandwidth() -> Result<f64> {
-        // Run a simple memory bandwidth test
-        // This is a placeholder returning a typical value
-        Ok(448.0) // GB/s for RTX 2080
+        Err(TensorError::unsupported_operation_simple(
+            "memory bandwidth cannot be queried through wgpu (no GB/s field exists on \
+             AdapterInfo/Limits/Features on any backend); a vendor runtime such as NVML or \
+             ROCm-SMI is required"
+                .to_string(),
+        ))
     }
 
+    /// wgpu deliberately does not expose a streaming-multiprocessor / compute-unit count.
+    /// This is unrelated to whether a real device handle is available: `AdapterInfo` and
+    /// `Limits` simply have no such field, on any backend.
     fn query_compute_units() -> Result<usize> {
-        Ok(46) // Example: RTX 2080 has 46 SMs
+        Err(TensorError::unsupported_operation_simple(
+            "compute unit / SM count has no wgpu API (AdapterInfo and Limits carry no such \
+             field on any backend); a vendor runtime such as NVML or ROCm-SMI is required"
+                .to_string(),
+        ))
     }
 
+    /// wgpu has no feature flag or limit indicating tensor-core / matrix-accelerator
+    /// presence. Detecting this honestly would require vendor-specific extensions (e.g.
+    /// `VK_NV_cooperative_matrix`, `VK_KHR_cooperative_matrix`) that are not exposed
+    /// through wgpu's portable `Features`/`Limits` surface.
     fn detect_tensor_cores() -> Result<bool> {
-        Ok(true) // Would detect based on compute capability >= 7.0
+        Err(TensorError::unsupported_operation_simple(
+            "tensor-core presence cannot be queried through wgpu; it exposes no matrix-\
+             accelerator feature flag on any backend"
+                .to_string(),
+        ))
     }
 
-    fn query_max_threads_per_block() -> Result<usize> {
-        Ok(1024) // Standard for modern GPUs
+    /// Maximum compute-workgroup X size, read from a real `wgpu::Limits`.
+    fn query_max_threads_per_block(limits: &wgpu::Limits) -> usize {
+        threads_from_limits(limits) as usize
     }
 
-    fn query_shared_memory_size() -> Result<usize> {
-        Ok(49152) // 48KB for compute capability 7.0+
+    /// Maximum compute-workgroup storage (shared memory) size, read from a real
+    /// `wgpu::Limits`.
+    fn query_shared_memory_size(limits: &wgpu::Limits) -> usize {
+        shared_mem_from_limits(limits) as usize
     }
 
-    fn test_fp16_support() -> Result<bool> {
-        Ok(true) // Most modern GPUs support FP16
+    /// fp16 shader support, read from a real `wgpu::Features` (`SHADER_F16`).
+    fn test_fp16_support(features: wgpu::Features) -> bool {
+        fp16_from_features(features)
     }
 
+    /// wgpu defines `Features::SHADER_F16` but has no `SHADER_BF16` (or equivalent)
+    /// counterpart on any backend, so brain-float-16 shader support cannot be queried
+    /// through wgpu at all.
     fn test_bf16_support() -> Result<bool> {
-        Ok(false) // Only newer GPUs support BF16
+        Err(TensorError::unsupported_operation_simple(
+            "bf16 support cannot be queried through wgpu; no SHADER_BF16 (or equivalent) \
+             feature flag exists on any backend"
+                .to_string(),
+        ))
     }
 
+    /// wgpu exposes `Features::SUBGROUP` for subgroup (warp/wave) intrinsics, but CUDA-style
+    /// "cooperative groups" (grid-wide / multi-block synchronization) is a distinct, more
+    /// powerful concept with no wgpu equivalent. `SUBGROUP` is deliberately NOT treated as
+    /// answering this query — doing so would silently misrepresent a much narrower
+    /// capability as the broader one.
     fn test_cooperative_groups() -> Result<bool> {
-        Ok(true) // Compute capability 6.0+
+        Err(TensorError::unsupported_operation_simple(
+            "cooperative groups cannot be queried through wgpu; Features::SUBGROUP (warp/wave \
+             intrinsics) is a distinct, narrower capability and not a substitute"
+                .to_string(),
+        ))
     }
 
     fn get_cached_kernel(&self, kernel_id: &str) -> Result<Option<CompiledKernel>> {
@@ -750,27 +811,28 @@ impl AdvancedKernelManager {
         &self,
         a: &Tensor<T>,
         b: &Tensor<T>,
-        kernel: &CompiledKernel,
-    ) -> Result<Tensor<T>> {
-        // Metal kernel execution implementation
-        // This would interface with Metal Performance Shaders and Metal compute pipelines
-
-        // For now, return an informative error that Metal execution is not yet implemented
-        // Future implementation would:
-        // 1. Create MTLDevice and MTLCommandQueue
-        // 2. Load Metal library from kernel.handle.library
-        // 3. Get Metal function from kernel.handle.function
-        // 4. Create MTLComputePipelineState from function
-        // 5. Allocate MTLBuffer objects for inputs/outputs
-        // 6. Create MTLComputeCommandEncoder
-        // 7. Set compute pipeline state and buffers
-        // 8. Dispatch threadgroups using kernel.parameters dimensions
-        // 9. Commit command buffer and wait for completion
-        // 10. Create result tensor with Metal buffer storage
-
-        Err(TensorError::unsupported_operation_simple(
-            "Metal kernel execution: Metal kernel execution not yet implemented. Metal feature is enabled but requires Metal Performance Shaders integration.".to_string()
-        ))
+        _kernel: &CompiledKernel,
+    ) -> Result<Tensor<T>>
+    where
+        T: bytemuck::Pod + bytemuck::Zeroable + Clone + Default + Send + Sync + 'static,
+    {
+        // Metal execution delegates to the already-complete, already-working WGPU
+        // compute path (`execute_wgpu_kernel`, below): wgpu's Metal backend
+        // (`wgpu::Backend::Metal`) already runs genuine compute shaders correctly
+        // on this exact Apple Silicon GPU, so there is no need for a separate
+        // Metal Performance Shaders integration to get a correct result here. (The
+        // raw metal-rs FFI path used when bypassing wgpu entirely is required
+        // lives in `gpu/metal_kernels/operations.rs`.)
+        //
+        // The Metal-specific `_kernel` passed in here (compiled by
+        // `compile_simd_group_matmul`, tuned for a hand-authored `.metal`
+        // SIMD-group shader that doesn't exist yet) is not reusable as-is by
+        // `execute_wgpu_kernel`, which requires a `KernelHandle::WGPU` handle
+        // whose `grid_size` matches `shaders/matmul_ops.wgsl`'s own workgroup
+        // size. A fresh, correctly shaped WGPU kernel is compiled here instead of
+        // reusing the passed-in one.
+        let wgpu_kernel = self.compile_standard_matmul(a, b)?;
+        self.execute_wgpu_kernel(a, b, &wgpu_kernel)
     }
 
     #[cfg(feature = "rocm")]
@@ -1174,5 +1236,555 @@ impl AdvancedKernelManager {
         // NOTE(v0.2): Implement Intel Xe GPU optimizations with XMX matrix extensions
         // For now, fallback to standard WGPU compute shader which works across all platforms
         self.compile_standard_matmul(a, b)
+    }
+}
+
+// Pure, GPU-hardware-independent mapping helpers.
+//
+// Each function below is a total, side-effect-free mapping from already-queried real
+// `wgpu` data (`AdapterInfo`/`Limits`/`Features`) to a `DeviceCapabilities` field. None
+// of them touch a live device, so all of them are exhaustively unit-testable with
+// literal `wgpu` values and require no GPU hardware to run in CI.
+
+/// PCI vendor id for NVIDIA adapters, as reported by `wgpu::AdapterInfo::vendor`.
+const PCI_VENDOR_NVIDIA: u32 = 0x10de;
+/// PCI vendor id for AMD adapters.
+const PCI_VENDOR_AMD: u32 = 0x1002;
+/// PCI vendor id for Intel adapters.
+const PCI_VENDOR_INTEL: u32 = 0x8086;
+/// PCI vendor id for Apple adapters (Apple Silicon integrated GPU).
+const PCI_VENDOR_APPLE: u32 = 0x106b;
+
+/// Map a real `wgpu::AdapterInfo` to a [`GpuVendor`].
+///
+/// `AdapterInfo::vendor` is documented by wgpu as "generally...a 16-bit PCI vendor ID",
+/// but this is backend-dependent: for example wgpu's Metal backend always reports
+/// `vendor: 0` (it has no PCI bus to query), so on macOS the PCI id is never populated.
+/// When the PCI vendor id doesn't match a known constant, this falls back to
+/// case-insensitive substring matching against the adapter's real, self-reported name
+/// (e.g. "Apple M2 Pro", "NVIDIA GeForce RTX 4090", "AMD Radeon RX 7900 XTX") before
+/// giving up as [`GpuVendor::Unknown`]. Every branch is derived from real fields — there
+/// is no fabricated default.
+fn map_vendor(info: &wgpu::AdapterInfo) -> GpuVendor {
+    match info.vendor {
+        PCI_VENDOR_NVIDIA => GpuVendor::Nvidia,
+        PCI_VENDOR_AMD => GpuVendor::AMD,
+        PCI_VENDOR_INTEL => GpuVendor::Intel,
+        PCI_VENDOR_APPLE => GpuVendor::Apple,
+        _ => vendor_from_name(&info.name),
+    }
+}
+
+/// Name-substring fallback used when the PCI vendor id is absent or unrecognized.
+fn vendor_from_name(name: &str) -> GpuVendor {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("quadro") {
+        GpuVendor::Nvidia
+    } else if lower.contains("amd") || lower.contains("radeon") {
+        GpuVendor::AMD
+    } else if lower.contains("intel") {
+        GpuVendor::Intel
+    } else if lower.contains("apple") {
+        GpuVendor::Apple
+    } else {
+        GpuVendor::Unknown
+    }
+}
+
+/// Derive an architecture/"compute capability" descriptor purely from real,
+/// wgpu-reported adapter fields.
+///
+/// wgpu intentionally does not expose vendor-specific architecture numbering: there is
+/// no API to obtain a CUDA "compute capability" (e.g. `8.9`), an AMD `gfx` ISA target
+/// (e.g. `gfx1100`), or an Apple GPU family index. The previous implementation papered
+/// over this gap with hardcoded per-vendor literals (`"7.5"` for *every* NVIDIA adapter,
+/// `"gfx906"` for *every* AMD adapter, `"M1"` for *every* Apple adapter) — a fabricated
+/// value for any device that wasn't that exact example part.
+///
+/// Instead, this reports the adapter's real, self-identified name together with its
+/// backend (e.g. `"Apple M2 Pro (Metal)"`, `"NVIDIA GeForce RTX 4090 (Vulkan)"`), both
+/// genuinely queried from `wgpu::AdapterInfo`. Callers should treat the result as an
+/// opaque, human-readable descriptor rather than a parseable version number.
+fn compute_capability_from_info(info: &wgpu::AdapterInfo) -> String {
+    if info.name.is_empty() {
+        format!("{:?}", info.backend)
+    } else {
+        format!("{} ({:?})", info.name, info.backend)
+    }
+}
+
+/// Maximum compute-workgroup X size, read from a real `wgpu::Limits`.
+///
+/// This mirrors `DeviceProperties::max_threads_per_block` in
+/// `crate::device::context::GpuContext::properties`, which uses the same
+/// `max_compute_workgroup_size_x` field for the same purpose, so both real
+/// "max threads per block" figures in this crate stay consistent with each other.
+fn threads_from_limits(limits: &wgpu::Limits) -> u32 {
+    limits.max_compute_workgroup_size_x
+}
+
+/// Maximum compute-workgroup storage (shared memory) size in bytes, read from a real
+/// `wgpu::Limits`. Mirrors `DeviceProperties::shared_memory_per_block`.
+fn shared_mem_from_limits(limits: &wgpu::Limits) -> u32 {
+    limits.max_compute_workgroup_storage_size
+}
+
+/// fp16 shader support, read from a real `wgpu::Features`.
+fn fp16_from_features(features: wgpu::Features) -> bool {
+    features.contains(wgpu::Features::SHADER_F16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Memory bandwidth cannot be measured without a vendor runtime / real
+    /// device handle, so the query must return an honest error rather than the
+    /// old fabricated literal `Ok(448.0)`.
+    #[test]
+    fn measure_memory_bandwidth_returns_honest_error_not_fabricated_literal() {
+        let result = AdvancedKernelManager::measure_memory_bandwidth();
+        assert!(
+            result.is_err(),
+            "measure_memory_bandwidth must not fabricate a measured value"
+        );
+        // Guard against regression back to the hardcoded 448.0 GB/s literal.
+        assert_ne!(
+            result.ok(),
+            Some(448.0),
+            "must not return the old fabricated 448.0 literal"
+        );
+    }
+
+    /// Compute-unit count requires a real device handle; must err, not return
+    /// the old fabricated `Ok(46)`.
+    #[test]
+    fn query_compute_units_returns_honest_error_not_fabricated_literal() {
+        let result = AdvancedKernelManager::query_compute_units();
+        assert!(result.is_err());
+        assert_ne!(result.ok(), Some(46), "must not return the old 46 literal");
+    }
+
+    /// Tensor-core presence cannot be queried from WebGPU; must err, not the
+    /// old fabricated `Ok(true)`.
+    #[test]
+    fn detect_tensor_cores_returns_honest_error() {
+        assert!(AdvancedKernelManager::detect_tensor_cores().is_err());
+    }
+
+    /// Max threads per block now comes from a real `wgpu::Limits` value (via
+    /// `threads_from_limits`), not the old fabricated `Ok(1024)`. Using a
+    /// non-default, distinctive value proves this is a genuine field read rather
+    /// than a hardcoded constant.
+    #[test]
+    fn query_max_threads_per_block_reflects_real_limits_not_fabricated_literal() {
+        let limits = wgpu::Limits {
+            max_compute_workgroup_size_x: 777,
+            ..Default::default()
+        };
+        assert_eq!(
+            AdvancedKernelManager::query_max_threads_per_block(&limits),
+            777
+        );
+    }
+
+    /// Shared-memory size now comes from a real `wgpu::Limits` value (via
+    /// `shared_mem_from_limits`), not the old fabricated `Ok(49152)`.
+    #[test]
+    fn query_shared_memory_size_reflects_real_limits_not_fabricated_literal() {
+        let limits = wgpu::Limits {
+            max_compute_workgroup_storage_size: 12345,
+            ..Default::default()
+        };
+        assert_eq!(
+            AdvancedKernelManager::query_shared_memory_size(&limits),
+            12345
+        );
+    }
+
+    /// fp16 support now comes from a real `wgpu::Features` check (via
+    /// `fp16_from_features`) rather than a blanket fabricated error.
+    #[test]
+    fn test_fp16_support_reflects_real_features_not_fabricated_error() {
+        assert!(AdvancedKernelManager::test_fp16_support(
+            wgpu::Features::SHADER_F16
+        ));
+        assert!(!AdvancedKernelManager::test_fp16_support(
+            wgpu::Features::empty()
+        ));
+    }
+
+    /// bf16 / cooperative-group capability still cannot be queried through wgpu at
+    /// all (no equivalent feature flag exists on any backend); each must return an
+    /// honest error rather than a fabricated boolean.
+    #[test]
+    fn bf16_and_coop_group_queries_return_honest_errors() {
+        assert!(
+            AdvancedKernelManager::test_bf16_support().is_err(),
+            "bf16 support must not be fabricated"
+        );
+        assert!(
+            AdvancedKernelManager::test_cooperative_groups().is_err(),
+            "cooperative groups support must not be fabricated"
+        );
+    }
+
+    /// Because `measure_memory_bandwidth`/`query_compute_units`/`detect_tensor_cores`/
+    /// `test_bf16_support`/`test_cooperative_groups` still honestly error (wgpu has no
+    /// API for any of them, on any backend, real adapter or not),
+    /// `detect_device_capabilities` must propagate an error for a GPU device rather
+    /// than returning fabricated capabilities -- even though several *other* fields
+    /// (vendor, compute_capability, max_threads_per_block, shared_memory_size,
+    /// supports_fp16) are now genuinely computed from real adapter data.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn detect_device_capabilities_propagates_honest_error_for_gpu() {
+        let result = AdvancedKernelManager::detect_device_capabilities(&Device::Gpu(0));
+        assert!(
+            result.is_err(),
+            "GPU capability detection must not fabricate a DeviceCapabilities struct"
+        );
+    }
+
+    // --- Pure mapping-helper tests -------------------------------------------------
+    //
+    // These construct literal `wgpu::AdapterInfo`/`Limits`/`Features` values by hand,
+    // so they need no GPU and run identically in headless CI.
+
+    /// Build a literal `wgpu::AdapterInfo` for pure-function tests. `AdapterInfo` is a
+    /// plain data struct (no `Default` impl), so every field must be supplied.
+    fn test_adapter_info(vendor: u32, name: &str, backend: wgpu::Backend) -> wgpu::AdapterInfo {
+        wgpu::AdapterInfo {
+            name: name.to_string(),
+            vendor,
+            device: 0,
+            device_type: wgpu::DeviceType::Other,
+            device_pci_bus_id: String::new(),
+            driver: String::new(),
+            driver_info: String::new(),
+            backend,
+            subgroup_min_size: 0,
+            subgroup_max_size: 0,
+            transient_saves_memory: Some(false),
+            limit_bucket: None,
+        }
+    }
+
+    #[test]
+    fn map_vendor_detects_nvidia_by_pci_id() {
+        let info = test_adapter_info(
+            PCI_VENDOR_NVIDIA,
+            "NVIDIA GeForce RTX 4090",
+            wgpu::Backend::Vulkan,
+        );
+        assert_eq!(map_vendor(&info), GpuVendor::Nvidia);
+    }
+
+    #[test]
+    fn map_vendor_detects_amd_by_pci_id() {
+        let info = test_adapter_info(
+            PCI_VENDOR_AMD,
+            "AMD Radeon RX 7900 XTX",
+            wgpu::Backend::Vulkan,
+        );
+        assert_eq!(map_vendor(&info), GpuVendor::AMD);
+    }
+
+    #[test]
+    fn map_vendor_detects_intel_by_pci_id() {
+        let info = test_adapter_info(PCI_VENDOR_INTEL, "Intel Arc A770", wgpu::Backend::Vulkan);
+        assert_eq!(map_vendor(&info), GpuVendor::Intel);
+    }
+
+    #[test]
+    fn map_vendor_detects_apple_by_pci_id() {
+        let info = test_adapter_info(PCI_VENDOR_APPLE, "Apple GPU", wgpu::Backend::Metal);
+        assert_eq!(map_vendor(&info), GpuVendor::Apple);
+    }
+
+    /// wgpu's Metal backend always reports `vendor: 0` (see wgpu-hal
+    /// `src/metal/mod.rs`, `AdapterShared::expose`), so on macOS the name-substring
+    /// fallback is what actually resolves vendor in practice -- this is exercised on
+    /// every Metal-backed run of this crate, not just a theoretical corner case.
+    #[test]
+    fn map_vendor_falls_back_to_name_when_pci_id_is_zero_apple() {
+        let info = test_adapter_info(0, "Apple M3 Max", wgpu::Backend::Metal);
+        assert_eq!(map_vendor(&info), GpuVendor::Apple);
+    }
+
+    #[test]
+    fn map_vendor_falls_back_to_name_for_nvidia_when_pci_id_unknown() {
+        let info = test_adapter_info(0, "NVIDIA GeForce RTX 3080", wgpu::Backend::Vulkan);
+        assert_eq!(map_vendor(&info), GpuVendor::Nvidia);
+    }
+
+    #[test]
+    fn map_vendor_falls_back_to_name_for_amd_when_pci_id_unknown() {
+        let info = test_adapter_info(0, "AMD Radeon Pro 5500M", wgpu::Backend::Vulkan);
+        assert_eq!(map_vendor(&info), GpuVendor::AMD);
+    }
+
+    #[test]
+    fn map_vendor_returns_unknown_for_unrecognized_adapter() {
+        let info = test_adapter_info(0, "llvmpipe (LLVM 17.0.0, 256 bits)", wgpu::Backend::Vulkan);
+        assert_eq!(map_vendor(&info), GpuVendor::Unknown);
+    }
+
+    #[test]
+    fn threads_from_limits_reads_workgroup_size_x() {
+        let limits_a = wgpu::Limits {
+            max_compute_workgroup_size_x: 1024,
+            ..Default::default()
+        };
+        assert_eq!(threads_from_limits(&limits_a), 1024);
+
+        let limits_b = wgpu::Limits {
+            max_compute_workgroup_size_x: 256,
+            ..Default::default()
+        };
+        assert_eq!(
+            threads_from_limits(&limits_b),
+            256,
+            "must track the real field, not a hardcoded constant"
+        );
+    }
+
+    #[test]
+    fn shared_mem_from_limits_reads_workgroup_storage_size() {
+        let limits_a = wgpu::Limits {
+            max_compute_workgroup_storage_size: 32768,
+            ..Default::default()
+        };
+        assert_eq!(shared_mem_from_limits(&limits_a), 32768);
+
+        let limits_b = wgpu::Limits {
+            max_compute_workgroup_storage_size: 16384,
+            ..Default::default()
+        };
+        assert_eq!(
+            shared_mem_from_limits(&limits_b),
+            16384,
+            "must track the real field, not a hardcoded constant"
+        );
+    }
+
+    #[test]
+    fn fp16_from_features_true_when_shader_f16_present() {
+        assert!(fp16_from_features(wgpu::Features::SHADER_F16));
+    }
+
+    #[test]
+    fn fp16_from_features_false_when_absent() {
+        assert!(!fp16_from_features(wgpu::Features::empty()));
+    }
+
+    #[test]
+    fn compute_capability_from_info_uses_real_name_not_fabricated_version() {
+        let info = test_adapter_info(
+            PCI_VENDOR_NVIDIA,
+            "NVIDIA GeForce RTX 4090",
+            wgpu::Backend::Vulkan,
+        );
+        let cap = compute_capability_from_info(&info);
+        assert!(
+            cap.contains("RTX 4090"),
+            "must reflect the real adapter name: {cap}"
+        );
+        // Guard against regression to the old fabricated "7.5" literal that every
+        // NVIDIA adapter used to receive regardless of its actual model.
+        assert_ne!(cap, "7.5");
+    }
+
+    #[test]
+    fn compute_capability_from_info_differs_across_real_devices() {
+        let a = compute_capability_from_info(&test_adapter_info(
+            PCI_VENDOR_NVIDIA,
+            "NVIDIA GeForce RTX 4090",
+            wgpu::Backend::Vulkan,
+        ));
+        let b = compute_capability_from_info(&test_adapter_info(
+            PCI_VENDOR_NVIDIA,
+            "NVIDIA GeForce RTX 3050",
+            wgpu::Backend::Vulkan,
+        ));
+        assert_ne!(
+            a, b,
+            "two different real NVIDIA cards must not collapse to the same fabricated literal"
+        );
+    }
+
+    #[test]
+    fn compute_capability_from_info_falls_back_to_backend_when_name_empty() {
+        let info = test_adapter_info(0, "", wgpu::Backend::Vulkan);
+        let cap = compute_capability_from_info(&info);
+        assert!(!cap.is_empty());
+    }
+
+    #[test]
+    fn detect_gpu_vendor_delegates_to_map_vendor() {
+        let info = test_adapter_info(
+            PCI_VENDOR_AMD,
+            "AMD Radeon RX 7900 XTX",
+            wgpu::Backend::Vulkan,
+        );
+        assert_eq!(
+            AdvancedKernelManager::detect_gpu_vendor(&info),
+            GpuVendor::AMD
+        );
+    }
+
+    #[test]
+    fn query_compute_capability_delegates_to_compute_capability_from_info() {
+        let info = test_adapter_info(PCI_VENDOR_APPLE, "Apple M2 Pro", wgpu::Backend::Metal);
+        let cap = AdvancedKernelManager::query_compute_capability(&info);
+        assert!(cap.contains("M2 Pro"));
+    }
+
+    // --- Guarded real-adapter integration test --------------------------------------
+
+    /// Local "is a real GPU adapter available" probe, matching the skip-gracefully
+    /// convention already used in `tests/gpu_reduction_integration.rs`
+    /// (`gpu_tests::gpu_available`).
+    #[cfg(feature = "gpu")]
+    fn gpu_adapter_available() -> bool {
+        // Probe real device creation, not just adapter enumeration: an adapter
+        // can be listed (e.g. via GL/EGL) in environments where `request_device`
+        // then fails with "Parent device is lost". Gating on a genuinely usable
+        // device makes these tests skip honestly instead of panicking.
+        crate::gpu::gpu_device_available()
+    }
+
+    /// Integration test: when a real GPU adapter is available at test time, the real
+    /// `wgpu::Adapter` -> `GpuAdapterCapabilities` -> pure-mapping-helper wiring must
+    /// run against genuine hardware data without panicking, and must produce a
+    /// non-empty, deterministic vendor/name mapping. `detect_device_capabilities`'s
+    /// overall result is still `Err` by design (see
+    /// `detect_device_capabilities_propagates_honest_error_for_gpu`), since several
+    /// fields remain honest errors regardless of adapter availability -- this test
+    /// exercises the real end-to-end wiring rather than only the pure helpers in
+    /// isolation.
+    ///
+    /// Skips gracefully (does not fail the suite) when no GPU adapter is available.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn detect_device_capabilities_uses_real_adapter_when_available() {
+        if !gpu_adapter_available() {
+            eprintln!(
+                "GPU adapter not available, skipping detect_device_capabilities integration test"
+            );
+            return;
+        }
+
+        let caps = crate::device::get_gpu_adapter_capabilities(0).expect(
+            "test: a GPU adapter was just reported available, so fetching its capabilities \
+             must succeed",
+        );
+        assert!(
+            !caps.info.name.is_empty(),
+            "a real adapter must report a non-empty name"
+        );
+
+        let vendor = AdvancedKernelManager::detect_gpu_vendor(&caps.info);
+        let vendor_again = AdvancedKernelManager::detect_gpu_vendor(&caps.info);
+        assert_eq!(
+            vendor, vendor_again,
+            "vendor mapping must be a pure, deterministic function of real adapter info"
+        );
+
+        let result = AdvancedKernelManager::detect_device_capabilities(&Device::Gpu(0));
+        assert!(
+            result.is_err(),
+            "capability detection must still honestly error on the fields wgpu cannot \
+             answer, even with a real adapter available"
+        );
+    }
+
+    // --- execute_metal_kernel now delegates to execute_wgpu_kernel ------------------
+
+    /// `execute_metal_kernel` must now genuinely run the matmul (by delegating to
+    /// the already-working `execute_wgpu_kernel`) instead of unconditionally
+    /// returning the old "Metal Performance Shaders integration" error.
+    ///
+    /// This constructs an `AdvancedKernelManager` directly (bypassing the public
+    /// `new()` constructor, which -- by design, see
+    /// `detect_device_capabilities_propagates_honest_error_for_gpu` above --
+    /// always errors for `Device::Gpu` today since several capability queries
+    /// have no wgpu API at all) since `execute_metal_kernel` and everything it
+    /// calls (`compile_standard_matmul`, `execute_wgpu_kernel`) only ever touch
+    /// their `a`/`b`/`kernel` parameters, never `self`'s
+    /// `device_info`/`kernel_cache`/`performance_data` -- so a manager built with
+    /// placeholder capability data is a faithful test of the real dispatch path.
+    #[cfg(feature = "metal")]
+    #[test]
+    fn execute_metal_kernel_delegates_to_wgpu_and_succeeds() {
+        if !gpu_adapter_available() {
+            eprintln!("GPU adapter not available, skipping execute_metal_kernel test");
+            return;
+        }
+
+        let a_cpu = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
+            .expect("test: create a");
+        let b_cpu = Tensor::<f32>::from_vec(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2])
+            .expect("test: create b");
+        let a_gpu = a_cpu
+            .to_device(Device::Gpu(0))
+            .expect("test: move a to GPU");
+        let b_gpu = b_cpu
+            .to_device(Device::Gpu(0))
+            .expect("test: move b to GPU");
+
+        let manager = AdvancedKernelManager {
+            device_info: Arc::new(RwLock::new(DeviceCapabilities {
+                vendor: GpuVendor::Apple,
+                compute_capability: "test".to_string(),
+                memory_bandwidth: 0.0,
+                compute_units: 0,
+                has_tensor_cores: false,
+                max_threads_per_block: 1024,
+                shared_memory_size: 0,
+                supports_fp16: false,
+                supports_bf16: false,
+                supports_coop_groups: false,
+            })),
+            kernel_cache: Arc::new(RwLock::new(HashMap::new())),
+            performance_data: Arc::new(RwLock::new(HashMap::new())),
+            strategy: KernelStrategy::StandardCompute,
+        };
+        // `execute_metal_kernel` ignores its `kernel` argument entirely (it builds
+        // a fresh, correctly-shaped WGPU kernel internally via
+        // `compile_standard_matmul`), so any well-formed placeholder value here
+        // still exercises the real dispatch path.
+        let dummy_kernel = CompiledKernel {
+            id: "test".to_string(),
+            strategy: KernelStrategy::StandardCompute,
+            compiled_at: std::time::SystemTime::now(),
+            parameters: KernelParameters {
+                grid_size: (1, 1, 1),
+                block_size: (1, 1, 1),
+                shared_memory: 0,
+                register_count: 0,
+            },
+            handle: KernelHandle::Metal {
+                library: "test".to_string(),
+                function: "test".to_string(),
+            },
+        };
+
+        let result = manager
+            .execute_metal_kernel(&a_gpu, &b_gpu, &dummy_kernel)
+            .expect(
+                "test: execute_metal_kernel must now succeed by delegating to execute_wgpu_kernel",
+            );
+
+        let result_cpu = result.to_cpu().expect("test: move result to CPU");
+        assert_eq!(result_cpu.shape().dims(), &[1, 2, 2]);
+        let data = result_cpu.data();
+        let expected = [58.0f32, 64.0, 139.0, 154.0];
+        for (got, want) in data.iter().zip(expected.iter()) {
+            assert!(
+                (got - want).abs() < 1e-4,
+                "execute_metal_kernel result mismatch: got {got}, want {want}"
+            );
+        }
     }
 }

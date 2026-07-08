@@ -68,19 +68,25 @@ windows-sys = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 approx = { workspace = true }
-proptest = { workspace = true }
 
 [features]
 default = ["std", "parallel"]
 std = []
 parallel = ["rayon"]
 gpu = ["wgpu", "futures", "pollster", "tokio", "tokio-stream", "async-trait"]
-# CUDA features are only available on Linux and Windows
+# CUDA features are only available on Linux and Windows.
+# Enabling cuda/cudnn/nccl gates the relevant modules but does NOT link against
+# any CUDA SDK. Real CUDA support requires adding cudarc/cuda-sys/nccl-sys deps
+# and linking libcudart.so / libcudnn.so / libnccl.so at build time.
 cuda = ["gpu"]
+# cudnn — all 11 operations return NotImplemented (no libcudnn.so linked).
 cudnn = ["gpu", "cuda"]
+# opencl — routes to wgpu; no OpenCL SDK. Present for API surface completeness.
 opencl = ["gpu"]
 metal = ["gpu", "dep:metal"]
+# rocm — all HIP FFI stubs return NotImplemented (no libamdhip64.so linked).
 rocm = ["gpu"]
+# nccl — all collective operations return NotImplemented (no libnccl.so linked).
 nccl = ["gpu", "cuda"]
 # BLAS support via ndarray-linalg and oxiblas
 blas = ["ndarray-linalg"]
@@ -88,6 +94,10 @@ blas-openblas = ["blas", "ndarray-linalg/openblas-system"]
 blas-oxiblas = ["blas", "oxiblas-ndarray"]
 blas-mkl = ["blas", "ndarray-linalg/intel-mkl-system"]
 blas-accelerate = ["blas"]
+# simd — reserved for future explicit SIMD opt-in; currently a no-op.
+# CPU SIMD is always available via the simd module (using std::arch intrinsics
+# detected at runtime). Enabling this feature gates optional dispatch_registry
+# SIMD kernel paths and benchmark helpers only.
 simd = []
 serialize = ["serde", "serde_json", "rmp-serde"]
 compression = ["dep:oxiarc-archive"]

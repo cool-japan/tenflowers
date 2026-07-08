@@ -102,17 +102,16 @@ where
 
         let mut samples = Vec::new();
 
-        // Handle array of objects or single object
-        let objects = match &json_value {
-            serde_json::Value::Array(arr) => arr,
-            serde_json::Value::Object(_) => {
-                return Err(TensorError::invalid_argument(
-                    "Single JSON object not supported, expected array of objects".to_string(),
-                ));
-            }
+        // Handle array of objects or single object. A bare top-level object is
+        // treated as a 1-element sequence via a zero-copy slice view so the
+        // loop below can stay identical for both shapes.
+        let objects: &[serde_json::Value] = match &json_value {
+            serde_json::Value::Array(arr) => arr.as_slice(),
+            serde_json::Value::Object(_) => std::slice::from_ref(&json_value),
             _ => {
                 return Err(TensorError::invalid_argument(
-                    "Invalid JSON format, expected array of objects".to_string(),
+                    "Invalid JSON format, expected an array of objects or a single object"
+                        .to_string(),
                 ))
             }
         };
@@ -627,6 +626,27 @@ mod tests {
             .expect("test: loading from file should succeed");
 
         assert_eq!(dataset.len(), 2);
+
+        let (features, label) = dataset.get(0).expect("index should be in bounds");
+        assert_eq!(features.shape().dims(), &[2]);
+        assert_eq!(label.shape().dims(), &[] as &[usize]); // scalar
+    }
+
+    #[test]
+    fn test_json_dataset_from_file_single_bare_object() {
+        // A bare top-level JSON object (not wrapped in an array) must be
+        // accepted as a 1-sample dataset.
+        let mut temp_file = NamedTempFile::new().expect("test: temp file creation should succeed");
+        let json_content = r#"{"features": [1.0, 2.0], "label": 0}"#;
+        temp_file
+            .write_all(json_content.as_bytes())
+            .expect("test: write should succeed");
+        temp_file.flush().expect("test: flush should succeed");
+
+        let dataset = JsonDataset::<f32>::from_file(temp_file.path(), "features", "label")
+            .expect("test: loading a bare top-level object should succeed");
+
+        assert_eq!(dataset.len(), 1);
 
         let (features, label) = dataset.get(0).expect("index should be in bounds");
         assert_eq!(features.shape().dims(), &[2]);

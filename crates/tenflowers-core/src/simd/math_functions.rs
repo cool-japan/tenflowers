@@ -17,7 +17,7 @@ impl MathFunctions {
                 operation: "SIMD exp".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -67,7 +67,7 @@ impl MathFunctions {
                 operation: "SIMD sqrt_f32".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -104,7 +104,7 @@ impl MathFunctions {
                 operation: "SIMD log_f32".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -146,7 +146,7 @@ impl MathFunctions {
                     exponent.len(),
                     output.len()
                 ),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -183,7 +183,7 @@ impl MathFunctions {
                 operation: "SIMD sin_f32".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -220,7 +220,7 @@ impl MathFunctions {
                 operation: "SIMD cos_f32".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -257,7 +257,7 @@ impl MathFunctions {
                 operation: "SIMD abs_f32".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -294,7 +294,7 @@ impl MathFunctions {
                 operation: "SIMD sub_f32".to_string(),
                 expected: format!("arrays of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -331,7 +331,7 @@ impl MathFunctions {
                 operation: "SIMD div_f32".to_string(),
                 expected: format!("arrays of length {}", a.len()),
                 got: format!("a: {}, b: {}, result: {}", a.len(), b.len(), result.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -369,7 +369,7 @@ impl MathFunctions {
                 operation: "SIMD reciprocal".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -412,7 +412,7 @@ impl MathFunctions {
                 operation: "SIMD clamp".to_string(),
                 expected: format!("arrays of length {}", input.len()),
                 got: format!("input: {}, output: {}", input.len(), output.len()),
-                context: Some(ErrorContext::new()),
+                context: Some(Box::new(ErrorContext::new())),
             });
         }
 
@@ -511,7 +511,10 @@ mod tests {
             .expect("test: pow_f32_optimized should succeed");
 
         for (i, &val) in output.iter().enumerate() {
-            assert_relative_eq!(val, expected[i], epsilon = 1e-6);
+            // epsilon widened from 1e-6 to 1e-5: pow-via-exp-log for 3^3 legitimately
+            // rounds to 27.000004 (abs diff ~4e-6, a few ULPs of f32 precision at this
+            // magnitude), which is not a correctness bug in pow_f32_optimized itself.
+            assert_relative_eq!(val, expected[i], epsilon = 1e-5);
         }
     }
 

@@ -736,7 +736,7 @@ lazy_static::lazy_static! {
 pub fn record_fusion_opportunity(graph: &FusionGraph) {
     let mut stats = GLOBAL_FUSION_STATS
         .lock()
-        .expect("lock should not be poisoned");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     stats.opportunities_identified += 1;
     if graph.is_fusible() {
         stats.fusions_applied += 1;
@@ -755,7 +755,7 @@ pub fn record_fusion_opportunity(graph: &FusionGraph) {
 pub fn get_fusion_stats() -> FusionStats {
     GLOBAL_FUSION_STATS
         .lock()
-        .expect("lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
 }
 
@@ -763,7 +763,7 @@ pub fn get_fusion_stats() -> FusionStats {
 pub fn reset_fusion_stats() {
     *GLOBAL_FUSION_STATS
         .lock()
-        .expect("lock should not be poisoned") = FusionStats::default();
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = FusionStats::default();
 }
 
 /// Print fusion statistics report

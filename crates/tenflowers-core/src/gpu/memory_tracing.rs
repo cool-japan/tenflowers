@@ -557,7 +557,7 @@ lazy_static::lazy_static! {
 pub fn record_gpu_allocation(size: usize, device_id: usize, operation: String) -> AllocationId {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .expect("GPU memory tracker mutex poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .record_allocation(size, device_id, operation)
 }
 
@@ -565,7 +565,7 @@ pub fn record_gpu_allocation(size: usize, device_id: usize, operation: String) -
 pub fn record_gpu_deallocation(id: AllocationId) {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .expect("GPU memory tracker mutex poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .record_deallocation(id);
 }
 
@@ -573,7 +573,7 @@ pub fn record_gpu_deallocation(id: AllocationId) {
 pub fn current_gpu_memory_usage() -> usize {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .expect("lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .current_usage()
 }
 
@@ -581,7 +581,7 @@ pub fn current_gpu_memory_usage() -> usize {
 pub fn peak_gpu_memory_usage() -> usize {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .expect("lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .peak_usage()
 }
 
@@ -589,7 +589,7 @@ pub fn peak_gpu_memory_usage() -> usize {
 pub fn generate_gpu_memory_report() -> MemoryReport {
     GLOBAL_GPU_MEMORY_TRACKER
         .lock()
-        .expect("lock should not be poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .generate_report()
 }
 

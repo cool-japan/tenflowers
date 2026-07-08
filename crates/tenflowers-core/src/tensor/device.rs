@@ -42,8 +42,18 @@ impl<T: Clone> Tensor<T> {
                     grad: None,
                 })
             }
+            // Any remaining combination (e.g. Gpu->Gpu across distinct devices,
+            // or any ROCm source/target) is a real, constructible input that
+            // `to()` does not implement. Return an honest error instead of
+            // panicking via `unreachable!()`, which would crash multi-GPU and
+            // ROCm builds. Use `transfer_to_device` for the richer transfer path.
             #[allow(unreachable_patterns)]
-            _ => unreachable!(),
+            _ => Err(crate::TensorError::unsupported_operation_simple(format!(
+                "device transfer {:?}->{:?} not supported by Tensor::to; \
+                 use Tensor::to_device for cross-GPU/ROCm transfers",
+                self.device(),
+                device
+            ))),
         }
     }
 
@@ -221,5 +231,57 @@ impl<T: Clone> Tensor<T> {
             #[cfg(feature = "rocm")]
             (_, Device::Rocm(_)) => true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ROCm transfer target is a real, constructible input that `Tensor::to`
+    /// does not implement. It must return an honest error instead of panicking
+    /// through the old `unreachable!()`.
+    #[cfg(feature = "rocm")]
+    #[test]
+    fn cpu_to_rocm_transfer_returns_honest_error_not_panic() {
+        let tensor = Tensor::<f32>::zeros(&[2, 2]);
+        let result = tensor.to(Device::Rocm(0));
+        assert!(
+            result.is_err(),
+            "CPU->ROCm transfer via Tensor::to must return an honest error, not succeed"
+        );
+        match result {
+            Err(crate::TensorError::UnsupportedOperation { reason, .. }) => {
+                assert!(
+                    reason.contains("not supported"),
+                    "error must explain the transfer is unsupported, got: {reason}"
+                );
+            }
+            other => panic!("expected UnsupportedOperation error, got: {other:?}"),
+        }
+    }
+
+    /// Transferring to the same device is a no-op clone (handled by the early
+    /// return), and must never reach the error branch.
+    #[test]
+    fn cpu_to_cpu_same_device_is_noop_clone() {
+        let tensor = Tensor::<f32>::zeros(&[3, 3]);
+        let result = tensor.to(Device::Cpu);
+        assert!(
+            result.is_ok(),
+            "same-device CPU->CPU transfer must succeed as a clone"
+        );
+    }
+
+    /// `Tensor::to` must not panic for any constructible target device; with
+    /// only the CPU storage available, a GPU/ROCm target yields a `Result`
+    /// (Ok for the implemented CPU->GPU path, Err otherwise) — never a panic.
+    #[cfg(feature = "rocm")]
+    #[test]
+    fn rocm_target_does_not_panic() {
+        let tensor = Tensor::<f32>::zeros(&[1, 4]);
+        // The call itself must complete without panicking. We only assert it
+        // returns a Result; the ROCm CPU->ROCm path is unsupported and errs.
+        let _result: Result<_> = tensor.to(Device::Rocm(1));
     }
 }

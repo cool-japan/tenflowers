@@ -251,37 +251,14 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            // Use GPU mish operation for f32, fall back to CPU for other types
-            if std::any::type_name::<T>() == "f32" {
-                let gpu_buffer_f32 = unsafe {
-                    std::mem::transmute::<
-                        &crate::gpu::buffer::GpuBuffer<T>,
-                        &crate::gpu::buffer::GpuBuffer<f32>,
-                    >(gpu_buffer)
-                };
-
-                let result_gpu_f32 = crate::gpu::ops::execute_activation_op(
-                    gpu_buffer_f32,
-                    crate::gpu::ops::ActivationOp::Mish,
-                )?;
-
-                let result_gpu = unsafe {
-                    std::mem::transmute::<
-                        crate::gpu::buffer::GpuBuffer<f32>,
-                        crate::gpu::buffer::GpuBuffer<T>,
-                    >(result_gpu_f32)
-                };
-
-                let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-                result.set_requires_grad(x.requires_grad());
-                Ok(result)
-            } else {
-                // Fallback to CPU for non-f32 types
-                let cpu_tensor = x.to_cpu()?;
-                let result = mish(&cpu_tensor)?;
-                result.to_device(x.device().clone())
-            }
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for Mish (gpu/ops/activation_ops.rs's
+            // UnaryOp only covers ReLU/Sigmoid/Tanh), so the old f32 "fast path"
+            // above always errored inside execute_activation_op and was dead
+            // code. Use the same host round-trip fallback uniformly for all T.
+            let cpu_tensor = x.to_cpu()?;
+            let result = mish(&cpu_tensor)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -377,7 +354,7 @@ where
 /// Approximation: GELU(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
 pub fn gelu<T>(x: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Float + Send + Sync + bytemuck::Pod,
+    T: Clone + Default + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
@@ -397,15 +374,13 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::GELU,
-            )?;
-
-            let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-            result.set_requires_grad(x.requires_grad());
-            Ok(result)
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for GELU; round-trip through the
+            // host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = gelu(&cpu_tensor)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -461,14 +436,14 @@ pub fn gelu_f32(x: &Tensor<f32>) -> Result<Tensor<f32>> {
             Ok(Tensor::from_array(computed_result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
             registry.record_gpu();
-            // Use GPU implementation if available
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::GELU,
-            )?;
-            Ok(Tensor::from_gpu_buffer(result_gpu, x.shape().clone()))
+            // No native GPU kernel exists for GELU; round-trip through the
+            // host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = gelu_f32(&cpu_tensor)?;
+            result.to_device(x.device().clone())
         }
     };
 
@@ -482,7 +457,7 @@ pub fn gelu_f32(x: &Tensor<f32>) -> Result<Tensor<f32>> {
 /// Swish(x) = x * sigmoid(x) = x / (1 + exp(-x))
 pub fn swish<T>(x: &Tensor<T>) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Float + Send + Sync + bytemuck::Pod,
+    T: Clone + Default + Float + Send + Sync + 'static + bytemuck::Pod,
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
@@ -495,15 +470,13 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::Swish,
-            )?;
-
-            let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-            result.set_requires_grad(x.requires_grad());
-            Ok(result)
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for Swish; round-trip through the
+            // host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = swish(&cpu_tensor)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -512,7 +485,7 @@ where
 /// ELU(x) = x if x > 0, α * (exp(x) - 1) if x <= 0
 pub fn elu<T>(x: &Tensor<T>, alpha: T) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Float + PartialOrd + Send + Sync + bytemuck::Pod,
+    T: Clone + Default + Float + PartialOrd + Send + Sync + 'static + bytemuck::Pod,
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
@@ -524,15 +497,13 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::ELU,
-            )?;
-
-            let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-            result.set_requires_grad(x.requires_grad());
-            Ok(result)
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for ELU; round-trip through the
+            // host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = elu(&cpu_tensor, alpha)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -541,7 +512,7 @@ where
 /// LeakyReLU(x) = max(αx, x) where α is typically 0.01
 pub fn leaky_relu<T>(x: &Tensor<T>, alpha: T) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Float + PartialOrd + Send + Sync + bytemuck::Pod,
+    T: Clone + Default + Float + PartialOrd + Send + Sync + 'static + bytemuck::Pod,
 {
     match &x.storage {
         crate::tensor::TensorStorage::Cpu(arr) => {
@@ -552,15 +523,13 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::LeakyReLU,
-            )?;
-
-            let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-            result.set_requires_grad(x.requires_grad());
-            Ok(result)
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for LeakyReLU; round-trip through
+            // the host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = leaky_relu(&cpu_tensor, alpha)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -601,15 +570,13 @@ where
             Ok(Tensor::from_array(result))
         }
         #[cfg(feature = "gpu")]
-        crate::tensor::TensorStorage::Gpu(gpu_buffer) => {
-            let result_gpu = crate::gpu::ops::execute_activation_op(
-                gpu_buffer,
-                crate::gpu::ops::ActivationOp::HardSwish,
-            )?;
-
-            let mut result = Tensor::from_gpu_buffer(result_gpu, x.shape().clone());
-            result.set_requires_grad(x.requires_grad());
-            Ok(result)
+        crate::tensor::TensorStorage::Gpu(_gpu_buffer) => {
+            // No native GPU kernel exists for HardSwish; round-trip through
+            // the host and delegate to the known-correct CPU implementation
+            // (mirrors mish/softmax's existing non-f32 fallback pattern).
+            let cpu_tensor = x.to_cpu()?;
+            let result = hard_swish(&cpu_tensor)?;
+            result.to_device(x.device().clone())
         }
     }
 }
@@ -822,5 +789,157 @@ where
             let cpu_tensor = x.to_cpu()?;
             log_softmax(&cpu_tensor)
         }
+    }
+}
+
+// GPU delegate correctness tests: verify each Tensor-level activation caller
+// that has no native GPU kernel (gelu, gelu_f32, swish, elu, leaky_relu,
+// hard_swish, mish) round-trips GPU-resident input through the host and
+// delegates to the known-correct CPU implementation, instead of erroring via
+// `execute_activation_op` (which only implements ReLU/Sigmoid/Tanh natively).
+// A GPU adapter is not guaranteed to be present in every environment that
+// builds with `--features gpu`; each test attempts the transfer and skips
+// (returns early) if no adapter is available, mirroring the convention in
+// `ops/einsum/gpu.rs`.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_delegate_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_gelu_matches_cpu_reference() {
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = gelu(&cpu_input).expect("test: CPU gelu should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+        let gpu_result =
+            gelu(&gpu_input).expect("test: GPU gelu should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_gelu_f32_matches_cpu_reference() {
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = gelu_f32(&cpu_input).expect("test: CPU gelu_f32 should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = gelu_f32(&gpu_input)
+            .expect("test: GPU gelu_f32 should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_swish_matches_cpu_reference() {
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = swish(&cpu_input).expect("test: CPU swish should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result =
+            swish(&gpu_input).expect("test: GPU swish should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_elu_matches_cpu_reference() {
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = elu(&cpu_input, 1.0f32).expect("test: CPU elu should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = elu(&gpu_input, 1.0f32)
+            .expect("test: GPU elu should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_leaky_relu_matches_cpu_reference() {
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result =
+            leaky_relu(&cpu_input, 0.01f32).expect("test: CPU leaky_relu should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = leaky_relu(&gpu_input, 0.01f32)
+            .expect("test: GPU leaky_relu should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_hard_swish_matches_cpu_reference() {
+        let data = vec![-4.0f32, -2.0, -0.5, 0.0, 0.5, 2.0, 4.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = hard_swish(&cpu_input).expect("test: CPU hard_swish should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result = hard_swish(&gpu_input)
+            .expect("test: GPU hard_swish should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
+    }
+
+    #[test]
+    fn gpu_mish_matches_cpu_reference_no_dead_fast_path() {
+        // Also guards against regressing the deleted dead f32 "fast path":
+        // mish must now use the uniform readback+delegate pattern for f32 too,
+        // since execute_activation_op has no real Mish kernel.
+        let data = vec![-2.0f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+        let cpu_input = Tensor::<f32>::from_vec(data, &[7]).expect("test: from_vec should succeed");
+        let cpu_result = mish(&cpu_input).expect("test: CPU mish should succeed");
+
+        let gpu_input = match cpu_input.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let gpu_result =
+            mish(&gpu_input).expect("test: GPU mish should succeed via CPU-delegate fallback");
+        assert_eq!(gpu_result.shape().dims(), cpu_result.shape().dims());
+        assert_eq!(
+            gpu_result.to_vec().expect("test: to_vec should succeed"),
+            cpu_result.to_vec().expect("test: to_vec should succeed"),
+        );
     }
 }

@@ -164,7 +164,10 @@ impl HybridWorkScheduler {
 
         // Add work to queue
         {
-            let mut queue = self.work_queue.lock().expect("lock should not be poisoned");
+            let mut queue = self
+                .work_queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             queue.push_back(work);
         }
 
@@ -180,8 +183,14 @@ impl HybridWorkScheduler {
 
     /// Schedule pending work items
     fn schedule_pending_work(&self) {
-        let mut queue = self.work_queue.lock().expect("lock should not be poisoned");
-        let metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let mut queue = self
+            .work_queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Sort by priority (higher priority first)
         let mut work_items: Vec<_> = queue.drain(..).collect();
@@ -289,7 +298,10 @@ impl HybridWorkScheduler {
             }
             ExecutionStrategy::Adaptive => {
                 // Use adaptive scheduling
-                let metrics = self.metrics.lock().expect("lock should not be poisoned");
+                let metrics = self
+                    .metrics
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let adaptive_strategy = self.determine_execution_strategy(&work, &metrics);
                 drop(metrics);
                 self.execute_work(work, adaptive_strategy);
@@ -305,7 +317,10 @@ impl HybridWorkScheduler {
 
         // Update metrics
         {
-            let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+            let mut metrics = self
+                .metrics
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.pending_cpu_work += 1;
         }
     }
@@ -321,7 +336,10 @@ impl HybridWorkScheduler {
 
         // Update metrics
         {
-            let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+            let mut metrics = self
+                .metrics
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.pending_gpu_work += 1;
         }
     }
@@ -351,7 +369,10 @@ impl HybridWorkScheduler {
 
         // Update metrics
         {
-            let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+            let mut metrics = self
+                .metrics
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             metrics.pending_cpu_work += 1;
             metrics.pending_gpu_work += 1;
         }
@@ -371,7 +392,10 @@ impl HybridWorkScheduler {
 
     /// Update resource metrics
     pub fn update_metrics(&self, cpu_util: f32, gpu_util: f32, memory_usage: f32) {
-        let mut metrics = self.metrics.lock().expect("lock should not be poisoned");
+        let mut metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         metrics.cpu_utilization = cpu_util;
         metrics.gpu_utilization = gpu_util;
         metrics.memory_usage = memory_usage;
@@ -382,7 +406,7 @@ impl HybridWorkScheduler {
     pub fn get_metrics(&self) -> ResourceMetrics {
         self.metrics
             .lock()
-            .expect("lock should not be poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 
@@ -391,7 +415,7 @@ impl HybridWorkScheduler {
         let mut counter = self
             .work_counter
             .lock()
-            .expect("lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *counter += 1;
         *counter
     }
@@ -426,7 +450,10 @@ impl HybridWorkScheduler {
 
     /// Check if scheduler is idle
     pub fn is_idle(&self) -> bool {
-        let queue = self.work_queue.lock().expect("lock should not be poisoned");
+        let queue = self
+            .work_queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         queue.is_empty() && self.gpu_executor.is_idle()
     }
 }

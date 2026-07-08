@@ -67,7 +67,16 @@ where
 /// ```
 pub fn cast<T, U>(tensor: &Tensor<T>) -> Result<Tensor<U>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + Into<U>,
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + Into<U>
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
     U: Clone + Default + Zero + Send + Sync + 'static,
 {
     match &tensor.storage {
@@ -78,11 +87,12 @@ where
         }
         #[cfg(feature = "gpu")]
         TensorStorage::Gpu(_) => {
-            // GPU operations require T,U: Pod + Zeroable which isn't guaranteed for generic types
-            Err(TensorError::unsupported_operation_simple(
-                "GPU cast not implemented for these types. Only f32 is currently supported."
-                    .to_string(),
-            ))
+            // No native GPU cast kernel exists for arbitrary `T -> U`. Read
+            // the tensor back to the host (a real device->host transfer) and
+            // delegate to the CPU implementation above, which is
+            // known-correct via `Into<U>`.
+            let cpu_tensor = tensor.to_cpu()?;
+            cast(&cpu_tensor)
         }
     }
 }
@@ -116,7 +126,7 @@ pub fn pad<T>(
     constant_value: T,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     if padding.len() != tensor.shape().rank() {
         return Err(TensorError::invalid_argument(format!(
@@ -207,7 +217,7 @@ pub fn one_hot<T>(
     off_value: T,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let indices_shape = indices.shape();
     let mut out_shape = indices_shape.dims().to_vec();
@@ -264,7 +274,7 @@ fn gpu_pad_dispatch<T>(
     constant_value: T,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let type_name = std::any::type_name::<T>();
 
@@ -333,7 +343,7 @@ fn gpu_one_hot_dispatch<T>(
     off_value: T,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + Send + Sync + 'static,
+    T: Clone + Default + Zero + Send + Sync + 'static + bytemuck::Pod + bytemuck::Zeroable,
 {
     let type_name = std::any::type_name::<T>();
 
@@ -389,5 +399,31 @@ where
             "GPU one_hot only supports f32, got {}",
             std::any::type_name::<T>()
         )))
+    }
+}
+
+// GPU-resident correctness test for the readback+delegate fix in
+// `cast<T, U>()`'s GPU arm. Skips gracefully (without failing the suite) if
+// no GPU adapter is available.
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_tests {
+    use super::*;
+    use crate::Device;
+
+    #[test]
+    fn gpu_cast_f32_to_f64_matches_cpu_reference() {
+        let src = Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[4])
+            .expect("test: from_vec should succeed");
+
+        let src_gpu = match src.to(Device::Gpu(0)) {
+            Ok(t) => t,
+            Err(_) => return, // No GPU adapter available in this environment; skip.
+        };
+
+        let result: Tensor<f64> =
+            cast(&src_gpu).expect("test: gpu cast should succeed with a real adapter");
+        assert_eq!(result.shape().dims(), &[4]);
+        let data = result.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(data, vec![1.0f64, 2.0, 3.0, 4.0]);
     }
 }

@@ -22,7 +22,17 @@ use scirs2_core::simd::SimdOps;
 /// Ultra-high-performance dense layer with maximum optimization
 pub struct UltraDense<T>
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     /// Weight matrix [input_dim, output_dim]
     weights: Tensor<T>,
@@ -41,6 +51,10 @@ where
     profiler: Arc<Profiler>,
     /// Matrix multiplication cache
     matmul_cache: MatMulOptimizationCache<T>,
+    /// Real metrics measured during the most recent forward pass. Shared behind
+    /// a lock so `forward_ultra` (which takes `&self`) can record genuine
+    /// timings instead of returning fabricated constants.
+    last_metrics: Arc<std::sync::Mutex<DensePerformanceMetrics>>,
 }
 
 /// Configuration for ultra-high-performance dense layer
@@ -113,6 +127,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     /// Create a new ultra-high-performance dense layer
@@ -135,6 +150,7 @@ where
         let global_buffer_pool = Arc::new(GlobalBufferPool::new());
         let profiler = Arc::new(Profiler::new());
         let matmul_cache = MatMulOptimizationCache::new();
+        let last_metrics = Arc::new(std::sync::Mutex::new(DensePerformanceMetrics::default()));
 
         Ok(Self {
             weights,
@@ -145,6 +161,7 @@ where
             global_buffer_pool,
             profiler,
             matmul_cache,
+            last_metrics,
         })
     }
 
@@ -172,7 +189,8 @@ where
             ));
         }
 
-        // Choose optimal matrix multiplication strategy
+        // Choose optimal matrix multiplication strategy (timed).
+        let matmul_start = std::time::Instant::now();
         let matmul_result = if batch_size >= self.config.batch_optimization_threshold
             && self.config.enable_simd_acceleration
         {
@@ -182,18 +200,21 @@ where
         } else {
             self.standard_matmul(input)?
         };
+        let matmul_time = matmul_start.elapsed();
 
-        // Add bias if present
+        // Add bias if present (timed).
+        let bias_start = std::time::Instant::now();
         let output = if let Some(ref bias) = self.bias {
             self.add_bias_ultra_optimized(&matmul_result, bias)?
         } else {
             matmul_result
         };
+        let bias_time = bias_start.elapsed();
 
-        // Update performance metrics
+        // Record the REAL measured metrics for this forward pass.
         if self.config.enable_performance_monitoring {
-            let elapsed = start_time.elapsed();
-            self.update_performance_metrics(elapsed, batch_size)?;
+            let forward_time = start_time.elapsed();
+            self.update_performance_metrics(forward_time, matmul_time, bias_time, batch_size)?;
         }
 
         Ok(output)
@@ -231,42 +252,78 @@ where
         tenflowers_core::ops::add(input, &bias_broadcasted)
     }
 
-    /// Initialize weights using He initialization
+    /// Initialize weights using He initialization.
+    ///
+    /// Samples from N(0, 1) (via `scirs2_core`-backed [`Tensor::randn`]) and
+    /// scales by `sqrt(2 / fan_in)`. An all-zero weight matrix would make the
+    /// layer's output independent of its input (no learning signal), so real
+    /// random values are required here.
     fn initialize_weights_he(input_dim: usize, output_dim: usize) -> Result<Tensor<T>> {
-        // He initialization: std = sqrt(2 / fan_in)
-        let fan_in = input_dim;
-        let _std_dev = (T::from(2.0).expect("Failed to convert 2.0 to tensor type")
-            / T::from(fan_in).expect("Failed to convert fan_in to tensor type"))
-        .sqrt();
+        let fan_in = input_dim.max(1) as f64;
+        let std_dev = (2.0 / fan_in).sqrt();
+        let std_t = <T as scirs2_core::num_traits::NumCast>::from(std_dev).ok_or_else(|| {
+            TensorError::invalid_argument(
+                "Failed to convert He initialisation scale to tensor element type".to_string(),
+            )
+        })?;
 
-        // For simplicity, return zeros (in real implementation would use proper random initialization)
-        Ok(Tensor::zeros(&[input_dim, output_dim]))
+        let base = Tensor::<T>::randn(&[input_dim, output_dim])?;
+        base.multiply_scalar(std_t)
     }
 
-    /// Update performance metrics
+    /// Record the real metrics measured during a forward pass.
     fn update_performance_metrics(
         &self,
-        elapsed: std::time::Duration,
+        forward_time: std::time::Duration,
+        matmul_time: std::time::Duration,
+        bias_time: std::time::Duration,
         batch_size: usize,
     ) -> Result<()> {
-        // Calculate theoretical FLOPS
+        // A dense forward performs 2 * batch * in * out floating-point ops
+        // (one multiply and one add per MAC). Divide by the measured wall-clock
+        // time to obtain the achieved FLOP/s. Guard against a zero duration on
+        // very fast / low-resolution clocks.
         let flops = 2.0 * (batch_size * self.input_dim * self.output_dim) as f64;
-        let flops_per_second = flops / elapsed.as_secs_f64();
+        let elapsed_secs = forward_time.as_secs_f64();
+        let flops_per_second = if elapsed_secs > 0.0 {
+            flops / elapsed_secs
+        } else {
+            0.0
+        };
 
-        // Update internal metrics (simplified)
+        // Bytes actually read for the weights (real, from the tensor buffer).
+        let memory_usage = std::mem::size_of_val(self.weights.data());
+
+        let metrics = DensePerformanceMetrics {
+            forward_time,
+            matmul_time,
+            bias_time,
+            memory_usage,
+            flops_per_second,
+            // Achieved memory-bandwidth *utilisation* (fraction of hardware peak)
+            // is not instrumented here: there is no hardware-counter access, so
+            // any specific fraction would be fabricated. Reported as 0.0 to mean
+            // "not measured" rather than inventing a value.
+            memory_bandwidth_utilization: 0.0,
+        };
+
+        if let Ok(mut guard) = self.last_metrics.lock() {
+            *guard = metrics;
+        }
         Ok(())
     }
 
-    /// Get comprehensive performance metrics
+    /// Get the performance metrics measured during the most recent forward pass.
+    ///
+    /// Returns the real timings/throughput recorded by [`Self::forward_ultra`].
+    /// Before any forward pass the metrics are the zero-valued default. The
+    /// `memory_bandwidth_utilization` field is reported as 0.0 because achieved
+    /// bandwidth utilisation is not instrumented (no fabricated value).
     pub fn get_performance_metrics(&self) -> DensePerformanceMetrics {
-        DensePerformanceMetrics {
-            forward_time: std::time::Duration::from_millis(1),
-            matmul_time: std::time::Duration::from_millis(1),
-            bias_time: std::time::Duration::from_nanos(100),
-            memory_usage: std::mem::size_of_val(self.weights.data()),
-            flops_per_second: 1000000.0,
-            memory_bandwidth_utilization: 0.85,
-        }
+        self.last_metrics
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_default()
     }
 
     /// Optimize layer for specific batch sizes
@@ -354,6 +411,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     fn forward(&self, input: &Tensor<T>) -> Result<Tensor<T>> {
@@ -392,7 +450,17 @@ where
 
 impl<T> Clone for UltraDense<T>
 where
-    T: Float + Clone + Default + Zero + One + Send + Sync + 'static + FromPrimitive + bytemuck::Pod,
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + FromPrimitive
+        + From<f32>
+        + bytemuck::Pod,
 {
     fn clone(&self) -> Self {
         Self {
@@ -404,6 +472,7 @@ where
             global_buffer_pool: self.global_buffer_pool.clone(),
             profiler: self.profiler.clone(),
             matmul_cache: MatMulOptimizationCache::new(),
+            last_metrics: Arc::new(std::sync::Mutex::new(DensePerformanceMetrics::default())),
         }
     }
 }
@@ -458,6 +527,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     /// Create ultra-dense layer with default configuration
@@ -484,6 +554,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     fn ultra_dense(input_dim: usize, output_dim: usize, use_bias: bool) -> Result<UltraDense<T>> {
@@ -513,6 +584,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     UltraDense::new(input_dim, output_dim, true, UltraDenseConfig::default())
@@ -531,6 +603,7 @@ where
         + 'static
         + FromPrimitive
         + bytemuck::Pod
+        + From<f32>
         + SimdOps,
 {
     UltraDense::new(input_dim, output_dim, false, UltraDenseConfig::default())
@@ -575,10 +648,30 @@ mod tests {
     }
 
     #[test]
-    fn test_performance_metrics() {
+    fn test_performance_metrics_are_measured_not_fabricated() {
         let layer = ultra_dense::<f32>(256, 128).expect("test: operation should succeed");
-        let metrics = layer.get_performance_metrics();
-        assert!(metrics.flops_per_second > 0.0);
+
+        // Before any forward pass the metrics are the zero-valued default (NOT a
+        // fabricated constant like the previous hard-coded 1_000_000.0).
+        let before = layer.get_performance_metrics();
+        assert_eq!(before.flops_per_second, 0.0);
+        assert_eq!(before.forward_time, std::time::Duration::ZERO);
+        // Bandwidth utilisation is intentionally not instrumented.
+        assert_eq!(before.memory_bandwidth_utilization, 0.0);
+
+        // After a real forward pass the timings reflect actual work performed.
+        let input = Tensor::<f32>::ones(&[64, 256]);
+        let _ = layer.forward(&input).expect("test: forward should succeed");
+
+        let after = layer.get_performance_metrics();
+        // A real forward took a non-zero amount of time and moved real bytes.
+        assert!(after.forward_time > std::time::Duration::ZERO);
+        assert!(after.memory_usage > 0);
+        // flops_per_second is derived from the measured wall-clock time; it must
+        // be finite and non-negative (and positive whenever the clock resolved a
+        // non-zero duration).
+        assert!(after.flops_per_second.is_finite());
+        assert!(after.flops_per_second >= 0.0);
     }
 
     #[test]
@@ -586,5 +679,56 @@ mod tests {
         let mut layer = ultra_dense::<f32>(64, 32).expect("test: operation should succeed");
         let result = layer.optimize_for_batch_size(64);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_weights_are_random_not_zeros() {
+        // He init previously returned an all-zero weight matrix (fabrication):
+        // the layer's output was then independent of its input.
+        let layer = ultra_dense::<f32>(6, 4).expect("test: operation should succeed");
+        let weights = layer.parameters()[0]
+            .to_vec()
+            .expect("test: weights to_vec");
+
+        let any_nonzero = weights.iter().any(|v| v.abs() > 1e-12);
+        assert!(any_nonzero, "weights must not be all zeros (real He init)");
+
+        let first = weights[0];
+        let any_different = weights.iter().any(|v| (v - first).abs() > 1e-12);
+        assert!(
+            any_different,
+            "weights must not be constant (real random init)"
+        );
+    }
+
+    #[test]
+    fn test_forward_output_depends_on_input() {
+        // With real random weights the forward output must depend on the input
+        // (a zeros-init layer returns zeros for every input).
+        let layer = ultra_dense_no_bias::<f32>(4, 3).expect("test: creation should succeed");
+
+        let input_a = Tensor::<f32>::ones(&[2, 4]);
+        let input_b = Tensor::from_vec(vec![0.5f32; 8], &[2, 4]).expect("test: input_b");
+
+        let out_a = layer
+            .forward(&input_a)
+            .expect("test: forward a")
+            .to_vec()
+            .expect("test: to_vec a");
+        let out_b = layer
+            .forward(&input_b)
+            .expect("test: forward b")
+            .to_vec()
+            .expect("test: to_vec b");
+
+        assert!(
+            out_a.iter().any(|v| v.abs() > 1e-8),
+            "forward output must be non-zero with real weights"
+        );
+        let differs = out_a
+            .iter()
+            .zip(out_b.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-8);
+        assert!(differs, "forward output must depend on the input");
     }
 }

@@ -96,6 +96,105 @@ where
     tenflowers_core::ops::add(attention_scores, attention_mask)
 }
 
+/// Combine an optional additive attention mask and an optional key-padding mask
+/// into a single additive bias tensor of shape `[batch, tgt_len, src_len]`.
+///
+/// This is the shared masking primitive behind the transformer FFI bindings, so a
+/// `key_padding_mask` is folded into the real attention-score math rather than
+/// being silently ignored.
+///
+/// * `attn_mask` — optional `[tgt_len, src_len]` additive mask (already expressed
+///   in the additive `-1e9`/`0` convention). It is broadcast across the batch.
+/// * `key_padding_mask` — optional `[batch, src_len]` mask following the PyTorch
+///   convention where a *nonzero* entry marks a key position that must be ignored.
+///   Every masked key contributes an additive `-1e9` bias to all query rows.
+///
+/// Returns `Ok(None)` when both inputs are absent, exactly reproducing the
+/// unmasked attention path. Otherwise returns a materialised additive bias to be
+/// added to the raw attention scores before the softmax.
+///
+/// The `-1e9` sentinel (instead of `-inf`) matches `create_padding_mask`,
+/// `create_causal_mask`, and `apply_attention_mask` in this module and avoids NaN
+/// propagation should an entire mask row degenerate.
+pub fn combine_attention_masks<T>(
+    attn_mask: Option<&Tensor<T>>,
+    key_padding_mask: Option<&Tensor<T>>,
+    batch: usize,
+    tgt_len: usize,
+    src_len: usize,
+) -> Result<Option<Tensor<T>>>
+where
+    T: Float
+        + Clone
+        + Default
+        + Zero
+        + One
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
+{
+    // Both masks absent: no additive bias, reproducing the unmasked path exactly.
+    if attn_mask.is_none() && key_padding_mask.is_none() {
+        return Ok(None);
+    }
+
+    let neg_bias = T::from(-1e9).unwrap_or_else(|| T::zero() - T::one());
+
+    // Validate and read the additive attention mask ([tgt_len, src_len]).
+    let attn_vec = match attn_mask {
+        Some(mask) => {
+            let dims = mask.shape().dims();
+            if dims.len() != 2 || dims[0] != tgt_len || dims[1] != src_len {
+                return Err(tenflowers_core::TensorError::invalid_shape_simple(format!(
+                    "combine_attention_masks: attn_mask must have shape [{}, {}], got {:?}",
+                    tgt_len, src_len, dims
+                )));
+            }
+            Some(mask.to_vec()?)
+        }
+        None => None,
+    };
+
+    // Validate and read the key-padding mask ([batch, src_len]).
+    let key_padding_vec = match key_padding_mask {
+        Some(mask) => {
+            let dims = mask.shape().dims();
+            if dims.len() != 2 || dims[0] != batch || dims[1] != src_len {
+                return Err(tenflowers_core::TensorError::invalid_shape_simple(format!(
+                    "combine_attention_masks: key_padding_mask must have shape [{}, {}], got {:?}",
+                    batch, src_len, dims
+                )));
+            }
+            Some(mask.to_vec()?)
+        }
+        None => None,
+    };
+
+    // Materialise the [batch, tgt_len, src_len] additive bias. A materialised
+    // triple loop (rather than tensor broadcasting) keeps the combination
+    // directly hand-verifiable and independent of broadcasting semantics.
+    let mut out = Vec::with_capacity(batch * tgt_len * src_len);
+    for b in 0..batch {
+        for t in 0..tgt_len {
+            for s in 0..src_len {
+                let attn_bias = match attn_vec {
+                    Some(ref values) => values[t * src_len + s],
+                    None => T::zero(),
+                };
+                let pad_bias = match key_padding_vec {
+                    Some(ref values) if values[b * src_len + s] != T::zero() => neg_bias,
+                    _ => T::zero(),
+                };
+                out.push(attn_bias + pad_bias);
+            }
+        }
+    }
+
+    Ok(Some(Tensor::from_vec(out, &[batch, tgt_len, src_len])?))
+}
+
 /// Compute scaled dot-product attention
 pub fn scaled_dot_product_attention<T>(
     query: &Tensor<T>,
@@ -356,7 +455,24 @@ where
     Tensor::from_vec(output_data, tensor_shape)
 }
 
-/// Compute attention pattern statistics for analysis
+/// Compute attention pattern statistics from the actual attention weights.
+///
+/// All four statistics are computed from the real tensor data rather than fabricated
+/// constants. The final tensor dimension is treated as the "key" axis over which a
+/// query attends (post-softmax attention rows are probability distributions), and the
+/// penultimate dimension as the "query" axis used for the locality measure.
+///
+/// - `entropy`: mean Shannon entropy (natural log) of the per-query attention rows,
+///   measuring how spread out attention is. A one-hot row has entropy 0; a uniform
+///   row over `n` keys has entropy `ln(n)`.
+/// - `sparsity`: fraction of weight elements that are effectively zero (`|w| < 1e-6`).
+/// - `max_attention`: the single largest attention weight observed.
+/// - `locality_score`: mean attention mass that lands on the diagonal band
+///   `|query_index - key_index| <= 1`, i.e. how much each query attends to nearby
+///   positions. Requires at least a 2-D pattern; returns 0 when no query/key axes
+///   exist.
+///
+/// Returns an honest error for non-CPU tensors whose data cannot be inspected.
 pub fn analyze_attention_patterns<T>(attention_weights: &Tensor<T>) -> Result<AttentionStats<T>>
 where
     T: Float
@@ -370,22 +486,100 @@ where
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    // Analyze attention patterns to compute various statistics
+    let data = attention_weights.as_slice().ok_or_else(|| {
+        tenflowers_core::TensorError::device_error_simple(
+            "analyze_attention_patterns requires CPU-resident attention weights; the \
+             tensor data could not be accessed (non-CPU tensor). Fabricated statistics \
+             are not produced."
+                .to_string(),
+        )
+    })?;
 
-    // For now, implement basic placeholder statistics
-    // A full implementation would compute:
-    // - Entropy: measure of attention distribution
-    // - Sparsity: how concentrated the attention is
-    // - Locality: how much attention focuses on nearby positions
+    if data.is_empty() {
+        return Err(tenflowers_core::TensorError::invalid_argument(
+            "analyze_attention_patterns received an empty attention tensor".to_string(),
+        ));
+    }
 
-    let shape = attention_weights.shape().dims();
-    let total_elements = shape.iter().product::<usize>() as f64;
+    let dims = attention_weights.shape().dims();
+    // The last axis is the key axis (attention distribution per query row).
+    let key_dim = dims.last().copied().unwrap_or(data.len()).max(1);
+    let num_rows = data.len() / key_dim;
 
-    // Placeholder values - in practice, these would be computed from actual attention weights
-    let entropy = T::from(total_elements.ln()).unwrap_or_default();
-    let sparsity = T::from(0.5).unwrap_or_default(); // Placeholder
-    let max_attention = T::one(); // Placeholder
-    let locality_score = T::from(0.8).unwrap_or_default(); // Placeholder
+    // --- max_attention: real maximum across all weights ---
+    let mut running_max = data[0];
+    for &value in &data[1..] {
+        if value > running_max {
+            running_max = value;
+        }
+    }
+    let max_attention = running_max;
+
+    // --- sparsity: real fraction of near-zero weights ---
+    let zero_threshold = T::from(1e-6_f64).unwrap_or_else(T::zero);
+    let near_zero_count = data
+        .iter()
+        .filter(|&&value| value.abs() < zero_threshold)
+        .count();
+    let sparsity = T::from(near_zero_count as f64 / data.len() as f64).unwrap_or_default();
+
+    // --- entropy: mean Shannon entropy of each per-query attention row ---
+    // H(row) = -sum_k p_k * ln(p_k), using the (possibly unnormalised) row mass so the
+    // measure is well defined even if the weights do not sum exactly to one.
+    let mut entropy_accum = 0.0_f64;
+    for row in data.chunks(key_dim) {
+        let row_sum: f64 = row.iter().map(|&value| value.to_f64().unwrap_or(0.0)).sum();
+        if row_sum <= 0.0 {
+            continue;
+        }
+        let mut row_entropy = 0.0_f64;
+        for &value in row {
+            let p = value.to_f64().unwrap_or(0.0) / row_sum;
+            if p > 0.0 {
+                row_entropy -= p * p.ln();
+            }
+        }
+        entropy_accum += row_entropy;
+    }
+    let entropy = T::from(entropy_accum / num_rows as f64).unwrap_or_default();
+
+    // --- locality_score: mean attention mass on the |query - key| <= 1 diagonal band ---
+    // Only meaningful when there are explicit query and key axes (rank >= 2).
+    let locality_score = if dims.len() >= 2 {
+        let query_dim = dims[dims.len() - 2].max(1);
+        let num_patterns = num_rows / query_dim.max(1);
+        let mut locality_accum = 0.0_f64;
+        let mut counted_rows = 0_usize;
+
+        for pattern_idx in 0..num_patterns {
+            for query_idx in 0..query_dim {
+                let row_offset = (pattern_idx * query_dim + query_idx) * key_dim;
+                let row = &data[row_offset..row_offset + key_dim];
+                let row_sum: f64 = row.iter().map(|&value| value.to_f64().unwrap_or(0.0)).sum();
+                if row_sum <= 0.0 {
+                    continue;
+                }
+                let mut local_mass = 0.0_f64;
+                let lower = query_idx.saturating_sub(1);
+                let upper = (query_idx + 1).min(key_dim.saturating_sub(1));
+                for (key_idx, &value) in row.iter().enumerate() {
+                    if key_idx >= lower && key_idx <= upper {
+                        local_mass += value.to_f64().unwrap_or(0.0);
+                    }
+                }
+                locality_accum += local_mass / row_sum;
+                counted_rows += 1;
+            }
+        }
+
+        if counted_rows == 0 {
+            T::zero()
+        } else {
+            T::from(locality_accum / counted_rows as f64).unwrap_or_default()
+        }
+    } else {
+        T::zero()
+    };
 
     Ok(AttentionStats {
         entropy,
@@ -551,6 +745,80 @@ mod tests {
     }
 
     #[test]
+    fn test_attention_stats_real_max_and_sparsity() {
+        use scirs2_core::ndarray::array;
+
+        // Known weights: real max is 0.9; half of the 4 elements are exactly zero.
+        let weights_data = array![[0.9_f32, 0.0], [0.0, 0.1]];
+        let weights = Tensor::from_array(weights_data.into_dyn());
+
+        let stats =
+            analyze_attention_patterns(&weights).expect("Failed to analyze attention patterns");
+
+        // max_attention must equal the actual maximum element, not a fabricated 1.0.
+        assert!((stats.max_attention - 0.9).abs() < 1e-6);
+        // sparsity must equal the actual fraction of near-zero elements (2 of 4 = 0.5).
+        assert!((stats.sparsity - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_attention_stats_real_entropy_one_hot_vs_uniform() {
+        use scirs2_core::ndarray::array;
+
+        // A one-hot row has entropy 0; a uniform row over 4 keys has entropy ln(4).
+        let one_hot = Tensor::from_array(array![[1.0_f32, 0.0, 0.0, 0.0]].into_dyn());
+        let uniform = Tensor::from_array(array![[0.25_f32, 0.25, 0.25, 0.25]].into_dyn());
+
+        let one_hot_stats =
+            analyze_attention_patterns(&one_hot).expect("Failed to analyze one-hot");
+        let uniform_stats =
+            analyze_attention_patterns(&uniform).expect("Failed to analyze uniform");
+
+        // Entropy is a real computation, not a constant.
+        assert!(
+            one_hot_stats.entropy.abs() < 1e-6,
+            "one-hot entropy should be ~0"
+        );
+        let expected_uniform = (4.0_f32).ln();
+        assert!(
+            (uniform_stats.entropy - expected_uniform).abs() < 1e-5,
+            "uniform entropy should be ln(4)"
+        );
+    }
+
+    #[test]
+    fn test_attention_stats_real_locality() {
+        use scirs2_core::ndarray::array;
+
+        // Perfectly diagonal attention (each query attends only to its own position)
+        // must yield locality 1.0; a fully anti-diagonal pattern attends far away.
+        let diagonal = Tensor::from_array(
+            array![[1.0_f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].into_dyn(),
+        );
+        let far = Tensor::from_array(
+            array![[0.0_f32, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]].into_dyn(),
+        );
+
+        let diag_stats = analyze_attention_patterns(&diagonal).expect("Failed to analyze diagonal");
+        let far_stats = analyze_attention_patterns(&far).expect("Failed to analyze far");
+
+        assert!(
+            (diag_stats.locality_score - 1.0).abs() < 1e-6,
+            "diagonal attention must be fully local"
+        );
+        // The far pattern's locality must be strictly lower than the diagonal's.
+        assert!(far_stats.locality_score < diag_stats.locality_score);
+    }
+
+    #[test]
+    fn test_attention_stats_empty_errors() {
+        // An empty attention tensor must surface an honest error, not fabricated stats.
+        let empty = Tensor::<f32>::zeros(&[0]);
+        let result = analyze_attention_patterns(&empty);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_rotary_position_embedding() {
         use scirs2_core::ndarray::array;
 
@@ -608,5 +876,113 @@ mod tests {
 
         // Should fail with invalid shape error
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_combine_masks_both_none() {
+        // No masks must reproduce the unmasked path (no additive bias at all).
+        let result =
+            combine_attention_masks::<f32>(None, None, 2, 3, 3).expect("combine should succeed");
+        assert!(result.is_none(), "no masks must yield no bias");
+    }
+
+    #[test]
+    fn test_combine_masks_attn_only() {
+        // attn_mask [tgt=2, src=2]: block key 1 for query 0 only.
+        let attn = Tensor::from_vec(vec![0.0_f32, -1.0e9, 0.0, 0.0], &[2, 2]).expect("attn tensor");
+        let combined = combine_attention_masks(Some(&attn), None, 2, 2, 2)
+            .expect("combine")
+            .expect("bias present");
+        assert_eq!(combined.shape().dims(), &[2, 2, 2]);
+        let data = combined.to_vec().expect("vec");
+        // Broadcast across batch: index [b,t,s] = (b*2 + t)*2 + s.
+        let idx = |b: usize, t: usize, s: usize| (b * 2 + t) * 2 + s;
+        for b in 0..2 {
+            assert_eq!(data[idx(b, 0, 0)], 0.0);
+            assert!(
+                data[idx(b, 0, 1)] < -1e8,
+                "attn-blocked key must be very negative"
+            );
+            assert_eq!(data[idx(b, 1, 0)], 0.0);
+            assert_eq!(data[idx(b, 1, 1)], 0.0);
+        }
+    }
+
+    #[test]
+    fn test_combine_masks_key_padding_only() {
+        // key_padding_mask [batch=2, src=3]; nonzero = ignore.
+        // Batch 0 masks key 2; batch 1 masks key 0.
+        let kpm =
+            Tensor::from_vec(vec![0.0_f32, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3]).expect("kpm tensor");
+        let (tgt_len, src_len) = (2usize, 3usize);
+        let combined = combine_attention_masks(None, Some(&kpm), 2, tgt_len, src_len)
+            .expect("combine")
+            .expect("bias present");
+        assert_eq!(combined.shape().dims(), &[2, 2, 3]);
+        let data = combined.to_vec().expect("vec");
+        let idx = |b: usize, t: usize, s: usize| (b * tgt_len + t) * src_len + s;
+        // Batch 0: only key 2 masked, for every query row.
+        for t in 0..tgt_len {
+            assert_eq!(data[idx(0, t, 0)], 0.0);
+            assert_eq!(data[idx(0, t, 1)], 0.0);
+            assert!(data[idx(0, t, 2)] < -1e8, "batch 0 key 2 must be masked");
+        }
+        // Batch 1: only key 0 masked, for every query row.
+        for t in 0..tgt_len {
+            assert!(data[idx(1, t, 0)] < -1e8, "batch 1 key 0 must be masked");
+            assert_eq!(data[idx(1, t, 1)], 0.0);
+            assert_eq!(data[idx(1, t, 2)], 0.0);
+        }
+    }
+
+    #[test]
+    fn test_combine_masks_both_additive_distinct_positions() {
+        // attn_mask [tgt=1, src=3] blocks key 1; key_padding blocks key 2.
+        let attn = Tensor::from_vec(vec![0.0_f32, -1.0e9, 0.0], &[1, 3]).expect("attn");
+        let kpm = Tensor::from_vec(vec![0.0_f32, 0.0, 1.0], &[1, 3]).expect("kpm");
+        let combined = combine_attention_masks(Some(&attn), Some(&kpm), 1, 1, 3)
+            .expect("combine")
+            .expect("bias present");
+        let data = combined.to_vec().expect("vec");
+        assert_eq!(data[0], 0.0); // neither mask
+        assert!(data[1] < -1e8, "attn-blocked key 1");
+        assert!(data[2] < -1e8, "key-padding-blocked key 2");
+    }
+
+    #[test]
+    fn test_combine_masks_both_additive_same_position() {
+        // Both masks target key 1: their contributions must add.
+        let attn = Tensor::from_vec(vec![0.0_f32, -1.0e9], &[1, 2]).expect("attn");
+        let kpm = Tensor::from_vec(vec![0.0_f32, 1.0], &[1, 2]).expect("kpm");
+        let combined = combine_attention_masks(Some(&attn), Some(&kpm), 1, 1, 2)
+            .expect("combine")
+            .expect("bias present");
+        let data = combined.to_vec().expect("vec");
+        assert_eq!(data[0], 0.0);
+        // -1e9 (attn) + -1e9 (padding) ≈ -2e9.
+        assert!(
+            data[1] < -1.5e9,
+            "additive combination should stack, got {}",
+            data[1]
+        );
+    }
+
+    #[test]
+    fn test_combine_masks_attn_shape_mismatch() {
+        // Claimed tgt=3, src=2 but the tensor is [2, 2].
+        let attn = Tensor::from_vec(vec![0.0_f32; 4], &[2, 2]).expect("attn");
+        let result = combine_attention_masks(Some(&attn), None, 1, 3, 2);
+        assert!(result.is_err(), "attn_mask shape mismatch must error");
+    }
+
+    #[test]
+    fn test_combine_masks_key_padding_shape_mismatch() {
+        // Claimed batch=1, src=3 but the tensor is [2, 3].
+        let kpm = Tensor::from_vec(vec![0.0_f32; 6], &[2, 3]).expect("kpm");
+        let result = combine_attention_masks(None, Some(&kpm), 1, 2, 3);
+        assert!(
+            result.is_err(),
+            "key_padding_mask shape mismatch must error"
+        );
     }
 }

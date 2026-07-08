@@ -2,6 +2,16 @@ use crate::{Result, TrackedTensor};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+/// Build an honest error for a fusable operation that cannot be applied in the
+/// element-wise fusion context because it needs parameters the fused-kernel API
+/// does not carry. Returning this is preferable to silently passing the input
+/// through (which would drop the operation from the fused chain).
+fn unsupported_fused_op(op: FusableOp, reason: &str) -> tenflowers_core::error::TensorError {
+    tenflowers_core::error::TensorError::unsupported_operation_simple(format!(
+        "kernel fusion cannot apply {op:?} in this context: {reason}"
+    ))
+}
+
 /// Represents a fusable operation that can be combined with others
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum FusableOp {
@@ -308,16 +318,25 @@ impl KernelFusionOptimizer {
                 FusableOp::Tanh => {
                     result = result.tanh()?;
                 }
-                // Placeholder implementations for extended operations
+                // Parameterized operations (normalization / affine) cannot be
+                // executed inside this element-wise fusion context: they require
+                // learned parameters (running mean/variance, gamma/beta, weights,
+                // biases, scaling factors) that the fused-kernel API does not carry.
+                // Silently passing the input through would drop the operation (e.g. a
+                // fused `Linear -> ReLU` would lose the Linear), so we return an
+                // honest error instead of fabricating an identity result.
                 FusableOp::BatchNorm | FusableOp::LayerNorm | FusableOp::GroupNorm => {
-                    // Normalization operations require additional parameters (means, variances, weights, biases)
-                    // These should be handled by specialized fused kernels in the neural network layer
-                    // For now, pass through unchanged as identity operation
+                    return Err(unsupported_fused_op(
+                        *op,
+                        "normalization requires running statistics and affine parameters \
+                         (gamma/beta) that are not available in the fused-kernel context",
+                    ));
                 }
                 FusableOp::Dropout => {
-                    // In inference mode, dropout is a no-op (pass through unchanged)
-                    // In training mode, this would apply random masking
-                    // For kernel fusion, we assume inference mode
+                    // In inference mode, dropout is a genuine no-op (identity):
+                    // there is no random masking at inference time, so passing the
+                    // input through unchanged is correct. Kernel fusion assumes
+                    // inference mode.
                 }
                 FusableOp::Softmax => {
                     let tensor_result = tenflowers_core::ops::softmax(&result.tensor, Some(-1))?;
@@ -333,25 +352,31 @@ impl KernelFusionOptimizer {
                     result.tensor = tensor_result;
                 }
                 FusableOp::Mish => {
-                    // Mish(x) = x * tanh(softplus(x))
-                    // For simplicity in kernel fusion, use tanh approximation
-                    // Full Mish should be implemented as a separate operation
-                    result = result.tanh()?;
+                    // Mish(x) = x * tanh(softplus(x)). Compute the real fused
+                    // activation; the previous `tanh()` was numerically wrong.
+                    let tensor_result = tenflowers_core::ops::mish(&result.tensor)?;
+                    result.tensor = tensor_result;
                 }
                 FusableOp::Conv2D | FusableOp::Linear => {
-                    // Linear operations require weight matrices and optional bias parameters
-                    // These should be handled by specialized kernels with proper parameter handling
-                    // For now, pass through unchanged as identity operation
+                    return Err(unsupported_fused_op(
+                        *op,
+                        "linear/convolution requires weight matrices (and optional bias) \
+                         that are not available in the fused-kernel context",
+                    ));
                 }
                 FusableOp::Scale => {
-                    // Scale operation requires a scaling factor parameter
-                    // In kernel fusion context, this would be provided as an additional input
-                    // For now, assume scaling by 1 (identity operation)
+                    return Err(unsupported_fused_op(
+                        *op,
+                        "scale requires a scaling-factor parameter that is not available \
+                         in the fused-kernel context",
+                    ));
                 }
                 FusableOp::Bias => {
-                    // Bias addition requires a bias vector parameter
-                    // In kernel fusion context, this would be provided as an additional input
-                    // For now, pass through unchanged as identity operation
+                    return Err(unsupported_fused_op(
+                        *op,
+                        "bias requires a bias-vector parameter that is not available in \
+                         the fused-kernel context",
+                    ));
                 }
             }
         }
@@ -595,16 +620,19 @@ impl KernelFusionOptimizer {
                     FusableOp::Tanh => {
                         result = result.tanh()?;
                     }
-                    // Extended operations (placeholder implementations)
+                    // Parameterized operations cannot be executed inside this
+                    // element-wise fusion context (see execute_sequential for the
+                    // full rationale). Return an honest error rather than silently
+                    // dropping the operation.
                     FusableOp::BatchNorm | FusableOp::LayerNorm | FusableOp::GroupNorm => {
-                        // Normalization operations require additional parameters (means, variances, weights, biases)
-                        // These should be handled by specialized fused kernels in the neural network layer
-                        // For now, pass through unchanged as identity operation
+                        return Err(unsupported_fused_op(
+                            *op,
+                            "normalization requires running statistics and affine parameters \
+                             (gamma/beta) that are not available in the fused-kernel context",
+                        ));
                     }
                     FusableOp::Dropout => {
-                        // In inference mode, dropout is a no-op (pass through unchanged)
-                        // In training mode, this would apply random masking
-                        // For kernel fusion, we assume inference mode
+                        // Inference-mode dropout is a genuine identity no-op.
                     }
                     FusableOp::Softmax => {
                         let tensor_result =
@@ -620,15 +648,30 @@ impl KernelFusionOptimizer {
                         result.tensor = tensor_result;
                     }
                     FusableOp::Mish => {
-                        // Mish(x) = x * tanh(softplus(x))
-                        // For simplicity in kernel fusion, use tanh approximation
-                        // Full Mish should be implemented as a separate operation
-                        result = result.tanh()?;
+                        // Mish(x) = x * tanh(softplus(x)). Real fused activation.
+                        let tensor_result = tenflowers_core::ops::mish(&result.tensor)?;
+                        result.tensor = tensor_result;
                     }
-                    FusableOp::Conv2D | FusableOp::Linear | FusableOp::Scale | FusableOp::Bias => {
-                        // These operations require additional parameters (weights, biases, scaling factors)
-                        // Should be handled by specialized kernels with proper parameter handling
-                        // For now, pass through unchanged as identity operation
+                    FusableOp::Conv2D | FusableOp::Linear => {
+                        return Err(unsupported_fused_op(
+                            *op,
+                            "linear/convolution requires weight matrices (and optional bias) \
+                             that are not available in the fused-kernel context",
+                        ));
+                    }
+                    FusableOp::Scale => {
+                        return Err(unsupported_fused_op(
+                            *op,
+                            "scale requires a scaling-factor parameter that is not available \
+                             in the fused-kernel context",
+                        ));
+                    }
+                    FusableOp::Bias => {
+                        return Err(unsupported_fused_op(
+                            *op,
+                            "bias requires a bias-vector parameter that is not available in \
+                             the fused-kernel context",
+                        ));
                     }
                 }
             }
@@ -809,5 +852,146 @@ mod tests {
         assert_eq!(optimizer.max_fusion_length, 2);
         assert!(!optimizer.can_fuse(&[FusableOp::Add, FusableOp::Mul, FusableOp::ReLU]));
         // Too long now
+    }
+
+    /// Build a single-operation-chain kernel for fused-execution tests.
+    fn kernel_for(ops: Vec<FusableOp>) -> FusedKernel {
+        FusedKernel {
+            operations: ops,
+            kernel_id: "test".to_string(),
+            estimated_speedup: 1.0,
+        }
+    }
+
+    fn input_tensor(data: Vec<f32>) -> TrackedTensor<f32> {
+        let len = data.len();
+        let tensor = tenflowers_core::Tensor::from_vec(data, &[len])
+            .expect("test: tensor construction should succeed");
+        TrackedTensor::new(tensor)
+    }
+
+    const MISH_EPS: f32 = 1e-5;
+
+    #[test]
+    fn test_fused_mish_matches_unfused_and_is_not_tanh() {
+        let optimizer = KernelFusionOptimizer::new();
+        let kernel = kernel_for(vec![FusableOp::Mish]);
+
+        let raw = vec![-2.0f32, -0.5, 0.0, 0.5, 2.0];
+        let input = input_tensor(raw.clone());
+
+        let fused = optimizer
+            .execute_sequential(&kernel, std::slice::from_ref(&input))
+            .expect("test: fused mish should succeed");
+        let fused_vals = fused
+            .tensor
+            .as_slice()
+            .expect("test: fused result should be host-accessible");
+
+        // Unfused reference: the real Mish op.
+        let reference_tensor = tenflowers_core::Tensor::from_vec(raw.clone(), &[raw.len()])
+            .expect("test: reference tensor should construct");
+        let reference = tenflowers_core::ops::mish(&reference_tensor)
+            .expect("test: reference mish should succeed");
+        let ref_vals = reference
+            .as_slice()
+            .expect("test: reference should be host-accessible");
+
+        for (got, want) in fused_vals.iter().zip(ref_vals.iter()) {
+            assert!(
+                (got - want).abs() < MISH_EPS,
+                "fused mish {got} should match unfused mish {want}"
+            );
+        }
+
+        // Guard against the previous fabrication where Mish returned tanh(x).
+        // For x = 2.0, tanh(2.0) ~= 0.9640 while mish(2.0) ~= 1.9440 -- clearly distinct.
+        let plain_tanh = (2.0f32).tanh();
+        let mish_at_two = *fused_vals.last().expect("test: at least one value");
+        assert!(
+            (mish_at_two - plain_tanh).abs() > 0.5,
+            "fused mish ({mish_at_two}) must not collapse to tanh ({plain_tanh})"
+        );
+    }
+
+    #[test]
+    fn test_fused_relu_then_mish_matches_unfused_composition() {
+        let optimizer = KernelFusionOptimizer::new();
+        let kernel = kernel_for(vec![FusableOp::ReLU, FusableOp::Mish]);
+
+        let raw = vec![-3.0f32, -1.0, 0.5, 2.5];
+        let input = input_tensor(raw.clone());
+
+        let fused = optimizer
+            .execute_sequential(&kernel, std::slice::from_ref(&input))
+            .expect("test: fused ReLU->Mish should succeed");
+        let fused_vals = fused
+            .tensor
+            .as_slice()
+            .expect("test: fused result should be host-accessible");
+
+        // Unfused composition: mish(relu(x)).
+        let base = tenflowers_core::Tensor::from_vec(raw.clone(), &[raw.len()])
+            .expect("test: base tensor should construct");
+        let relu_ref = base.relu().expect("test: relu reference should succeed");
+        let reference =
+            tenflowers_core::ops::mish(&relu_ref).expect("test: mish reference should succeed");
+        let ref_vals = reference
+            .as_slice()
+            .expect("test: reference should be host-accessible");
+
+        for (got, want) in fused_vals.iter().zip(ref_vals.iter()) {
+            assert!(
+                (got - want).abs() < MISH_EPS,
+                "fused ReLU->Mish {got} should match unfused composition {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fused_scale_then_relu_returns_honest_error() {
+        // Scale needs a scaling-factor parameter that the fused-kernel API does
+        // not carry. Previously this silently passed the input through (dropping
+        // the Scale); it must now return an honest error.
+        let optimizer = KernelFusionOptimizer::new();
+        let kernel = kernel_for(vec![FusableOp::Scale, FusableOp::ReLU]);
+        let input = input_tensor(vec![1.0f32, -1.0, 2.0]);
+
+        let result = optimizer.execute_sequential(&kernel, std::slice::from_ref(&input));
+        assert!(
+            result.is_err(),
+            "fused Scale must return an honest error, not a silent identity"
+        );
+    }
+
+    #[test]
+    fn test_fused_linear_returns_honest_error() {
+        let optimizer = KernelFusionOptimizer::new();
+        let kernel = kernel_for(vec![FusableOp::Linear, FusableOp::ReLU]);
+        let input = input_tensor(vec![1.0f32, -1.0, 2.0]);
+
+        let result = optimizer.execute_sequential(&kernel, std::slice::from_ref(&input));
+        assert!(
+            result.is_err(),
+            "fused Linear must return an honest error, not a silent identity"
+        );
+    }
+
+    #[test]
+    fn test_fused_dropout_inference_is_identity() {
+        // Inference-mode dropout is a legitimate no-op and must be preserved.
+        let optimizer = KernelFusionOptimizer::new();
+        let kernel = kernel_for(vec![FusableOp::Dropout]);
+        let raw = vec![1.0f32, -1.0, 2.0, 0.0];
+        let input = input_tensor(raw.clone());
+
+        let result = optimizer
+            .execute_sequential(&kernel, std::slice::from_ref(&input))
+            .expect("test: inference dropout should succeed as identity");
+        let vals = result
+            .tensor
+            .as_slice()
+            .expect("test: result should be host-accessible");
+        assert_eq!(vals, raw.as_slice());
     }
 }

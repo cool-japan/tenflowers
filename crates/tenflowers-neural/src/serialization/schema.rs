@@ -809,7 +809,7 @@ mod tests {
         let metadata = ModelMetadata {
             model_type: "Sequential".to_string(),
             version: SemanticVersion::new(0, 1, 0),
-            framework_version: "TenfloweRS-0.1.1".to_string(),
+            framework_version: format!("TenfloweRS-{}", env!("CARGO_PKG_VERSION")),
             created_at: "2023-01-01T00:00:00Z".to_string(),
             architecture_hash: "test_hash".to_string(),
             parameter_count: 1000,

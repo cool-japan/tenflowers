@@ -178,7 +178,7 @@ impl JitCompiler {
         let mut registry = self
             .template_registry
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for template in templates {
             registry.insert(template.operation_name.clone(), template);
         }
@@ -188,10 +188,11 @@ impl JitCompiler {
     pub fn compile_gradient_kernel(&self, signature: KernelSignature) -> Result<CompiledKernel> {
         // Check cache first
         {
-            let cache = self
-                .kernel_cache
-                .read()
-                .expect("read lock should not be poisoned");
+            let cache = self.kernel_cache.read().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "jit compiler lock poisoned".to_string(),
+                )
+            })?;
             if let Some(cached_kernel) = cache.get(&signature) {
                 return Ok(cached_kernel.clone());
             }
@@ -207,10 +208,11 @@ impl JitCompiler {
 
         // Cache the compiled kernel
         {
-            let mut cache = self
-                .kernel_cache
-                .write()
-                .expect("write lock should not be poisoned");
+            let mut cache = self.kernel_cache.write().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "jit compiler lock poisoned".to_string(),
+                )
+            })?;
             cache.insert(signature.clone(), kernel.clone());
         }
 
@@ -220,10 +222,11 @@ impl JitCompiler {
     /// Generate optimized WGSL shader code
     fn compile_kernel_from_signature(&self, signature: &KernelSignature) -> Result<CompiledKernel> {
         let template = {
-            let registry = self
-                .template_registry
-                .read()
-                .expect("read lock should not be poisoned");
+            let registry = self.template_registry.read().map_err(|_| {
+                tenflowers_core::TensorError::invalid_operation_simple(
+                    "jit compiler lock poisoned".to_string(),
+                )
+            })?;
             registry
                 .get(&signature.operation)
                 .ok_or_else(|| {
@@ -493,7 +496,7 @@ impl JitCompiler {
         let cache = self
             .kernel_cache
             .read()
-            .expect("read lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let total_kernels = cache.len();
         let total_size_estimate = cache.values().map(|k| k.wgsl_source.len()).sum::<usize>();
         (total_kernels, total_size_estimate)
@@ -504,7 +507,7 @@ impl JitCompiler {
         let mut cache = self
             .kernel_cache
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache.clear();
     }
 
@@ -513,16 +516,17 @@ impl JitCompiler {
         let mut registry = self
             .template_registry
             .write()
-            .expect("write lock should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         registry.insert(template.operation_name.clone(), template);
     }
 
     /// Export cached kernels for persistence
     pub fn export_cache(&self) -> Result<String> {
-        let cache = self
-            .kernel_cache
-            .read()
-            .expect("read lock should not be poisoned");
+        let cache = self.kernel_cache.read().map_err(|_| {
+            tenflowers_core::TensorError::invalid_operation_simple(
+                "jit compiler export cache lock poisoned".to_string(),
+            )
+        })?;
         let serializable_cache: HashMap<String, serde_json::Value> = cache
             .iter()
             .map(|(sig, kernel)| {

@@ -13,7 +13,7 @@
 //! - Dynamic workload balancing
 //! - Memory bandwidth optimization
 
-use crate::{Result, Shape};
+use crate::{Result, Shape, TensorError};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,10 +90,10 @@ impl PerformancePredictor {
 
     /// Predict the best execution strategy for given operation and shapes
     pub fn predict_best_strategy(&self, op_name: &str, shapes: &[Shape]) -> ExecutionStrategy {
-        let performance_map = self
-            .strategy_performance
-            .read()
-            .expect("read lock should not be poisoned");
+        let performance_map = match self.strategy_performance.read() {
+            Ok(g) => g,
+            Err(_) => return self.heuristic_strategy_selection(shapes),
+        };
 
         // Find the best performing strategy
         let mut best_strategy = ExecutionStrategy::Sequential;
@@ -119,16 +119,16 @@ impl PerformancePredictor {
 
     /// Update performance data with new metrics
     pub fn update_performance(&self, metrics: &OperationMetrics, strategy: ExecutionStrategy) {
-        let mut history = self
-            .metrics_history
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut history = match self.metrics_history.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         history.push(metrics.clone());
 
-        let mut performance_map = self
-            .strategy_performance
-            .write()
-            .expect("write lock should not be poisoned");
+        let mut performance_map = match self.strategy_performance.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         let key = (
             metrics.op_name.clone(),
             metrics.input_shapes.clone(),
@@ -262,10 +262,11 @@ impl AdaptiveTuner {
 
         // Try to get cached strategy first
         let strategy = {
-            let cache = self
-                .active_strategies
-                .lock()
-                .expect("lock should not be poisoned");
+            let cache = self.active_strategies.lock().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "adaptive tuner strategy cache lock poisoned".to_string(),
+                )
+            })?;
             cache.get(&cache_key).cloned()
         }
         .unwrap_or_else(|| {
@@ -294,10 +295,11 @@ impl AdaptiveTuner {
                 .update_performance(&metrics, strategy.clone());
 
             // Cache the strategy for future use
-            let mut cache = self
-                .active_strategies
-                .lock()
-                .expect("lock should not be poisoned");
+            let mut cache = self.active_strategies.lock().map_err(|_| {
+                TensorError::invalid_operation_simple(
+                    "adaptive tuner strategy cache lock poisoned".to_string(),
+                )
+            })?;
             cache.insert(cache_key, strategy);
         }
 
@@ -321,20 +323,18 @@ impl AdaptiveTuner {
 
     /// Clear the strategy cache
     pub fn clear_strategy_cache(&self) {
-        let mut cache = self
-            .active_strategies
-            .lock()
-            .expect("lock should not be poisoned");
+        let mut cache = match self.active_strategies.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         cache.clear();
     }
 
     /// Get performance statistics
     pub fn get_performance_stats(&self) -> Result<String> {
-        let history = self
-            .predictor
-            .metrics_history
-            .read()
-            .expect("read lock should not be poisoned");
+        let history = self.predictor.metrics_history.read().map_err(|_| {
+            TensorError::invalid_operation_simple("metrics history lock poisoned".to_string())
+        })?;
 
         if history.is_empty() {
             return Ok("No performance data collected yet.".to_string());
@@ -423,7 +423,9 @@ pub fn execute_with_adaptive_tuning<F, T>(
 where
     F: Fn(ExecutionStrategy) -> Result<T>,
 {
-    let tuner = GLOBAL_TUNER.lock().expect("lock should not be poisoned");
+    let tuner = GLOBAL_TUNER.lock().map_err(|_| {
+        TensorError::invalid_operation_simple("global adaptive tuner lock poisoned".to_string())
+    })?;
     tuner.execute_with_tuning(op_name, shapes, operation)
 }
 
