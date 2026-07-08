@@ -1,4 +1,4 @@
-# TenfloweRS Autograd TODO & Roadmap (v0.1.2)
+# TenfloweRS Autograd TODO & Roadmap (v0.2.0)
 
 v0.1.1 focus: automatic differentiation capabilities and forward development plan.
 

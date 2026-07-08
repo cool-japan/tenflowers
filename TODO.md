@@ -1,4 +1,4 @@
-# TenfloweRS TODO & Roadmap (v0.1.2 · 2026-07-08)
+# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-08)
 
 ## v0.1.2 — Honesty Hardening (2026-06-23)
 

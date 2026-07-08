@@ -1,4 +1,4 @@
-# TenfloweRS FFI TODO & Roadmap (v0.1.2)
+# TenfloweRS FFI TODO & Roadmap (v0.2.0)
 
 Initial release capabilities and forward development plan.
 

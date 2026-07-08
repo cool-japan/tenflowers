@@ -1,4 +1,4 @@
-# TenfloweRS Neural TODO & Roadmap (v0.1.2)
+# TenfloweRS Neural TODO & Roadmap (v0.2.0)
 
 v0.1.1 focus: neural network capabilities and forward development plan.
 

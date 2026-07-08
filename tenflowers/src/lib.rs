@@ -555,7 +555,7 @@ pub fn version() -> &'static str {
 /// `env!()` macros.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionInfo {
-    /// Semver version string (e.g. `"0.1.2"`).
+    /// Semver version string (e.g. `"0.2.0"`).
     pub version: &'static str,
     /// Crate / package name (always `"tenflowers"`).
     pub pkg_name: &'static str,
