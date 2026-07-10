@@ -103,15 +103,25 @@ where
     }
 
     /// Detect SharedArrayBuffer support
+    ///
+    /// On `wasm32` targets this performs a real capability probe via
+    /// `js_sys::eval`, checking whether the host exposes `SharedArrayBuffer`.
+    /// On non-wasm32 targets there genuinely is no JS `SharedArrayBuffer` to
+    /// detect, so `false` is a correct fact rather than a fabrication. This
+    /// must be gated on `target_arch = "wasm32"` rather than merely
+    /// `feature = "wasm"`: the `wasm` Cargo feature can be enabled on native
+    /// targets (e.g. via `--all-features`), and `js_sys::eval` unconditionally
+    /// panics if actually invoked on a non-wasm32 target. This mirrors
+    /// `detect_simd_support` immediately above.
     fn detect_shared_buffer_support() -> bool {
-        #[cfg(feature = "wasm")]
+        #[cfg(target_arch = "wasm32")]
         {
             // Check if SharedArrayBuffer is available
             js_sys::eval("typeof SharedArrayBuffer !== 'undefined'")
                 .map(|val| val.as_bool().unwrap_or(false))
                 .unwrap_or(false)
         }
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             false
         }
@@ -347,6 +357,23 @@ mod tests {
         assert!(
             !WasmOptimizedTensor::<f32>::detect_simd_support(),
             "detect_simd_support must be false on non-wasm32 targets: there is no WASM SIMD to detect here"
+        );
+    }
+
+    /// `detect_shared_buffer_support` must report an honest, non-fabricated
+    /// answer on non-wasm32 targets: there is no JS `SharedArrayBuffer` to
+    /// detect off-wasm32, so the only correct answer is `false`. This guards
+    /// against regressing back to gating the real `js_sys::eval` call on
+    /// `feature = "wasm"` alone (which panics on native targets when the
+    /// `wasm` feature is enabled, e.g. via `--all-features`) instead of
+    /// `target_arch = "wasm32"`.
+    #[test]
+    #[cfg(feature = "wasm")]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_detect_shared_buffer_support_is_honest_off_wasm32() {
+        assert!(
+            !WasmOptimizedTensor::<f32>::detect_shared_buffer_support(),
+            "detect_shared_buffer_support must be false on non-wasm32 targets: there is no JS SharedArrayBuffer to detect here"
         );
     }
 
