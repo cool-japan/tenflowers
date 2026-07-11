@@ -1231,7 +1231,7 @@ mod tests {
             // `PyTensor::backward` (tensor_ops.rs) is a private wrapper
             // around this exact call; calling it directly here is the
             // established idiom for Rust-side tests in this crate (see
-            // e.g. `neural/normalization.rs`, `neural/extended_optimizers.rs`).
+            // e.g. `neural/normalization.rs`, `neural/extended_optimizers/mod.rs`).
             crate::implicit_autograd::run_backward(&loss1)
                 .expect("first backward pass should succeed");
 

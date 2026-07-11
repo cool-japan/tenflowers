@@ -410,7 +410,7 @@ def test_comprehensive_gradient_suite():
 # ---------------------------------------------------------------------------
 # Direct tests of the backward()/grad() mechanism itself (not just numeric
 # gradient-value validation): these check the semantics of the implicit
-# autograd machinery in `crates/tenflowers-ffi/src/implicit_autograd.rs`
+# autograd machinery in `crates/tenflowers-ffi/src/implicit_autograd/mod.rs`
 # rather than the correctness of any one operation's derivative formula.
 # ---------------------------------------------------------------------------
 

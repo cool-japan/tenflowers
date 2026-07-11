@@ -306,13 +306,9 @@ impl PyAdam {
             let denom = v_hat_sqrt.add(&epsilon_tensor).map_err(to_py_err)?;
             let step_dir = m_hat.div(&denom).map_err(to_py_err)?;
             let update = step_dir.scalar_mul(lr).map_err(to_py_err)?;
-            let _new_w = w.sub(&update).map_err(to_py_err)?;
+            let new_w = w.sub(&update).map_err(to_py_err)?;
 
-            // TEMPORARY NEGATIVE-CONTROL EDIT (orchestrator spot-check, will
-            // be reverted immediately): write back the UNCHANGED weight
-            // instead of the real update, to confirm the new convergence
-            // test actually detects a no-op optimizer.
-            param_ref.set_data(w)?;
+            param_ref.set_data(new_w)?;
         }
 
         Ok(())

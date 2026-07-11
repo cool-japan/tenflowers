@@ -32,7 +32,7 @@
 //!
 //! Every binary-cross-entropy/cross-entropy/KL/L1/smooth-L1/cosine loss below
 //! needs at least one of these four operations. Rather than duplicate
-//! `implicit_autograd.rs`'s tape-recording machinery in this file (which
+//! `implicit_autograd/mod.rs`'s tape-recording machinery in this file (which
 //! would create two independent sources of truth for how an operation gets
 //! linked onto the tape), this module instead expresses `log`/`abs`/`clamp`/
 //! `sqrt` **compositionally**, purely in terms of the tape kinds that
@@ -80,12 +80,12 @@
 //! reverse-mode traversal accumulates every contribution automatically,
 //! exactly as it does for any other multi-step computation.
 //!
-//! ## Coordination flag for whoever owns `implicit_autograd.rs` next
+//! ## Coordination flag for whoever owns `implicit_autograd/mod.rs` next
 //!
 //! The compositional approach above is deliberately *not* a permanent
 //! substitute for real `UnaryOpKind::{Log, Abs, Clamp}` variants (and a real
 //! `sqrt` `Operation`/`TrackedTensor` method) — it exists because this file
-//! is scoped to not modify `implicit_autograd.rs`, `tensor_ops.rs`, or any
+//! is scoped to not modify `implicit_autograd/mod.rs`, `tensor_ops.rs`, or any
 //! other `neural/*.rs` file. Once `Log`/`Abs`/`Clamp` are added to
 //! `UnaryOpKind` (the `TrackedTensor` and `Operation` sides already exist —
 //! see the module-level doc above) and a `sqrt` `Operation`/`TrackedTensor`

@@ -51,35 +51,39 @@ use pyo3::prelude::*;
 /// alike, exactly matching how real PyTorch resolves `model.parameters()` at
 /// the Python level rather than through a shared base class.
 ///
-/// # Design tension: `PyTensor`-returning layers cannot be optimized (yet)
+/// # Resolved: every built-in layer's `.parameters()` returns `Vec<PyParameter>`
 ///
-/// As of this writing, [`super::layers::PyDense::parameters`] and
-/// [`super::layers::PySequential::parameters`] both return
+/// Earlier in this crate's development, [`super::layers::PyDense::parameters`]
+/// and [`super::layers::PySequential::parameters`] returned
 /// `Vec<`[`crate::tensor_ops::PyTensor`]`>`, **not** `Vec<PyParameter>` —
-/// because `PyParameter` did not support in-place mutation
-/// ([`PyParameter::set_data`]) until it was redesigned around the same time
-/// this bridge was written. A bare [`crate::tensor_ops::PyTensor`] cannot
+/// because `PyParameter` did not yet support in-place mutation
+/// ([`PyParameter::set_data`]). A bare [`crate::tensor_ops::PyTensor`] cannot
 /// serve as a mutable optimizer target: it has no `set_data`, and its
 /// identity *is* its `Arc` pointer, which changes on every new computation —
 /// there is no stable cell an optimizer could write an in-place update into.
 ///
-/// Rather than silently doing something the caller did not ask for — either
-/// dropping such elements from the result (an optimizer would then silently
-/// skip training a whole layer's weights) or fabricating a throwaway
+/// That gap has since been closed: every built-in layer's `.parameters()` —
+/// `PyDense`, `PySequential`, and every layer in `neural/conv_layers`,
+/// `neural/normalization`, `neural/embedding`, `neural/attention`,
+/// `neural/transformer`, and `neural/recurrent` — now returns
+/// `Vec<Py<PyParameter>>`, each handle sharing stable identity with the
+/// owning layer's own weight/bias cell (see [`super::layers::PyDense::parameters`]'s
+/// doc for the full identity-sharing guarantee that makes an optimizer's
+/// `.set_data()` call visible on the very next `.forward()`). A bare
+/// `PyTensor`-returning `.parameters()` is no longer produced by any
+/// built-in layer.
+///
+/// The type-mismatch handling below remains as defensive code for a
+/// hypothetical third-party Python model whose hand-written `.parameters()`
+/// yields a `PyTensor` (or any other non-`PyParameter` value) by mistake:
+/// this function returns a clear, typed [`pyo3::exceptions::PyTypeError`]
+/// naming the offending index and explaining what is required, rather than
+/// silently skipping that element (which would make an optimizer run a
+/// no-op step over part of the model) or fabricating a throwaway
 /// `PyParameter` around the tensor (a synthetic identity that can never
 /// receive a gradient, since [`crate::implicit_autograd`] recorded the
 /// backward pass against the *original* `PyTensor`'s `Arc` identity, not
-/// this new wrapper's) — this function returns a clear, typed
-/// [`pyo3::exceptions::PyTypeError`] the moment it sees a non-`PyParameter`
-/// element, naming the offending index and telling the caller exactly what
-/// needs to change upstream. This is a deliberate, load-bearing design
-/// choice: a caller must never be able to mistake "optimizer ran a no-op
-/// step over a `PyDense`" for "optimizer successfully updated a `PyDense`".
-///
-/// Making layer `.parameters()` methods return `Vec<PyParameter>` instead is
-/// tracked as follow-up work for whichever wave implements the optimizers
-/// that consume this bridge; it is out of scope here (see this crate's
-/// `PyDense` / `PySequential` — deliberately left untouched by this module).
+/// this new wrapper's).
 ///
 /// # Errors
 ///
@@ -92,10 +96,10 @@ use pyo3::prelude::*;
 ///   [`PyAnyMethods::try_iter`].
 /// * Iterating raises partway through — propagated as-is.
 /// * Any yielded element is not a [`PyParameter`] instance. If it *is* a
-///   [`crate::tensor_ops::PyTensor`] (the current, structural limitation of
-///   `PyDense`/`PySequential` described above), the error message names that
-///   specifically and explains the fix; for any other type, a generic
-///   type-mismatch message is used instead.
+///   [`crate::tensor_ops::PyTensor`] — which no built-in layer produces any
+///   more, but a hand-written third-party Python model theoretically could —
+///   the error message names that specifically and explains the fix; for any
+///   other type, a generic type-mismatch message is used instead.
 pub fn collect_parameters(model: &Bound<'_, PyAny>) -> PyResult<Vec<Py<PyParameter>>> {
     let params_obj = model.call_method0("parameters").map_err(|err| {
         pyo3::exceptions::PyAttributeError::new_err(format!(
