@@ -171,7 +171,8 @@ pub mod higher_order {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + scirs2_core::num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed,
     {
         // First compute gradients
         let first_order = tape.gradient(std::slice::from_ref(loss), params)?;
@@ -219,7 +220,8 @@ pub mod higher_order {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + scirs2_core::num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed,
     {
         let mut hessian = Vec::new();
 
@@ -273,7 +275,8 @@ pub mod jacobian {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + scirs2_core::num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed,
     {
         let mut jacobian = Vec::new();
 
@@ -302,7 +305,8 @@ pub mod jacobian {
             + 'static
             + bytemuck::Pod
             + bytemuck::Zeroable
-            + scirs2_core::num_traits::FromPrimitive,
+            + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed,
     {
         // Compute JVP using forward-mode AD or reverse-mode with vector trick
         let mut jvp_results = Vec::new();

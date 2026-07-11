@@ -9,7 +9,9 @@
 use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use std::sync::Arc;
+use tenflowers_autograd::grad_ops::SliceSpec;
 use tenflowers_autograd::TrackedTensor;
+use tenflowers_core::strided::SliceParams;
 use tenflowers_core::Tensor;
 
 /// Python-facing wrapper around a TenfloweRS `Tensor<f32>`.
@@ -157,7 +159,7 @@ impl PyTensor {
     /// y.backward()
     /// print(x.grad().shape())  # [2, 2]
     /// ```
-    fn set_requires_grad(&mut self, requires_grad: bool) {
+    pub fn set_requires_grad(&mut self, requires_grad: bool) {
         self.requires_grad = requires_grad;
         if requires_grad {
             crate::implicit_autograd::mark_leaf(self);
@@ -193,7 +195,7 @@ impl PyTensor {
     /// y.backward()
     /// print(x.grad().shape())  # [3, 3]
     /// ```
-    fn backward(&self) -> PyResult<()> {
+    pub fn backward(&self) -> PyResult<()> {
         crate::implicit_autograd::run_backward(self)
     }
 
@@ -217,7 +219,7 @@ impl PyTensor {
     /// g = x.grad()
     /// print(g.shape())  # [2]
     /// ```
-    fn grad(&self) -> PyResult<PyTensor> {
+    pub fn grad(&self) -> PyResult<PyTensor> {
         crate::implicit_autograd::get_grad(self)
     }
 
@@ -298,6 +300,7 @@ impl PyTensor {
     /// ```
     #[pyo3(signature = (axes=None))]
     pub fn transpose(&self, axes: Option<Vec<usize>>) -> PyResult<PyTensor> {
+        let axes_for_tape = axes.clone();
         let result = if let Some(axes_vec) = axes {
             tenflowers_core::ops::manipulation::transpose_axes(&self.tensor, Some(&axes_vec))
         } else {
@@ -305,11 +308,21 @@ impl PyTensor {
         };
 
         match result {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad,
-                is_pinned: self.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad,
+                    is_pinned: self.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_unary(
+                    crate::implicit_autograd::UnaryOpKind::Transpose {
+                        axes: axes_for_tape,
+                    },
+                    self,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!("Transpose failed: {}", e))),
         }
     }
@@ -329,12 +342,97 @@ impl PyTensor {
     /// ```
     fn reshape(&self, shape: Vec<usize>) -> PyResult<PyTensor> {
         match tenflowers_core::ops::reshape(&self.tensor, &shape) {
-            Ok(tensor) => Ok(PyTensor {
-                tensor: Arc::new(tensor),
-                requires_grad: self.requires_grad,
-                is_pinned: self.is_pinned,
-            }),
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad,
+                    is_pinned: self.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_unary(
+                    crate::implicit_autograd::UnaryOpKind::Reshape {
+                        shape: shape.clone(),
+                    },
+                    self,
+                    &result,
+                )?;
+                Ok(result)
+            }
             Err(e) => Err(PyRuntimeError::new_err(format!("Reshape failed: {}", e))),
+        }
+    }
+
+    /// Slice this tensor along each dimension.
+    ///
+    /// `ranges` is a list of `(start, end, step)` tuples, one per leading
+    /// dimension, positionally matching the semantics of Python's `slice`
+    /// object (`None` for `start`/`end` means "unbounded on that side";
+    /// `None` for `step` means step `1`). Trailing dimensions with no
+    /// corresponding entry in `ranges` are taken in full — `ranges` may be
+    /// shorter than `self.ndim()`, but not longer (extra entries beyond the
+    /// tensor's rank are silently ignored, mirroring how a short `ranges`
+    /// list pads with "take in full").
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if the underlying slice cannot be computed (e.g.
+    /// an out-of-range or invalid `start`/`end`/`step` combination for the
+    /// tensor's shape).
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import tenflowers as tf
+    /// t = tf.ones([4, 5])
+    /// # Rows 1..3 (exclusive), all columns.
+    /// s = t.slice([(1, 3, None)])
+    /// print(s.shape())  # [2, 5]
+    /// ```
+    pub fn slice(
+        &self,
+        ranges: Vec<(Option<isize>, Option<isize>, Option<isize>)>,
+    ) -> PyResult<PyTensor> {
+        // Unpadded specs for the tape recording: `record_and_link_unary` /
+        // `TrackedTensor::slice` pad short lists themselves (see that
+        // method's own doc), so this must stay exactly `ranges.len()` long —
+        // pre-padding it here would make the tape-recorded op diverge from
+        // what was actually requested.
+        let specs_for_tape: Vec<SliceSpec> = ranges
+            .iter()
+            .map(|&(start, end, step)| SliceSpec::new(start, end, step))
+            .collect();
+
+        // Padded params for the eager computation: `slice_with_stride`
+        // requires exactly one entry per tensor dimension (no auto-padding),
+        // so dimensions beyond what the caller specified default to "take in
+        // full, step 1" via `SliceParams::new()`.
+        let ndim = self.tensor.ndim();
+        let mut padded_params: Vec<SliceParams> = Vec::with_capacity(ndim);
+        for dim_idx in 0..ndim {
+            if dim_idx < ranges.len() {
+                let (start, end, step) = ranges[dim_idx];
+                padded_params.push(SliceParams::with_step(start, end, step));
+            } else {
+                padded_params.push(SliceParams::new());
+            }
+        }
+
+        match tenflowers_core::ops::slice_with_stride(&self.tensor, &padded_params) {
+            Ok(tensor) => {
+                let result = PyTensor {
+                    tensor: Arc::new(tensor),
+                    requires_grad: self.requires_grad,
+                    is_pinned: self.is_pinned,
+                };
+                crate::implicit_autograd::record_and_link_unary(
+                    crate::implicit_autograd::UnaryOpKind::Slice {
+                        specs: specs_for_tape,
+                    },
+                    self,
+                    &result,
+                )?;
+                Ok(result)
+            }
+            Err(e) => Err(PyRuntimeError::new_err(format!("Slice failed: {}", e))),
         }
     }
 
@@ -830,6 +928,28 @@ pub fn reshape(tensor: &PyTensor, shape: Vec<usize>) -> PyResult<PyTensor> {
     tensor.reshape(shape)
 }
 
+/// Slice `tensor` along each dimension.
+///
+/// `ranges` is a list of `(start, end, step)` tuples, one per leading
+/// dimension; trailing dimensions are taken in full. See
+/// [`PyTensor::slice`] for the full semantics.
+///
+/// # Python Example
+///
+/// ```python
+/// import tenflowers as tf
+/// t = tf.ones([4, 5])
+/// s = tf.slice(t, [(1, 3, None)])
+/// print(s.shape())  # [2, 5]
+/// ```
+#[pyfunction]
+pub fn slice(
+    tensor: &PyTensor,
+    ranges: Vec<(Option<isize>, Option<isize>, Option<isize>)>,
+) -> PyResult<PyTensor> {
+    tensor.slice(ranges)
+}
+
 /// Autograd-enabled tensor wrapper produced by [`PyGradientTape::watch`].
 ///
 /// `PyTrackedTensor` wraps a `tenflowers_autograd::TrackedTensor<f32>` and is
@@ -954,5 +1074,116 @@ impl PyTensorIter {
             requires_grad: self.source.requires_grad,
             is_pinned: self.source.is_pinned,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test isolation note: `crate::implicit_autograd`'s thread-local state
+    // (IMPLICIT_TAPE, TRACKED_REGISTRY, LEAVES, GRAD_STORE, IDENTITY_ANCHORS)
+    // persists across tests that happen to run on the same OS thread, and
+    // Rust's test harness does not guarantee one thread per test. However,
+    // `implicit_autograd`'s own `reset_for_test` helper is a private `fn`
+    // inside a `#[cfg(test)] mod tests` block in that module — not `pub` or
+    // `pub(crate)` — so it is not reachable from this module at all
+    // (confirmed by reading that file's test module). Cross-contamination is
+    // nonetheless not possible here: `run_backward` (called by every test
+    // below via `.backward()`) unconditionally clears
+    // TRACKED_REGISTRY/LEAVES/the tape immediately after a successful
+    // backward pass, and every test in this module builds its own
+    // self-contained graph (its own leaf, its own scalar) and calls
+    // `.backward()` exactly once, synchronously, with no `.await`/yield point
+    // anywhere in this code — so one test's body (including the
+    // state-resetting `.backward()` call) always runs to completion before
+    // another test could possibly interleave on the same OS thread.
+    // GRAD_STORE is deliberately never cleared by run_backward, but it is
+    // keyed by each leaf's own unique `tensor_key` (an `Arc` address), so a
+    // stale entry from an earlier test cannot be read back by a later test's
+    // distinct, freshly-allocated tensors.
+
+    fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
+        let tensor =
+            tenflowers_core::Tensor::from_vec(data, shape).expect("tensor construction must succeed");
+        PyTensor {
+            tensor: Arc::new(tensor),
+            requires_grad: false,
+            is_pinned: false,
+        }
+    }
+
+    #[test]
+    fn transpose_links_onto_tape_and_grad_is_correct() {
+        let mut x = make_tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        x.set_requires_grad(true);
+        let t = x.transpose(None).expect("transpose must succeed");
+        assert_eq!(t.shape(), vec![3, 2]);
+        let scalar = crate::math_ops::sum(&t, None, None).expect("sum must succeed");
+        scalar.backward().expect("backward must succeed");
+        let grad = x.grad().expect("grad must be populated");
+        let grad_data = grad.tensor.to_vec().expect("grad readable");
+        // sum is invariant to any bijective reindexing of elements, and
+        // transpose is exactly such a reindexing, so d(sum)/d(x_ij) = 1 for
+        // every element regardless of where it moved to.
+        assert_eq!(grad_data, vec![1.0; 6]);
+    }
+
+    #[test]
+    fn transpose_with_explicit_axes_links_onto_tape_and_grad_is_correct() {
+        let mut x = make_tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        x.set_requires_grad(true);
+        let t = x
+            .transpose(Some(vec![1, 0]))
+            .expect("transpose with axes must succeed");
+        assert_eq!(t.shape(), vec![3, 2]);
+        let scalar = crate::math_ops::sum(&t, None, None).expect("sum must succeed");
+        scalar.backward().expect("backward must succeed");
+        let grad = x.grad().expect("grad must be populated");
+        let grad_data = grad.tensor.to_vec().expect("grad readable");
+        // Same reasoning as the `None`-axes case: an explicit permutation is
+        // still a bijective reindexing, so every gradient entry is 1.
+        assert_eq!(grad_data, vec![1.0; 6]);
+    }
+
+    #[test]
+    fn reshape_links_onto_tape_and_grad_is_correct() {
+        let mut x = make_tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        x.set_requires_grad(true);
+        let r = x.reshape(vec![3, 2]).expect("reshape must succeed");
+        assert_eq!(r.shape(), vec![3, 2]);
+        let scalar = crate::math_ops::sum(&r, None, None).expect("sum must succeed");
+        scalar.backward().expect("backward must succeed");
+        let grad = x.grad().expect("grad must be populated");
+        assert_eq!(grad.shape(), vec![2, 3], "grad must match x's ORIGINAL shape");
+        let grad_data = grad.tensor.to_vec().expect("grad readable");
+        // reshape does not move data across a reduction boundary (sum over
+        // all elements either way), so every element's gradient is 1.
+        assert_eq!(grad_data, vec![1.0; 6]);
+    }
+
+    #[test]
+    fn slice_links_onto_tape_and_grad_is_correct() {
+        let mut x = make_tensor(vec![1.0, 2.0, 3.0, 4.0], &[4]);
+        x.set_requires_grad(true);
+        let s = x
+            .slice(vec![(Some(1), Some(3), None)])
+            .expect("slice must succeed");
+
+        // Verify the slice itself before trusting anything about the
+        // gradient: (start=1, end=3, step=1) selects indices 1 and 2.
+        assert_eq!(s.shape(), vec![2]);
+        let s_data = s.tensor.to_vec().expect("slice output readable");
+        assert_eq!(s_data, vec![2.0, 3.0]);
+
+        let scalar = crate::math_ops::sum(&s, None, None).expect("sum must succeed");
+        scalar.backward().expect("backward must succeed");
+        let grad = x.grad().expect("grad must be populated");
+        assert_eq!(grad.shape(), vec![4]);
+        let grad_data = grad.tensor.to_vec().expect("grad readable");
+        // Gradient flows back only through the sliced elements (indices 1
+        // and 2); elements outside the slice (indices 0 and 3) get zero
+        // gradient.
+        assert_eq!(grad_data, vec![0.0, 1.0, 1.0, 0.0]);
     }
 }

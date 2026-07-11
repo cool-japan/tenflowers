@@ -1,6 +1,9 @@
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::{Result, Tensor};
 
+/// Type alias for Conv1D backward result to reduce complexity
+pub type Conv1dBackwardResult<T> = Result<(Tensor<T>, Tensor<T>, Option<Tensor<T>>)>;
+
 /// Type alias for Conv2D backward result to reduce complexity
 pub type Conv2dBackwardResult<T> = Result<(Tensor<T>, Tensor<T>, Option<Tensor<T>>)>;
 

@@ -6,6 +6,8 @@
 //! - Pooling operations (max pooling, average pooling)
 //! - Specialized convolutions (depthwise, grouped)
 
+mod conv1d;
+mod conv1d_utils;
 mod conv2d;
 mod conv3d;
 mod conv_transpose;
@@ -16,6 +18,9 @@ mod utils;
 
 // Re-export type aliases
 pub use types::*;
+
+// Re-export Conv1D operations
+pub use conv1d::conv1d_backward;
 
 // Re-export Conv2D operations
 pub use conv2d::conv2d_backward;

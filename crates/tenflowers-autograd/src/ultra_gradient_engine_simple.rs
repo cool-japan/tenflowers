@@ -166,6 +166,7 @@ impl UltraGradientEngine {
             + PartialOrd
             + Float
             + FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -573,6 +574,7 @@ pub trait UltraGradientTapeExt {
             + PartialOrd
             + Float
             + FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable;
 }
@@ -599,6 +601,7 @@ impl UltraGradientTapeExt for GradientTape {
             + PartialOrd
             + Float
             + FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {

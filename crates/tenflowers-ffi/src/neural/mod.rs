@@ -17,6 +17,7 @@
 //! | [`layers`] | Dense, Parameter, Sequential |
 //! | [`losses`] | MSE, BCE, cross-entropy, Huber, KL-divergence, … |
 //! | [`normalization`] | BatchNorm1d, LayerNorm, GroupNorm, InstanceNorm1d |
+//! | [`optimizer_bridge`] | Generic `model.parameters()` → `Vec<Py<PyParameter>>` extraction |
 //! | [`optimizers`] | Adam, SGD, RMSprop, AdamW |
 //! | [`recurrent`] | LSTM, GRU, RNN, LSTMCell, GRUCell |
 //! | [`regularization`] | Dropout, Dropout2D, AlphaDropout, L1/L2 regularisation |
@@ -77,6 +78,7 @@ pub mod hooks;
 pub mod layers;
 pub mod losses;
 pub mod normalization;
+pub mod optimizer_bridge;
 pub mod optimizers;
 pub mod recurrent;
 pub mod regularization;
@@ -87,7 +89,7 @@ pub mod transformer;
 
 // Re-export main types for backward compatibility
 pub use attention::PyMultiheadAttention;
-pub use conv_layers::{PyAvgPool2D, PyConv1D, PyConv2D, PyMaxPool2D};
+pub use conv_layers::{PyAvgPool2D, PyConv1D, PyConv2D, PyConv3D, PyMaxPool2D};
 pub use embedding::{PyEmbedding, PyEmbeddingBag};
 pub use functions::*;
 pub use gradient_tape::{PyGradientContext, PyGradientTape, PyTrackedTensor};
@@ -96,6 +98,7 @@ pub use hooks::{BackwardHook, ForwardHook, HookManager, PyGlobalHookRegistry, Py
 pub use layers::{PyDense, PyParameter, PySequential};
 // losses module is not re-exported to avoid conflicts, use neural::losses::* instead
 pub use extended_optimizers::{PyAdaBelief, PyAdaDelta, PyAdaGrad, PyNadam, PyRAdam};
+pub use optimizer_bridge::collect_parameters;
 pub use normalization::{PyBatchNorm1d, PyGroupNorm, PyInstanceNorm1d, PyLayerNorm};
 pub use optimizers::{PyAdam, PyAdamW, PyRMSprop, PySGD};
 pub use recurrent::{PyGRU, PyGRUCell, PyLSTM, PyLSTMCell, PyRNN};
@@ -152,6 +155,7 @@ pub fn register_neural_functions(_py: Python, m: &Bound<'_, PyModule>) -> PyResu
     // Register convolutional layers
     m.add_class::<PyConv1D>()?;
     m.add_class::<PyConv2D>()?;
+    m.add_class::<PyConv3D>()?;
     m.add_class::<PyMaxPool2D>()?;
     m.add_class::<PyAvgPool2D>()?;
 

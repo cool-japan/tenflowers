@@ -27,6 +27,10 @@ pub fn extract_parent_ids(operation: &Operation) -> Vec<TensorId> {
         | Operation::Gelu { input }
         | Operation::Swish { input }
         | Operation::Mish { input }
+        | Operation::Log { input }
+        | Operation::Abs { input }
+        | Operation::Relu6 { input }
+        | Operation::HardSwish { input }
         | Operation::Neg { input }
         | Operation::Identity { input }
         | Operation::Eig { input }
@@ -50,7 +54,9 @@ pub fn extract_parent_ids(operation: &Operation) -> Vec<TensorId> {
         // Single input with parameters
         Operation::LeakyRelu { input, .. }
         | Operation::Elu { input, .. }
+        | Operation::Clamp { input, .. }
         | Operation::Softmax { input, .. }
+        | Operation::LogSoftmax { input, .. }
         | Operation::Sum { input, .. }
         | Operation::Mean { input, .. }
         | Operation::Max { input, .. }
@@ -84,7 +90,13 @@ pub fn extract_parent_ids(operation: &Operation) -> Vec<TensorId> {
         | Operation::Einsum { inputs, .. } => inputs.clone(),
 
         // Convolution operations
-        Operation::Conv2D {
+        Operation::Conv1D {
+            input,
+            weight,
+            bias,
+            ..
+        }
+        | Operation::Conv2D {
             input,
             weight,
             bias,
@@ -148,6 +160,9 @@ pub fn extract_parent_ids(operation: &Operation) -> Vec<TensorId> {
         Operation::BooleanMask { input, mask } => vec![*input, *mask],
         Operation::Where { condition, x, z } => vec![*condition, *x, *z],
         Operation::IntegerArrayIndexing { input, indices, .. } => vec![*input, *indices],
+        // `indices` is a raw Tensor<i32> value (not a TensorId) and is never
+        // tracked on the tape, so it is intentionally excluded from parents.
+        Operation::Gather { input, .. } => vec![*input],
 
         // Fused operations
         Operation::FusedAddReLU { lhs, rhs } => vec![*lhs, *rhs],

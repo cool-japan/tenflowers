@@ -403,6 +403,7 @@ impl GradientTape {
             + PartialOrd
             + scirs2_core::num_traits::Float
             + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
         F: Fn(&[&TrackedTensor<T>]) -> Result<TrackedTensor<T>>,
@@ -480,6 +481,10 @@ impl GradientTape {
             | Operation::Gelu { input }
             | Operation::Swish { input }
             | Operation::Mish { input }
+            | Operation::Log { input }
+            | Operation::Abs { input }
+            | Operation::Relu6 { input }
+            | Operation::HardSwish { input }
             | Operation::Neg { input }
             | Operation::Identity { input }
             | Operation::Sum { input, .. }
@@ -496,7 +501,9 @@ impl GradientTape {
 
             Operation::LeakyRelu { input, .. }
             | Operation::Elu { input, .. }
-            | Operation::Softmax { input, .. } => *input == tensor_id,
+            | Operation::Clamp { input, .. }
+            | Operation::Softmax { input, .. }
+            | Operation::LogSoftmax { input, .. } => *input == tensor_id,
 
             Operation::Prelu { input, alpha } => *input == tensor_id || *alpha == tensor_id,
 
@@ -531,7 +538,13 @@ impl GradientTape {
                 input, gamma, beta, ..
             } => *input == tensor_id || *gamma == tensor_id || *beta == tensor_id,
 
-            Operation::Conv2D {
+            Operation::Conv1D {
+                input,
+                weight,
+                bias,
+                ..
+            }
+            | Operation::Conv2D {
                 input,
                 weight,
                 bias,
@@ -582,6 +595,10 @@ impl GradientTape {
             Operation::IntegerArrayIndexing { input, indices, .. } => {
                 *input == tensor_id || *indices == tensor_id
             }
+
+            // `indices` is a raw Tensor<i32> value, not a TensorId, so only
+            // `input` can match.
+            Operation::Gather { input, .. } => *input == tensor_id,
 
             Operation::Fft { input, .. }
             | Operation::Ifft { input, .. }

@@ -126,3 +126,108 @@ where
         Self::new()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+//
+// `statistics.rs` had zero test coverage before this module. These tests
+// drive `SimdStats::mean_variance` -- the only public entry point in this
+// file. Its `unsafe` blocks (`mean_variance_f32_simd` and the `transmute`
+// call sites that feed it) are gated `#[cfg(target_arch = "x86_64")]`, so
+// on this crate's Miri host (aarch64-apple-darwin) that code is not
+// compiled in at all and these tests exercise `mean_variance_scalar` -- the
+// same code path used on any non-x86_64 host, and the only path Miri's
+// interpreter can check regardless of host architecture.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simd_stats_new_reports_simd_status() {
+        let stats = SimdStats::<f32>::new();
+        let _ = stats.use_simd; // must not panic to read
+    }
+
+    #[test]
+    fn test_simd_stats_default_matches_new() {
+        let a = SimdStats::<f32>::default();
+        let b = SimdStats::<f32>::new();
+        let data = vec![1.0f32, 2.0, 3.0, 4.0];
+        assert_eq!(a.mean_variance(&data), b.mean_variance(&data));
+    }
+
+    #[test]
+    fn test_mean_variance_empty_is_zero() {
+        let stats = SimdStats::<f32>::new();
+        let (mean, variance) = stats.mean_variance(&[]);
+        assert_eq!(mean, 0.0);
+        assert_eq!(variance, 0.0);
+    }
+
+    #[test]
+    fn test_mean_variance_known_values() {
+        let stats = SimdStats::<f32>::new();
+        let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0];
+        let (mean, variance) = stats.mean_variance(&data);
+        // mean = 3, population variance = 2
+        assert!((mean - 3.0).abs() < 1e-5, "mean={mean}");
+        assert!((variance - 2.0).abs() < 1e-4, "variance={variance}");
+    }
+
+    #[test]
+    fn test_mean_variance_constant_data_has_zero_variance() {
+        let stats = SimdStats::<f32>::new();
+        let data = vec![7.0f32; 20];
+        let (mean, variance) = stats.mean_variance(&data);
+        assert!((mean - 7.0).abs() < 1e-5, "mean={mean}");
+        assert!(variance.abs() < 1e-5, "variance={variance}");
+    }
+
+    #[test]
+    fn test_mean_variance_large_batch_crosses_simd_chunk_boundary() {
+        // 33 elements: crosses an 8-lane chunk boundary with a non-zero
+        // remainder (`chunks = 33 / 8 = 4`, `remainder = 1`), matching the
+        // exact chunking arithmetic the x86_64 SIMD path uses. On this host
+        // this exercises only `mean_variance_scalar`, but the element count
+        // still pins down the boundary condition this file's chunking
+        // logic must handle correctly everywhere.
+        let stats = SimdStats::<f32>::new();
+        let data: Vec<f32> = (0..33).map(|i| i as f32).collect();
+        let (mean, variance) = stats.mean_variance(&data);
+
+        let n = data.len() as f32;
+        let expected_mean = data.iter().sum::<f32>() / n;
+        let expected_variance =
+            data.iter().map(|&x| (x - expected_mean).powi(2)).sum::<f32>() / n;
+
+        assert!(
+            (mean - expected_mean).abs() < 1e-3,
+            "mean={mean}, expected={expected_mean}"
+        );
+        assert!(
+            (variance - expected_variance).abs() < 1e-2,
+            "variance={variance}, expected={expected_variance}"
+        );
+    }
+
+    #[test]
+    fn test_mean_variance_f64_uses_generic_scalar_path() {
+        // f64 never qualifies for the (f32-only) SIMD fast path even on
+        // x86_64 (`size_of::<T>() == 4` guard fails), so this always goes
+        // through `mean_variance_scalar` on every host.
+        let stats = SimdStats::<f64>::new();
+        let data = vec![2.0f64, 4.0, 6.0, 8.0];
+        let (mean, variance) = stats.mean_variance(&data);
+        assert!((mean - 5.0).abs() < 1e-10, "mean={mean}");
+        assert!((variance - 5.0).abs() < 1e-10, "variance={variance}");
+    }
+
+    #[test]
+    fn test_mean_variance_single_element_has_zero_variance() {
+        let stats = SimdStats::<f32>::new();
+        let (mean, variance) = stats.mean_variance(&[42.0]);
+        assert!((mean - 42.0).abs() < 1e-5, "mean={mean}");
+        assert!(variance.abs() < 1e-5, "variance={variance}");
+    }
+}

@@ -31,7 +31,7 @@ pub fn batch_norm_backward<T>(
     input: &Tensor<T>,
     gamma: &Tensor<T>,
     beta: &Tensor<T>,
-    _running_mean: &Tensor<T>,
+    running_mean: &Tensor<T>,
     running_var: &Tensor<T>,
     training: bool,
     epsilon: T,
@@ -56,16 +56,23 @@ where
     let input_shape = input.shape().dims();
     let ndim = input_shape.len();
 
-    // For batch norm, assume NCHW format (batch, channels, height, width)
-    // We need to reduce over all dimensions except channel dimension (dimension 1)
+    // For batch norm, the channel dimension is at index 1 (NCHW for rank 4,
+    // NCL for rank 3, NC for rank 2). We need to reduce over all dimensions
+    // except the channel dimension.
     let axes: Vec<i32> = if ndim == 4 {
         // NCHW format: reduce over batch, height, width (dimensions 0, 2, 3)
         vec![0, 2, 3]
+    } else if ndim == 3 {
+        // NCL format: reduce over batch, length (dimensions 0, 2). Channel
+        // stays at index 1, matching the NCHW convention used above (and the
+        // gamma-reshape logic below), NOT a channel-last assumption.
+        vec![0, 2]
     } else if ndim == 2 {
         // NC format: reduce over batch (dimension 0)
         vec![0]
     } else {
-        // Default: assume channel-last format for other cases
+        // Default fallback for unanticipated ranks (5D+): assume channel-last
+        // format.
         (0..ndim - 1).map(|i| i as i32).collect()
     };
 
@@ -118,6 +125,9 @@ where
         let gamma_reshaped = if ndim == 4 {
             let channels = input_shape[1];
             gamma.reshape(&[1, channels, 1, 1])?
+        } else if ndim == 3 {
+            let channels = input_shape[1];
+            gamma.reshape(&[1, channels, 1])?
         } else {
             gamma.clone()
         };
@@ -127,26 +137,44 @@ where
 
         Ok((grad_input, grad_gamma, grad_beta))
     } else {
-        // Inference mode: use running statistics
+        // Inference mode: use running statistics. The eval-mode forward
+        // computation is `output = gamma * (x - running_mean) / std + beta`,
+        // which is affine in gamma and beta (x, running_mean, running_var are
+        // forward-only constants here, never differentiated through), so:
+        //   d(output)/d(gamma) = (x - running_mean) / std  (the eval-mode
+        //                        normalized input), reduced-summed over `axes`
+        //   d(output)/d(beta)  = 1, i.e. grad_beta = sum(grad_output, axes)
         let eps_tensor = Tensor::from_scalar(epsilon);
         let std = running_var.add(&eps_tensor)?.sqrt()?;
 
-        // Reshape gamma and std for proper broadcasting
-        let (gamma_reshaped, std_reshaped) = if ndim == 4 {
+        // Reshape gamma, std, and running_mean for proper broadcasting
+        let (gamma_reshaped, std_reshaped, running_mean_reshaped) = if ndim == 4 {
             let channels = input_shape[1];
             let gamma_reshaped = gamma.reshape(&[1, channels, 1, 1])?;
             let std_reshaped = std.reshape(&[1, channels, 1, 1])?;
-            (gamma_reshaped, std_reshaped)
+            let running_mean_reshaped = running_mean.reshape(&[1, channels, 1, 1])?;
+            (gamma_reshaped, std_reshaped, running_mean_reshaped)
+        } else if ndim == 3 {
+            let channels = input_shape[1];
+            let gamma_reshaped = gamma.reshape(&[1, channels, 1])?;
+            let std_reshaped = std.reshape(&[1, channels, 1])?;
+            let running_mean_reshaped = running_mean.reshape(&[1, channels, 1])?;
+            (gamma_reshaped, std_reshaped, running_mean_reshaped)
         } else {
-            (gamma.clone(), std)
+            (gamma.clone(), std, running_mean.clone())
         };
 
         // Gradient w.r.t. input
         let grad_input = grad_output.mul(&gamma_reshaped)?.div(&std_reshaped)?;
 
-        // Gradients w.r.t. gamma and beta are zero in inference mode
-        let grad_gamma = Tensor::zeros(gamma.shape().dims());
-        let grad_beta = Tensor::zeros(beta.shape().dims());
+        // Eval-mode normalized input: (x - running_mean) / std
+        let normalized_eval = input.sub(&running_mean_reshaped)?.div(&std_reshaped)?;
+
+        // Gradient w.r.t. gamma: sum(grad_output * normalized_eval) over `axes`
+        let grad_gamma = grad_output.mul(&normalized_eval)?.sum(Some(&axes), false)?;
+
+        // Gradient w.r.t. beta: sum(grad_output) over `axes`
+        let grad_beta = grad_output.sum(Some(&axes), false)?;
 
         Ok((grad_input, grad_gamma, grad_beta))
     }
@@ -352,30 +380,37 @@ where
     };
 
     // Gradient w.r.t. input (complex LayerNorm backward computation)
-    // The formula is similar to BatchNorm but applied to different dimensions:
-    // grad_x = (1/N) * gamma / std * [N * grad_out - sum(grad_out) - normalized * sum(grad_out * normalized)]
+    //
+    // Let `dxhat = grad_output * gamma` be the gradient w.r.t. the normalized
+    // input (`normalized`). `gamma` varies per-element along the normalized
+    // axis, so it MUST be folded into `dxhat` before the reduction sums below
+    // are taken -- applying `gamma` only to the final result (as a single
+    // `gamma / std` factor multiplied in afterward) is only correct when
+    // `gamma` is uniform across the normalized axis, since otherwise
+    // `gamma * sum(grad_out)` != `sum(gamma * grad_out)`. The correct formula
+    // is:
+    //   grad_x = (1/(N*std)) * [N * dxhat - sum(dxhat) - normalized * sum(dxhat * normalized)]
+    // where the sums are taken over the normalization dimensions.
+    let dxhat = grad_output.mul(gamma)?;
 
-    // sum(grad_output) over normalization dimensions
-    let grad_sum = grad_output.sum(Some(&reduce_axes), true)?;
+    // sum(dxhat) over normalization dimensions
+    let grad_sum = dxhat.sum(Some(&reduce_axes), true)?;
 
-    // sum(grad_output * normalized) over normalization dimensions
-    let grad_norm_sum = grad_output
-        .mul(&normalized)?
-        .sum(Some(&reduce_axes), true)?;
+    // sum(dxhat * normalized) over normalization dimensions
+    let grad_norm_sum = dxhat.mul(&normalized)?.sum(Some(&reduce_axes), true)?;
 
-    // normalized * sum(grad_output * normalized)
+    // normalized * sum(dxhat * normalized)
     let norm_grad_norm_sum = normalized.mul(&grad_norm_sum)?;
 
-    // N * grad_output - sum(grad_output) - normalized * sum(grad_output * normalized)
+    // N * dxhat - sum(dxhat) - normalized * sum(dxhat * normalized)
     let norm_size_tensor = Tensor::from_scalar(norm_size_f);
-    let n_grad_out = grad_output.mul(&norm_size_tensor)?;
-    let diff1 = n_grad_out.sub(&grad_sum)?;
+    let n_dxhat = dxhat.mul(&norm_size_tensor)?;
+    let diff1 = n_dxhat.sub(&grad_sum)?;
     let diff2 = diff1.sub(&norm_grad_norm_sum)?;
 
-    // (1/N) * gamma / std * [...]
+    // (1/(N*std)) * [...]
     let one_over_n = Tensor::from_scalar(T::one() / norm_size_f);
-    let gamma_over_std = gamma.div(&std)?;
-    let grad_input = diff2.mul(&one_over_n)?.mul(&gamma_over_std)?;
+    let grad_input = diff2.mul(&one_over_n)?.div(&std)?;
 
     Ok((grad_input, grad_gamma, grad_beta))
 }
@@ -454,27 +489,49 @@ where
     let group_size = channels_per_group * height * width;
     let group_size_f = T::from_usize(group_size).unwrap_or_else(|| T::one());
 
-    // Gradient computation similar to LayerNorm but applied per group
-    let grad_sum = reshaped_grad_output.sum(Some(&reduce_axes), true)?;
-    let grad_norm_sum = reshaped_grad_output
-        .mul(&normalized)?
-        .sum(Some(&reduce_axes), true)?;
-    let norm_grad_norm_sum = normalized.mul(&grad_norm_sum)?;
-
-    let group_size_tensor = Tensor::from_scalar(group_size_f);
-    let n_grad_out = reshaped_grad_output.mul(&group_size_tensor)?;
-    let diff1 = n_grad_out.sub(&grad_sum)?;
-    let diff2 = diff1.sub(&norm_grad_norm_sum)?;
-
-    let one_over_n = Tensor::from_scalar(T::one() / group_size_f);
-
-    // Reshape gamma and beta to broadcast correctly
+    // Reshape gamma to broadcast correctly across the group layout
     let gamma_reshaped =
         gamma
             .reshape(&[1, channels, 1, 1])?
             .reshape(&[1, num_groups, channels_per_group, 1, 1])?;
-    let gamma_over_std = gamma_reshaped.div(&std)?;
-    let grad_input_reshaped = diff2.mul(&one_over_n)?.mul(&gamma_over_std)?;
+
+    // Gradient w.r.t. input (GroupNorm backward, LayerNorm-style formula
+    // applied per group).
+    //
+    // Let `dxhat = grad_output * gamma` be the gradient w.r.t. the
+    // normalized input (`normalized`). `gamma` varies per-channel *within*
+    // a group (each group spans `channels_per_group` > 1 channels whenever
+    // `num_groups < channels`), so it MUST be folded into `dxhat` before the
+    // reduction sums below are taken -- applying `gamma` only to the final
+    // result (as a single `gamma / std` factor multiplied in afterward, as
+    // this function previously did) is only correct when `gamma` is uniform
+    // across every channel in the group, since otherwise
+    // `gamma * sum(grad_out)` != `sum(gamma * grad_out)`. This mirrors
+    // `layer_norm_backward`'s identical fix for the same class of bug (see
+    // that function's doc comment for the full derivation). The correct
+    // formula is:
+    //   grad_x = (1/(group_size*std)) * [group_size * dxhat - sum(dxhat) - normalized * sum(dxhat * normalized)]
+    // where the sums are taken per-group over `reduce_axes`.
+    let dxhat = reshaped_grad_output.mul(&gamma_reshaped)?;
+
+    // sum(dxhat) over the group's reduction axes
+    let grad_sum = dxhat.sum(Some(&reduce_axes), true)?;
+
+    // sum(dxhat * normalized) over the group's reduction axes
+    let grad_norm_sum = dxhat.mul(&normalized)?.sum(Some(&reduce_axes), true)?;
+
+    // normalized * sum(dxhat * normalized)
+    let norm_grad_norm_sum = normalized.mul(&grad_norm_sum)?;
+
+    // group_size * dxhat - sum(dxhat) - normalized * sum(dxhat * normalized)
+    let group_size_tensor = Tensor::from_scalar(group_size_f);
+    let n_dxhat = dxhat.mul(&group_size_tensor)?;
+    let diff1 = n_dxhat.sub(&grad_sum)?;
+    let diff2 = diff1.sub(&norm_grad_norm_sum)?;
+
+    // (1/(group_size*std)) * [...]
+    let one_over_n = Tensor::from_scalar(T::one() / group_size_f);
+    let grad_input_reshaped = diff2.mul(&one_over_n)?.div(&std)?;
 
     // Reshape back to original shape
     let grad_input = grad_input_reshaped.reshape(input_shape)?;

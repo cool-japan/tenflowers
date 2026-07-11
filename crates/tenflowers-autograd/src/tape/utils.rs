@@ -82,7 +82,8 @@ pub fn classify_computation_type(operation: &Operation) -> ComputationType {
 
         Operation::MatMul { .. } => ComputationType::MatrixMultiplication,
 
-        Operation::Conv2D { .. }
+        Operation::Conv1D { .. }
+        | Operation::Conv2D { .. }
         | Operation::Conv3D { .. }
         | Operation::ConvTranspose2D { .. }
         | Operation::DepthwiseConv2D { .. }
@@ -143,7 +144,7 @@ pub fn estimate_memory_footprint(operation: &Operation) -> usize {
         Operation::MatMul { .. } => 10,
 
         // Convolutions: large intermediate buffers
-        Operation::Conv2D { .. } | Operation::Conv3D { .. } => 20,
+        Operation::Conv1D { .. } | Operation::Conv2D { .. } | Operation::Conv3D { .. } => 20,
 
         // FFT: working memory for transforms
         Operation::Fft { .. }
@@ -500,7 +501,8 @@ pub fn is_reduction_operation(operation: &Operation) -> bool {
 pub fn is_convolution_operation(operation: &Operation) -> bool {
     matches!(
         operation,
-        Operation::Conv2D { .. }
+        Operation::Conv1D { .. }
+            | Operation::Conv2D { .. }
             | Operation::Conv3D { .. }
             | Operation::ConvTranspose2D { .. }
             | Operation::DepthwiseConv2D { .. }
@@ -545,7 +547,7 @@ pub fn operation_complexity_score(operation: &Operation) -> usize {
         Operation::MatMul { .. } => 10,
 
         // Convolutions
-        Operation::Conv2D { .. } | Operation::Conv3D { .. } => 20,
+        Operation::Conv1D { .. } | Operation::Conv2D { .. } | Operation::Conv3D { .. } => 20,
 
         // Complex operations
         Operation::BatchNorm { .. } | Operation::LayerNorm { .. } => 15,

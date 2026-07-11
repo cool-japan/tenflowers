@@ -6,6 +6,7 @@
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::concat;
 use tenflowers_core::ops::einsum::einsum;
+use tenflowers_core::ops::manipulation::common::{calculate_strides, coords_to_flat, flat_to_coords};
 use tenflowers_core::ops::manipulation::{slice, squeeze, transpose_axes};
 use tenflowers_core::{Result, Tensor, TensorError};
 
@@ -61,80 +62,128 @@ impl SliceSpec {
 }
 
 /// Backward pass for slice operation
-/// For `y = x[slice_spec]`, `grad_x = zeros(x.shape)` with `grad_y` placed at slice positions
+/// For `y = x[slice_spec]`, `grad_x = zeros(x.shape)` with `grad_y` scattered back to
+/// the original per-dimension `(start, step)` positions it was sliced from.
+///
+/// Supports arbitrary rank and non-unit positive step (e.g. `step=2` strided slices).
+///
+/// # Negative step
+/// `SliceSpec.step` may in principle be negative (a reversed slice), but the
+/// forward slicing kernel this mirrors
+/// (`tenflowers_core::ops::manipulation::indexing::slice_with_stride`) does
+/// NOT correctly implement negative step today: it silently produces wrong
+/// values (confirmed empirically — for a size-6 `[0..6)` source sliced with
+/// `start=5, end=0, step=-2`, the expected result is `[5, 3, 1]` but the
+/// actual forward result is `[5, 0, 0]`, i.e. only the first element is
+/// correct and the rest are zeroed-out out-of-bounds reads). Since there is
+/// no correct forward behavior to be the gradient of, this function returns
+/// an explicit `TensorError::not_implemented_simple` for any negative step
+/// rather than silently computing a gradient for a forward pass that itself
+/// doesn't work. This is a pre-existing `tenflowers-core` bug, out of scope
+/// to fix here (it lives outside `tenflowers-autograd`).
 pub fn slice_backward<T>(
     grad_output: &Tensor<T>,
     input_shape: &[usize],
     slice_specs: &[SliceSpec],
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + Send + Sync + 'static + bytemuck::Pod,
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
 {
-    // Initialize gradient tensor with zeros matching input shape
-    let grad_input = Tensor::zeros(input_shape);
-
-    // If no slice specs provided, just return zeros
+    // If no slice specs provided, just return zeros (nothing to scatter back).
     if slice_specs.is_empty() {
-        return Ok(grad_input);
+        return Ok(Tensor::zeros(input_shape));
     }
 
-    // For the complete implementation, we need to reverse the slice operation
-    // This involves placing grad_output values back at their original positions
-
-    // Create normalized slice specs for each dimension
-    let mut normalized_specs = Vec::new();
+    // Normalize every dimension's slice spec to a concrete (start, end, step),
+    // defaulting to the full dimension (step=1) for any trailing dimension
+    // that has no explicit spec.
+    let mut normalized_specs: Vec<(usize, usize, isize)> = Vec::with_capacity(input_shape.len());
     for (dim_idx, shape_size) in input_shape.iter().enumerate() {
         if dim_idx < slice_specs.len() {
             let spec = &slice_specs[dim_idx];
+            let step = spec.step.unwrap_or(1);
+            if step < 0 {
+                return Err(TensorError::not_implemented_simple(format!(
+                    "slice_backward: negative step ({step}) is not supported because the \
+                     forward slice_with_stride kernel does not correctly implement negative \
+                     step (dimension {dim_idx})"
+                )));
+            }
+            if step == 0 {
+                return Err(TensorError::InvalidArgument {
+                    operation: "slice_backward".to_string(),
+                    reason: format!("slice step cannot be zero (dimension {dim_idx})"),
+                    context: None,
+                });
+            }
             let start = normalize_index(spec.start.unwrap_or(0), *shape_size)?;
             let end = normalize_index(spec.end.unwrap_or(*shape_size as isize), *shape_size)?;
-            let step = spec.step.unwrap_or(1);
-
-            // Handle both unit and non-unit step sizes
-            normalized_specs.push((start, end, step));
+            normalized_specs.push((start, end.max(start), step));
         } else {
-            // Full dimension if no slice spec provided (step=1 for full dimension)
+            // Full dimension if no slice spec provided (step=1 for full dimension).
             normalized_specs.push((0, *shape_size, 1));
         }
     }
 
-    // Implement proper strided slice backward pass
-    // The gradient should be scattered back to the original positions based on slice specs
+    // The expected output shape of the forward slice, per dimension:
+    // ceil((end - start) / step). Computed manually (rather than via
+    // `usize::div_ceil`, stable only since Rust 1.73.0) because this crate's
+    // MSRV is 1.70.0.
+    let expected_shape: Vec<usize> = normalized_specs
+        .iter()
+        .map(|&(start, end, step)| {
+            let span = end - start;
+            let step = step as usize;
+            (span + step - 1) / step
+        })
+        .collect();
 
-    // For now, implement a conservative approach for strided slices:
-    // - For step=1 cases, we can potentially implement proper gradient scattering
-    // - For step!=1 cases, use identity gradient to maintain mathematical correctness
-
-    // Check if all slices use step=1 for potential optimization
-    let all_unit_step = normalized_specs.iter().all(|(_, _, step)| *step == 1);
-
-    if all_unit_step && input_shape.len() <= 2 {
-        // For simple cases with unit steps, implement proper gradient placement
-        // This is a simplified implementation for common use cases
-
-        // Validate that grad_output shape matches expected slice output shape
-        let expected_shape: Vec<usize> = normalized_specs
-            .iter()
-            .map(|(start, end, _)| end - start)
-            .collect();
-
-        if grad_output.shape().dims() == expected_shape {
-            // For 1D and 2D cases with unit step, we can implement proper scattering
-            // This requires advanced tensor indexing which is complex to implement here
-            // For now, use identity gradient to ensure mathematical correctness
-            Ok(grad_output.clone())
-        } else {
-            Ok(grad_output.clone())
-        }
-    } else {
-        // For strided slices (step != 1), use identity gradient
-        // This maintains gradient flow while being mathematically conservative
-        // The identity gradient ensures that:
-        // 1. Gradient magnitudes are preserved
-        // 2. No gradient information is lost
-        // 3. Training can proceed with correct directional information
-        Ok(grad_output.clone())
+    if grad_output.shape().dims() != expected_shape {
+        return Err(TensorError::ShapeMismatch {
+            operation: "slice_backward".to_string(),
+            expected: format!("{expected_shape:?}"),
+            got: format!("{:?}", grad_output.shape().dims()),
+            context: None,
+        });
     }
+
+    // Scatter grad_output back into a zero-initialized input_shape-sized buffer.
+    // Walk every coordinate of grad_output (row-major), map dimension-by-dimension
+    // via `input_coord[d] = start_d + out_coord[d] * step_d`, and accumulate
+    // (add, not overwrite) into grad_input at that position. Slice specs never
+    // produce overlapping output positions in practice, but accumulating is
+    // defensive and costs nothing extra here.
+    let grad_output_data = grad_output.to_vec()?;
+    let input_strides = calculate_strides(input_shape);
+    let input_total: usize = input_shape.iter().product();
+    let mut grad_input_data: Vec<T> = vec![T::zero(); input_total];
+
+    for (out_flat, out_val) in grad_output_data.iter().enumerate() {
+        let out_coords = flat_to_coords(out_flat, &expected_shape);
+
+        let mut input_coords = Vec::with_capacity(out_coords.len());
+        for (d, &out_c) in out_coords.iter().enumerate() {
+            let (start, _end, step) = normalized_specs[d];
+            input_coords.push(start + out_c * step as usize);
+        }
+
+        let input_flat = coords_to_flat(&input_coords, &input_strides);
+        // `input_flat` is guaranteed in-bounds because every `input_coords[d]`
+        // was derived from a normalized (start, end) that itself was clamped
+        // to `input_shape[d]` by `normalize_index`.
+        grad_input_data[input_flat] = grad_input_data[input_flat].clone() + out_val.clone();
+    }
+
+    Tensor::from_vec(grad_input_data, input_shape)
 }
 
 /// Helper function to normalize negative indices
@@ -369,55 +418,114 @@ where
 }
 
 /// Backward pass for gather operation
-/// For y = gather(x, indices, axis), the gradient is scattered back to the original positions
-/// This is the inverse of gather: grad_x = scatter_add(zeros_like(x), indices, grad_y, axis)
+/// For `y = gather(x, indices, axis)` (TensorFlow-style `tf.gather`: `indices`
+/// carries no gradient, and the `axis` dimension of `x` is REPLACED — not just
+/// resized — by `indices.shape()`), the gradient is scattered back to the
+/// original positions with scatter-ADD semantics: if the same input index is
+/// gathered more than once, every occurrence's contribution to `grad_output`
+/// must be summed into that single `grad_input` position.
+///
+/// Mirrors the coordinate mapping of the forward
+/// `tenflowers_core::ops::manipulation::indexing::gather` exactly: output
+/// coordinates split as `(pre_axis..., index_coords..., post_axis...)`, where
+/// `index_coords` selects an entry of `indices` whose value becomes the
+/// `axis` coordinate into `input`.
 pub fn gather_backward<T>(
     grad_output: &Tensor<T>,
     input_shape: &[usize],
-    indices: &Tensor<i64>,
-    axis: i32,
+    indices: &Tensor<i32>,
+    axis: usize,
 ) -> Result<Tensor<T>>
 where
-    T: Clone + Default + Zero + One + std::ops::Add<Output = T> + Send + Sync + 'static,
+    T: Clone
+        + Default
+        + Zero
+        + One
+        + std::ops::Add<Output = T>
+        + Send
+        + Sync
+        + 'static
+        + bytemuck::Pod
+        + bytemuck::Zeroable,
 {
     let ndim = input_shape.len();
 
-    // Normalize axis
-    let actual_axis = if axis < 0 {
-        (ndim as i32 + axis) as usize
-    } else {
-        axis as usize
+    if axis >= ndim {
+        return Err(TensorError::InvalidArgument {
+            operation: "gather_backward".to_string(),
+            reason: format!("axis {axis} out of range for input of rank {ndim}"),
+            context: None,
+        });
+    }
+
+    let axis_size = input_shape[axis];
+    let indices_dims = indices.shape().dims().to_vec();
+    let indices_rank = indices_dims.len();
+
+    // The expected grad_output shape is input_shape with the `axis` dimension
+    // replaced by indices_dims (same as the forward gather's output shape).
+    let mut expected_shape = input_shape.to_vec();
+    expected_shape.splice(axis..axis + 1, indices_dims.iter().copied());
+    if grad_output.shape().dims() != expected_shape {
+        return Err(TensorError::ShapeMismatch {
+            operation: "gather_backward".to_string(),
+            expected: format!("{expected_shape:?}"),
+            got: format!("{:?}", grad_output.shape().dims()),
+            context: None,
+        });
+    }
+
+    // Read grad_output/indices logically (safe for non-contiguous inputs),
+    // matching how the forward `gather` reads `params`/`indices`.
+    let grad_output_data: Vec<T> = match grad_output.as_slice() {
+        Some(s) => s.to_vec(),
+        None => grad_output.to_vec()?,
+    };
+    let indices_data: Vec<i32> = match indices.as_slice() {
+        Some(s) => s.to_vec(),
+        None => indices.to_vec()?,
     };
 
-    if actual_axis >= ndim {
-        return Err(TensorError::ShapeMismatch {
-            operation: "backward_operation".to_string(),
-            expected: format!("axis < {ndim}"),
-            got: format!("axis = {axis}"),
-            context: None,
-        });
+    let indices_strides = calculate_strides(&indices_dims);
+    let input_strides = calculate_strides(input_shape);
+    let input_total: usize = input_shape.iter().product();
+    let mut grad_input_data: Vec<T> = vec![T::zero(); input_total];
+
+    for (out_flat, out_val) in grad_output_data.iter().enumerate() {
+        let out_coords = flat_to_coords(out_flat, &expected_shape);
+
+        // The index block occupies positions [axis, axis + indices_rank)
+        // within the output coordinates (same as forward gather).
+        let index_coords = &out_coords[axis..axis + indices_rank];
+        let indices_flat = coords_to_flat(index_coords, &indices_strides);
+        let gathered = indices_data[indices_flat];
+
+        if gathered < 0 || gathered as usize >= axis_size {
+            return Err(TensorError::InvalidArgument {
+                operation: "gather_backward".to_string(),
+                reason: format!(
+                    "index {gathered} out of bounds for axis {axis} of size {axis_size}"
+                ),
+                context: None,
+            });
+        }
+
+        // Reconstruct the input coordinate: pre-axis dims unchanged, the
+        // gathered index at `axis`, then post-axis dims (which follow the
+        // index block in the output).
+        let mut input_coords = Vec::with_capacity(input_shape.len());
+        input_coords.extend_from_slice(&out_coords[..axis]);
+        input_coords.push(gathered as usize);
+        input_coords.extend_from_slice(&out_coords[axis + indices_rank..]);
+
+        let input_flat = coords_to_flat(&input_coords, &input_strides);
+
+        // Scatter-ADD: accumulate, never overwrite, so that gathering the
+        // same input index multiple times sums all of its contributions.
+        grad_input_data[input_flat] = grad_input_data[input_flat].clone() + out_val.clone();
     }
 
-    // Initialize gradient input with zeros
-    let grad_input = Tensor::zeros(input_shape);
-
-    // Get shapes for iteration
-    let grad_output_shape = grad_output.shape().dims();
-    let indices_shape = indices.shape().dims();
-
-    // Verify shapes are compatible
-    if grad_output_shape != indices_shape {
-        return Err(TensorError::ShapeMismatch {
-            operation: "backward_operation".to_string(),
-            expected: format!("grad_output and indices shapes must match: {grad_output_shape:?}"),
-            got: format!("indices shape: {indices_shape:?}"),
-            context: None,
-        });
-    }
-
-    // For now, implement a simplified version that works for basic cases
-    // In a full implementation, this would need proper multi-dimensional scatter operations
-    Ok(grad_input)
+    Tensor::from_vec(grad_input_data, input_shape)
 }
 
 /// Backward pass for scatter operation
@@ -831,6 +939,76 @@ mod tests {
     }
 
     #[test]
+    fn test_slice_backward_contiguous_range() {
+        // x shape [6], slice [1..4] (step=1): grad_input must be
+        // [0, g0, g1, g2, 0, 0] for grad_output = [g0, g1, g2].
+        let grad_output = Tensor::from_vec(vec![10.0f32, 20.0, 30.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let input_shape = &[6];
+        let slice_specs = vec![SliceSpec::range(1, 4)];
+
+        let grad_input = slice_backward(&grad_output, input_shape, &slice_specs)
+            .expect("test: slice_backward should succeed");
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let got = grad_input.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(got, vec![0.0, 10.0, 20.0, 30.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_slice_backward_strided_step_2() {
+        // x shape [6], slice picking indices [0, 2, 4] (step=2): grad must
+        // land ONLY at those 3 positions and be exactly zero elsewhere.
+        let grad_output = Tensor::from_vec(vec![100.0f32, 200.0, 300.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let input_shape = &[6];
+        let slice_specs = vec![SliceSpec::range_with_step(0, 6, 2)];
+
+        let grad_input = slice_backward(&grad_output, input_shape, &slice_specs)
+            .expect("test: slice_backward should succeed");
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let got = grad_input.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(got, vec![100.0, 0.0, 200.0, 0.0, 300.0, 0.0]);
+    }
+
+    #[test]
+    fn test_slice_backward_2d_partial_both_dims() {
+        // x shape [3, 4]; slice rows [1..3], cols [1..3] -> output [2, 2].
+        // grad_input must place grad_output at rows 1..3, cols 1..3 and be
+        // zero everywhere else.
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2])
+            .expect("test: tensor creation from valid data should succeed");
+        let input_shape = &[3, 4];
+        let slice_specs = vec![SliceSpec::range(1, 3), SliceSpec::range(1, 3)];
+
+        let grad_input = slice_backward(&grad_output, input_shape, &slice_specs)
+            .expect("test: slice_backward should succeed");
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let got = grad_input.to_vec().expect("test: to_vec should succeed");
+        #[rustfmt::skip]
+        let expected = vec![
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 2.0, 0.0,
+            0.0, 3.0, 4.0, 0.0,
+        ];
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn test_slice_backward_negative_step_not_implemented() {
+        // The forward slice_with_stride kernel does not correctly implement
+        // negative step (confirmed empirically against
+        // tenflowers_core::ops::manipulation::indexing::slice_with_stride),
+        // so slice_backward must reject it explicitly rather than silently
+        // computing a gradient for a forward pass that doesn't work.
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0], &[3])
+            .expect("test: tensor creation from valid data should succeed");
+        let input_shape = &[6];
+        let slice_specs = vec![SliceSpec::range_with_step(5, 0, -2)];
+        let result = slice_backward(&grad_output, input_shape, &slice_specs);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_stack_backward_basic() {
         // Test basic stack backward functionality
         let grad_output = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])
@@ -899,21 +1077,80 @@ mod tests {
     }
 
     #[test]
-    fn test_gather_scatter_backward_interface() {
-        // Test that the functions compile and basic structure works
+    fn test_gather_backward_simple_1d_values() {
+        // params shape [5], indices = [0, 2] (1D gather along axis 0).
+        // grad_output shape matches indices shape: [2].
         let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
             .expect("test: tensor creation from valid data should succeed");
         let input_shape = &[5];
+        let indices =
+            Tensor::from_vec(vec![0i32, 2], &[2]).expect("test: tensor creation should succeed");
+
+        let grad_input = gather_backward(&grad_output, input_shape, &indices, 0)
+            .expect("test: gather_backward should succeed");
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let got = grad_input.to_vec().expect("test: to_vec should succeed");
+        // index 0 received grad_output[0]=1.0, index 2 received grad_output[1]=2.0,
+        // indices 1, 3, 4 were never gathered so must be exactly zero.
+        assert_eq!(got, vec![1.0, 0.0, 2.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_gather_backward_repeated_index_accumulates() {
+        // params shape [4, 3], indices = [0, 2, 0] along axis 0 (mandatory
+        // same-index-gathered-twice accumulation case): grad_input[0] must
+        // equal the SUM of grad_output rows 0 and 2 (both gathered index 0),
+        // not just one of them; grad_input[2] equals grad_output row 1;
+        // grad_input[1] and grad_input[3] (never gathered) are exactly zero.
+        let input_shape = &[4, 3];
+        let indices =
+            Tensor::from_vec(vec![0i32, 2, 0], &[3]).expect("test: tensor creation should succeed");
+        // grad_output shape [3, 3]: row i is the gradient contributed by
+        // indices[i].
+        let grad_output = Tensor::from_vec(
+            vec![
+                1.0f32, 1.0, 1.0, // row 0 -> gathered index 0
+                2.0, 2.0, 2.0, // row 1 -> gathered index 2
+                3.0, 3.0, 3.0, // row 2 -> gathered index 0 (again)
+            ],
+            &[3, 3],
+        )
+        .expect("test: tensor creation from valid data should succeed");
+
+        let grad_input = gather_backward(&grad_output, input_shape, &indices, 0)
+            .expect("test: gather_backward should succeed");
+        assert_eq!(grad_input.shape().dims(), input_shape);
+        let got = grad_input.to_vec().expect("test: to_vec should succeed");
+        assert_eq!(
+            got,
+            vec![
+                4.0, 4.0, 4.0, // row 0 = row0 + row2 = [1,1,1] + [3,3,3]
+                0.0, 0.0, 0.0, // row 1 never gathered
+                2.0, 2.0, 2.0, // row 2 = row1 = [2,2,2]
+                0.0, 0.0, 0.0, // row 3 never gathered
+            ]
+        );
+    }
+
+    #[test]
+    fn test_gather_backward_out_of_bounds_index_errors() {
+        let grad_output = Tensor::from_vec(vec![1.0f32], &[1])
+            .expect("test: tensor creation from valid data should succeed");
+        let input_shape = &[3];
+        let indices =
+            Tensor::from_vec(vec![5i32], &[1]).expect("test: tensor creation should succeed");
+        let result = gather_backward(&grad_output, input_shape, &indices, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scatter_backward_interface() {
+        // scatter_backward is out of scope for this round (still a stub);
+        // this only verifies the existing interface/shape contract.
+        let grad_output = Tensor::from_vec(vec![1.0f32, 2.0], &[2])
+            .expect("test: tensor creation from valid data should succeed");
         let indices = Tensor::from_vec(vec![0i64, 2], &[2])
             .expect("test: tensor creation from valid data should succeed");
-
-        // Test gather backward
-        let result = gather_backward(&grad_output, input_shape, &indices, 0);
-        assert!(result.is_ok());
-        let grad_input = result.expect("test: gradient computation should succeed");
-        assert_eq!(grad_input.shape().dims(), input_shape);
-
-        // Test scatter backward
         let input = Tensor::from_vec(vec![1.0f32, 2.0, 3.0, 4.0, 5.0], &[5])
             .expect("test: tensor creation from valid data should succeed");
         let values = Tensor::from_vec(vec![10.0f32, 20.0], &[2])

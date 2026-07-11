@@ -300,23 +300,33 @@ where
         + Zero
         + One
         + scirs2_core::num_traits::Float
-        + scirs2_core::num_traits::Signed
         + Send
         + Sync
         + 'static
         + bytemuck::Pod
         + bytemuck::Zeroable,
 {
-    // Compute softplus(x) = log(1 + exp(x)) using a more stable implementation
-    // For numerical stability, use: softplus(x) = max(0, x) + log(1 + exp(-abs(x)))
-    let abs_x = input.abs()?;
+    // Compute softplus(x) = log(1 + exp(x)) using a numerically stable
+    // implementation: softplus(x) = max(0, x) + log(1 + exp(-abs(x))).
+    //
+    // `abs(x)` is built from `where(x >= 0, x, -x)` (via `where_op` + `gt` +
+    // `neg`) rather than `Tensor::abs()`, which requires `T: Signed` — a
+    // bound `num_traits::Float` does not itself provide. Avoiding it here
+    // keeps this function's bound at `Float` alone, matching every sibling
+    // activation-backward function in this file and avoiding a `Signed`
+    // requirement from propagating up through the generic `T` on
+    // `GradientTape::gradient`'s public signature.
+    let zero_tensor = Tensor::zeros(input.shape().dims());
+    let is_non_negative = input.gt(&zero_tensor)?;
+    let neg_x = input.neg()?;
+    let abs_x = tenflowers_core::ops::where_op(&is_non_negative, input, &neg_x)?;
     let neg_abs_x = abs_x.neg()?;
     let exp_neg_abs = neg_abs_x.exp()?;
     let one_tensor = Tensor::ones(input.shape().dims());
-    let _one_plus_exp = one_tensor.add(&exp_neg_abs)?;
-    // For now, use a simpler approximation since we don't have ln implemented
-    let zero_tensor = Tensor::zeros(input.shape().dims());
-    let softplus = tenflowers_core::ops::where_op(&input.gt(&zero_tensor)?, input, &zero_tensor)?;
+    let one_plus_exp = one_tensor.add(&exp_neg_abs)?;
+    let log_term = one_plus_exp.log()?;
+    let max_x_zero = tenflowers_core::ops::where_op(&is_non_negative, input, &zero_tensor)?;
+    let softplus = max_x_zero.add(&log_term)?;
 
     // Compute tanh(softplus(x))
     let tanh_softplus = tenflowers_core::ops::activation::tanh(&softplus)?;

@@ -517,7 +517,7 @@ impl PyPerformanceBenchmark {
         let mut model = PySequential::new();
 
         for i in 0..dims.len() - 1 {
-            let dense = PyDense::new(dims[i], dims[i + 1], Some(true), Some("relu".to_string()));
+            let dense = PyDense::new(dims[i], dims[i + 1], Some(true), Some("relu".to_string()))?;
             // Add the layer to the sequential model
             model.add(dense);
         }

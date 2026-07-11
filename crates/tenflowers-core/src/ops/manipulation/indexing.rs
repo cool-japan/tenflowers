@@ -132,26 +132,49 @@ where
             if let Some(result_slice) = result.as_slice_mut() {
                 let mut result_idx = 0;
 
+                // Row-major (C-order) strides of the ORIGINAL (unsliced)
+                // array: `strides[d]` is the number of contiguous elements
+                // to skip to advance dimension `d` by one, i.e. the product
+                // of every LATER dimension's size (`calculate_strides`
+                // iterates dimensions in reverse for exactly this reason —
+                // see its own doc). Computed once, outside the loop below,
+                // since it depends only on `shape` (the original array's
+                // shape), not on the current slice position.
+                //
+                // Prior to this fix, the linear-index computation below used
+                // a forward-order `.scan(1, |acc, (idx, dim)| { stride =
+                // acc; acc *= dim; idx * stride })` instead — which computes
+                // dimension `d`'s stride as the product of every EARLIER
+                // dimension's size, the wrong direction for row-major
+                // layout. That formula is only accidentally correct when
+                // every dimension's size is equal (e.g. a square matrix) or
+                // when the array is 1-D; for a `[2, 4]` array it silently
+                // produced element `[3, 5, 4, 6]` for a `[:, 1:3]` slice of
+                // `[1..8]` (expected `[2, 3, 6, 7]`) — confirmed by a
+                // dedicated finite-difference gradient test in
+                // `tenflowers-ffi`'s `neural::recurrent` module, which
+                // caught this via `batch_size > 1` combined with a
+                // non-uniform, non-full-axis gate slice (e.g. LSTM/GRU cell
+                // gate extraction) failing against an independent
+                // finite-difference oracle.
+                let original_strides = calculate_strides(shape.dims());
+
                 // Iterate through the strided layout to copy elements
                 for indices in sliced_layout.indices_iter() {
-                    // Map back to original indices
-                    let mut original_indices = Vec::new();
+                    // Map back to original indices and directly accumulate
+                    // the linear index against `original_strides` (rather
+                    // than building an intermediate `original_indices: Vec`
+                    // just to re-zip it against `shape.dims()` afterward, as
+                    // the pre-fix code did) — one pass, using the correct,
+                    // already-shared `calculate_strides` helper the rest of
+                    // this module relies on for the same purpose (see e.g.
+                    // `flat_to_coords` in `common.rs`).
+                    let mut linear_idx = 0usize;
                     for (dim, &index) in indices.iter().enumerate() {
                         let (start, _end, step) = slice_params[dim].normalize(shape.dims()[dim])?;
                         let original_idx = start + (index * step.unsigned_abs());
-                        original_indices.push(original_idx);
+                        linear_idx += original_idx * original_strides[dim];
                     }
-
-                    // Get the linear index in the original array
-                    let linear_idx: usize = original_indices
-                        .iter()
-                        .zip(shape.dims())
-                        .scan(1, |acc, (&idx, &dim)| {
-                            let stride = *acc;
-                            *acc *= dim;
-                            Some(idx * stride)
-                        })
-                        .sum();
 
                     // Copy the element
                     if let Some(val) = array.as_slice().and_then(|s| s.get(linear_idx)) {
