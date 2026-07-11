@@ -49,8 +49,7 @@ fn forward_conv1d_reference(
         "valid" => ((in_length - kernel_length) / stride + 1, 0usize),
         "same" => {
             let out_len = (in_length + stride - 1) / stride;
-            let pad_total =
-                std::cmp::max(0, (out_len - 1) * stride + kernel_length - in_length);
+            let pad_total = std::cmp::max(0, (out_len - 1) * stride + kernel_length - in_length);
             (out_len, pad_total / 2)
         }
         other => panic!("test: unsupported padding {other}"),
@@ -68,8 +67,7 @@ fn forward_conv1d_reference(
                         if il >= pad_left && il < in_length + pad_left {
                             let il_actual = il - pad_left;
                             if il_actual < in_length {
-                                let input_idx =
-                                    (b * in_channels + ic) * in_length + il_actual;
+                                let input_idx = (b * in_channels + ic) * in_length + il_actual;
                                 let weight_idx = (oc * in_channels + ic) * kernel_length + k;
                                 sum += input[input_idx] * weight[weight_idx];
                             }
@@ -166,7 +164,9 @@ fn run_conv1d_gradient_check(stride: usize, padding: &str) {
 
     let output_tracked = input_tracked
         .conv1d(&weight_tracked, Some(&bias_tracked), stride, padding)
-        .unwrap_or_else(|e| panic!("conv1d forward failed (stride={stride}, padding={padding}): {e}"));
+        .unwrap_or_else(|e| {
+            panic!("conv1d forward failed (stride={stride}, padding={padding}): {e}")
+        });
 
     // Build the scalar loss L = <grad_seed, output> as an actual traced
     // computation (output.mul(grad_seed_tracked).sum()) rather than manually
@@ -182,7 +182,9 @@ fn run_conv1d_gradient_check(stride: usize, padding: &str) {
     let loss_tracked = output_tracked
         .mul(&grad_seed_tracked)
         .and_then(|weighted| weighted.sum(None, false))
-        .unwrap_or_else(|e| panic!("loss construction failed (stride={stride}, padding={padding}): {e}"));
+        .unwrap_or_else(|e| {
+            panic!("loss construction failed (stride={stride}, padding={padding}): {e}")
+        });
 
     let gradients = tape
         .gradient(
@@ -193,7 +195,9 @@ fn run_conv1d_gradient_check(stride: usize, padding: &str) {
                 bias_tracked.clone(),
             ],
         )
-        .unwrap_or_else(|e| panic!("gradient computation failed (stride={stride}, padding={padding}): {e}"));
+        .unwrap_or_else(|e| {
+            panic!("gradient computation failed (stride={stride}, padding={padding}): {e}")
+        });
 
     let analytical_grad_input = gradients[0]
         .as_ref()

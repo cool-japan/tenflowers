@@ -512,9 +512,8 @@ mod tests {
             assert_eq!(tensor.device(), &Device::Gpu(0));
 
             // Same seed, independent dispatch -> identical samples.
-            let tensor2 =
-                random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(42), &Device::Gpu(0))
-                    .expect("test: second GPU random_normal dispatch should succeed");
+            let tensor2 = random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(42), &Device::Gpu(0))
+                .expect("test: second GPU random_normal dispatch should succeed");
             let data = tensor
                 .to_cpu()
                 .expect("test: to_cpu should succeed")
@@ -525,13 +524,15 @@ mod tests {
                 .expect("test: to_cpu should succeed")
                 .to_vec()
                 .expect("test: to_vec should succeed");
-            assert_eq!(data, data2, "GPU random_normal is not deterministic for a fixed seed");
+            assert_eq!(
+                data, data2,
+                "GPU random_normal is not deterministic for a fixed seed"
+            );
 
             // Different seed -> the two draws should not be identical (would
             // indicate the seed is silently ignored by the shader).
-            let tensor3 =
-                random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(43), &Device::Gpu(0))
-                    .expect("test: third GPU random_normal dispatch should succeed");
+            let tensor3 = random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(43), &Device::Gpu(0))
+                .expect("test: third GPU random_normal dispatch should succeed");
             let data3 = tensor3
                 .to_cpu()
                 .expect("test: to_cpu should succeed")
@@ -586,20 +587,21 @@ mod tests {
             }
 
             // Same seed, independent dispatch -> identical samples.
-            let tensor2 =
-                random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(42), &Device::Gpu(0))
-                    .expect("test: second GPU random_uniform dispatch should succeed");
+            let tensor2 = random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(42), &Device::Gpu(0))
+                .expect("test: second GPU random_uniform dispatch should succeed");
             let data2 = tensor2
                 .to_cpu()
                 .expect("test: to_cpu should succeed")
                 .to_vec()
                 .expect("test: to_vec should succeed");
-            assert_eq!(data, data2, "GPU random_uniform is not deterministic for a fixed seed");
+            assert_eq!(
+                data, data2,
+                "GPU random_uniform is not deterministic for a fixed seed"
+            );
 
             // Different seed -> draws should differ (seed must not be ignored).
-            let tensor3 =
-                random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(43), &Device::Gpu(0))
-                    .expect("test: third GPU random_uniform dispatch should succeed");
+            let tensor3 = random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(43), &Device::Gpu(0))
+                .expect("test: third GPU random_uniform dispatch should succeed");
             let data3 = tensor3
                 .to_cpu()
                 .expect("test: to_cpu should succeed")

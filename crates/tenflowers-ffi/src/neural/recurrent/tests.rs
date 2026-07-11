@@ -138,7 +138,12 @@ fn lstm_forward_is_real() {
         let input = make_tensor(ramp(3 * 2 * 4), &[3, 2, 4]);
         let (zero_output, _zero_hidden) = lstm.forward(py, &input, None).expect("forward");
         assert!(
-            zero_output.tensor.to_vec().expect("vec").iter().all(|&v| v == 0.0),
+            zero_output
+                .tensor
+                .to_vec()
+                .expect("vec")
+                .iter()
+                .all(|&v| v == 0.0),
             "a fresh, zero-initialised LSTM must produce an exactly-zero output"
         );
         for p in lstm.parameters(py) {
@@ -307,7 +312,11 @@ fn lstm_gradients_are_correct() {
         run_backward(&loss).expect("backward must succeed");
 
         let params = lstm.parameters(py);
-        assert_eq!(params.len(), 4, "weight_ih, weight_hh, bias_ih, bias_hh for 1 layer");
+        assert_eq!(
+            params.len(),
+            4,
+            "weight_ih, weight_hh, bias_ih, bias_hh for 1 layer"
+        );
 
         let mut any_nonzero_overall = false;
         for p in &params {
@@ -317,7 +326,10 @@ fn lstm_gradients_are_correct() {
                 .tensor
                 .to_vec()
                 .expect("grad readable");
-            assert!(grad.iter().all(|g| g.is_finite()), "grad must be finite: {grad:?}");
+            assert!(
+                grad.iter().all(|g| g.is_finite()),
+                "grad must be finite: {grad:?}"
+            );
             if grad.iter().any(|&g| g != 0.0) {
                 any_nonzero_overall = true;
             }
@@ -341,8 +353,14 @@ fn lstm_gradients_are_correct() {
             .tensor
             .to_vec()
             .expect("readable");
-        assert!(grad_w_ih.iter().any(|&g| g != 0.0), "weight_ih grad must be nonzero");
-        assert!(grad_w_hh.iter().any(|&g| g != 0.0), "weight_hh grad must be nonzero");
+        assert!(
+            grad_w_ih.iter().any(|&g| g != 0.0),
+            "weight_ih grad must be nonzero"
+        );
+        assert!(
+            grad_w_hh.iter().any(|&g| g != 0.0),
+            "weight_hh grad must be nonzero"
+        );
 
         // Finite-difference oracle for weight_ih: re-run the SAME real
         // forward() with a perturbed weight_ih value, recomputing the exact
@@ -418,8 +436,14 @@ fn gru_gradients_are_correct() {
             .expect("readable");
         assert!(grad_w_ih.iter().all(|g| g.is_finite()));
         assert!(grad_w_hh.iter().all(|g| g.is_finite()));
-        assert!(grad_w_ih.iter().any(|&g| g != 0.0), "weight_ih grad must be nonzero");
-        assert!(grad_w_hh.iter().any(|&g| g != 0.0), "weight_hh grad must be nonzero");
+        assert!(
+            grad_w_ih.iter().any(|&g| g != 0.0),
+            "weight_ih grad must be nonzero"
+        );
+        assert!(
+            grad_w_hh.iter().any(|&g| g != 0.0),
+            "weight_hh grad must be nonzero"
+        );
 
         let w_hh_param = &params[1];
         let w_hh_vals = w_hh_param
@@ -480,7 +504,10 @@ fn rnn_gradients_are_correct() {
             .to_vec()
             .expect("readable");
         assert!(grad_w_ih.iter().all(|g| g.is_finite()));
-        assert!(grad_w_ih.iter().any(|&g| g != 0.0), "weight_ih grad must be nonzero");
+        assert!(
+            grad_w_ih.iter().any(|&g| g != 0.0),
+            "weight_ih grad must be nonzero"
+        );
 
         let w_ih_param = &params[0];
         let w_ih_vals = w_ih_param
@@ -539,7 +566,10 @@ fn lstm_cell_gradients_are_correct() {
             .to_vec()
             .expect("readable");
         assert!(grad_w_ih.iter().all(|g| g.is_finite()));
-        assert!(grad_w_ih.iter().any(|&g| g != 0.0), "weight_ih grad must be nonzero");
+        assert!(
+            grad_w_ih.iter().any(|&g| g != 0.0),
+            "weight_ih grad must be nonzero"
+        );
 
         let w_ih_param = &params[0];
         let w_ih_vals = w_ih_param
@@ -603,7 +633,10 @@ fn gru_cell_gradients_are_correct() {
             .to_vec()
             .expect("readable");
         assert!(grad_w_hh.iter().all(|g| g.is_finite()));
-        assert!(grad_w_hh.iter().any(|&g| g != 0.0), "weight_hh grad must be nonzero");
+        assert!(
+            grad_w_hh.iter().any(|&g| g != 0.0),
+            "weight_hh grad must be nonzero"
+        );
 
         let w_hh_param = &params[1];
         let w_hh_vals = w_hh_param
@@ -670,7 +703,10 @@ fn lstm_parameters_share_identity_with_forward() {
         let n = weight_ih_handle.borrow(py).size();
         weight_ih_handle
             .borrow(py)
-            .set_data(Tensor::from_vec(small_values(n, 5.0), &weight_ih_handle.borrow(py).shape()).expect("tensor"))
+            .set_data(
+                Tensor::from_vec(small_values(n, 5.0), &weight_ih_handle.borrow(py).shape())
+                    .expect("tensor"),
+            )
             .expect("set_data");
 
         let (out_after, _h) = lstm.forward(py, &input, None).expect("forward after");
@@ -710,7 +746,10 @@ fn gru_parameters_share_identity_with_forward() {
         let n = weight_ih_handle.borrow(py).size();
         weight_ih_handle
             .borrow(py)
-            .set_data(Tensor::from_vec(small_values(n, 6.0), &weight_ih_handle.borrow(py).shape()).expect("tensor"))
+            .set_data(
+                Tensor::from_vec(small_values(n, 6.0), &weight_ih_handle.borrow(py).shape())
+                    .expect("tensor"),
+            )
             .expect("set_data");
 
         let (out_after, _h) = gru.forward(py, &input, None).expect("forward after");
@@ -738,7 +777,10 @@ fn rnn_parameters_share_identity_with_forward() {
         let n = weight_ih_handle.borrow(py).size();
         weight_ih_handle
             .borrow(py)
-            .set_data(Tensor::from_vec(small_values(n, 7.0), &weight_ih_handle.borrow(py).shape()).expect("tensor"))
+            .set_data(
+                Tensor::from_vec(small_values(n, 7.0), &weight_ih_handle.borrow(py).shape())
+                    .expect("tensor"),
+            )
             .expect("set_data");
 
         let (out_after, _h) = rnn.forward(py, &input, None).expect("forward after");
@@ -886,9 +928,16 @@ fn gru_forward_matches_single_cell_step() {
         let x_t = sequence_timestep(&input, 0, 2, 4, false).expect("x_t");
         let h_prev = slice_initial_state(&h0, 0, 0, 1, 2, 5).expect("h_prev");
 
-        let expected =
-            super::gru::gru_cell_step_for_tests(&x_t, &h_prev, &w_ih, &w_hh, Some(&b_ih), Some(&b_hh), 5)
-                .expect("gru_cell_step");
+        let expected = super::gru::gru_cell_step_for_tests(
+            &x_t,
+            &h_prev,
+            &w_ih,
+            &w_hh,
+            Some(&b_ih),
+            Some(&b_hh),
+            5,
+        )
+        .expect("gru_cell_step");
         let exp = expected.tensor.to_vec().expect("vec");
         let got = output.tensor.to_vec().expect("vec");
         assert_eq!(exp.len(), got.len());
@@ -1086,7 +1135,12 @@ fn rnn_bidirectional_forward_with_hidden_state_succeeds() {
             .expect("bidirectional forward with hidden must succeed");
         assert_eq!(output.tensor.shape().dims().to_vec(), vec![3, 2, 10]);
         assert_eq!(h_n.tensor.shape().dims().to_vec(), vec![2, 2, 5]);
-        assert!(output.tensor.to_vec().expect("vec").iter().all(|v| v.is_finite()));
+        assert!(output
+            .tensor
+            .to_vec()
+            .expect("vec")
+            .iter()
+            .all(|v| v.is_finite()));
     });
 }
 
@@ -1121,10 +1175,17 @@ fn lstm_reset_parameters_produces_fresh_identities() {
         let before_handles = lstm.parameters(py);
         let before_ids: Vec<usize> = before_handles.iter().map(|p| p.borrow(py).id()).collect();
         lstm.reset_parameters(py).expect("reset_parameters");
-        let after_ids: Vec<usize> = lstm.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
+        let after_ids: Vec<usize> = lstm
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
         assert_eq!(before_ids.len(), after_ids.len());
         for (b, a) in before_ids.iter().zip(after_ids.iter()) {
-            assert_ne!(b, a, "reset_parameters must produce a fresh parameter identity");
+            assert_ne!(
+                b, a,
+                "reset_parameters must produce a fresh parameter identity"
+            );
         }
         drop(before_handles);
     });
@@ -1141,10 +1202,17 @@ fn gru_reset_parameters_produces_fresh_identities() {
         let before_handles = gru.parameters(py);
         let before_ids: Vec<usize> = before_handles.iter().map(|p| p.borrow(py).id()).collect();
         gru.reset_parameters(py).expect("reset_parameters");
-        let after_ids: Vec<usize> = gru.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
+        let after_ids: Vec<usize> = gru
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
         assert_eq!(before_ids.len(), after_ids.len());
         for (b, a) in before_ids.iter().zip(after_ids.iter()) {
-            assert_ne!(b, a, "reset_parameters must produce a fresh parameter identity");
+            assert_ne!(
+                b, a,
+                "reset_parameters must produce a fresh parameter identity"
+            );
         }
         drop(before_handles);
     });
@@ -1161,10 +1229,17 @@ fn rnn_reset_parameters_produces_fresh_identities() {
         let before_handles = rnn.parameters(py);
         let before_ids: Vec<usize> = before_handles.iter().map(|p| p.borrow(py).id()).collect();
         rnn.reset_parameters(py).expect("reset_parameters");
-        let after_ids: Vec<usize> = rnn.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
+        let after_ids: Vec<usize> = rnn
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
         assert_eq!(before_ids.len(), after_ids.len());
         for (b, a) in before_ids.iter().zip(after_ids.iter()) {
-            assert_ne!(b, a, "reset_parameters must produce a fresh parameter identity");
+            assert_ne!(
+                b, a,
+                "reset_parameters must produce a fresh parameter identity"
+            );
         }
         drop(before_handles);
     });
@@ -1318,9 +1393,20 @@ fn lstm_clone_shares_parameter_identity() {
     Python::attach(|py| {
         let lstm = PyLSTM::new(py, 3, 2, None, None, None, None, None).expect("lstm");
         let cloned = lstm.clone();
-        let orig_ids: Vec<usize> = lstm.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
-        let clone_ids: Vec<usize> = cloned.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
-        assert_eq!(orig_ids, clone_ids, "Clone must share PyParameter identity (Py::clone_ref semantics)");
+        let orig_ids: Vec<usize> = lstm
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
+        let clone_ids: Vec<usize> = cloned
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
+        assert_eq!(
+            orig_ids, clone_ids,
+            "Clone must share PyParameter identity (Py::clone_ref semantics)"
+        );
     });
 }
 
@@ -1332,8 +1418,8 @@ fn multi_layer_lstm_parameter_count_matches_layer_count() {
         // 2 layers * (weight_ih, weight_hh, bias_ih, bias_hh) = 8.
         assert_eq!(lstm.parameters(py).len(), 8);
 
-        let lstm_bi =
-            PyLSTM::new(py, 3, 2, Some(2), None, None, None, Some(true)).expect("bidirectional lstm 2-layer");
+        let lstm_bi = PyLSTM::new(py, 3, 2, Some(2), None, None, None, Some(true))
+            .expect("bidirectional lstm 2-layer");
         // 2 layers * 4 forward + 2 layers * 4 reverse = 16.
         assert_eq!(lstm_bi.parameters(py).len(), 16);
     });

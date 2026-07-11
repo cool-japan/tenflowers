@@ -198,8 +198,11 @@ mod tests {
 
         let n = data.len() as f32;
         let expected_mean = data.iter().sum::<f32>() / n;
-        let expected_variance =
-            data.iter().map(|&x| (x - expected_mean).powi(2)).sum::<f32>() / n;
+        let expected_variance = data
+            .iter()
+            .map(|&x| (x - expected_mean).powi(2))
+            .sum::<f32>()
+            / n;
 
         assert!(
             (mean - expected_mean).abs() < 1e-3,

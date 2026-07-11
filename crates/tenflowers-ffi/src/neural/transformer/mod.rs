@@ -257,14 +257,18 @@ impl Clone for PyTransformerEncoderLayer {
                 batch_first: self.batch_first,
                 layer_norm_eps: self.layer_norm_eps,
                 self_attn: self.self_attn.clone(),
-                ff_w1_param: Py::new(py, ff_w1)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_b1_param: Py::new(py, ff_b1)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_w2_param: Py::new(py, ff_w2)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_b2_param: Py::new(py, ff_b2)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
+                ff_w1_param: Py::new(py, ff_w1).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_b1_param: Py::new(py, ff_b1).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_w2_param: Py::new(py, ff_w2).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_b2_param: Py::new(py, ff_b2).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
                 layer_norm: PyLayerNorm {
                     normalized_shape: self.layer_norm.normalized_shape.clone(),
                     eps: self.layer_norm.eps,
@@ -537,14 +541,18 @@ impl Clone for PyTransformerDecoderLayer {
                 layer_norm_eps: self.layer_norm_eps,
                 self_attn: self.self_attn.clone(),
                 cross_attn: self.cross_attn.clone(),
-                ff_w1_param: Py::new(py, ff_w1)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_b1_param: Py::new(py, ff_b1)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_w2_param: Py::new(py, ff_w2)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                ff_b2_param: Py::new(py, ff_b2)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
+                ff_w1_param: Py::new(py, ff_w1).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_b1_param: Py::new(py, ff_b1).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_w2_param: Py::new(py, ff_w2).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                ff_b2_param: Py::new(py, ff_b2).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
                 layer_norm: PyLayerNorm {
                     normalized_shape: self.layer_norm.normalized_shape.clone(),
                     eps: self.layer_norm.eps,

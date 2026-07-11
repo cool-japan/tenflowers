@@ -435,9 +435,7 @@ impl PyGRU {
             )?;
 
             let mut h_fwd = match init {
-                Some(h0) => {
-                    slice_initial_state(h0, l, 0, num_directions, batch, self.hidden_size)?
-                }
+                Some(h0) => slice_initial_state(h0, l, 0, num_directions, batch, self.hidden_size)?,
                 None => zeros_state(batch, self.hidden_size),
             };
             let mut fwd_outputs = Vec::with_capacity(seq_len);
@@ -468,8 +466,10 @@ impl PyGRU {
             // why this branch is only ever reached when the invariant it
             // relies on (bidirectional=true implies these `Option`s are
             // `Some`) already holds.
-            let w_ih_rev = reverse_layer_param(&self.weight_ih_reverse, l, "weight_ih")?.clone_ref(py);
-            let w_hh_rev = reverse_layer_param(&self.weight_hh_reverse, l, "weight_hh")?.clone_ref(py);
+            let w_ih_rev =
+                reverse_layer_param(&self.weight_ih_reverse, l, "weight_ih")?.clone_ref(py);
+            let w_hh_rev =
+                reverse_layer_param(&self.weight_hh_reverse, l, "weight_hh")?.clone_ref(py);
             let b_ih_rev = self
                 .bias
                 .then(|| reverse_layer_param(&self.bias_ih_reverse, l, "bias_ih"))
@@ -493,9 +493,7 @@ impl PyGRU {
                 // so `init` is always `None` here; this arm is unreachable in
                 // practice but kept for structural symmetry with `h_fwd`
                 // above rather than a `.expect()`/`unreachable!()`.
-                Some(h0) => {
-                    slice_initial_state(h0, l, 1, num_directions, batch, self.hidden_size)?
-                }
+                Some(h0) => slice_initial_state(h0, l, 1, num_directions, batch, self.hidden_size)?,
                 None => zeros_state(batch, self.hidden_size),
             };
             // Collected in reverse time order (t = seq_len-1 down to 0) since
@@ -782,7 +780,15 @@ impl PyGRUCell {
 
         let h_0 = hidden.unwrap_or_else(|| zeros_state(batch_size, self.hidden_size));
 
-        gru_cell_step(input, &h_0, &weight_ih, &weight_hh, None, None, self.hidden_size)
+        gru_cell_step(
+            input,
+            &h_0,
+            &weight_ih,
+            &weight_hh,
+            None,
+            None,
+            self.hidden_size,
+        )
     }
 
     /// Get layer parameters: `[weight_ih, weight_hh]`.

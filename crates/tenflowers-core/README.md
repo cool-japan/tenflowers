@@ -2,7 +2,7 @@
 
 The foundational crate of TenfloweRS, providing core tensor operations, device management, and the computational infrastructure for machine learning in Rust.
 
-> Stable (v0.1.2 -- 2026-07-08) | 1171 tests passing | 0 clippy warnings
+> Stable (v0.2.0 -- 2026-07-11) | 1174 tests passing (26 skipped, `--all-features`) | 0 clippy warnings
 
 ## Overview
 
@@ -23,7 +23,7 @@ The foundational crate of TenfloweRS, providing core tensor operations, device m
   - Linear Algebra: matrix multiplication, decompositions, eigenvalues
   - Neural Network: convolutions, pooling, activations
   - Reductions: sum, mean, max, argmax along axes (including real `StdDev`, `L1Norm`, `L2Norm`; segment reductions now support N-D data, not just 1-D)
-  - Manipulation: reshape, transpose, concatenate, slice
+  - Manipulation: reshape, transpose, concatenate, slice (strided slicing now uses correct row-major linear-index accumulation for every rank/shape combination, fixing a stride-direction bug that previously silently returned wrong elements for non-square, non-1D strided slices)
   - Advanced Math: logsumexp, GELU, Mish, Swish, and more
 - **GPU Acceleration**: WGPU-based compute shaders for cross-platform GPU support; `device::get_gpu_adapter_capabilities` exposes a real, unprocessed `wgpu::Adapter` capability snapshot (no vendor-specific guessing)
 - **Operation Registry**: Extensible dispatch registry with shape inference
@@ -138,6 +138,7 @@ let array_back: Array2<f32> = tensor.to_numrs2()?;
 - `simd`: SIMD vectorization optimizations
 - `serialize`: Enable serialization support via serde
 - `onnx`: Real protobuf-backed ONNX graph import/export (`onnx_interop::{OnnxImporter, OnnxExporter}`)
+- `wasm`: WebAssembly target support; `wasm_optimization::tensor` runtime-probes `WebAssembly.validate` for SIMD support and `typeof SharedArrayBuffer` for shared-memory support on `wasm32` targets (honest `false` off-`wasm32`, not a hardcoded guess)
 
 ## Performance Considerations
 

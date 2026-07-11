@@ -37,6 +37,26 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 - Benchmark/CPU metrics were hardcoded or random → real `/proc` measurements
   or honest sentinels.
 
+## v0.2.0 — Test Coverage Hardening (2026-07-11)
+
+No production-code behavior changed this cycle. Test coverage was expanded
+for previously-uncovered paths:
+- `zero_copy::MemoryMappedFileDataset::from_file` (the crate's one real
+  `mmap()`-backed `unsafe` block) had zero test coverage anywhere in the
+  crate — a regression test now exercises the real file-backed mmap path
+  end-to-end (via `std::env::temp_dir()`, not a hardcoded path). Skipped
+  under Miri, which does not model file-backed memory mappings at all
+  (confirmed: `error: unsupported operation: Miri does not support
+  file-backed memory mappings`, not an isolation-flag issue).
+- `simd_transforms::{normalization, statistics, image_processing,
+  element_wise}` gained end-to-end tests through the public `Transform`
+  API, exercising the scalar fallback path (the only path Miri can
+  interpret, and the same path any non-AVX2 x86_64 host or non-x86_64 host
+  such as aarch64 runs in practice); these files previously had zero test
+  coverage.
+- Verified 2026-07-11: `cargo nextest run -p tenflowers-dataset
+  --all-features` → **698 tests run: 698 passed, 0 skipped** (up from 660).
+
 ## 1. Current Capabilities
 
 ### Core Data Pipeline
@@ -236,4 +256,6 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 
 ---
 
-**v0.1.2 Status** (2026-07-07): Production-ready data loading capabilities with comprehensive format support (including a new pure-Rust Zarr Blosc decoder and TFRecord `SequenceExample` support), GPU-accelerated transforms (affine/perspective/elastic/histogram-equalize), SIMD preprocessing, a Miri-verified memory pool, and SciRS2 integration — 660 tests passing with `--all-features`. Forward development focuses on distributed loading and advanced format integration.
+**v0.1.2 Status** (2026-07-07): Production-ready data loading capabilities with comprehensive format support (including a new pure-Rust Zarr Blosc decoder and TFRecord `SequenceExample` support), GPU-accelerated transforms (affine/perspective/elastic/histogram-equalize), SIMD preprocessing, a Miri-verified memory pool, and SciRS2 integration — 660 tests passing with `--all-features`.
+
+**v0.2.0 Status** (2026-07-11): No production-code changes this cycle; test coverage expanded for previously-uncovered `mmap`/SIMD-transform paths — 698 tests passing with `--all-features`. Forward development focuses on distributed loading and advanced format integration.

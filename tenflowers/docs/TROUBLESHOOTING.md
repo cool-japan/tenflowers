@@ -23,7 +23,7 @@ system library dependency:
 
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.1.0", features = ["blas-oxiblas"] }
+tenflowers-core = { version = "0.2.0", features = ["blas-oxiblas"] }
 ```
 
 `blas-openblas` is retained for advanced users who require identical numerical results to
@@ -279,7 +279,7 @@ Enable the `experimental` feature in `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.0", features = ["experimental"] }
+tenflowers = { version = "0.2.0", features = ["experimental"] }
 ```
 
 Note: symbols in `tenflowers::experimental` are explicitly unstable and may change in any

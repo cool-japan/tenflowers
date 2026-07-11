@@ -3,8 +3,8 @@
 //! See the [`super`] module doc for the shared autograd design this follows.
 
 use super::{
-    apply_nonlinearity, concat_on_tape, parse_nonlinearity, reverse_layer_param,
-    sequence_timestep, slice_initial_state, snapshot_leaf, stack_on_tape, zeros_state,
+    apply_nonlinearity, concat_on_tape, parse_nonlinearity, reverse_layer_param, sequence_timestep,
+    slice_initial_state, snapshot_leaf, stack_on_tape, zeros_state,
 };
 use crate::neural::layers::PyParameter;
 use crate::tensor_ops::PyTensor;
@@ -361,9 +361,7 @@ impl PyRNN {
                 .transpose()?;
 
             let mut h_fwd = match init {
-                Some(h0) => {
-                    slice_initial_state(h0, l, 0, num_directions, batch, self.hidden_size)?
-                }
+                Some(h0) => slice_initial_state(h0, l, 0, num_directions, batch, self.hidden_size)?,
                 None => zeros_state(batch, self.hidden_size),
             };
             let mut fwd_outputs = Vec::with_capacity(seq_len);
@@ -394,20 +392,30 @@ impl PyRNN {
             // why this branch is only ever reached when the invariant it
             // relies on (bidirectional=true implies these `Option`s are
             // `Some`) already holds.
-            let w_ih_rev =
-                snapshot_leaf(py, reverse_layer_param(&self.weight_ih_reverse, l, "weight_ih")?)?;
-            let w_hh_rev =
-                snapshot_leaf(py, reverse_layer_param(&self.weight_hh_reverse, l, "weight_hh")?)?;
+            let w_ih_rev = snapshot_leaf(
+                py,
+                reverse_layer_param(&self.weight_ih_reverse, l, "weight_ih")?,
+            )?;
+            let w_hh_rev = snapshot_leaf(
+                py,
+                reverse_layer_param(&self.weight_hh_reverse, l, "weight_hh")?,
+            )?;
             let b_ih_rev = self
                 .bias
                 .then(|| {
-                    snapshot_leaf(py, reverse_layer_param(&self.bias_ih_reverse, l, "bias_ih")?)
+                    snapshot_leaf(
+                        py,
+                        reverse_layer_param(&self.bias_ih_reverse, l, "bias_ih")?,
+                    )
                 })
                 .transpose()?;
             let b_hh_rev = self
                 .bias
                 .then(|| {
-                    snapshot_leaf(py, reverse_layer_param(&self.bias_hh_reverse, l, "bias_hh")?)
+                    snapshot_leaf(
+                        py,
+                        reverse_layer_param(&self.bias_hh_reverse, l, "bias_hh")?,
+                    )
                 })
                 .transpose()?;
 
@@ -417,9 +425,7 @@ impl PyRNN {
                 // directions read from the same `[num_directions, batch,
                 // hidden]` state via `slice_initial_state`'s
                 // `direction_idx=1` row.
-                Some(h0) => {
-                    slice_initial_state(h0, l, 1, num_directions, batch, self.hidden_size)?
-                }
+                Some(h0) => slice_initial_state(h0, l, 1, num_directions, batch, self.hidden_size)?,
                 None => zeros_state(batch, self.hidden_size),
             };
             // Collected in reverse time order, then reversed back into

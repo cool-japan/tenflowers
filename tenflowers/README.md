@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.1.2"
+tenflowers = "0.2.0"
 ```
 
 ### Basic Example
@@ -149,14 +149,14 @@ TenfloweRS provides several optional features:
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.2", features = ["gpu"] }
+tenflowers = { version = "0.2.0", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.1.2", features = ["full"] }
+tenflowers = { version = "0.2.0", features = ["full"] }
 ```
 
 ## Architecture
@@ -236,7 +236,7 @@ Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://
 
 ## Status
 
-TenfloweRS v0.1.2 (2026-07-07). All 14,289 tests passing across the workspace (39 skipped), 0 clippy warnings, 0 TODO markers. The project comprises ~677K SLoC of Rust across 1,495 files in 6 published crates.
+TenfloweRS v0.2.0 (2026-07-07). All 14,289 tests passing across the workspace (39 skipped), 0 clippy warnings, 0 TODO markers. The project comprises ~677K SLoC of Rust across 1,495 files in 6 published crates.
 
 ## Links
 

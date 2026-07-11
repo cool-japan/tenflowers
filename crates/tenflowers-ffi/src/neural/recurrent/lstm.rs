@@ -44,10 +44,13 @@ fn lstm_cell_step(
     };
     let gates = gi.add(&gh)?;
 
-    let i_gate = crate::neural::functions::sigmoid(&gate_slice(&gates, 0, hidden_size, NUM_GATES)?)?;
-    let f_gate = crate::neural::functions::sigmoid(&gate_slice(&gates, 1, hidden_size, NUM_GATES)?)?;
+    let i_gate =
+        crate::neural::functions::sigmoid(&gate_slice(&gates, 0, hidden_size, NUM_GATES)?)?;
+    let f_gate =
+        crate::neural::functions::sigmoid(&gate_slice(&gates, 1, hidden_size, NUM_GATES)?)?;
     let g_gate = crate::neural::functions::tanh(&gate_slice(&gates, 2, hidden_size, NUM_GATES)?)?;
-    let o_gate = crate::neural::functions::sigmoid(&gate_slice(&gates, 3, hidden_size, NUM_GATES)?)?;
+    let o_gate =
+        crate::neural::functions::sigmoid(&gate_slice(&gates, 3, hidden_size, NUM_GATES)?)?;
 
     let new_c = f_gate.mul(c)?.add(&i_gate.mul(&g_gate)?)?;
     let new_h = o_gate.mul(&crate::neural::functions::tanh(&new_c)?)?;
@@ -749,4 +752,3 @@ impl PyLSTMCell {
         )
     }
 }
-

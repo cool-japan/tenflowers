@@ -702,8 +702,8 @@ mod tests {
     // OS threads across tests.
 
     fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
-        let tensor =
-            tenflowers_core::Tensor::from_vec(data, shape).expect("tensor construction must succeed");
+        let tensor = tenflowers_core::Tensor::from_vec(data, shape)
+            .expect("tensor construction must succeed");
         PyTensor {
             tensor: Arc::new(tensor),
             requires_grad: false,

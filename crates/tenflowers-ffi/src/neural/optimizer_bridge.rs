@@ -107,10 +107,10 @@ pub fn collect_parameters(model: &Bound<'_, PyAny>) -> PyResult<Vec<Py<PyParamet
              (type '{}'); an optimizer requires the model to expose a `.parameters()` method \
              returning an iterable of Parameter objects, mirroring PyTorch's \
              `model.parameters()`. Underlying error: {}",
-            model.get_type().name().map_or_else(
-                |_| "<unknown>".to_string(),
-                |name| name.to_string()
-            ),
+            model
+                .get_type()
+                .name()
+                .map_or_else(|_| "<unknown>".to_string(), |name| name.to_string()),
             err
         ))
     })?;
@@ -120,10 +120,10 @@ pub fn collect_parameters(model: &Bound<'_, PyAny>) -> PyResult<Vec<Py<PyParamet
             "collect_parameters: `.parameters()` returned a value of type '{}' that is not \
              iterable; expected an iterable (e.g. list) of Parameter objects. Underlying \
              error: {}",
-            params_obj.get_type().name().map_or_else(
-                |_| "<unknown>".to_string(),
-                |name| name.to_string()
-            ),
+            params_obj
+                .get_type()
+                .name()
+                .map_or_else(|_| "<unknown>".to_string(), |name| name.to_string()),
             err
         ))
     })?;
@@ -229,9 +229,7 @@ class FakeModel:
                 py,
                 PyParameter::new(
                     PyTensor {
-                        tensor: std::sync::Arc::new(
-                            tenflowers_core::Tensor::<f32>::zeros(&[2, 2]),
-                        ),
+                        tensor: std::sync::Arc::new(tenflowers_core::Tensor::<f32>::zeros(&[2, 2])),
                         requires_grad: true,
                         is_pinned: false,
                     },
@@ -259,8 +257,7 @@ class FakeModel:
                 .call1((params_list,))
                 .expect("FakeModel(...) should construct");
 
-            let collected =
-                collect_parameters(&model).expect("collect_parameters should succeed");
+            let collected = collect_parameters(&model).expect("collect_parameters should succeed");
 
             assert_eq!(collected.len(), 2);
             assert_eq!(collected[0].borrow(py).id(), w.borrow(py).id());
@@ -296,8 +293,7 @@ class EmptyModel:
                 .call0()
                 .expect("EmptyModel() should construct");
 
-            let collected =
-                collect_parameters(&model).expect("collect_parameters should succeed");
+            let collected = collect_parameters(&model).expect("collect_parameters should succeed");
             assert!(collected.is_empty());
         });
     }
@@ -465,9 +461,8 @@ class RaisingModel:
                 .call0()
                 .expect("RaisingModel() should construct");
 
-            let err = collect_parameters(&model).expect_err(
-                "collect_parameters must propagate a Python-side exception, not panic",
-            );
+            let err = collect_parameters(&model)
+                .expect_err("collect_parameters must propagate a Python-side exception, not panic");
             assert!(
                 err.is_instance_of::<pyo3::exceptions::PyAttributeError>(py),
                 "expected PyAttributeError wrapping the underlying ValueError, got: {:?}",
@@ -522,8 +517,13 @@ class MixedModel:
             // exercises the generic (non-Tensor) type-mismatch branch.
             let mixed_list = pyo3::types::PyList::new(
                 py,
-                [good.into_bound_py_any(py).expect("Parameter bind should not fail"),
-                 42i64.into_bound_py_any(py).expect("int bind should not fail")],
+                [
+                    good.into_bound_py_any(py)
+                        .expect("Parameter bind should not fail"),
+                    42i64
+                        .into_bound_py_any(py)
+                        .expect("int bind should not fail"),
+                ],
             )
             .expect("list construction should not fail for two valid items");
             let model = make_model

@@ -515,19 +515,15 @@ fn conv3d_general(
                                         if iw >= in_w {
                                             continue;
                                         }
-                                        let input_idx = (((b * in_channels + real_ic) * in_d
-                                            + id)
-                                            * in_h
-                                            + ih)
-                                            * in_w
-                                            + iw;
-                                        let weight_idx = (((oc * in_channels_per_group + ic)
-                                            * kd
-                                            + kdi)
-                                            * kh
-                                            + ki)
-                                            * kw
-                                            + kj;
+                                        let input_idx =
+                                            (((b * in_channels + real_ic) * in_d + id) * in_h + ih)
+                                                * in_w
+                                                + iw;
+                                        let weight_idx =
+                                            (((oc * in_channels_per_group + ic) * kd + kdi) * kh
+                                                + ki)
+                                                * kw
+                                                + kj;
                                         sum += input_data[input_idx] * weight_data[weight_idx];
                                     }
                                 }
@@ -536,9 +532,8 @@ fn conv3d_general(
                         if let Some(ref bd) = bias_data {
                             sum += bd[oc];
                         }
-                        let out_idx = (((b * out_channels + oc) * out_d + od) * out_h + oh)
-                            * out_w
-                            + ow;
+                        let out_idx =
+                            (((b * out_channels + oc) * out_d + od) * out_h + oh) * out_w + ow;
                         output_data[out_idx] = sum;
                     }
                 }
@@ -887,7 +882,9 @@ impl PyConv2D {
             .set_data(Tensor::zeros(&weight_shape))?;
 
         if let Some(bias_param) = &self.bias_param {
-            bias_param.borrow(py).set_data(Tensor::zeros(&[self.out_channels]))?;
+            bias_param
+                .borrow(py)
+                .set_data(Tensor::zeros(&[self.out_channels]))?;
         }
 
         Ok(())
@@ -947,7 +944,11 @@ impl PyConv2D {
     }
 
     /// Load layer state dict
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Some(weight) = state_dict.get_item("weight")? {
             let weight_vec: Vec<f32> = weight.extract()?;
             let weight_shape = vec![
@@ -1277,8 +1278,10 @@ impl PyAvgPool2D {
         // supported subset — see the struct-level "Autograd" doc. Computed
         // up front since several early-return branches below (divisor
         // override, boundary correction) fall outside it.
-        let tape_recordable =
-            self.padding == (0, 0) && extra_h == 0 && extra_w == 0 && self.divisor_override.is_none();
+        let tape_recordable = self.padding == (0, 0)
+            && extra_h == 0
+            && extra_w == 0
+            && self.divisor_override.is_none();
 
         // Compose explicit padding (plus any ceil-mode overhang on the end) with
         // the core "valid" average pool. The core op divides every window by the
@@ -1588,7 +1591,9 @@ impl PyConv1D {
             .set_data(Tensor::zeros(&weight_shape))?;
 
         if let Some(bias_param) = &self.bias_param {
-            bias_param.borrow(py).set_data(Tensor::zeros(&[self.out_channels]))?;
+            bias_param
+                .borrow(py)
+                .set_data(Tensor::zeros(&[self.out_channels]))?;
         }
 
         Ok(())
@@ -1899,7 +1904,9 @@ impl PyConv3D {
             .set_data(Tensor::zeros(&weight_shape))?;
 
         if let Some(bias_param) = &self.bias_param {
-            bias_param.borrow(py).set_data(Tensor::zeros(&[self.out_channels]))?;
+            bias_param
+                .borrow(py)
+                .set_data(Tensor::zeros(&[self.out_channels]))?;
         }
 
         Ok(())

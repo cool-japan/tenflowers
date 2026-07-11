@@ -64,9 +64,7 @@ use super::layers::PyParameter;
 /// only for a genuine failure unrelated to "no gradient" (e.g.
 /// [`PyParameter::to_tensor`]'s lock-poisoned case), which a `step()` should
 /// still propagate rather than silently swallow.
-fn read_value_and_grad(
-    param: &PyParameter,
-) -> PyResult<Option<(Tensor<f32>, Tensor<f32>)>> {
+fn read_value_and_grad(param: &PyParameter) -> PyResult<Option<(Tensor<f32>, Tensor<f32>)>> {
     let grad = match param.grad() {
         Ok(grad) => grad,
         Err(_) => return Ok(None),
@@ -297,8 +295,14 @@ impl PyAdam {
             // Bias correction.
             let bias_correction1 = 1.0 - beta1.powf(t);
             let bias_correction2 = 1.0 - beta2.powf(t);
-            let m_hat = entry.m.scalar_mul(1.0 / bias_correction1).map_err(to_py_err)?;
-            let v_hat = entry.v.scalar_mul(1.0 / bias_correction2).map_err(to_py_err)?;
+            let m_hat = entry
+                .m
+                .scalar_mul(1.0 / bias_correction1)
+                .map_err(to_py_err)?;
+            let v_hat = entry
+                .v
+                .scalar_mul(1.0 / bias_correction2)
+                .map_err(to_py_err)?;
 
             // w <- w - lr * m_hat / (sqrt(v_hat) + epsilon)
             let v_hat_sqrt = v_hat.sqrt().map_err(to_py_err)?;
@@ -935,8 +939,14 @@ impl PyAdamW {
             // Bias correction.
             let bias_correction1 = 1.0 - beta1.powf(t);
             let bias_correction2 = 1.0 - beta2.powf(t);
-            let m_hat = entry.m.scalar_mul(1.0 / bias_correction1).map_err(to_py_err)?;
-            let v_hat = entry.v.scalar_mul(1.0 / bias_correction2).map_err(to_py_err)?;
+            let m_hat = entry
+                .m
+                .scalar_mul(1.0 / bias_correction1)
+                .map_err(to_py_err)?;
+            let v_hat = entry
+                .v
+                .scalar_mul(1.0 / bias_correction2)
+                .map_err(to_py_err)?;
 
             // gradient-based update = lr * m_hat / (sqrt(v_hat) + epsilon)
             let v_hat_sqrt = v_hat.sqrt().map_err(to_py_err)?;
@@ -1049,8 +1059,8 @@ fn to_py_err(err: tenflowers_core::TensorError) -> PyErr {
 mod tests {
     use super::*;
     use crate::implicit_autograd::{
-        mark_leaf_param, record_and_link_binary, record_and_link_unary, run_backward,
-        BinaryOpKind, UnaryOpKind,
+        mark_leaf_param, record_and_link_binary, record_and_link_unary, run_backward, BinaryOpKind,
+        UnaryOpKind,
     };
     use crate::tensor_ops::PyTensor;
     use std::sync::Arc;
@@ -1191,7 +1201,11 @@ class FakeModel:
                 "sanity check: d(sum(w*w))/dw = 2w"
             );
 
-            let old_w = param.to_tensor().expect("test: to_tensor").tensor.to_vec()
+            let old_w = param
+                .to_tensor()
+                .expect("test: to_tensor")
+                .tensor
+                .to_vec()
                 .expect("test: old weight readable");
             assert_eq!(old_w, vec![3.0, -2.0]);
 
@@ -1212,10 +1226,7 @@ class FakeModel:
                 .expect("test: new weight readable");
 
             // Plain (no momentum, no weight decay) SGD: new_w = old_w - lr*grad.
-            let expected = vec![
-                3.0 - lr as f32 * 6.0,
-                -2.0 - lr as f32 * (-4.0),
-            ];
+            let expected = vec![3.0 - lr as f32 * 6.0, -2.0 - lr as f32 * (-4.0)];
             assert_eq!(
                 new_w, expected,
                 "SGD update must exactly match w - lr*grad for plain SGD"
@@ -1682,8 +1693,8 @@ class FakeModel:
         );
         let zero_weight = Tensor::<f32>::from_vec(vec![0.0, 0.0], &[2, 1])
             .expect("test: zero weight tensor construction");
-        let zero_bias = Tensor::<f32>::from_vec(vec![0.0], &[1])
-            .expect("test: zero bias tensor construction");
+        let zero_bias =
+            Tensor::<f32>::from_vec(vec![0.0], &[1]).expect("test: zero bias tensor construction");
         params[0]
             .borrow(py)
             .set_data(zero_weight)
@@ -1817,7 +1828,12 @@ class FakeModel:
     /// under bias correction) even while the overall trend is unambiguously
     /// downward — asserting strict monotonicity would flake on exactly the
     /// optimizers this test suite most needs to exercise honestly.
-    fn assert_loss_trends_down(losses: &[f32], window: usize, max_trailing_ratio: f32, label: &str) {
+    fn assert_loss_trends_down(
+        losses: &[f32],
+        window: usize,
+        max_trailing_ratio: f32,
+        label: &str,
+    ) {
         assert!(
             losses.len() >= window * 2,
             "{label}: need at least {} recorded losses to compare a leading/trailing window of {window}, got {}",

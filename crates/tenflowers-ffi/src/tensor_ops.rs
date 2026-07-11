@@ -1104,8 +1104,8 @@ mod tests {
     // distinct, freshly-allocated tensors.
 
     fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
-        let tensor =
-            tenflowers_core::Tensor::from_vec(data, shape).expect("tensor construction must succeed");
+        let tensor = tenflowers_core::Tensor::from_vec(data, shape)
+            .expect("tensor construction must succeed");
         PyTensor {
             tensor: Arc::new(tensor),
             requires_grad: false,
@@ -1155,7 +1155,11 @@ mod tests {
         let scalar = crate::math_ops::sum(&r, None, None).expect("sum must succeed");
         scalar.backward().expect("backward must succeed");
         let grad = x.grad().expect("grad must be populated");
-        assert_eq!(grad.shape(), vec![2, 3], "grad must match x's ORIGINAL shape");
+        assert_eq!(
+            grad.shape(),
+            vec![2, 3],
+            "grad must match x's ORIGINAL shape"
+        );
         let grad_data = grad.tensor.to_vec().expect("grad readable");
         // reshape does not move data across a reduction boundary (sum over
         // all elements either way), so every element's gradient is 1.

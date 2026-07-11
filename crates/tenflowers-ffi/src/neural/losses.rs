@@ -226,10 +226,7 @@ fn link_unary_via_binary_proxy(
 ///
 /// Returns an error only if a tracked operand's proxy `Mul`/`Add` recording
 /// itself fails (e.g. a poisoned tape lock).
-fn link_multi_gradient_sum(
-    terms: &[(&PyTensor, &PyTensor)],
-    result: &PyTensor,
-) -> PyResult<()> {
+fn link_multi_gradient_sum(terms: &[(&PyTensor, &PyTensor)], result: &PyTensor) -> PyResult<()> {
     let Some((first_operand, first_grad)) = terms.first() else {
         // No differentiable contributions at all (e.g. every input was a
         // plain constant) -- nothing to link.
@@ -703,18 +700,18 @@ pub fn cross_entropy(
     let batch_size = pred_shape[0];
     let num_classes = pred_shape[1];
 
-    let one_hot: PyTensor = if target_shape.len() == 1 || (target_shape.len() == 2 && target_shape[1] == 1)
-    {
-        class_indices_to_one_hot(targets, batch_size, num_classes)?
-    } else {
-        if target_shape.dims() != [batch_size, num_classes] {
-            return Err(PyValueError::new_err(format!(
-                "One-hot targets shape {:?} does not match predictions {:?}",
-                target_shape, pred_shape
-            )));
-        }
-        targets.clone()
-    };
+    let one_hot: PyTensor =
+        if target_shape.len() == 1 || (target_shape.len() == 2 && target_shape[1] == 1) {
+            class_indices_to_one_hot(targets, batch_size, num_classes)?
+        } else {
+            if target_shape.dims() != [batch_size, num_classes] {
+                return Err(PyValueError::new_err(format!(
+                    "One-hot targets shape {:?} does not match predictions {:?}",
+                    target_shape, pred_shape
+                )));
+            }
+            targets.clone()
+        };
 
     let eps = 1e-7_f32;
     let p_c = tape_clamp(predictions, eps, 1.0 - eps)?;
@@ -875,8 +872,10 @@ pub fn smooth_l1_loss(
             }
         })
         .collect();
-    let forward_tensor = Tensor::from_vec(forward_data, diff.tensor.shape().dims())
-        .map_err(|e| PyRuntimeError::new_err(format!("Failed to build smooth_l1 forward: {}", e)))?;
+    let forward_tensor =
+        Tensor::from_vec(forward_data, diff.tensor.shape().dims()).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to build smooth_l1 forward: {}", e))
+        })?;
     let losses = PyTensor {
         tensor: Arc::new(forward_tensor),
         requires_grad: diff.requires_grad,
@@ -889,7 +888,10 @@ pub fn smooth_l1_loss(
     // never a tape edge of their own — the gate itself is the detached
     // operand of the `Mul` proxy below, exactly like every other helper in
     // this module's detached constant operands.
-    let gate_data: Vec<f32> = diff_data.iter().map(|d| (d / beta).clamp(-1.0, 1.0)).collect();
+    let gate_data: Vec<f32> = diff_data
+        .iter()
+        .map(|d| (d / beta).clamp(-1.0, 1.0))
+        .collect();
     let gate_tensor = Tensor::from_vec(gate_data, diff.tensor.shape().dims())
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to build smooth_l1 gate: {}", e)))?;
     let gate_detached = detached(gate_tensor);
@@ -1238,7 +1240,11 @@ mod tests {
 
     fn ref_l1(p: &[f32], t: &[f32]) -> f32 {
         let n = p.len() as f32;
-        p.iter().zip(t.iter()).map(|(pi, ti)| (pi - ti).abs()).sum::<f32>() / n
+        p.iter()
+            .zip(t.iter())
+            .map(|(pi, ti)| (pi - ti).abs())
+            .sum::<f32>()
+            / n
     }
 
     fn ref_smooth_l1(p: &[f32], t: &[f32], beta: f32) -> f32 {
@@ -1275,7 +1281,13 @@ mod tests {
         let n = p.len() as f32;
         p.iter()
             .zip(t.iter())
-            .map(|(pi, ti)| if *ti == 1.0 { *pi } else { (margin - pi).max(0.0) })
+            .map(|(pi, ti)| {
+                if *ti == 1.0 {
+                    *pi
+                } else {
+                    (margin - pi).max(0.0)
+                }
+            })
             .sum::<f32>()
             / n
     }
@@ -1428,8 +1440,7 @@ mod tests {
         let targets = make_tensor(t_data.clone(), &[4]);
         mark_leaf(&predictions);
 
-        let loss =
-            l1_loss(&predictions, &targets, Some("mean")).expect("l1 forward must succeed");
+        let loss = l1_loss(&predictions, &targets, Some("mean")).expect("l1 forward must succeed");
         let loss_val = grad_data(&loss)[0];
         let expected_val = ref_l1(&p_data, &t_data);
         assert!((loss_val - expected_val).abs() < 1e-5);
@@ -1476,7 +1487,8 @@ mod tests {
             p_plus[i] += h;
             let mut p_minus = p_data.clone();
             p_minus[i] -= h;
-            let numerical = (ref_smooth_l1(&p_plus, &t_data, beta) - ref_smooth_l1(&p_minus, &t_data, beta))
+            let numerical = (ref_smooth_l1(&p_plus, &t_data, beta)
+                - ref_smooth_l1(&p_minus, &t_data, beta))
                 / (2.0 * h);
             assert!(
                 (grad_vals[i] - numerical).abs() < 1e-2,
@@ -1542,7 +1554,8 @@ mod tests {
             p_plus[i] += h;
             let mut p_minus = p_data.clone();
             p_minus[i] -= h;
-            let numerical = (ref_hinge(&p_plus, &t_data, margin) - ref_hinge(&p_minus, &t_data, margin))
+            let numerical = (ref_hinge(&p_plus, &t_data, margin)
+                - ref_hinge(&p_minus, &t_data, margin))
                 / (2.0 * h);
             assert!(
                 (grad_vals[i] - numerical).abs() < 1e-2,
@@ -1589,8 +1602,18 @@ mod tests {
             let sample = i / 3;
             let lo = sample * 3;
             let hi = lo + 3;
-            let loss_plus = ref_cosine(&v1_plus[lo..hi], &v2_data[lo..hi], target_data[sample], margin);
-            let loss_minus = ref_cosine(&v1_minus[lo..hi], &v2_data[lo..hi], target_data[sample], margin);
+            let loss_plus = ref_cosine(
+                &v1_plus[lo..hi],
+                &v2_data[lo..hi],
+                target_data[sample],
+                margin,
+            );
+            let loss_minus = ref_cosine(
+                &v1_minus[lo..hi],
+                &v2_data[lo..hi],
+                target_data[sample],
+                margin,
+            );
             // mean reduction over batch=2 -> factor 1/2 on this sample's contribution
             let numerical = (loss_plus - loss_minus) / (2.0 * h) / 2.0;
             assert!(

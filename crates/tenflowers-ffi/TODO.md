@@ -2,7 +2,59 @@
 
 Initial release capabilities and forward development plan.
 
-Last updated: 2026-07-08
+Last updated: 2026-07-11
+
+## v0.2.0 — Implicit Autograd Wired Through Every Layer & Optimizer (2026-07-11)
+
+- [x] **Implicit-autograd rewrite spans the full layer/optimizer/loss
+  surface**: previously `.backward()`/`.grad()`/`optimizer.step()` only
+  worked end-to-end for a minimal Dense/Sequential/MSE/relu-sigmoid-tanh
+  path; the thread-local `implicit_autograd` tape is now genuinely wired
+  through every layer type and all 9 optimizers. Landed in exactly two
+  commits, both dated 2026-07-11: `85bf627` ("Implement tensor slicing
+  functionality and enhance autograd support") and `0727e96` ("Add
+  end-to-end training convergence tests for TenfloweRS FFI"). Combined they
+  touched 34 files in `crates/tenflowers-ffi/src/` (+22,276/-7,005 lines).
+  - Layers now confirmed tape-linked with real `forward()`: `Dense` +
+    `PyParameter` (`neural/layers.rs`), `Conv1D`/`Conv2D`/`Conv3D` +
+    `MaxPool2D`/`AvgPool2D` (`neural/conv_layers/mod.rs` — `Conv2D` backward
+    is confirmed only for unit dilation, `groups == 1`, and default
+    `padding=(0,0)`; other configurations forward correctly but are not
+    confirmed tape-linked), `Embedding`/`EmbeddingBag` (`neural/embedding.rs`),
+    `BatchNorm1d`/`LayerNorm`/`GroupNorm`/`InstanceNorm1d`
+    (`neural/normalization.rs`), `MultiheadAttention`
+    (`neural/attention/mod.rs`), `TransformerEncoderLayer`/
+    `TransformerDecoderLayer`/`PositionalEncoding` (`neural/transformer/mod.rs`),
+    `LSTM`/`GRU`/`RNN` + single-step `LSTMCell`/`GRUCell`
+    (`neural/recurrent/{lstm,gru,rnn}.rs`).
+  - All 9 optimizers confirmed to perform genuine gradient-based parameter
+    updates via `step(&mut self, model)`, not no-ops: `SGD`, `Adam`,
+    `RMSprop`, `AdamW` (`neural/optimizers.rs`); `AdaBelief`, `RAdam`,
+    `Nadam`, `AdaGrad`, `AdaDelta` (`neural/extended_optimizers/mod.rs`).
+- [x] **File-layout split for the 2000-line-per-file policy** (no functional
+  change): `implicit_autograd.rs` and `neural/{attention,conv_layers,
+  recurrent,transformer,extended_optimizers}.rs` were each split from a
+  single file into `mod.rs` + `tests.rs`; `neural/recurrent/` was further
+  split into `lstm.rs`/`gru.rs`/`rnn.rs`/`mod.rs`/`tests.rs`.
+- [x] **New end-to-end convergence proof**: `tests/test_training_convergence.py`
+  adds three tests, each asserting concrete before/after loss ratios (not
+  just "doesn't crash"): `test_dense_layer_training_converges` (single
+  `PyDense` + `SGD`, 50 steps, >=100x loss drop), `test_sequential_mlp_training_converges`
+  (3-layer `PySequential` MLP + `Adam`, 50 steps, >=10x drop plus a
+  monotonic downward-trend check), `test_conv2d_training_converges`
+  (`Conv2D` + `Adam`, 30 steps, >=5x drop, deliberately inside the
+  tape-linked `Conv2D` config subset noted above).
+- [x] **Test counts**: `cargo test -p tenflowers-ffi --lib` — 337 passed, 0
+  failed, 0 ignored. Python: 55 passed via `pytest tests/` (50 fast + 5
+  performance-marked; excludes `integration_test.py`, which is a standalone
+  script rather than pytest-collectible — it calls `sys.exit(1)` at module
+  scope on import failure) plus 13/13 passed running `integration_test.py`
+  directly as a script. `grep -rn "todo!()\|unimplemented!()" src/` — 0 hits.
+- Still open, not touched by this release (see "Current Gaps & Limitations"
+  below): the explicit `PyGradientTape` API does not work end-to-end
+  (`.watch()` only snapshots values; free ops don't record onto it), and
+  `StateSpaceModel`/`Mamba` forward is still a stub returning
+  `Tensor::zeros(...)` regardless of input.
 
 ## v0.1.2 — Eager Autograd & Masking/Recurrent Correctness (2026-07-07)
 
@@ -60,7 +112,15 @@ Last updated: 2026-07-08
   auto-activating `implicit_autograd` tape, in addition to the explicit
   `GradientTape` API
 - **Gradient Tape Integration**: Full autograd support with PyTorch-style gradient tape
-- **Neural Network Layers**: Dense and Sequential layer implementations with training support
+- **Neural Network Layers**: Dense/`PyParameter`, Sequential, Conv1D/2D/3D +
+  MaxPool2D/AvgPool2D, Embedding/EmbeddingBag, BatchNorm1d/LayerNorm/
+  GroupNorm/InstanceNorm1d, MultiheadAttention, Transformer encoder/decoder +
+  PositionalEncoding, LSTM/GRU/RNN + single-step cells — all with real
+  `forward()` genuinely wired into the implicit-autograd tape (Conv2D
+  backward confirmed only for unit dilation / `groups == 1` / default
+  padding). All 9 optimizers (SGD, Adam, RMSprop, AdamW, AdaBelief, RAdam,
+  Nadam, AdaGrad, AdaDelta) perform genuine gradient-based parameter
+  updates via `step()`, proven convergent in `tests/test_training_convergence.py`
 - **Numpy Interoperability**: Seamless tensor <-> ndarray conversion for f32 data types
 - **Memory Optimization**: Memory alignment, prefetch utilities, and fragmentation analysis
 
@@ -99,7 +159,10 @@ Last updated: 2026-07-08
 ### API Coverage & Completeness
 - **Limited Dtype Support**: Restricted to f32, missing f16/bf16/i32 support
 - **Device Coverage**: Limited device abstraction and multi-device support
-- **Neural Network APIs**: Incomplete coverage for advanced layers and optimizers
+- **Neural Network APIs**: as of the 2026-07-11 rewrite, implicit autograd is
+  genuinely wired through every layer type and all 9 optimizers (see
+  "1. Current Capabilities" above); remaining known gaps are the two items
+  below (`PyGradientTape`, `StateSpaceModel`/`Mamba`), not general coverage
 - **Exception Mapping**: Non-standardized error taxonomy and Python exception mapping
 
 ### C API Development
@@ -122,6 +185,26 @@ surface through these bindings but rely on unfinished backends fail loudly
 - **NCCL collective ops**: require the `libnccl` runtime → honest error.
 - **TensorFlow / ONNX protobuf import-export**: no protobuf parser wired →
   honest error.
+
+### Known-incomplete autograd/layer surfaces (not fixed by the 2026-07-11 rewrite)
+- **`PyGradientTape` (explicit, TensorFlow-style tape) does not work
+  end-to-end**: `PyGradientTape.watch()` (`neural/gradient_tape.rs:71`) only
+  clones a tensor's current value onto the tape at call time; the free
+  functions used to build computations (`tf.add`, `tf.mul`, etc.) are not
+  tape-aware for this explicit-tape style and never record operation-graph
+  edges onto it, so `tape.gradient()` cannot trace a real computation chain.
+  Reproduces with the tape module's own documented example (verbatim skip
+  reason at `tests/integration_test.py:93-103`). Unrelated to, and does not
+  affect, the implicit `.backward()`/`.grad()` API, which is what got fixed
+  this release. Real tape-based autograd through plain tensor ops via this
+  explicit-tape style remains a separate, not-yet-implemented future project.
+- **`StateSpaceModel`/`Mamba` forward pass is a stub that fabricates its
+  output**, not a real SSM computation: `neural/ssm.rs` — both
+  `PyMamba::forward` and `PyStateSpaceModel::forward` ignore their input
+  entirely and return `Tensor::zeros(...)`. Verbatim skip reason at
+  `tests/integration_test.py:366-370`: "StateSpaceModel.selective_scan is
+  currently a stub (returns input unchanged) and MambaBlock's SSM recurrence
+  is not really computed." Explicitly out of scope for this release.
 
 ## 3. Near-Term Roadmap
 

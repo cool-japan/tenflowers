@@ -253,10 +253,9 @@ impl PyParameter {
     ///
     /// Raises `RuntimeError` if the internal lock is poisoned. Never panics.
     pub fn to_tensor(&self) -> PyResult<PyTensor> {
-        let guard = self
-            .data
-            .read()
-            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("parameter data lock poisoned"))?;
+        let guard = self.data.read().map_err(|_| {
+            pyo3::exceptions::PyRuntimeError::new_err("parameter data lock poisoned")
+        })?;
         Ok(PyTensor {
             tensor: Arc::new(guard.clone()),
             requires_grad: self.requires_grad,
@@ -560,8 +559,9 @@ impl Clone for PyDense {
                 .map(|bias| bias.borrow(py).clone_param());
             Self {
                 layer: self.layer.clone(),
-                weight_param: Py::new(py, weight_param)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
+                weight_param: Py::new(py, weight_param).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
                 bias_param: bias_param.map(|bias| {
                     Py::new(py, bias).expect(
                         "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
@@ -1214,15 +1214,18 @@ mod tests {
 
             // Step 2: build a small, deterministic input and run the first
             // forward + loss + backward cycle.
-            let x_tensor = tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 4])
-                .expect("from_vec should succeed for matching data/shape lengths");
+            let x_tensor =
+                tenflowers_core::Tensor::<f32>::from_vec(vec![1.0, 2.0, 3.0, 4.0], &[1, 4])
+                    .expect("from_vec should succeed for matching data/shape lengths");
             let x = PyTensor {
                 tensor: Arc::new(x_tensor),
                 requires_grad: false,
                 is_pinned: false,
             };
 
-            let output1 = dense.forward(&x).expect("first forward pass should succeed");
+            let output1 = dense
+                .forward(&x)
+                .expect("first forward pass should succeed");
             assert_eq!(output1.shape(), vec![1, 3]);
             let output1_values = output1.tensor.data().to_vec();
 

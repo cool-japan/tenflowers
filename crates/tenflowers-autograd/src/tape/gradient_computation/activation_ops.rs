@@ -553,7 +553,8 @@ where
     let negative_mask = input_tensor.lt(&zero_tensor)?;
 
     // innermost: -1 where x < 0, else 0 (covers x == 0 -> 0)
-    let neg_or_zero = tenflowers_core::ops::where_op(&negative_mask, &neg_one_tensor, &zero_tensor)?;
+    let neg_or_zero =
+        tenflowers_core::ops::where_op(&negative_mask, &neg_one_tensor, &zero_tensor)?;
     // outer: 1 where x > 0, else the innermost result
     let sign = tenflowers_core::ops::where_op(&positive_mask, &one_tensor, &neg_or_zero)?;
 
@@ -623,8 +624,7 @@ where
         })?;
         let min_tensor = Tensor::from_scalar(min_t);
         let above_min = input_tensor.ge(&min_tensor)?;
-        in_range_mask =
-            tenflowers_core::ops::where_op(&above_min, &in_range_mask, &zero_tensor)?;
+        in_range_mask = tenflowers_core::ops::where_op(&above_min, &in_range_mask, &zero_tensor)?;
     }
 
     if let Some(max_f32) = max {
@@ -636,8 +636,7 @@ where
         })?;
         let max_tensor = Tensor::from_scalar(max_t);
         let below_max = input_tensor.le(&max_tensor)?;
-        in_range_mask =
-            tenflowers_core::ops::where_op(&below_max, &in_range_mask, &zero_tensor)?;
+        in_range_mask = tenflowers_core::ops::where_op(&below_max, &in_range_mask, &zero_tensor)?;
     }
 
     let input_grad = tenflowers_core::ops::mul(grad_output, &in_range_mask)?;

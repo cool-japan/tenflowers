@@ -297,8 +297,7 @@ fn mark_param_leaf_add_then_sum_backward(param: &PyParameter, y: &PyTensor) -> P
     let snapshot = param.to_tensor().expect("to_tensor must succeed");
     mark_leaf_param(&snapshot, param.id());
 
-    let raw =
-        tenflowers_core::ops::add(&snapshot.tensor, &y.tensor).expect("add must succeed");
+    let raw = tenflowers_core::ops::add(&snapshot.tensor, &y.tensor).expect("add must succeed");
     let sum_result = PyTensor {
         tensor: Arc::new(raw),
         requires_grad: true,
@@ -347,8 +346,8 @@ fn mark_param_leaf_square_then_sum_backward(param: &PyParameter) -> PyTensor {
     let snapshot = param.to_tensor().expect("to_tensor must succeed");
     mark_leaf_param(&snapshot, param.id());
 
-    let raw = tenflowers_core::ops::mul(&snapshot.tensor, &snapshot.tensor)
-        .expect("mul must succeed");
+    let raw =
+        tenflowers_core::ops::mul(&snapshot.tensor, &snapshot.tensor).expect("mul must succeed");
     let mul_result = PyTensor {
         tensor: Arc::new(raw),
         requires_grad: true,
@@ -560,8 +559,10 @@ fn independent_parameters_do_not_cross_contaminate_even_on_address_reuse() {
     // `address_reuse_does_not_leak_stale_gradient` uses for tensor_key
     // addresses, adapted here to parameter-id addresses.
     for i in 0..64 {
-        let transient_param =
-            PyParameter::new(make_tensor(vec![i as f32, (i + 1) as f32], &[2]), Some(true));
+        let transient_param = PyParameter::new(
+            make_tensor(vec![i as f32, (i + 1) as f32], &[2]),
+            Some(true),
+        );
         let transient_y = make_tensor(vec![10.0, 20.0], &[2]);
         mark_param_leaf_add_then_sum_backward(&transient_param, &transient_y);
         // transient_param (and every intermediate PyTensor created
@@ -579,8 +580,7 @@ fn independent_parameters_do_not_cross_contaminate_even_on_address_reuse() {
     // TRACKED_REGISTRY, no matter what address its RwLock allocation
     // happens to occupy after 64 rounds of allocate-then-free pressure.
     let fresh_param = PyParameter::new(make_tensor(vec![99.0, 100.0], &[2]), Some(true));
-    let fresh_is_tracked =
-        TRACKED_REGISTRY.with(|r| r.borrow().contains_key(&fresh_param.id()));
+    let fresh_is_tracked = TRACKED_REGISTRY.with(|r| r.borrow().contains_key(&fresh_param.id()));
     assert!(
         !fresh_is_tracked,
         "a fresh, never-marked parameter must not appear tracked even if its \
@@ -598,13 +598,19 @@ fn independent_parameters_do_not_cross_contaminate_even_on_address_reuse() {
     let final_grad_a = get_grad_by_id(param_a.id())
         .expect("param_a's grad must survive 64 unrelated transient cycles");
     assert_eq!(
-        final_grad_a.tensor.to_vec().expect("grad data must be readable"),
+        final_grad_a
+            .tensor
+            .to_vec()
+            .expect("grad data must be readable"),
         vec![1.0, 1.0, 1.0]
     );
     let final_grad_b = get_grad_by_id(param_b.id())
         .expect("param_b's grad must survive 64 unrelated transient cycles");
     assert_eq!(
-        final_grad_b.tensor.to_vec().expect("grad data must be readable"),
+        final_grad_b
+            .tensor
+            .to_vec()
+            .expect("grad data must be readable"),
         vec![1.0, 1.0]
     );
 }
@@ -651,8 +657,10 @@ fn dropped_untracked_backward_param_does_not_poison_tracked_registry_on_address_
     // allocator to reuse a freed RwLock address for a later iteration's
     // parameter.
     for i in 0..256 {
-        let stale_param =
-            PyParameter::new(make_tensor(vec![i as f32, (i + 1) as f32], &[2]), Some(true));
+        let stale_param = PyParameter::new(
+            make_tensor(vec![i as f32, (i + 1) as f32], &[2]),
+            Some(true),
+        );
         let snapshot = stale_param.to_tensor().expect("to_tensor must succeed");
         mark_leaf_param(&snapshot, stale_param.id());
         // stale_param is dropped here. Its Drop impl clears GRAD_STORE
@@ -716,9 +724,18 @@ fn ternary_conv1d_gradient_reaches_all_three_operands() {
     mark_leaf(&weight);
     mark_leaf(&bias);
 
-    let raw = tenflowers_core::ops::conv1d(&input.tensor, &weight.tensor, Some(&bias.tensor), 1, "valid")
-        .expect("conv1d must succeed");
-    assert_eq!(raw.to_vec().expect("conv output readable"), vec![3.0, 5.0, 7.0]);
+    let raw = tenflowers_core::ops::conv1d(
+        &input.tensor,
+        &weight.tensor,
+        Some(&bias.tensor),
+        1,
+        "valid",
+    )
+    .expect("conv1d must succeed");
+    assert_eq!(
+        raw.to_vec().expect("conv output readable"),
+        vec![3.0, 5.0, 7.0]
+    );
     let conv_result = PyTensor {
         tensor: Arc::new(raw),
         requires_grad: true,
@@ -775,7 +792,10 @@ fn ternary_conv1d_gradient_reaches_all_three_operands() {
     );
     // d(sum(...))/d(bias) = number of output positions the bias is
     // added at = 3 (one add per output position).
-    assert_eq!(grad_bias.tensor.to_vec().expect("bias grad readable"), vec![3.0]);
+    assert_eq!(
+        grad_bias.tensor.to_vec().expect("bias grad readable"),
+        vec![3.0]
+    );
     // d(sum(...))/d(input[i]) = sum of weight taps that touch input[i].
     // With an all-ones kernel of length 2 and output length 3: input[0]
     // is touched by 1 output (tap 0 of output 0) => 1; input[1] by 2
@@ -823,8 +843,8 @@ fn variadic_concat_gradient_reaches_all_three_inputs() {
     )
     .expect("recording concat must succeed");
 
-    let summed = tenflowers_core::ops::sum(&concat_result.tensor, None, false)
-        .expect("sum must succeed");
+    let summed =
+        tenflowers_core::ops::sum(&concat_result.tensor, None, false).expect("sum must succeed");
     let scalar = PyTensor {
         tensor: Arc::new(summed),
         requires_grad: true,
@@ -845,7 +865,10 @@ fn variadic_concat_gradient_reaches_all_three_inputs() {
     // d(sum(concat(a, b, c)))/d(x) = ones_like(x) for every one of the
     // three concatenated inputs.
     let grad_a = get_grad(&a).expect("a's gradient must be reachable");
-    assert_eq!(grad_a.tensor.to_vec().expect("grad readable"), vec![1.0, 1.0]);
+    assert_eq!(
+        grad_a.tensor.to_vec().expect("grad readable"),
+        vec![1.0, 1.0]
+    );
     let grad_b = get_grad(&b).expect("b's gradient must be reachable");
     assert_eq!(
         grad_b.tensor.to_vec().expect("grad readable"),
@@ -884,8 +907,12 @@ fn gather_indices_are_never_tracked() {
 
     let indices = Tensor::<i32>::from_vec(vec![0, 2, 3], &[3]).expect("indices construction");
 
-    let raw = tenflowers_core::ops::gather(&input.tensor, &indices, 0).expect("gather must succeed");
-    assert_eq!(raw.to_vec().expect("gather output readable"), vec![10.0, 30.0, 40.0]);
+    let raw =
+        tenflowers_core::ops::gather(&input.tensor, &indices, 0).expect("gather must succeed");
+    assert_eq!(
+        raw.to_vec().expect("gather output readable"),
+        vec![10.0, 30.0, 40.0]
+    );
     let gather_result = PyTensor {
         tensor: Arc::new(raw),
         requires_grad: true,
@@ -894,8 +921,8 @@ fn gather_indices_are_never_tracked() {
     record_and_link_gather(&input, &indices, 0, &gather_result)
         .expect("recording gather must succeed");
 
-    let summed = tenflowers_core::ops::sum(&gather_result.tensor, None, false)
-        .expect("sum must succeed");
+    let summed =
+        tenflowers_core::ops::sum(&gather_result.tensor, None, false).expect("sum must succeed");
     let scalar = PyTensor {
         tensor: Arc::new(summed),
         requires_grad: true,
@@ -959,7 +986,11 @@ fn gather_indices_are_never_tracked() {
 /// [`UnaryOpKind`], for the eleven activation/elementwise variants added in
 /// this wave (`Gelu`, `Swish`, `Mish`, `LeakyRelu`, `Elu`, `Relu6`,
 /// `HardSwish`, `LogSoftmax`, `Log`, `Abs`, `Clamp`).
-fn unary_op_then_sum_backward(x: PyTensor, kind: UnaryOpKind, raw_forward: Tensor<f32>) -> PyTensor {
+fn unary_op_then_sum_backward(
+    x: PyTensor,
+    kind: UnaryOpKind,
+    raw_forward: Tensor<f32>,
+) -> PyTensor {
     mark_leaf(&x);
 
     let op_result = PyTensor {
@@ -1305,8 +1336,7 @@ fn forward_only_never_backward(seed: f32) {
 fn stale_forward_only_computations_do_not_corrupt_later_backward() {
     reset_for_test();
 
-    let registry_len_before =
-        TRACKED_REGISTRY.with(|r| r.borrow().len());
+    let registry_len_before = TRACKED_REGISTRY.with(|r| r.borrow().len());
     let anchors_len_before = IDENTITY_ANCHORS.with(|a| a.borrow().len());
     assert_eq!(registry_len_before, 0, "must start from a clean registry");
     assert_eq!(anchors_len_before, 0, "must start from a clean anchor set");
@@ -1325,8 +1355,7 @@ fn stale_forward_only_computations_do_not_corrupt_later_backward() {
     // proportional to N (bounded neither by a cap nor by reuse) —
     // confirming this is unbounded accumulation, not merely "some
     // growth that happens to plateau".
-    let registry_len_after_stale =
-        TRACKED_REGISTRY.with(|r| r.borrow().len());
+    let registry_len_after_stale = TRACKED_REGISTRY.with(|r| r.borrow().len());
     let anchors_len_after_stale = IDENTITY_ANCHORS.with(|a| a.borrow().len());
     assert_eq!(
         registry_len_after_stale,
@@ -1336,7 +1365,8 @@ fn stale_forward_only_computations_do_not_corrupt_later_backward() {
          unbounded accumulation rather than any bound/reuse policy"
     );
     assert_eq!(
-        anchors_len_after_stale, N * 3,
+        anchors_len_after_stale,
+        N * 3,
         "IDENTITY_ANCHORS must grow in lockstep with TRACKED_REGISTRY for \
          the same reason"
     );
@@ -1403,8 +1433,7 @@ fn stale_forward_only_computations_do_not_corrupt_later_backward() {
     // does not compound indefinitely across many independent
     // Python-level tests as long as *something*, eventually, calls
     // backward on this thread.
-    let registry_len_after_real =
-        TRACKED_REGISTRY.with(|r| r.borrow().len());
+    let registry_len_after_real = TRACKED_REGISTRY.with(|r| r.borrow().len());
     assert_eq!(
         registry_len_after_real, 0,
         "run_backward's unconditional registry clear must sweep away \

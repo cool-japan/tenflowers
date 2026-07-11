@@ -306,9 +306,7 @@ fn run_batch_norm_backward_kernel_check(
     let raw_inputs = vec![input, gamma, beta, running_mean, running_var];
     let loss_fn = |t: &[Tensor<f32>]| -> Tensor<f32> {
         let out = manual_batch_norm_forward(&t[0], &t[1], &t[2], &t[3], &t[4], epsilon, training);
-        let weighted = out
-            .mul(&grad_output)
-            .expect("test: raw mul should succeed");
+        let weighted = out.mul(&grad_output).expect("test: raw mul should succeed");
         weighted
             .sum(None, false)
             .expect("test: raw sum should succeed")
@@ -448,8 +446,9 @@ fn run_batch_norm_gradient_check(
     ];
 
     let loss_fn = |t: &[Tensor<f32>]| -> Tensor<f32> {
-        let out = tenflowers_core::ops::batch_norm(&t[0], &t[1], &t[2], &t[3], &t[4], epsilon, training)
-            .expect("test: raw batch_norm forward should succeed");
+        let out =
+            tenflowers_core::ops::batch_norm(&t[0], &t[1], &t[2], &t[3], &t[4], epsilon, training)
+                .expect("test: raw batch_norm forward should succeed");
         let weighted = out.mul(&weights).expect("test: raw mul should succeed");
         weighted
             .sum(None, false)

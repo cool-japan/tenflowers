@@ -148,7 +148,8 @@ fn test_tape_concat_nonzero_nonlast_axis_gradient() {
     let a_tracked = tape.watch(a);
     let b_tracked = tape.watch(b);
 
-    let y = TrackedTensor::concat(&[&a_tracked, &b_tracked], 1).expect("test: concat should succeed");
+    let y =
+        TrackedTensor::concat(&[&a_tracked, &b_tracked], 1).expect("test: concat should succeed");
     assert_eq!(y.shape().dims(), &[2, 3, 3]);
 
     let gradients = tape
@@ -261,9 +262,7 @@ fn test_tape_split_inverts_concat_gradient() {
         .expect("test: tensor creation should succeed");
     let x_tracked = tape.watch(x);
 
-    let pieces = x_tracked
-        .split(2, 0)
-        .expect("test: split should succeed");
+    let pieces = x_tracked.split(2, 0).expect("test: split should succeed");
     assert_eq!(pieces.len(), 2);
     assert_eq!(pieces[0].shape().dims(), &[2, 2]);
     assert_eq!(pieces[1].shape().dims(), &[2, 2]);

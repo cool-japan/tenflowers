@@ -98,8 +98,8 @@ pub use hooks::{BackwardHook, ForwardHook, HookManager, PyGlobalHookRegistry, Py
 pub use layers::{PyDense, PyParameter, PySequential};
 // losses module is not re-exported to avoid conflicts, use neural::losses::* instead
 pub use extended_optimizers::{PyAdaBelief, PyAdaDelta, PyAdaGrad, PyNadam, PyRAdam};
-pub use optimizer_bridge::collect_parameters;
 pub use normalization::{PyBatchNorm1d, PyGroupNorm, PyInstanceNorm1d, PyLayerNorm};
+pub use optimizer_bridge::collect_parameters;
 pub use optimizers::{PyAdam, PyAdamW, PyRMSprop, PySGD};
 pub use recurrent::{PyGRU, PyGRUCell, PyLSTM, PyLSTMCell, PyRNN};
 pub use regularization::{PyAlphaDropout, PyDropout, PyDropout2D, PyFeatureAlphaDropout};

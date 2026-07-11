@@ -102,13 +102,12 @@ fn forward_conv3d_reference(
                                             + ih_actual)
                                             * in_width
                                             + iw_actual;
-                                        let weight_idx = ((((oc * in_channels + ic)
-                                            * kernel_depth
-                                            + kd)
-                                            * kernel_height
-                                            + kh)
-                                            * kernel_width)
-                                            + kw;
+                                        let weight_idx =
+                                            ((((oc * in_channels + ic) * kernel_depth + kd)
+                                                * kernel_height
+                                                + kh)
+                                                * kernel_width)
+                                                + kw;
                                         sum += input[input_idx] * weight[weight_idx];
                                     }
                                 }
@@ -265,9 +264,7 @@ fn run_conv3d_gradient_check(stride: (usize, usize, usize), padding: &str) {
         .expect("test: grad_input to_vec");
     let analytical_grad_weight = gradients[1]
         .as_ref()
-        .unwrap_or_else(|| {
-            panic!("no grad_weight recorded (stride={stride:?}, padding={padding})")
-        })
+        .unwrap_or_else(|| panic!("no grad_weight recorded (stride={stride:?}, padding={padding})"))
         .to_vec()
         .expect("test: grad_weight to_vec");
     let analytical_grad_bias = gradients[2]
@@ -278,7 +275,11 @@ fn run_conv3d_gradient_check(stride: (usize, usize, usize), padding: &str) {
 
     // ---- Shape sanity checks ----
     assert_eq!(
-        gradients[0].as_ref().expect("grad_input present").shape().dims(),
+        gradients[0]
+            .as_ref()
+            .expect("grad_input present")
+            .shape()
+            .dims(),
         &input_shape,
         "grad_input shape must match input shape (stride={stride:?}, padding={padding})"
     );
@@ -292,7 +293,11 @@ fn run_conv3d_gradient_check(stride: (usize, usize, usize), padding: &str) {
         "grad_weight shape must match weight shape (stride={stride:?}, padding={padding})"
     );
     assert_eq!(
-        gradients[2].as_ref().expect("grad_bias present").shape().dims(),
+        gradients[2]
+            .as_ref()
+            .expect("grad_bias present")
+            .shape()
+            .dims(),
         &[out_channels],
         "grad_bias shape must match bias shape (stride={stride:?}, padding={padding})"
     );

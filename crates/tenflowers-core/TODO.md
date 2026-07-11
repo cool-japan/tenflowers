@@ -1,9 +1,9 @@
 # TenfloweRS Core TODO & Roadmap (v0.2.0)
 
 **Version:** 0.2.0  
-**Date:** 2026-07-08
+**Date:** 2026-07-11
 
-v0.1.1 focus: core tensor engine capabilities and forward development plan.
+Core tensor engine capabilities and forward development plan.
 
 ## v0.1.2 — Honesty Hardening (2026-06-22)
 
@@ -80,6 +80,60 @@ pre-existing `memory::pool_diagnostics`) — but none has a `pub mod` (or any
 public API. TODO: wire `allocation_timeline`/`memory_pressure`/
 `per_op_tracker`/`pool_diagnostics` into `lib.rs`, resolving naming/overlap
 with the existing `memory::pool_diagnostics` submodule before exposing it.
+
+## v0.2.0 — Correctness fixes (2026-07-11)
+
+- **`slice_with_stride` row-major stride bug fixed**: the linear-index
+  accumulation in `ops::manipulation::indexing` used a forward-order
+  `.scan(1, |acc, (idx, dim)| ...)` that computed each dimension's stride as
+  the product of every *earlier* dimension's size — the wrong direction for
+  row-major (C-order) layout. This was only accidentally correct when every
+  dimension's size was equal (e.g. a square matrix) or the array was 1-D;
+  for a non-square, non-1D strided slice (e.g. `[:, 1:3]` on a `[2, 4]`
+  array) it silently returned the wrong elements. Found via a
+  finite-difference gradient test in `tenflowers-ffi`'s `neural::recurrent`
+  module (an LSTM/GRU gate-slice with `batch_size > 1` combined with a
+  non-uniform, non-full-axis gate slice). Fixed to accumulate directly
+  against `calculate_strides(shape.dims())` — the same row-major stride
+  helper already used elsewhere in this module (e.g. `flat_to_coords`) — in
+  a single pass, rather than building an intermediate index vector and
+  re-deriving strides via `.scan()`.
+- **`ops::stats::histogram` missing `#[cfg(feature = "parallel")]` gate
+  fixed**: `ultra_fast_min_max_parallel` and `ultra_fast_histogram_parallel`
+  unconditionally called into `rayon` regardless of whether the `parallel`
+  feature was enabled, breaking `--no-default-features --features std`
+  builds. Both now have a `#[cfg(feature = "parallel")]` rayon-based
+  implementation and a `#[cfg(not(feature = "parallel"))]` sequential
+  fallback that mirrors the same chunked map/reduce structure (same chunk
+  size, same per-chunk fold/count order, same cross-chunk reduction order),
+  so results are identical between the two builds, just single-threaded
+  when `parallel` is off.
+  **Known gap, not yet resolved**: this was a necessary but not sufficient
+  fix for `--no-default-features --features std` — `ops/registry/core.rs`
+  and `ops/stats/distribution.rs` still call `rayon`'s `par_chunks`/
+  `par_iter`/`into_par_iter` without the corresponding trait imports in
+  scope (`ParallelSlice`/`IntoParallelRefIterator`/`IntoParallelIterator`),
+  which only compile today because `parallel` is a default feature and
+  pulls those traits into scope transitively. `cargo check -p
+  tenflowers-core --no-default-features --features std` still fails as of
+  this writing; do not advertise that build configuration as working.
+- **WASM capability detection hardened**: `wasm_optimization::tensor`'s
+  `detect_shared_buffer_support` was gated on `feature = "wasm"` alone,
+  which called `js_sys::eval` (a wasm-bindgen API) even when compiled for a
+  native target with the `wasm` feature enabled, rather than being gated on
+  `target_arch = "wasm32"`. Both `detect_simd_support` (probes
+  `WebAssembly.validate` against a SIMD-bearing module) and
+  `detect_shared_buffer_support` (probes `typeof SharedArrayBuffer !==
+  'undefined'`) now correctly return a real, runtime-probed answer on
+  `wasm32` and an honest `false` off-`wasm32`, with regression tests
+  (`test_detect_simd_support_is_honest_off_wasm32`,
+  `test_detect_shared_buffer_support_is_honest_off_wasm32`) guarding
+  against a hardcoded-`true` regression.
+- **GPU random-tensor test coverage expanded**: `ops::random`'s GPU
+  determinism tests now additionally assert device affinity
+  (`tensor.device() == Device::Gpu(0)`) and that a different seed produces
+  different samples (catching a shader that silently ignores the seed
+  input), on top of the existing same-seed-reproducibility check.
 
 ## 1. Current Capabilities
 

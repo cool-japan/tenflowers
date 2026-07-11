@@ -68,8 +68,8 @@ fn weighted_sum_to_scalar(tensor: &PyTensor) -> PyTensor {
         is_pinned: false,
     };
 
-    let weighted_raw =
-        tenflowers_core::ops::mul(&tensor.tensor, &weight.tensor).expect("weighted mul must succeed");
+    let weighted_raw = tenflowers_core::ops::mul(&tensor.tensor, &weight.tensor)
+        .expect("weighted mul must succeed");
     let weighted = PyTensor {
         tensor: Arc::new(weighted_raw),
         requires_grad: true,
@@ -182,8 +182,8 @@ fn positional_encoding_modifies_input() {
 fn transformer_encoder_forward_is_real() {
     Python::initialize();
     Python::attach(|py| {
-        let enc = PyTransformerEncoderLayer::new(py, 8, 2, None, None, None, None, None)
-            .expect("enc");
+        let enc =
+            PyTransformerEncoderLayer::new(py, 8, 2, None, None, None, None, None).expect("enc");
         let src = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
         let out = enc.forward(py, &src, None, None).expect("forward");
 
@@ -200,8 +200,8 @@ fn transformer_encoder_forward_is_real() {
 fn transformer_decoder_forward_is_real() {
     Python::initialize();
     Python::attach(|py| {
-        let dec = PyTransformerDecoderLayer::new(py, 8, 2, None, None, None, None, None)
-            .expect("dec");
+        let dec =
+            PyTransformerDecoderLayer::new(py, 8, 2, None, None, None, None, None).expect("dec");
         let tgt = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
         let memory = make_tensor(ramp(4 * 2 * 8), &[4, 2, 8]);
         let out = dec
@@ -222,8 +222,8 @@ fn transformer_encoder_forward_with_masks_succeeds() {
     Python::initialize();
     Python::attach(|py| {
         // Providing real masks previously returned an error; it must now succeed.
-        let enc = PyTransformerEncoderLayer::new(py, 8, 2, None, None, None, None, None)
-            .expect("enc");
+        let enc =
+            PyTransformerEncoderLayer::new(py, 8, 2, None, None, None, None, None).expect("enc");
         // Default batch_first=false: src is [seq=3, batch=2, d_model=8].
         let src = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
         // Causal [seq, seq] = [3, 3] additive attention mask.
@@ -254,15 +254,15 @@ fn transformer_decoder_forward_with_masks_succeeds() {
     Python::initialize();
     Python::attach(|py| {
         // All four decoder mask parameters provided together must succeed.
-        let dec = PyTransformerDecoderLayer::new(py, 8, 2, None, None, None, None, None)
-            .expect("dec");
+        let dec =
+            PyTransformerDecoderLayer::new(py, 8, 2, None, None, None, None, None).expect("dec");
         // Default batch_first=false: tgt [tgt=3, batch=2, 8], memory [src=4, batch=2, 8].
         let tgt = make_tensor(ramp(3 * 2 * 8), &[3, 2, 8]);
         let memory = make_tensor(ramp(4 * 2 * 8), &[4, 2, 8]);
         let tgt_mask = generate_square_subsequent_mask(3).expect("tgt mask"); // [3, 3]
         let memory_mask = make_tensor(vec![0.0; 3 * 4], &[3, 4]); // [tgt=3, src=4]
         let tgt_kpm = make_tensor(vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0], &[2, 3]); // [batch, tgt]
-                                                                                 // [batch, src=4]; mask memory position 3 for batch 0 only.
+                                                                                // [batch, src=4]; mask memory position 3 for batch 0 only.
         let memory_kpm = make_tensor(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], &[2, 4]);
 
         let out = dec
@@ -382,7 +382,11 @@ fn transformer_encoder_all_parameters_receive_finite_nonzero_gradients() {
         run_backward(&loss).expect("backward must succeed");
 
         // self_attn: 5 params (q,k,v,out,bias) + ff: 4 params + layer_norm: 2 params = 11.
-        assert_eq!(params.len(), 11, "expected 5 (self_attn) + 4 (ff) + 2 (layer_norm)");
+        assert_eq!(
+            params.len(),
+            11,
+            "expected 5 (self_attn) + 4 (ff) + 2 (layer_norm)"
+        );
 
         for (i, handle) in params.iter().enumerate() {
             let grad = handle
@@ -451,9 +455,17 @@ fn transformer_encoder_ff_w2_gradient_matches_finite_difference() {
 
         let loss_fn = |ff_w2_flat: &[f32]| -> f32 {
             Python::attach(|py2| {
-                let probe =
-                    PyTransformerEncoderLayer::new(py2, 4, 2, Some(3), None, None, Some(true), None)
-                        .expect("probe construction");
+                let probe = PyTransformerEncoderLayer::new(
+                    py2,
+                    4,
+                    2,
+                    Some(3),
+                    None,
+                    None,
+                    Some(true),
+                    None,
+                )
+                .expect("probe construction");
                 let probe_params = probe.parameters(py2);
                 assert_eq!(probe_params.len(), snapshots.len());
                 for (handle, snap) in probe_params.iter().zip(snapshots.iter()) {
@@ -584,9 +596,17 @@ fn transformer_decoder_ff_b2_gradient_matches_finite_difference() {
 
         let loss_fn = |ff_b2_flat: &[f32]| -> f32 {
             Python::attach(|py2| {
-                let probe =
-                    PyTransformerDecoderLayer::new(py2, 4, 2, Some(3), None, None, Some(true), None)
-                        .expect("probe construction");
+                let probe = PyTransformerDecoderLayer::new(
+                    py2,
+                    4,
+                    2,
+                    Some(3),
+                    None,
+                    None,
+                    Some(true),
+                    None,
+                )
+                .expect("probe construction");
                 let probe_params = probe.parameters(py2);
                 assert_eq!(probe_params.len(), snapshots.len());
                 for (handle, snap) in probe_params.iter().zip(snapshots.iter()) {
@@ -750,9 +770,16 @@ fn encoder_clone_produces_independent_parameter_identities() {
             .expect("enc construction");
         let cloned = enc.clone();
 
-        let original_ids: Vec<usize> = enc.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
-        let cloned_ids: Vec<usize> =
-            cloned.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
+        let original_ids: Vec<usize> = enc
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
+        let cloned_ids: Vec<usize> = cloned
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
 
         assert_eq!(original_ids.len(), cloned_ids.len());
         for (o, c) in original_ids.iter().zip(cloned_ids.iter()) {

@@ -37,39 +37,29 @@ fn param_value_and_grad(param: &PyParameter) -> PyResult<Option<ParamStepInputs>
     let value_data = value_tensor
         .tensor
         .to_vec()
-        .map_err(|e| PyRuntimeError::new_err(
-            format!("failed to read parameter data: {}", e),
-        ))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("failed to read parameter data: {}", e)))?;
     let grad_data = grad_tensor
         .tensor
         .to_vec()
-        .map_err(|e| PyRuntimeError::new_err(
-            format!("failed to read gradient data: {}", e),
-        ))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("failed to read gradient data: {}", e)))?;
     if value_data.len() != grad_data.len() {
-        return Err(
-            PyRuntimeError::new_err(
-                format!(
-                    "parameter/gradient length mismatch: parameter has {} elements, gradient has {}",
-                    value_data.len(), grad_data.len()
-                ),
-            ),
-        );
+        return Err(PyRuntimeError::new_err(format!(
+            "parameter/gradient length mismatch: parameter has {} elements, gradient has {}",
+            value_data.len(),
+            grad_data.len()
+        )));
     }
-    Ok(
-        Some(ParamStepInputs {
-            value: value_data,
-            grad: grad_data,
-            shape,
-        }),
-    )
+    Ok(Some(ParamStepInputs {
+        value: value_data,
+        grad: grad_data,
+        shape,
+    }))
 }
 /// Write a flat `Vec<f32>` back into a parameter as its new value.
 fn write_back(param: &PyParameter, data: Vec<f32>, shape: &[usize]) -> PyResult<()> {
-    let tensor = Tensor::from_vec(data, shape)
-        .map_err(|e| {
-            PyRuntimeError::new_err(format!("failed to construct updated tensor: {}", e))
-        })?;
+    let tensor = Tensor::from_vec(data, shape).map_err(|e| {
+        PyRuntimeError::new_err(format!("failed to construct updated tensor: {}", e))
+    })?;
     param.set_data(tensor)
 }
 /// Zero the gradient of every parameter reachable from `model.parameters()`.
@@ -220,9 +210,12 @@ impl PyAdaBelief {
         let bias_correction2 = 1.0 - self.beta2.powi(t) as f32;
         for param in &params {
             let param_ref = param.borrow(py);
-            let Some(ParamStepInputs { mut value, mut grad, shape }) = param_value_and_grad(
-                &param_ref,
-            )? else {
+            let Some(ParamStepInputs {
+                mut value,
+                mut grad,
+                shape,
+            }) = param_value_and_grad(&param_ref)?
+            else {
                 continue;
             };
             if weight_decay != 0.0 {
@@ -239,8 +232,7 @@ impl PyAdaBelief {
                 let g = grad[i];
                 param_state.m[i] = beta1 * param_state.m[i] + (1.0 - beta1) * g;
                 let diff = g - param_state.m[i];
-                param_state.s[i] = beta2 * param_state.s[i] + (1.0 - beta2) * diff * diff
-                    + epsilon;
+                param_state.s[i] = beta2 * param_state.s[i] + (1.0 - beta2) * diff * diff + epsilon;
                 let m_hat = param_state.m[i] / bias_correction1;
                 let s_hat = param_state.s[i] / bias_correction2;
                 let s_used = if self.amsgrad {
@@ -433,9 +425,12 @@ impl PyRAdam {
         };
         for param in &params {
             let param_ref = param.borrow(py);
-            let Some(ParamStepInputs { mut value, mut grad, shape }) = param_value_and_grad(
-                &param_ref,
-            )? else {
+            let Some(ParamStepInputs {
+                mut value,
+                mut grad,
+                shape,
+            }) = param_value_and_grad(&param_ref)?
+            else {
                 continue;
             };
             if weight_decay != 0.0 {
@@ -505,8 +500,8 @@ impl PyRAdam {
     /// String representation
     pub fn __str__(&self) -> String {
         format!(
-            "RAdam(learning_rate={}, beta1={}, beta2={}, epsilon={})", self
-            .learning_rate, self.beta1, self.beta2, self.epsilon
+            "RAdam(learning_rate={}, beta1={}, beta2={}, epsilon={})",
+            self.learning_rate, self.beta1, self.beta2, self.epsilon
         )
     }
     /// Detailed string representation
@@ -607,9 +602,12 @@ impl PyNadam {
         let bias_correction2 = 1.0 - self.beta2.powi(t) as f32;
         for param in &params {
             let param_ref = param.borrow(py);
-            let Some(ParamStepInputs { mut value, mut grad, shape }) = param_value_and_grad(
-                &param_ref,
-            )? else {
+            let Some(ParamStepInputs {
+                mut value,
+                mut grad,
+                shape,
+            }) = param_value_and_grad(&param_ref)?
+            else {
                 continue;
             };
             if weight_decay != 0.0 {
@@ -677,8 +675,8 @@ impl PyNadam {
     /// String representation
     pub fn __str__(&self) -> String {
         format!(
-            "Nadam(learning_rate={}, beta1={}, beta2={}, epsilon={})", self
-            .learning_rate, self.beta1, self.beta2, self.epsilon
+            "Nadam(learning_rate={}, beta1={}, beta2={}, epsilon={})",
+            self.learning_rate, self.beta1, self.beta2, self.epsilon
         )
     }
     /// Detailed string representation
@@ -775,13 +773,16 @@ impl PyAdaGrad {
         self.timestep += 1;
         let weight_decay = self.weight_decay as f32;
         let epsilon = self.epsilon as f32;
-        let effective_lr = (self.learning_rate
-            / (1.0 + self.timestep as f64 * self.lr_decay)) as f32;
+        let effective_lr =
+            (self.learning_rate / (1.0 + self.timestep as f64 * self.lr_decay)) as f32;
         for param in &params {
             let param_ref = param.borrow(py);
-            let Some(ParamStepInputs { mut value, mut grad, shape }) = param_value_and_grad(
-                &param_ref,
-            )? else {
+            let Some(ParamStepInputs {
+                mut value,
+                mut grad,
+                shape,
+            }) = param_value_and_grad(&param_ref)?
+            else {
                 continue;
             };
             if weight_decay != 0.0 {
@@ -790,7 +791,10 @@ impl PyAdaGrad {
                 }
             }
             let n = value.len();
-            let accum = self.state.entry(param_ref.id()).or_insert_with(|| vec![0.0; n]);
+            let accum = self
+                .state
+                .entry(param_ref.id())
+                .or_insert_with(|| vec![0.0; n]);
             for i in 0..n {
                 let g = grad[i];
                 accum[i] += g * g;
@@ -837,16 +841,15 @@ impl PyAdaGrad {
     /// String representation
     pub fn __str__(&self) -> String {
         format!(
-            "AdaGrad(learning_rate={}, epsilon={}, lr_decay={})", self.learning_rate,
-            self.epsilon, self.lr_decay
+            "AdaGrad(learning_rate={}, epsilon={}, lr_decay={})",
+            self.learning_rate, self.epsilon, self.lr_decay
         )
     }
     /// Detailed string representation
     pub fn __repr__(&self) -> String {
         format!(
             "PyAdaGrad(learning_rate={}, epsilon={}, weight_decay={}, lr_decay={}, timestep={})",
-            self.learning_rate, self.epsilon, self.weight_decay, self.lr_decay, self
-            .timestep
+            self.learning_rate, self.epsilon, self.weight_decay, self.lr_decay, self.timestep
         )
     }
 }
@@ -950,9 +953,12 @@ impl PyAdaDelta {
         let weight_decay = self.weight_decay as f32;
         for param in &params {
             let param_ref = param.borrow(py);
-            let Some(ParamStepInputs { mut value, mut grad, shape }) = param_value_and_grad(
-                &param_ref,
-            )? else {
+            let Some(ParamStepInputs {
+                mut value,
+                mut grad,
+                shape,
+            }) = param_value_and_grad(&param_ref)?
+            else {
                 continue;
             };
             if weight_decay != 0.0 {
@@ -967,12 +973,11 @@ impl PyAdaDelta {
                 .or_insert_with(|| AdaDeltaState::zeros(n));
             for i in 0..n {
                 let g = grad[i];
-                param_state.accum_grad[i] = rho * param_state.accum_grad[i]
-                    + (1.0 - rho) * g * g;
+                param_state.accum_grad[i] = rho * param_state.accum_grad[i] + (1.0 - rho) * g * g;
                 let update = g * (param_state.accum_update[i] + epsilon).sqrt()
                     / (param_state.accum_grad[i] + epsilon).sqrt();
-                param_state.accum_update[i] = rho * param_state.accum_update[i]
-                    + (1.0 - rho) * update * update;
+                param_state.accum_update[i] =
+                    rho * param_state.accum_update[i] + (1.0 - rho) * update * update;
                 value[i] -= update;
             }
             drop(param_ref);
@@ -1016,8 +1021,8 @@ impl PyAdaDelta {
     /// Detailed string representation
     pub fn __repr__(&self) -> String {
         format!(
-            "PyAdaDelta(rho={}, epsilon={}, weight_decay={}, timestep={})", self.rho,
-            self.epsilon, self.weight_decay, self.timestep
+            "PyAdaDelta(rho={}, epsilon={}, weight_decay={}, timestep={})",
+            self.rho, self.epsilon, self.weight_decay, self.timestep
         )
     }
 }

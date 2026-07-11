@@ -334,10 +334,7 @@ mod tests {
                 (f0 - i as f32 / 2.0).abs() < 1e-4,
                 "sample {i} feature 0: {f0}"
             );
-            assert!(
-                (f1 - i as f32).abs() < 1e-4,
-                "sample {i} feature 1: {f1}"
-            );
+            assert!((f1 - i as f32).abs() < 1e-4, "sample {i} feature 1: {f1}");
         }
     }
 

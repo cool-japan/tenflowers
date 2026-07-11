@@ -6,7 +6,9 @@
 use scirs2_core::numeric::{One, Zero};
 use tenflowers_core::ops::concat;
 use tenflowers_core::ops::einsum::einsum;
-use tenflowers_core::ops::manipulation::common::{calculate_strides, coords_to_flat, flat_to_coords};
+use tenflowers_core::ops::manipulation::common::{
+    calculate_strides, coords_to_flat, flat_to_coords,
+};
 use tenflowers_core::ops::manipulation::{slice, squeeze, transpose_axes};
 use tenflowers_core::{Result, Tensor, TensorError};
 

@@ -827,7 +827,8 @@ mod tests {
                 std::fs::File::create(&file_path).expect("test: temp file creation should succeed");
             file.write_all(&file_bytes)
                 .expect("test: temp file write should succeed");
-            file.sync_all().expect("test: temp file flush should succeed");
+            file.sync_all()
+                .expect("test: temp file flush should succeed");
         }
 
         let dataset_result = MemoryMappedFileDataset::<f32>::from_file(
@@ -901,11 +902,11 @@ mod tests {
             // label] f32 each (24 bytes expected).
             file.write_all(&1.0f32.to_le_bytes())
                 .expect("test: temp file write should succeed");
-            file.sync_all().expect("test: temp file flush should succeed");
+            file.sync_all()
+                .expect("test: temp file flush should succeed");
         }
 
-        let result =
-            MemoryMappedFileDataset::<f32>::from_file(&file_path, 2, vec![2], vec![]);
+        let result = MemoryMappedFileDataset::<f32>::from_file(&file_path, 2, vec![2], vec![]);
 
         let cleanup = std::fs::remove_file(&file_path);
         assert!(result.is_err(), "undersized file should be rejected");

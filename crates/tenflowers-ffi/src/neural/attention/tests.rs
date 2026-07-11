@@ -142,12 +142,27 @@ fn multihead_attention_key_padding_mask_zeros_padded_weight() {
             PyMultiheadAttention::new(py, 2, 1, None, None, None, None, None, None, Some(true))
                 .expect("mha construction");
         // Identity projections => scores are exactly Q·K^T / sqrt(2).
-        mha.q_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.k_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.v_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.out_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
+        mha.q_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.k_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.v_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.out_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
         if let Some(ref bias_param) = mha.bias_param {
-            bias_param.borrow(py).set_data(Tensor::zeros(&[2])).expect("set_data");
+            bias_param
+                .borrow(py)
+                .set_data(Tensor::zeros(&[2]))
+                .expect("set_data");
         }
 
         // batch=1, tgt_len=1, src_len=3, embed=2.
@@ -213,12 +228,27 @@ fn multihead_attention_combines_attn_and_key_padding_masks() {
         let mha =
             PyMultiheadAttention::new(py, 2, 1, None, None, None, None, None, None, Some(true))
                 .expect("mha construction");
-        mha.q_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.k_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.v_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
-        mha.out_proj_param.borrow(py).set_data(identity_2x2()).expect("set_data");
+        mha.q_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.k_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.v_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
+        mha.out_proj_param
+            .borrow(py)
+            .set_data(identity_2x2())
+            .expect("set_data");
         if let Some(ref bias_param) = mha.bias_param {
-            bias_param.borrow(py).set_data(Tensor::zeros(&[2])).expect("set_data");
+            bias_param
+                .borrow(py)
+                .set_data(Tensor::zeros(&[2]))
+                .expect("set_data");
         }
 
         let q = make_tensor(vec![1.0, 0.0], &[1, 1, 2]);
@@ -231,7 +261,16 @@ fn multihead_attention_combines_attn_and_key_padding_masks() {
         let kpm = make_tensor(vec![0.0, 0.0, 1.0], &[1, 3]);
 
         let (_out, weights) = mha
-            .forward(py, &q, &k, &v, Some(&kpm), Some(true), Some(&attn_mask), None)
+            .forward(
+                py,
+                &q,
+                &k,
+                &v,
+                Some(&kpm),
+                Some(true),
+                Some(&attn_mask),
+                None,
+            )
             .expect("masked forward");
         let w = weights
             .expect("weights present")
@@ -284,11 +323,9 @@ fn multihead_attention_all_parameters_receive_finite_nonzero_gradients() {
             "expected [q_proj, k_proj, v_proj, out_proj, bias] since bias=true by default"
         );
 
-        for (label, handle) in [
-            "q_proj", "k_proj", "v_proj", "out_proj", "bias",
-        ]
-        .into_iter()
-        .zip(params.iter())
+        for (label, handle) in ["q_proj", "k_proj", "v_proj", "out_proj", "bias"]
+            .into_iter()
+            .zip(params.iter())
         {
             let grad = handle
                 .borrow(py)
@@ -359,7 +396,16 @@ fn multihead_attention_out_proj_gradient_matches_finite_difference() {
         let loss_fn = |out_proj_flat: &[f32]| -> f32 {
             Python::attach(|py2| {
                 let probe = PyMultiheadAttention::new(
-                    py2, 4, 2, None, None, None, None, None, None, Some(true),
+                    py2,
+                    4,
+                    2,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(true),
                 )
                 .expect("probe construction");
                 probe
@@ -385,12 +431,23 @@ fn multihead_attention_out_proj_gradient_matches_finite_difference() {
                     .set_data(out_proj_tensor)
                     .expect("set_data");
                 if let Some(ref bp) = probe.bias_param {
-                    bp.borrow(py2).set_data((*bias_vals.tensor).clone()).expect("set_data");
+                    bp.borrow(py2)
+                        .set_data((*bias_vals.tensor).clone())
+                        .expect("set_data");
                 }
 
                 let probe_x = make_tensor(x_data.clone(), &[1, 2, 4]);
                 let (probe_out, _) = probe
-                    .forward(py2, &probe_x, &probe_x, &probe_x, None, Some(false), None, None)
+                    .forward(
+                        py2,
+                        &probe_x,
+                        &probe_x,
+                        &probe_x,
+                        None,
+                        Some(false),
+                        None,
+                        None,
+                    )
                     .expect("probe forward");
                 probe_out.tensor.to_vec().expect("readable").iter().sum()
             })
@@ -430,7 +487,10 @@ fn multihead_attention_gradients_flow_with_non_batch_first_layout() {
             let grad = handle.borrow(py).grad().expect("grad must be populated");
             let grad_vec = grad.tensor.to_vec().expect("grad readable");
             assert!(grad_vec.iter().any(|&g| g != 0.0), "grad must be non-zero");
-            assert!(grad_vec.iter().all(|g| g.is_finite()), "grad must be finite");
+            assert!(
+                grad_vec.iter().all(|g| g.is_finite()),
+                "grad must be finite"
+            );
         }
     });
 }
@@ -531,8 +591,16 @@ fn clone_produces_independent_parameter_identities() {
                 .expect("mha construction");
         let cloned = mha.clone();
 
-        let original_ids: Vec<usize> = mha.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
-        let cloned_ids: Vec<usize> = cloned.parameters(py).iter().map(|p| p.borrow(py).id()).collect();
+        let original_ids: Vec<usize> = mha
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
+        let cloned_ids: Vec<usize> = cloned
+            .parameters(py)
+            .iter()
+            .map(|p| p.borrow(py).id())
+            .collect();
 
         assert_eq!(original_ids.len(), cloned_ids.len());
         for (o, c) in original_ids.iter().zip(cloned_ids.iter()) {
@@ -543,4 +611,3 @@ fn clone_produces_independent_parameter_identities() {
         }
     });
 }
-

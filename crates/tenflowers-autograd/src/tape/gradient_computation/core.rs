@@ -243,8 +243,7 @@ impl GradientTape {
             Operation::Stack { inputs, axis } => {
                 // grad_y is unstacked along `axis` into one gradient per
                 // input, in the same order as `inputs`.
-                let per_input_grads =
-                    grad_ops::stack_backward(grad_output, inputs.len(), *axis)?;
+                let per_input_grads = grad_ops::stack_backward(grad_output, inputs.len(), *axis)?;
                 for (id, grad) in inputs.iter().zip(per_input_grads) {
                     super::super::utils::accumulate_gradient(gradients, *id, grad)?;
                 }
@@ -278,8 +277,7 @@ impl GradientTape {
             } => {
                 let input_tensor = get_tensor_value::<T>(inner, *input).ok_or_else(|| {
                     tenflowers_core::TensorError::invalid_operation_simple(
-                        "Gather backward: input tensor value not recorded on the tape"
-                            .to_string(),
+                        "Gather backward: input tensor value not recorded on the tape".to_string(),
                     )
                 })?;
                 let grad_input = grad_ops::gather_backward(
@@ -331,16 +329,14 @@ impl GradientTape {
                 *input,
                 gradients,
             ),
-            Operation::Softmax { input, axis } => {
-                super::activation_ops::process_softmax_backward(
-                    self,
-                    inner,
-                    grad_output,
-                    *input,
-                    *axis,
-                    gradients,
-                )
-            }
+            Operation::Softmax { input, axis } => super::activation_ops::process_softmax_backward(
+                self,
+                inner,
+                grad_output,
+                *input,
+                *axis,
+                gradients,
+            ),
             Operation::Gelu { input } => super::activation_ops::process_gelu_backward(
                 self,
                 inner,

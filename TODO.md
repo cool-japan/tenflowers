@@ -1,4 +1,121 @@
-# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-08)
+# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-11)
+
+## v0.2.0 — Implicit Autograd Rewrite (2026-07-11)
+
+A complete rewrite of the Python-facing, PyTorch-style implicit autograd
+system in `tenflowers-ffi`. Previously `.backward()`/`.grad()`/
+`optimizer.step()` only worked end-to-end for a minimal Dense/Sequential/MSE
+path; every other layer, loss, and optimizer either raised or silently
+produced wrong gradients. Full detail lives in CHANGELOG.md's
+`[0.2.0] - 2026-07-11` entry, summarized here.
+
+### Every layer type now has real, tape-backed backward support
+`Dense`, `Conv1D`/`Conv2D`/`Conv3D` (+ pooling), `Embedding`/`EmbeddingBag`,
+`BatchNorm1d`, `LayerNorm`, `GroupNorm`, `InstanceNorm1d`,
+`MultiheadAttention`, `TransformerEncoderLayer`/`TransformerDecoderLayer`,
+and `LSTM`/`GRU`/`RNN` (plus their single-step cell variants) all now
+genuinely wire into the gradient tape — with two narrow, honestly-documented
+exceptions (not glossed over, see "Known Limitations" below for the current
+tracked status):
+- **Conv1D/Conv2D/Conv3D and MaxPool2D/AvgPool2D**: tape-recording only fires
+  for unit dilation, `groups == 1`, and no explicit padding, gated by a
+  `tape_recordable` check (`crates/tenflowers-ffi/src/neural/conv_layers/
+  mod.rs:784`). Dilated/grouped/padded convolutions still compute a correct
+  forward value but skip gradient recording.
+- **EmbeddingBag**: `sum`/`mean` reduction modes are tape-wired; `mode="max"`
+  is not — its own source doc states plainly "no tape-aware max reduction
+  exists" anywhere in the crate (`crates/tenflowers-ffi/src/neural/
+  embedding.rs`).
+- `PyTensor::slice` now records itself on the tape, so slicing a tracked
+  tensor participates correctly in `.backward()`.
+
+### All 9 optimizers now do real gradient-based parameter updates
+`SGD`, `Adam`, `RMSprop`, `AdamW`, `AdaBelief`, `RAdam`, `Nadam`, `AdaGrad`,
+`AdaDelta` all read `.grad()` and write back to parameters via a new
+`optimizer_bridge` module's `collect_parameters()` helper, replacing the
+previous no-op/partial `step()`. The actual step() math lives in
+`neural/optimizers.rs` and the newly-split-out `neural/extended_optimizers/`
+module.
+
+### Every loss function is genuinely backward-connected to the tape
+`neural::losses` was substantially rewritten so loss values participate in
+`.backward()` rather than being a dead end.
+
+### Real end-to-end training convergence, proven with actual loss traces
+`crates/tenflowers-ffi/tests/test_training_convergence.py` — three tests
+proving finite, decreasing loss over real training steps:
+`test_dense_layer_training_converges` (PyDense + SGD),
+`test_sequential_mlp_training_converges` (3-layer Sequential MLP + Adam),
+`test_conv2d_training_converges` (Conv2D + Adam, deliberately using only a
+unit-dilation/groups=1/no-padding configuration to stay inside the wired
+boundary above).
+
+### Autograd crate (`tenflowers-autograd`) correctness fixes
+- **Softmax/LogSoftmax backward** were computing wrong gradients; rewritten
+  to recompute the forward output on the tape and apply the correct
+  Jacobian-vector product.
+- **BatchNorm backward** (`ops::normalization_ops`): eval-mode (inference)
+  `grad_gamma`/`grad_beta` were hardcoded to zero instead of derived from the
+  running statistics; a missing 3-D (NCL) shape case fell through to an
+  incorrect channel-last default.
+- **LayerNorm backward**: `gamma` was applied as a single post-reduction
+  factor instead of being folded in before the per-axis reduction sum — only
+  correct when `gamma` is uniform across the normalized axis, silently wrong
+  otherwise.
+- **GroupNorm backward**: the same gamma-before-reduction bug as LayerNorm,
+  compounded by `gamma` varying per-channel *within* a group — measured up to
+  **760% relative error** for non-uniform gamma prior to this fix.
+- **Slice/Gather backward** were stubs; now produce real gradients.
+- A row-major-vs-Fortran-order stride bug in `slice_with_stride`
+  (`tenflowers-core::ops::manipulation::indexing`): the linear-index
+  computation used a forward-order running-product stride formula instead of
+  the correct row-major (reverse-order) one, silently producing wrong
+  elements for any non-square, non-1-D sliced array — caught by an LSTM/GRU
+  gate-slicing finite-difference gradient test.
+- A `PyParameter` tape-registry lifecycle bug where a dropped parameter could
+  poison a later parameter reusing the same allocation address, silently
+  losing its gradients.
+- A `mark_leaf_param` bug where any second-or-later `forward()` call on the
+  same parameter without an intervening `backward()` silently broke that
+  parameter's tape registration, dropping its gradient without error.
+
+### New gradient-check test suites
+`activation_gaps_gradient_test`, `conv1d_gradient_test`,
+`conv3d_gradient_test`, `group_instance_norm_gradient_check`,
+`normalization_gradient_check`, `slice_concat_stack_split_gather_gradient_test`
+(all in `tenflowers-autograd`), plus per-module `tests.rs` suites for
+`neural::{attention,conv_layers,recurrent,transformer,extended_optimizers}`
+in `tenflowers-ffi`. `Conv1D` gained a dedicated backward implementation
+(`ops/convolution_ops/conv1d.rs`, `conv1d_utils.rs`).
+
+### Module splits (COOLJAPAN 2000-line refactor policy)
+`crates/tenflowers-ffi/src/implicit_autograd.rs` and
+`neural/{attention,conv_layers,recurrent,transformer}.rs` split into
+`mod.rs` + `tests.rs` submodule directories.
+
+### Security
+RUSTSEC-2026-0204 (`crossbeam-epoch`), tracked as open in the prior release
+(fix noted then as requiring `crossbeam-epoch >= 0.9.20`), is now resolved —
+`cargo tree -i crossbeam-epoch` confirms `crossbeam-epoch v0.9.20` in the
+lockfile via the `scirs2-core` 0.6.0 transitive chain, exactly the version
+the prior release's own tracking note said would fix it. 2 advisories remain
+open, both transitive and unchanged from last release: RUSTSEC-2024-0384
+(`instant`, unmaintained, via `hdf5`) and RUSTSEC-2024-0436 (`paste`,
+unmaintained, via `rav1e`/`parquet`/`metal`).
+
+### Verified metrics (2026-07-11 full-workspace run)
+- **Tests**: 14,536 passing, 39 skipped, 0 failures (`cargo nextest run
+  --workspace --all-features`); 14,093 passing, 14 skipped, 0 failures with
+  default features. Skipped count is unchanged from the prior 2026-07-07 run
+  (39), so the +247 newly-passing tests are net-new additions, not
+  previously-skipped tests newly passing.
+- **Code size**: 685,753 SLoC Rust (`tokei .`), 1,635 total files (1,533 Rust
+  files / 823,712 total Rust lines)
+- **Warnings**: 0 compilation warnings, 0 clippy warnings
+- **Security**: 0 direct vulnerabilities, 2 known transitive advisories (see
+  "Security" above)
+- **Publishability**: `cargo publish --dry-run` succeeds for all 5
+  publishable crates (`tenflowers-ffi` is `publish = false`)
 
 ## v0.1.2 — Honesty Hardening (2026-06-23)
 
@@ -136,13 +253,15 @@ RUSTSEC-2024-0436 (`paste`, transitive via `rav1e`/`parquet`/`metal`).
 ## Current Capabilities
 
 ### Project Status
-- **Tests**: 14,289 passing, 39 skipped across all crates (verified 2026-07-07
-  full-workspace `cargo nextest run --workspace --all-features` run, 102s)
-- **Code Size**: ~677K SLoC Rust code (~805K total Rust lines, 1,616 total
-  files / 1,515 Rust files, per `tokei .`)
+- **Tests**: 14,536 passing, 39 skipped across all crates (verified 2026-07-11
+  full-workspace `cargo nextest run --workspace --all-features` run); 14,093
+  passing, 14 skipped with default features
+- **Code Size**: 685,753 SLoC Rust code (823,712 total Rust lines, 1,635 total
+  files / 1,533 Rust files, per `tokei .`)
 - **Warnings**: 0 compilation warnings, 0 clippy warnings
-- **Vulnerabilities**: 0 direct vulnerabilities; 3 known transitive advisories,
-  all upstream-blocked and none directly exploitable (see "Security" above)
+- **Vulnerabilities**: 0 direct vulnerabilities; 2 known transitive advisories,
+  both upstream-blocked and neither directly exploitable (see "Security"
+  under "v0.2.0 — Implicit Autograd Rewrite" above)
 - **SciRS2 Integration**: Full migration to SciRS2 ecosystem (0.6.0)
 
 ### TenfloweRS-Core (Tensor Engine)
@@ -177,12 +296,20 @@ RUSTSEC-2024-0436 (`paste`, transitive via `rav1e`/`parquet`/`metal`).
 - Memory-mapped file dataset for large file zero-copy access
 
 ### TenfloweRS-FFI (Language Bindings)
-- Python bindings via PyO3 (tensors, gradient tape, Dense/Sequential, hooks)
+- Python bindings via PyO3 with real, tape-backed `.backward()`/`.grad()` for
+  every major layer type (Dense, Conv1D/2D/3D+pooling, Embedding/
+  EmbeddingBag, all normalization layers, MultiheadAttention, Transformer
+  enc/dec layers, LSTM/GRU/RNN+cells) — see "Known Limitations" for the two
+  narrow tape-recording exceptions (dilated/grouped/padded conv+pool,
+  EmbeddingBag max-mode)
+- All 9 optimizers (SGD, Adam, RMSprop, AdamW, AdaBelief, RAdam, Nadam,
+  AdaGrad, AdaDelta) perform real gradient-based parameter updates
+- All loss functions genuinely backward-connected to the tape
 - NumPy tensor conversion (f32), memory optimization utilities
 - C API scaffolding (types, tensor creation)
 - Hook system (forward/backward), benchmarking, visualization
 
-## Known Limitations (v0.1.2, updated 2026-07-08)
+## Known Limitations (v0.2.0, updated 2026-07-11)
 
 ### Resolved since the 2026-06-22 sweep (see "Completed" section below for detail)
 The following were listed as honest-error deferrals as of 2026-06-23 and are
@@ -210,13 +337,28 @@ now real, tested implementations rather than gaps:
   execution via `SessionConfig::enable_graph_optimization` (constant folding,
   CSE, algebraic simplification, strength reduction, DCE, scheduling); see
   "Other limitations" below — this does *not* mean every planned rewrite is
-  landed, see the `[0.2.0]` roadmap for further optimizer work.
+  landed, see the `v0.3.0` roadmap below for further optimizer work.
 - **ONNX protobuf import/export**: real prost-based decode/encode is now wired
   for both `tenflowers-core::onnx_interop` (core op subset: Add/Sub/Mul/Div/
   Relu/Sigmoid/Tanh/MatMul/Reshape/Transpose/Identity/Concat/Softmax/Flatten/
   Gemm) and `tenflowers-neural::serialization::onnx` (behind the `onnx`
   feature), replacing what were previously hardcoded `NotImplemented`/`Err`
   returns regardless of the feature flag.
+
+### FFI implicit-autograd gaps (new in v0.2.0, narrow and honestly documented)
+The v0.2.0 autograd rewrite (see section above) wired real tape-backed
+gradients into every layer type, with two specific, currently-open
+exceptions — forward computation is correct in both cases, only gradient
+recording is skipped:
+- **Conv1D/Conv2D/Conv3D and MaxPool2D/AvgPool2D tape-recording**: only fires
+  for unit dilation, `groups == 1`, and no explicit padding (the
+  `tape_recordable` gate in `crates/tenflowers-ffi/src/neural/conv_layers/
+  mod.rs:784`). Dilated, grouped, or explicitly-padded convolutions/pools
+  still forward correctly but do not record onto the gradient tape.
+- **`EmbeddingBag` `mode="max"`**: not tape-wired — `sum`/`mean` modes are.
+  Documented directly in the source
+  (`crates/tenflowers-ffi/src/neural/embedding.rs`): "no tape-aware max
+  reduction exists" anywhere in the crate.
 
 ### Honest-error deferrals still open (fail loudly instead of faking)
 - **GPU compute kernels (Metal MPS)**: GPU→host readback for the Metal MPS
@@ -265,19 +407,44 @@ now real, tested implementations rather than gaps:
 
 ## Roadmap
 
-### v0.2.0 — Attention & Training Polish
-- Multi-head + scaled dot-product attention implementation
-- Learning rate schedulers: step, cosine, warmup, one-cycle
-- Gradient clipping utilities and anomaly detection hooks
-- Unified dispatch registry (CPU/GPU) with backend feature gating
-- Consolidated shape inference + standardized error taxonomy
-- GPU memory diagnostics: allocation tracing, pool diagnostics, usage reporting
-- Elementwise fusion MVP for performance improvement
-- Activation checkpointing API for memory-efficient training
-- Deterministic mode: global seed + op-local seeds for reproducible training
-- Mixed precision policy refinement + dynamic loss scaling
-- Streaming data loaders with deterministic sharding for distributed training
-- Python wheel builds (manylinux, macOS universal2, Windows)
+**Note on the old "v0.2.0 — Attention & Training Polish" roadmap entry**: this
+project previously roadmapped v0.2.0 under that title with the item list
+below. v0.2.0 shipped 2026-07-11 with substantially different actual content
+(the FFI implicit-autograd rewrite — see the section near the top of this
+file). Verified by direct source check (2026-07-11) that most of the
+originally-roadmapped items were, in fact, *already implemented* prior to
+this release (they did not ship as part of v0.2.0's work, they simply
+predate it and this roadmap was stale about their status):
+- **Multi-head + scaled dot-product attention**: already implemented
+  (`crates/tenflowers-neural/src/layers/attention/multi_head.rs`'s
+  `MultiHeadAttention`, `layers/attention/utils.rs`'s
+  `scaled_dot_product_attention`, plus `layers/transformer.rs`).
+- **Learning rate schedulers** (step/exponential w/ staircase, cosine,
+  warmup, one-cycle): already implemented
+  (`crates/tenflowers-neural/src/optimizers/schedulers.rs`'s
+  `CosineAnnealingScheduler`/`OneCycleLrScheduler`/`WarmupScheduler`/
+  `ExponentialDecayScheduler`, `crates/tenflowers-neural/src/scheduler.rs`'s
+  `CosineAnnealingLR`).
+- **Gradient clipping utilities**: already implemented
+  (`crates/tenflowers-neural/src/optimizers/gradient_clipping.rs`'s
+  `clip_gradients_by_value`/`_by_norm`/`_by_global_norm`/`_adaptive`).
+  Anomaly-detection hooks specifically were not verified as implemented —
+  moved to "still pending" below.
+- **Activation checkpointing**: already implemented
+  (`crates/tenflowers-autograd/src/checkpointing.rs`, `efficient_memory.rs`).
+- **Deterministic mode**: already implemented
+  (`crates/tenflowers-core/src/deterministic.rs`,
+  `crates/tenflowers-autograd/src/deterministic.rs`).
+- **Mixed precision**: already implemented
+  (`crates/tenflowers-autograd/src/amp_policy.rs`,
+  `crates/tenflowers-neural/src/mixed_precision.rs`). Dynamic loss-scaling
+  *refinement* specifically was not re-verified as complete — moved to
+  "still pending" below out of caution.
+
+These are cut from the pending list entirely (they are already-shipped
+background capability, not upcoming work). The remaining items from that old
+list that are still genuinely pending/unverified are folded into v0.3.0
+below rather than kept under a stale "v0.2.0" heading.
 
 ### v0.3.0 — Scale & Distributed
 - Multi-GPU data-parallel execution with optimizer state sync
@@ -286,6 +453,21 @@ now real, tested implementations rather than gaps:
   further fusion passes and real NCCL/Gloo/MPI collective backends for multi-GPU sync
 - ONNX export/import for the core operator subset landed in v0.1.2 (see "Completed" below,
   item and Continued Hardening section); remaining v0.3.0 work is wider operator coverage
+- Unified dispatch registry (CPU/GPU) with backend feature gating (carried over from the
+  stale "v0.2.0" roadmap entry, still pending as of 2026-07-11)
+- Consolidated shape inference + standardized error taxonomy (carried over, still pending)
+- GPU memory diagnostics: allocation tracing, pool diagnostics, usage reporting (carried over,
+  still pending — note the four diagnostic *modules* already exist on disk in tenflowers-core
+  per "Other limitations" above but are not yet wired into the public API; this roadmap item
+  is that wiring pass plus the reporting layer on top)
+- Elementwise fusion MVP for performance improvement (carried over, still pending)
+- Gradient anomaly-detection hooks (carried over from the gradient-clipping roadmap item,
+  still pending — the clipping utilities themselves already shipped, see note above)
+- Dynamic loss-scaling refinement for the mixed precision policy (carried over, not
+  re-verified as complete, kept pending out of caution)
+- Streaming data loaders with deterministic sharding for distributed training (carried over,
+  still pending)
+- Python wheel builds (manylinux, macOS universal2, Windows) (carried over, still pending)
 - Sequence parallel / model parallel experiments
 - Parameter grouping & weight decay configurability
 - Pretrained model export/import (JSON weights + binary format)

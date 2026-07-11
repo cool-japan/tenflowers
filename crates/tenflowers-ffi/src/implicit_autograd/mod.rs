@@ -426,15 +426,44 @@ pub fn mark_leaf(tensor: &PyTensor) {
 ///
 /// This function cannot currently fail; it returns `()` like [`mark_leaf`].
 pub fn mark_leaf_param(transient: &PyTensor, explicit_key: usize) {
-    let already_tracked =
-        TRACKED_REGISTRY.with(|registry| registry.borrow().contains_key(&explicit_key));
-    if already_tracked {
+    let existing = TRACKED_REGISTRY.with(|registry| registry.borrow().get(&explicit_key).cloned());
+    if let Some(tracked) = existing {
         // Already tracked under this parameter's id — either from an earlier
         // call within the same forward/backward cycle, or (more commonly in
-        // practice) simply not yet cleared by a `run_backward` call. Nothing
-        // further to do; in particular, do NOT re-watch `transient` on the
-        // tape, which would silently start tracking two different
-        // `TrackedTensor`s under variations of "the same" parameter.
+        // practice) simply not yet cleared by a `run_backward` call. Do NOT
+        // re-watch `transient` on the tape (which would silently start
+        // tracking two different `TrackedTensor`s under variations of "the
+        // same" parameter) and do NOT push a second entry onto `LEAVES`
+        // (which would make `run_backward` accumulate this parameter's
+        // gradient twice under the same `explicit_key`).
+        //
+        // *This* call's `transient` snapshot, however, is still a **fresh**
+        // `PyParameter::to_tensor()` allocation distinct from whichever
+        // snapshot's `tensor_key` originally got registered on the first
+        // call — every `forward()` call allocates a new one (see this
+        // function's "Why this cannot just call `mark_leaf`" doc above). If
+        // this call's own `tensor_key(transient)` is never registered, the
+        // operation this `transient` is about to participate in (e.g.
+        // `weight_snapshot.matmul(&input)` inside the caller's `forward()`)
+        // cannot find it via `lookup_tracked`, so `record_and_link_binary`/
+        // `record_and_link_unary`/`record_and_link_ternary` silently treat
+        // it as an untracked constant — the result's `requires_grad` flag
+        // still gets set (a separate, purely cosmetic bookkeeping step) but
+        // no tape edge is actually recorded, so a later `.backward()`
+        // eventually fails with "no recorded computation graph" once it
+        // walks back to this severed link. This previously broke any
+        // second-and-later `forward()` call on the same parameter made
+        // without an intervening `backward()` (e.g. a shape-probing forward
+        // pass before the training loop, or plain inference before the
+        // first training step) — exactly the "real training loop calls
+        // `forward()` on every step" scenario this function's own doc
+        // describes, just without relying on `run_backward`'s full-registry
+        // clear happening in between. The fix: always (re-)register this
+        // call's own `transient` under its own `tensor_key`, pointing at the
+        // *same* already-existing `tracked` `Arc` — cheap (an `Arc` clone
+        // and a hashmap insert, not a new tape node) and idempotent to call
+        // redundantly.
+        register_tracked(transient, tracked);
         return;
     }
 
@@ -518,10 +547,14 @@ pub enum UnaryOpKind {
     Mish,
     /// `leaky_relu(alpha)`, matching `TrackedTensor::leaky_relu`'s own `f32`
     /// slope parameter (applied to negative inputs).
-    LeakyRelu { negative_slope: f32 },
+    LeakyRelu {
+        negative_slope: f32,
+    },
     /// `elu(alpha)`, matching `TrackedTensor::elu`'s own `f32` scale
     /// parameter for the negative-input exponential branch.
-    Elu { alpha: f32 },
+    Elu {
+        alpha: f32,
+    },
     /// `relu6()` — `min(max(x, 0), 6)`, matching `TrackedTensor::relu6`.
     Relu6,
     /// `hard_swish()` — `x * relu6(x + 3) / 6`, matching
@@ -530,16 +563,24 @@ pub enum UnaryOpKind {
     /// `softmax(axis)`, matching `TrackedTensor::softmax`'s own `Option<i32>`
     /// axis (`None` means "softmax over the flattened tensor" — see that
     /// method's forward kernel).
-    Softmax { axis: Option<i32> },
+    Softmax {
+        axis: Option<i32>,
+    },
     /// `log_softmax(axis)`, matching `TrackedTensor::log_softmax`'s own
     /// `Option<i32>` axis (same convention as `Softmax` above).
-    LogSoftmax { axis: Option<i32> },
+    LogSoftmax {
+        axis: Option<i32>,
+    },
     /// `transpose(axes)`, matching `TrackedTensor::transpose`'s own
     /// `Option<Vec<usize>>` axes (`None` means "reverse all axes" — see that
     /// method's forward kernel).
-    Transpose { axes: Option<Vec<usize>> },
+    Transpose {
+        axes: Option<Vec<usize>>,
+    },
     /// `reshape(shape)`.
-    Reshape { shape: Vec<usize> },
+    Reshape {
+        shape: Vec<usize>,
+    },
     /// `slice(specs)`, one [`tenflowers_autograd::grad_ops::SliceSpec`] per
     /// dimension (trailing dimensions without an explicit spec are taken in
     /// full — see `TrackedTensor::slice`'s own doc).
@@ -684,8 +725,9 @@ fn tracked_or_watch_as_constant(
     tracked: Option<Arc<TrackedTensor<f32>>>,
     tensor: &PyTensor,
 ) -> Arc<TrackedTensor<f32>> {
-    tracked
-        .unwrap_or_else(|| Arc::new(IMPLICIT_TAPE.with(|tape| tape.watch((*tensor.tensor).clone()))))
+    tracked.unwrap_or_else(|| {
+        Arc::new(IMPLICIT_TAPE.with(|tape| tape.watch((*tensor.tensor).clone())))
+    })
 }
 
 /// The ternary (up to three *differentiable* operands) tensor operations

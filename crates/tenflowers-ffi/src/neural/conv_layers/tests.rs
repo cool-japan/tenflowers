@@ -79,14 +79,9 @@ fn conv2d_forward_matches_core_op() {
         );
 
         // Cross-check against the core op invoked directly.
-        let direct = tenflowers_core::ops::conv2d(
-            input.tensor.as_ref(),
-            &weight,
-            None,
-            (1, 1),
-            "valid",
-        )
-        .expect("direct conv2d");
+        let direct =
+            tenflowers_core::ops::conv2d(input.tensor.as_ref(), &weight, None, (1, 1), "valid")
+                .expect("direct conv2d");
         let direct_vec = direct.to_vec().expect("direct vec");
         assert_eq!(out_vec.len(), direct_vec.len());
         for (a, b) in out_vec.iter().zip(direct_vec.iter()) {
@@ -100,10 +95,23 @@ fn conv2d_padding_changes_output_shape() {
     Python::initialize();
     Python::attach(|py| {
         reset_autograd_state();
-        let conv = PyConv2D::new(py, 1, 1, (3, 3), None, Some((1, 1)), None, None, Some(false))
-            .expect("conv2d construction");
+        let conv = PyConv2D::new(
+            py,
+            1,
+            1,
+            (3, 3),
+            None,
+            Some((1, 1)),
+            None,
+            None,
+            Some(false),
+        )
+        .expect("conv2d construction");
         let weight = Tensor::from_vec(vec![1.0; 9], &[1, 1, 3, 3]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         let input_data: Vec<f32> = (1..=16).map(|v| v as f32).collect();
         let input = make_tensor(input_data, &[1, 1, 4, 4]);
         let out = conv.forward(py, &input).expect("forward");
@@ -126,7 +134,10 @@ fn conv2d_groups_real_values() {
             .expect("conv2d construction");
         // Weight [out=2, in/groups=1, 1, 1]: oc0 scales by 10, oc1 scales by 100.
         let weight = Tensor::from_vec(vec![10.0, 100.0], &[2, 1, 1, 1]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // Input [1, 2, 2, 2]: channel 0 = 2.0, channel 1 = 3.0.
         let input = make_tensor(vec![2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0], &[1, 2, 2, 2]);
         let out = conv.forward(py, &input).expect("forward");
@@ -146,10 +157,23 @@ fn conv2d_dilation_real_values() {
     Python::attach(|py| {
         reset_autograd_state();
         // 1 in / 1 out, kernel 2x2, dilation 2, valid, all-ones weight.
-        let conv = PyConv2D::new(py, 1, 1, (2, 2), None, None, Some((2, 2)), None, Some(false))
-            .expect("conv2d construction");
+        let conv = PyConv2D::new(
+            py,
+            1,
+            1,
+            (2, 2),
+            None,
+            None,
+            Some((2, 2)),
+            None,
+            Some(false),
+        )
+        .expect("conv2d construction");
         let weight = Tensor::from_vec(vec![1.0; 4], &[1, 1, 2, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // 4x4 input with values 1..16.
         let input_data: Vec<f32> = (1..=16).map(|v| v as f32).collect();
         let input = make_tensor(input_data, &[1, 1, 4, 4]);
@@ -182,7 +206,10 @@ fn conv2d_dilation_groups_padding_combined() {
         .expect("conv2d construction");
         // Weight [out=2, in/groups=1, 2, 2].
         let weight = Tensor::from_vec(vec![1.0; 8], &[2, 1, 2, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // Input [1, 2, 4, 4].
         let input_data: Vec<f32> = (1..=32).map(|v| v as f32).collect();
         let input = make_tensor(input_data, &[1, 2, 4, 4]);
@@ -336,7 +363,10 @@ fn conv1d_forward_real_values() {
         let conv = PyConv1D::new(py, 1, 1, 2, None, None, None, None, Some(false))
             .expect("conv1d construction");
         let weight = Tensor::from_vec(vec![1.0, 1.0], &[1, 1, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         let input = make_tensor(vec![1.0, 2.0, 3.0, 4.0], &[1, 1, 4]);
         let out = conv.forward(py, &input).expect("forward");
         assert_eq!(out.tensor.shape().dims().to_vec(), vec![1, 1, 3]);
@@ -354,7 +384,10 @@ fn conv1d_dilation_real_values() {
         let conv = PyConv1D::new(py, 1, 1, 2, None, None, Some(2), None, Some(false))
             .expect("conv1d construction");
         let weight = Tensor::from_vec(vec![1.0, 1.0], &[1, 1, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         let input = make_tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0], &[1, 1, 5]);
         let out = conv.forward(py, &input).expect("forward");
         // output_length = (5 - (2-1)*2 - 1)/1 + 1 = 3.
@@ -375,7 +408,10 @@ fn conv1d_groups_real_values() {
             .expect("conv1d construction");
         // Weight [out=2, in/groups=1, 1]: oc0 scales by 10, oc1 scales by 100.
         let weight = Tensor::from_vec(vec![10.0, 100.0], &[2, 1, 1]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // Input [1, 2, 3]: channel 0 = 2.0, channel 1 = 3.0.
         let input = make_tensor(vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0], &[1, 2, 3]);
         let out = conv.forward(py, &input).expect("forward");
@@ -395,7 +431,10 @@ fn conv3d_forward_real_values() {
         let conv = PyConv3D::new(py, 1, 1, (2, 2, 2), None, None, None, None, Some(false))
             .expect("conv3d construction");
         let weight = Tensor::from_vec(vec![1.0; 8], &[1, 1, 2, 2, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // Input [1, 1, 3, 3, 3] = 27 elements, values 1..27.
         let input_data: Vec<f32> = (1..=27).map(|v| v as f32).collect();
         let input = make_tensor(input_data, &[1, 1, 3, 3, 3]);
@@ -427,7 +466,10 @@ fn conv3d_groups_real_values() {
             .expect("conv3d construction");
         // Weight [out=2, in/groups=1, 1, 1, 1]: oc0 scales by 10, oc1 scales by 100.
         let weight = Tensor::from_vec(vec![10.0, 100.0], &[2, 1, 1, 1, 1]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // Input [1, 2, 1, 1, 1]: channel 0 = 2.0, channel 1 = 3.0.
         let input = make_tensor(vec![2.0, 3.0], &[1, 2, 1, 1, 1]);
         let out = conv.forward(py, &input).expect("forward");
@@ -457,7 +499,10 @@ fn conv3d_dilation_real_values() {
         )
         .expect("conv3d construction");
         let weight = Tensor::from_vec(vec![1.0; 8], &[1, 1, 2, 2, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         // 4x4x4 input, values 1..64.
         let input_data: Vec<f32> = (1..=64).map(|v| v as f32).collect();
         let input = make_tensor(input_data, &[1, 1, 4, 4, 4]);
@@ -533,7 +578,10 @@ fn conv1d_backward_gradients_match_finite_difference() {
             .expect("conv1d construction");
         let weight_data = vec![0.5, -0.3, 0.2, 0.7];
         let weight = Tensor::from_vec(weight_data.clone(), &[2, 1, 2]).expect("weight");
-        conv.weight_param.borrow(py).set_data(weight).expect("set_data");
+        conv.weight_param
+            .borrow(py)
+            .set_data(weight)
+            .expect("set_data");
         let bias_data = vec![0.1, -0.2];
         let bias_param = conv
             .bias_param
@@ -692,8 +740,7 @@ fn conv2d_backward_gradients_match_finite_difference() {
                 .expect("scalar readable")[0]
         };
         let epsilon = 1e-3;
-        let numeric_weight =
-            numerical_gradient(&weight_data, epsilon, |w| oracle(w, &bias_data));
+        let numeric_weight = numerical_gradient(&weight_data, epsilon, |w| oracle(w, &bias_data));
         let numeric_bias = numerical_gradient(&bias_data, epsilon, |b| oracle(&weight_data, b));
 
         for (analytic, numeric) in grad_weight.iter().zip(numeric_weight.iter()) {
@@ -786,8 +833,7 @@ fn conv3d_backward_gradients_match_finite_difference() {
                 .expect("scalar readable")[0]
         };
         let epsilon = 1e-3;
-        let numeric_weight =
-            numerical_gradient(&weight_data, epsilon, |w| oracle(w, &bias_data));
+        let numeric_weight = numerical_gradient(&weight_data, epsilon, |w| oracle(w, &bias_data));
         let numeric_bias = numerical_gradient(&bias_data, epsilon, |b| oracle(&weight_data, b));
 
         for (analytic, numeric) in grad_weight.iter().zip(numeric_weight.iter()) {
@@ -1143,7 +1189,9 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
         let conv_weight_data: Vec<f32> = (0..36).map(deterministic_seed).collect();
         conv.weight_param
             .borrow(py)
-            .set_data(Tensor::from_vec(conv_weight_data.clone(), &[4, 1, 3, 3]).expect("conv weight"))
+            .set_data(
+                Tensor::from_vec(conv_weight_data.clone(), &[4, 1, 3, 3]).expect("conv weight"),
+            )
             .expect("seed conv weight");
         let conv_bias_data: Vec<f32> = (0..4).map(|i| deterministic_seed(i + 100)).collect();
         let conv_bias_param = conv
@@ -1158,8 +1206,8 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
         // MaxPool2D: 2x2 kernel, all other args left at their
         // tape-recordable defaults (stride defaults to kernel_size,
         // padding=0, dilation=1, no ceil-mode overhang, return_indices=False).
-        let pool = PyMaxPool2D::new((2, 2), None, None, None, None, None)
-            .expect("maxpool2d construction");
+        let pool =
+            PyMaxPool2D::new((2, 2), None, None, None, None, None).expect("maxpool2d construction");
 
         // Dense head: flattened pooled features (4 channels * 3 * 3 spatial
         // = 36) -> 1 regression output, with bias, no activation (MSE is
@@ -1172,7 +1220,11 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
         // for the same rationale applied to a bare PyDense), matching this
         // test's "deterministic only" requirement across every parameter.
         let dense_params = dense.parameters();
-        assert_eq!(dense_params.len(), 2, "PyDense(36, 1, bias=true) must expose [weight, bias]");
+        assert_eq!(
+            dense_params.len(),
+            2,
+            "PyDense(36, 1, bias=true) must expose [weight, bias]"
+        );
         let dense_weight_data: Vec<f32> = (0..36).map(|i| deterministic_seed(i + 200)).collect();
         dense_params[0]
             .borrow(py)
@@ -1248,14 +1300,16 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
 
             crate::implicit_autograd::run_backward(&loss).expect("run_backward must succeed");
 
-            let model_for_step = make_conv_dense_model(py, py_conv.clone_ref(py), py_dense.clone_ref(py))
-                .expect("model wrapper for step()");
+            let model_for_step =
+                make_conv_dense_model(py, py_conv.clone_ref(py), py_dense.clone_ref(py))
+                    .expect("model wrapper for step()");
             sgd.step(model_for_step).expect("sgd.step must succeed");
 
             let model_for_zero_grad =
                 make_conv_dense_model(py, py_conv.clone_ref(py), py_dense.clone_ref(py))
                     .expect("model wrapper for zero_grad()");
-            sgd.zero_grad(model_for_zero_grad).expect("sgd.zero_grad must succeed");
+            sgd.zero_grad(model_for_zero_grad)
+                .expect("sgd.zero_grad must succeed");
         }
 
         // --- Assertion (a): loss substantially lower than initial loss. ---
@@ -1386,7 +1440,10 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
             };
             let loss = crate::neural::losses::mse_loss(&out, &y, None)
                 .expect("negative-control training mse_loss must succeed");
-            neg_final_loss = loss.tensor.to_vec().expect("negative-control training loss readable")[0];
+            neg_final_loss = loss
+                .tensor
+                .to_vec()
+                .expect("negative-control training loss readable")[0];
 
             crate::implicit_autograd::run_backward(&loss)
                 .expect("negative-control run_backward must succeed");
@@ -1394,7 +1451,9 @@ fn conv_net_end_to_end_training_drives_loss_down_through_every_layer() {
             let model_for_step =
                 make_conv_dense_model(py, neg_py_conv.clone_ref(py), neg_py_dense.clone_ref(py))
                     .expect("negative-control model wrapper for step()");
-            neutered_sgd.step(model_for_step).expect("neutered sgd.step must succeed");
+            neutered_sgd
+                .step(model_for_step)
+                .expect("neutered sgd.step must succeed");
 
             let model_for_zero_grad =
                 make_conv_dense_model(py, neg_py_conv.clone_ref(py), neg_py_dense.clone_ref(py))

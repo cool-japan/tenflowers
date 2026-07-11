@@ -653,8 +653,7 @@ fn test_relu6_gradient_interior_points_matches_finite_difference() {
 
     let eps = 1e-3_f32;
     let numerical = numerical_gradient(&x, &w, eps, |t| {
-        tenflowers_core::ops::activation::relu6(t)
-            .expect("plain relu6 should succeed for fd probe")
+        tenflowers_core::ops::activation::relu6(t).expect("plain relu6 should succeed for fd probe")
     });
 
     assert_close(analytical, &numerical, 5e-2, "relu6 (interior points)");

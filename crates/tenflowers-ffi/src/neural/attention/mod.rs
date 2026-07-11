@@ -304,14 +304,18 @@ impl Clone for PyMultiheadAttention {
                 kdim: self.kdim,
                 vdim: self.vdim,
                 batch_first: self.batch_first,
-                q_proj_param: Py::new(py, q_proj_param)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                k_proj_param: Py::new(py, k_proj_param)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                v_proj_param: Py::new(py, v_proj_param)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
-                out_proj_param: Py::new(py, out_proj_param)
-                    .expect("PyParameter::clone_param()'s result must construct as a Py<PyParameter>"),
+                q_proj_param: Py::new(py, q_proj_param).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                k_proj_param: Py::new(py, k_proj_param).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                v_proj_param: Py::new(py, v_proj_param).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
+                out_proj_param: Py::new(py, out_proj_param).expect(
+                    "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
+                ),
                 bias_param: bias_param.map(|b| {
                     Py::new(py, b).expect(
                         "PyParameter::clone_param()'s result must construct as a Py<PyParameter>",
@@ -807,7 +811,10 @@ impl PyMultiheadAttention {
         dict.set_item("q_proj_weight", self.q_proj_param.borrow(py).to_tensor()?)?;
         dict.set_item("k_proj_weight", self.k_proj_param.borrow(py).to_tensor()?)?;
         dict.set_item("v_proj_weight", self.v_proj_param.borrow(py).to_tensor()?)?;
-        dict.set_item("out_proj_weight", self.out_proj_param.borrow(py).to_tensor()?)?;
+        dict.set_item(
+            "out_proj_weight",
+            self.out_proj_param.borrow(py).to_tensor()?,
+        )?;
         if let Some(ref bias_param) = self.bias_param {
             dict.set_item("bias", bias_param.borrow(py).to_tensor()?)?;
         }
@@ -816,7 +823,11 @@ impl PyMultiheadAttention {
     }
 
     /// Load layer state from dictionary
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Ok(Some(weight)) = state_dict.get_item("q_proj_weight") {
             if let Ok(weight_tensor) = weight.extract::<PyTensor>() {
                 self.q_proj_param
@@ -853,7 +864,9 @@ impl PyMultiheadAttention {
             if let (Ok(weight_tensor), Some(ref bias_param)) =
                 (weight.extract::<PyTensor>(), &self.bias_param)
             {
-                bias_param.borrow(py).set_data((*weight_tensor.tensor).clone())?;
+                bias_param
+                    .borrow(py)
+                    .set_data((*weight_tensor.tensor).clone())?;
             }
         }
 
@@ -890,9 +903,17 @@ fn slice_batch_head(
 ) -> PyResult<PyTensor> {
     let b = batch_idx as isize;
     let ranges: Vec<(Option<isize>, Option<isize>, Option<isize>)> = if batch_first {
-        vec![(Some(b), Some(b + 1), None), (None, None, None), (Some(head_start), Some(head_end), None)]
+        vec![
+            (Some(b), Some(b + 1), None),
+            (None, None, None),
+            (Some(head_start), Some(head_end), None),
+        ]
     } else {
-        vec![(None, None, None), (Some(b), Some(b + 1), None), (Some(head_start), Some(head_end), None)]
+        vec![
+            (None, None, None),
+            (Some(b), Some(b + 1), None),
+            (Some(head_start), Some(head_end), None),
+        ]
     };
     let sliced = projection.slice(ranges)?;
     let head_dim = (head_end - head_start) as usize;
@@ -1083,8 +1104,7 @@ pub fn scaled_dot_product_attention(
                 mask.clone()
             } else {
                 // [batch, tgt_len, src_len]: slice out this batch's own row.
-                let mask_row = mask
-                    .slice(vec![(Some(b as isize), Some(b as isize + 1), None)])?;
+                let mask_row = mask.slice(vec![(Some(b as isize), Some(b as isize + 1), None)])?;
                 crate::tensor_ops::reshape(&mask_row, vec![tgt_len, src_len])?
             };
             scaled_scores.add(&mask_2d)?

@@ -351,7 +351,10 @@ impl PyBatchNorm1d {
     /// handles is populated after a `.backward()` call that passes through
     /// this layer's `forward()`.
     pub fn parameters(&self, py: Python<'_>) -> Vec<Py<PyParameter>> {
-        vec![self.gamma_param.clone_ref(py), self.beta_param.clone_ref(py)]
+        vec![
+            self.gamma_param.clone_ref(py),
+            self.beta_param.clone_ref(py),
+        ]
     }
 
     /// Reset running statistics
@@ -430,7 +433,11 @@ impl PyBatchNorm1d {
     }
 
     /// Load layer state dict
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Some(weight) = state_dict.get_item("weight")? {
             let weight_vec: Vec<f32> = weight.extract()?;
             let tensor = Tensor::from_vec(weight_vec, &[self.num_features])
@@ -487,19 +494,31 @@ impl PyBatchNorm1d {
         let channels = dims[1];
         let reduce_axes: Vec<i32> = vec![0, 2, 3];
 
-        let batch_mean = tenflowers_core::ops::mean(input_4d.tensor.as_ref(), Some(&reduce_axes), true)
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
-        let centered = tenflowers_core::ops::sub(input_4d.tensor.as_ref(), &batch_mean)
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
-        let squared = tenflowers_core::ops::mul(&centered, &centered)
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
-        let batch_var = tenflowers_core::ops::mean(&squared, Some(&reduce_axes), true)
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
+        let batch_mean =
+            tenflowers_core::ops::mean(input_4d.tensor.as_ref(), Some(&reduce_axes), true)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+                })?;
+        let centered =
+            tenflowers_core::ops::sub(input_4d.tensor.as_ref(), &batch_mean).map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
+        let squared = tenflowers_core::ops::mul(&centered, &centered).map_err(|e| {
+            PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+        })?;
+        let batch_var =
+            tenflowers_core::ops::mean(&squared, Some(&reduce_axes), true).map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
 
-        let batch_mean_flat = tenflowers_core::ops::reshape(&batch_mean, &[channels])
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
-        let batch_var_flat = tenflowers_core::ops::reshape(&batch_var, &[channels])
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
+        let batch_mean_flat =
+            tenflowers_core::ops::reshape(&batch_mean, &[channels]).map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
+        let batch_var_flat =
+            tenflowers_core::ops::reshape(&batch_var, &[channels]).map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
 
         let batch_size: usize = reduce_axes.iter().map(|&a| dims[a as usize]).product();
         // Unbiased variance estimate (N / (N - 1)) for the running-var update,
@@ -508,9 +527,9 @@ impl PyBatchNorm1d {
         // would be zero).
         let unbiased_var_flat = if batch_size > 1 {
             let scale = batch_size as f32 / (batch_size as f32 - 1.0);
-            batch_var_flat
-                .multiply_scalar(scale)
-                .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?
+            batch_var_flat.multiply_scalar(scale).map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?
         } else {
             batch_var_flat
         };
@@ -524,7 +543,9 @@ impl PyBatchNorm1d {
                     .multiply_scalar(momentum)
                     .and_then(|scaled_new| tenflowers_core::ops::add(&scaled_old, &scaled_new))
             })
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
+            .map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
         let new_running_var = self
             .running_var
             .multiply_scalar(1.0 - momentum)
@@ -533,7 +554,9 @@ impl PyBatchNorm1d {
                     .multiply_scalar(momentum)
                     .and_then(|scaled_new| tenflowers_core::ops::add(&scaled_old, &scaled_new))
             })
-            .map_err(|e| PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}")))?;
+            .map_err(|e| {
+                PyRuntimeError::new_err(format!("BatchNorm1d stats update failed: {e}"))
+            })?;
 
         self.running_mean = new_running_mean;
         self.running_var = new_running_var;
@@ -680,7 +703,10 @@ impl PyLayerNorm {
 
     /// Get layer parameters: `[gamma, beta]`.
     pub fn parameters(&self, py: Python<'_>) -> Vec<Py<PyParameter>> {
-        vec![self.gamma_param.clone_ref(py), self.beta_param.clone_ref(py)]
+        vec![
+            self.gamma_param.clone_ref(py),
+            self.beta_param.clone_ref(py),
+        ]
     }
 
     /// Reset parameters
@@ -736,7 +762,11 @@ impl PyLayerNorm {
     }
 
     /// Load layer state dict
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Some(weight) = state_dict.get_item("weight")? {
             let weight_vec: Vec<f32> = weight.extract()?;
             let tensor = Tensor::from_vec(weight_vec, &self.normalized_shape)
@@ -921,7 +951,10 @@ impl PyGroupNorm {
 
     /// Get layer parameters: `[gamma, beta]`.
     pub fn parameters(&self, py: Python<'_>) -> Vec<Py<PyParameter>> {
-        vec![self.gamma_param.clone_ref(py), self.beta_param.clone_ref(py)]
+        vec![
+            self.gamma_param.clone_ref(py),
+            self.beta_param.clone_ref(py),
+        ]
     }
 
     /// Reset parameters
@@ -977,7 +1010,11 @@ impl PyGroupNorm {
     }
 
     /// Load layer state dict
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Some(weight) = state_dict.get_item("weight")? {
             let weight_vec: Vec<f32> = weight.extract()?;
             let tensor = Tensor::from_vec(weight_vec, &[self.num_channels])
@@ -1140,7 +1177,10 @@ impl PyInstanceNorm1d {
 
     /// Get layer parameters: `[gamma, beta]`.
     pub fn parameters(&self, py: Python<'_>) -> Vec<Py<PyParameter>> {
-        vec![self.gamma_param.clone_ref(py), self.beta_param.clone_ref(py)]
+        vec![
+            self.gamma_param.clone_ref(py),
+            self.beta_param.clone_ref(py),
+        ]
     }
 
     /// Reset parameters
@@ -1196,7 +1236,11 @@ impl PyInstanceNorm1d {
     }
 
     /// Load layer state dict
-    pub fn load_state_dict(&mut self, py: Python<'_>, state_dict: &Bound<'_, PyDict>) -> PyResult<()> {
+    pub fn load_state_dict(
+        &mut self,
+        py: Python<'_>,
+        state_dict: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
         if let Some(weight) = state_dict.get_item("weight")? {
             let weight_vec: Vec<f32> = weight.extract()?;
             let tensor = Tensor::from_vec(weight_vec, &[self.num_features])
@@ -1226,7 +1270,8 @@ impl PyInstanceNorm1d {
 mod tests {
     use super::*;
     use crate::implicit_autograd::{
-        record_and_link_unary as record_unary_for_test, run_backward, UnaryOpKind as UnaryKindForTest,
+        record_and_link_unary as record_unary_for_test, run_backward,
+        UnaryOpKind as UnaryKindForTest,
     };
 
     fn make_tensor(data: Vec<f32>, shape: &[usize]) -> PyTensor {
@@ -1548,7 +1593,13 @@ mod tests {
                 let running_mean = Tensor::<f32>::zeros(&[2]);
                 let running_var = Tensor::<f32>::ones(&[2]);
                 let out = tenflowers_core::ops::batch_norm(
-                    &input_arc_4d, &gamma_t, &beta_t, &running_mean, &running_var, 1e-5, true,
+                    &input_arc_4d,
+                    &gamma_t,
+                    &beta_t,
+                    &running_mean,
+                    &running_var,
+                    1e-5,
+                    true,
                 )
                 .expect("batch_norm");
                 let out_vec = out.to_vec().expect("readable");
@@ -1622,8 +1673,10 @@ mod tests {
             // exactly the eval-mode formula documented on `batch_norm_backward`.
             let std0 = (4.0f32 + 1e-5).sqrt();
             let std1 = (9.0f32 + 1e-5).sqrt();
-            let expected_gamma_c0: f32 = [1.0, 3.0, 5.0, 7.0].iter().map(|&x| (x - 1.0) / std0).sum();
-            let expected_gamma_c1: f32 = [2.0, 4.0, 6.0, 8.0].iter().map(|&x| (x - 2.0) / std1).sum();
+            let expected_gamma_c0: f32 =
+                [1.0, 3.0, 5.0, 7.0].iter().map(|&x| (x - 1.0) / std0).sum();
+            let expected_gamma_c1: f32 =
+                [2.0, 4.0, 6.0, 8.0].iter().map(|&x| (x - 2.0) / std1).sum();
             assert_close(
                 &grad_gamma,
                 &[expected_gamma_c0, expected_gamma_c1],
@@ -1670,7 +1723,13 @@ mod tests {
                 let gamma_t = Tensor::from_vec(gamma.to_vec(), &[2]).expect("gamma");
                 let beta_t = Tensor::from_vec(beta.to_vec(), &[2]).expect("beta");
                 let out = tenflowers_core::ops::batch_norm(
-                    &input_arc, &gamma_t, &beta_t, &running_mean, &running_var, 1e-5, false,
+                    &input_arc,
+                    &gamma_t,
+                    &beta_t,
+                    &running_mean,
+                    &running_var,
+                    1e-5,
+                    false,
                 )
                 .expect("batch_norm");
                 out.to_vec().expect("readable").iter().sum()
@@ -1713,7 +1772,10 @@ mod tests {
 
             assert_eq!(grad_gamma.len(), 3);
             assert_eq!(grad_beta.len(), 3);
-            assert!(grad_gamma.iter().any(|&g| g != 0.0), "gamma grad must be non-zero");
+            assert!(
+                grad_gamma.iter().any(|&g| g != 0.0),
+                "gamma grad must be non-zero"
+            );
             assert!(grad_beta.iter().all(|v| v.is_finite()));
             assert!(grad_gamma.iter().all(|v| v.is_finite()));
             // d(sum(gamma*normalized+beta))/d(beta) = row count = 2 for every element.
@@ -1783,12 +1845,20 @@ mod tests {
 
             assert_eq!(grad_gamma.len(), 4);
             assert_eq!(grad_beta.len(), 4);
-            assert!(grad_gamma.iter().any(|&g| g != 0.0), "gamma grad must be non-zero");
+            assert!(
+                grad_gamma.iter().any(|&g| g != 0.0),
+                "gamma grad must be non-zero"
+            );
             assert!(grad_beta.iter().all(|v| v.is_finite()));
             assert!(grad_gamma.iter().all(|v| v.is_finite()));
             // d(sum(...))/d(beta[c]) = number of positions beta[c] is added
             // at = N * L = 1 * 2 = 2, for every channel.
-            assert_close(&grad_beta, &[2.0, 2.0, 2.0, 2.0], 1e-3, "group_norm grad_beta");
+            assert_close(
+                &grad_beta,
+                &[2.0, 2.0, 2.0, 2.0],
+                1e-3,
+                "group_norm grad_beta",
+            );
 
             let gamma_vals = gn
                 .gamma_param
@@ -1857,7 +1927,10 @@ mod tests {
 
             assert_eq!(grad_gamma.len(), 2);
             assert_eq!(grad_beta.len(), 2);
-            assert!(grad_gamma.iter().any(|&g| g != 0.0), "gamma grad must be non-zero");
+            assert!(
+                grad_gamma.iter().any(|&g| g != 0.0),
+                "gamma grad must be non-zero"
+            );
             assert!(grad_beta.iter().all(|v| v.is_finite()));
             assert!(grad_gamma.iter().all(|v| v.is_finite()));
             // d(sum(...))/d(beta[c]) = N * L = 1 * 4 = 4, for every channel.
@@ -1925,8 +1998,14 @@ mod tests {
             let inorm = PyInstanceNorm1d::new(py, 3, None).expect("in construction");
             let in_params = inorm.parameters(py);
             assert_eq!(in_params.len(), 2);
-            assert_eq!(in_params[0].borrow(py).id(), inorm.gamma_param.borrow(py).id());
-            assert_eq!(in_params[1].borrow(py).id(), inorm.beta_param.borrow(py).id());
+            assert_eq!(
+                in_params[0].borrow(py).id(),
+                inorm.gamma_param.borrow(py).id()
+            );
+            assert_eq!(
+                in_params[1].borrow(py).id(),
+                inorm.beta_param.borrow(py).id()
+            );
         });
     }
 }

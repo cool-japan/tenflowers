@@ -5,15 +5,103 @@ All notable changes to TenfloweRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-07-11
+
+This release is a complete rewrite of the Python-facing, PyTorch-style implicit
+autograd system in `tenflowers-ffi`. Previously `.backward()` / `.grad()` /
+`optimizer.step()` only worked end-to-end for a minimal Dense/Sequential/MSE/
+relu-sigmoid-tanh path; every other layer, loss, and optimizer either raised
+or silently produced wrong gradients. All of them are now genuinely wired
+into the tape-aware autograd engine, and each was individually gradient-
+verified against finite-difference/closed-form references.
 
 ### Added
 
-### Changed
+#### FFI Crate (`tenflowers-ffi`)
+- Real, tape-backed `.backward()` / `.grad()` support for every layer type:
+  `Dense`, `Conv1D`/`Conv2D`/`Conv3D` (+ pooling), `Embedding`/`EmbeddingBag`,
+  `BatchNorm1d`, `LayerNorm`, `GroupNorm`, `InstanceNorm1d`,
+  `MultiheadAttention`, `TransformerEncoderLayer`/`TransformerDecoderLayer`,
+  and `LSTM`/`GRU`/`RNN` (plus their single-step cell variants) — previously
+  only a minimal Dense/Sequential path had working gradients
+  - `PyTensor::slice` records itself on the autograd tape, so slicing a
+    tracked tensor now participates correctly in `.backward()`
+  - `set_requires_grad`, `backward`, `grad`, `transpose`, `reshape` made
+    `pub` for direct external use
+- All 9 optimizers now perform real gradient-based parameter updates via a
+  new `optimizer_bridge` module, rather than the previous no-op/partial
+  `step()`: `SGD`, `Adam`, `RMSprop`, `AdamW`, `AdaBelief`, `RAdam`, `Nadam`,
+  `AdaGrad`, `AdaDelta` (`AdaBelief`/`RAdam`/`Nadam`/`AdaGrad`/`AdaDelta`
+  newly split out into their own `neural::extended_optimizers` module)
+- Every loss function is now genuinely backward-connected to the tape
+  (`neural::losses`, substantially rewritten)
+- `neural::attention`, `neural::conv_layers`, `neural::recurrent`,
+  `neural::transformer`, `neural::extended_optimizers` split from single
+  files into `mod.rs` + dedicated `tests.rs` submodules, each gaining a large
+  new gradient-check test suite (`attention/tests.rs`,
+  `conv_layers/tests.rs`, `recurrent/tests.rs`, `transformer/tests.rs`,
+  `extended_optimizers/tests.rs`)
+- `tests/test_training_convergence.py`: new real end-to-end training-loop
+  tests proving actual convergence (finite, decreasing loss over real
+  training steps) for a single `Dense` layer (SGD), a 3-layer
+  `Sequential` MLP (Adam), and `Conv2D` (Adam)
+
+#### Autograd Crate (`tenflowers-autograd`)
+- New gradient-check test suites verifying backward correctness against
+  finite-difference/closed-form references: `activation_gaps_gradient_test`,
+  `conv1d_gradient_test`, `conv3d_gradient_test`,
+  `group_instance_norm_gradient_check`, `normalization_gradient_check`,
+  `slice_concat_stack_split_gather_gradient_test`
+- `Conv1D` gained a dedicated backward implementation
+  (`ops/convolution_ops/conv1d.rs`, `conv1d_utils.rs`)
+- `tape::tracked_tensor` module substantially expanded to support the new
+  layer/loss/optimizer coverage above
 
 ### Fixed
 
-### Security
+- **Softmax / LogSoftmax backward** were computing incorrect gradients;
+  rewritten to recompute the forward output on the tape and apply the
+  correct Jacobian-vector product
+- **BatchNorm backward** (`tenflowers-autograd::ops::normalization_ops`):
+  eval-mode (inference) `grad_gamma`/`grad_beta` were hardcoded to zero
+  instead of being derived from the running statistics; a missing 3-D
+  (NCL) shape case fell through to an incorrect channel-last default
+- **LayerNorm backward**: `gamma` was applied as a single `gamma / std`
+  factor to the final reduced result instead of being folded into the
+  gradient *before* the per-axis reduction sums — only correct when
+  `gamma` is uniform across the normalized axis, silently wrong otherwise
+- **GroupNorm backward**: the same gamma-before-reduction bug as LayerNorm,
+  compounded by `gamma` varying per-channel *within* a group; measured up
+  to 760% relative error for non-uniform gamma prior to this fix
+- **Slice / Gather backward** were stubs; now produce real gradients
+- A row-major-vs-Fortran-order stride bug in `slice_with_stride`
+  (`tenflowers-core::ops::manipulation::indexing`): the linear-index
+  computation for mapping a slice back into its parent array used a
+  forward-order running-product stride formula instead of the correct
+  row-major (reverse-order) one, silently producing wrong elements for any
+  non-square, non-1-D sliced array (e.g. `[2, 4]`-shaped `[:, 1:3]`);
+  caught by an LSTM/GRU gate-slicing finite-difference gradient test
+- `PyParameter` tape-registry lifecycle bug: a dropped parameter could poison
+  a later parameter reusing the same allocation address, silently losing
+  its gradients
+- `mark_leaf_param`: any second-or-later `forward()` call on the same
+  parameter without an intervening `backward()` (an ordinary pattern, e.g.
+  a shape-probe forward before training starts) silently broke that
+  parameter's tape registration, so its gradient was dropped without error
+- `histogram.rs`: added a missing `#[cfg(feature = "parallel")]` gate (plus
+  a sequential fallback with identical chunking/reduction order) so the
+  crate builds with `--no-default-features --features std` (e.g. the Miri
+  workflow)
+- WASM: improved `SharedArrayBuffer` detection and SIMD-capability detection
+  in `wasm_optimization::tensor`
+- GPU random-tensor test coverage expanded (`ops::random`)
+
+### Changed
+
+- `crates/tenflowers-ffi/src/implicit_autograd.rs` and
+  `neural/{attention,conv_layers,recurrent,transformer}.rs` split into
+  `mod.rs` + `tests.rs` submodule directories (COOLJAPAN 2000-line refactor
+  policy)
 
 ## [0.1.2] - 2026-07-08
 
@@ -275,4 +363,5 @@ tenflowers = { version = "0.1.0", features = ["gpu", "simd"] }
 Developed by COOLJAPAN OU (Team KitaSan).
 Contact: contact@cooljapan.tech
 
+[0.2.0]: https://github.com/cool-japan/tenflowers/releases/tag/v0.2.0
 [0.1.2]: https://github.com/cool-japan/tenflowers/releases/tag/v0.1.2

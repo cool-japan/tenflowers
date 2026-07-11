@@ -448,9 +448,8 @@ mod tests {
         // handle correctly everywhere.
         let hist = SimdHistogram::new(10, 0.0, 10.0);
         let data: Vec<f32> = (0..37).map(|i| (i % 10) as f32 + 0.5).collect();
-        let tensor =
-            Tensor::<f32>::from_vec(data.clone(), &[data.len()])
-                .expect("test: tensor construction should succeed");
+        let tensor = Tensor::<f32>::from_vec(data.clone(), &[data.len()])
+            .expect("test: tensor construction should succeed");
         let histogram = hist.compute(&tensor).expect("test: compute should succeed");
 
         // Independently computed scalar reference histogram.
