@@ -1,7 +1,7 @@
 # TenfloweRS Core TODO & Roadmap (v0.2.0)
 
 **Version:** 0.2.0  
-**Date:** 2026-07-11
+**Date:** 2026-07-12
 
 Core tensor engine capabilities and forward development plan.
 
@@ -81,7 +81,7 @@ public API. TODO: wire `allocation_timeline`/`memory_pressure`/
 `per_op_tracker`/`pool_diagnostics` into `lib.rs`, resolving naming/overlap
 with the existing `memory::pool_diagnostics` submodule before exposing it.
 
-## v0.2.0 — Correctness fixes (2026-07-11)
+## v0.2.0 — Correctness fixes (2026-07-12)
 
 - **`slice_with_stride` row-major stride bug fixed**: the linear-index
   accumulation in `ops::manipulation::indexing` used a forward-order
@@ -98,6 +98,21 @@ with the existing `memory::pool_diagnostics` submodule before exposing it.
   helper already used elsewhere in this module (e.g. `flat_to_coords`) — in
   a single pass, rather than building an intermediate index vector and
   re-deriving strides via `.scan()`.
+- **`fallback::{get_fallback_config, set_fallback_config}` unsynchronized
+  global write fixed**: the global `FallbackConfig` lived in an `unsafe
+  static mut GLOBAL_FALLBACK_CONFIG: Option<FallbackConfig>`, with only its
+  *first* initialization guarded by a `std::sync::Once`
+  (`FALLBACK_CONFIG_INIT`); `get_fallback_config` respected that guard on
+  read, but `set_fallback_config` wrote straight through the `static mut`
+  with no synchronization at all, so any call racing against a concurrent
+  `get_fallback_config` read (or another concurrent `set_fallback_config`
+  write) was undefined behavior, not just a logical race. Replaced with a
+  safe `static GLOBAL_FALLBACK_CONFIG: OnceLock<RwLock<FallbackConfig>>`;
+  both accessors now go through `RwLock::read`/`write` and recover the
+  inner value on a poisoned lock instead of panicking (consistent with the
+  v0.1.2 lock-poison-recovery policy above); the paired
+  `#[allow(static_mut_refs)]` suppressions on both functions are gone since
+  neither is `unsafe` anymore.
 - **`ops::stats::histogram` missing `#[cfg(feature = "parallel")]` gate
   fixed**: `ultra_fast_min_max_parallel` and `ultra_fast_histogram_parallel`
   unconditionally called into `rayon` regardless of whether the `parallel`

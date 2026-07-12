@@ -2,17 +2,18 @@
 
 Foreign Function Interface for TenfloweRS, providing Python bindings and C API for seamless integration with other languages and frameworks.
 
-> v0.2.0 (2026-07-11) | 337 Rust tests + 55 Python (pytest) + 13 Python (integration_test.py) passing | 0 clippy warnings
+> v0.2.0 (2026-07-12) | 337 Rust tests + 55 Python (pytest) + 13 Python (integration_test.py) passing | 0 clippy warnings
 > Python bindings are functional. Build from source via maturin.
 
 ## Overview
 
 `tenflowers-ffi` implements:
 - **Python Bindings**: PyO3-based Python API for tensor operations, neural network layers, and optimizers
-- **Eager Autograd (PyTorch-style)**: `PyTensor.set_requires_grad()` / `.backward()` / `.grad()` — a thread-local, auto-activating implicit gradient tape (`implicit_autograd`) layered on the existing explicit `GradientTape` engine, so `x.backward(); x.grad()` works without ever constructing a tape object by hand. As of the 2026-07-11 rewrite the implicit tape is genuinely wired through the entire layer/optimizer/loss surface, not just a minimal Dense/Sequential/MSE path:
+- **Eager Autograd (PyTorch-style)**: `PyTensor.set_requires_grad()` / `.backward()` / `.grad()` — a thread-local, auto-activating implicit gradient tape (`implicit_autograd`) layered on the existing explicit `GradientTape` engine, so `x.backward(); x.grad()` works without ever constructing a tape object by hand. As of the 2026-07-12 rewrite the implicit tape is genuinely wired through the entire layer/optimizer/loss surface, not just a minimal Dense/Sequential/MSE path:
   - **Layers** (all `#[pyclass]`, real `forward()` participating in the tape): `Dense` and `PyParameter` (the autograd leaf-node type returned by `layer.parameters()`), `Conv1D`/`Conv2D`/`Conv3D` + `MaxPool2D`/`AvgPool2D`, `Embedding`/`EmbeddingBag`, `BatchNorm1d`/`LayerNorm`/`GroupNorm`/`InstanceNorm1d`, `MultiheadAttention`, `TransformerEncoderLayer`/`TransformerDecoderLayer`/`PositionalEncoding`, `LSTM`/`GRU`/`RNN` + single-step `LSTMCell`/`GRUCell`. Caveat: `Conv2D`'s backward/autograd wiring is confirmed only for unit dilation, `groups == 1`, and no explicit integer padding (default `padding=(0,0)`); other configurations still forward correctly but are not confirmed tape-linked (documented on the struct itself in `neural/conv_layers/mod.rs`).
-  - **Optimizers** (9 total, all real `#[pyclass]` with `step(&mut self, model)` performing genuine gradient-based updates, not no-ops): `SGD`, `Adam`, `RMSprop`, `AdamW` (`neural/optimizers.rs`); `AdaBelief`, `RAdam`, `Nadam`, `AdaGrad`, `AdaDelta` (`neural/extended_optimizers/mod.rs`)
+  - **Optimizers** (9 total, all real `#[pyclass]` with `step(&mut self, model)` performing genuine gradient-based updates, not no-ops): `SGD`, `Adam`, `RMSprop`, `AdamW` (`neural/optimizers/mod.rs`); `AdaBelief`, `RAdam`, `Nadam`, `AdaGrad`, `AdaDelta` (`neural/extended_optimizers/mod.rs`)
   - **Losses** (free `#[pyfunction]`s, not classes — call as `tf.mse_loss(y_pred, y_true)`): `mse_loss`, `binary_cross_entropy`, `cross_entropy`, `l1_loss`, `smooth_l1_loss`, `kl_div_loss`, `hinge_embedding_loss`, `cosine_embedding_loss` (`neural/losses.rs`)
+  - `PyTensor::transpose`/`reshape`/`slice` now correctly record themselves onto the implicit tape (`tensor_ops.rs`); previously `transpose`/`reshape` silently dropped out of `.backward()` on a tracked tensor since no `UnaryOpKind::Transpose`/`Reshape` variant existed.
   - Real multi-step training-loop convergence (not just "runs without crashing") is proven in `tests/test_training_convergence.py` for a lone `Dense` layer + `SGD`, a 3-layer `Sequential` MLP + `Adam`, and `Conv2D` + `Adam`.
 - **C API**: C FFI bindings for cross-language compatibility
 - **NumPy Integration**: Tensor conversion with NumPy arrays
@@ -133,7 +134,7 @@ print(x.grad())  # dz/dx = 2x -> [2.0, 2.0]
 print(y.grad())  # dz/dy = 2y -> [2.0, 2.0]
 ```
 
-The 2026-07-11 rewrite wires this same implicit tape through real layers and
+The 2026-07-12 rewrite wires this same implicit tape through real layers and
 optimizers, so a genuine training loop converges end to end — the pattern
 below mirrors `tests/test_training_convergence.py::test_dense_layer_training_converges`,
 which asserts the loss drops by at least two orders of magnitude over 50 steps

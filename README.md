@@ -8,7 +8,7 @@ A pure Rust implementation of TensorFlow, providing a full-featured machine lear
 [![Tests](https://img.shields.io/badge/tests-14536%2B%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
 [![Security](https://img.shields.io/badge/advisories-2-yellow)](https://github.com/cool-japan/tenflowers)
 
-> **v0.2.0 (2026-07-11)**
+> **v0.2.0 (2026-07-12)**
 >
 > TenfloweRS v0.2.0 is a complete rewire of the Python-facing, PyTorch-style implicit autograd
 > system in the FFI crate. Previously `.backward()`/`.grad()`/`optimizer.step()` only worked
@@ -23,8 +23,10 @@ A pure Rust implementation of TensorFlow, providing a full-featured machine lear
 > loss traces for a Dense layer, a 3-layer Sequential MLP, and a Conv2D layer. This release also
 > fixes several autograd correctness bugs: wrong Softmax/LogSoftmax backward gradients, BatchNorm
 > eval-mode grad_gamma/grad_beta hardcoded to zero, a GroupNorm/LayerNorm gamma-before-reduction
-> bug (up to 760% relative error for non-uniform gamma), and a stride bug in `slice_with_stride`
-> that silently produced wrong elements for non-square/non-1D sliced arrays.
+> bug (up to 760% relative error for non-uniform gamma), stubbed Slice/Gather backward that now
+> produce real gradients, a stride bug in `slice_with_stride` that silently produced wrong
+> elements for non-square/non-1D sliced arrays, and two tape-registry lifecycle bugs that could
+> silently drop a parameter's gradient.
 > 14,536+ tests passing across 6 crates, zero clippy warnings, zero rustdoc warnings.
 
 ## Overview
@@ -61,7 +63,7 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 - **Pure Rust Implementation**: No C/C++ dependencies in the core, ensuring memory safety
 - **GPU Support**: Cross-platform GPU acceleration via WGPU (Metal, Vulkan, DirectX)
 - **Rust Scientific Stack**: Built on NumRS2 and SciRS2 for numerical computing
-- **Python Bindings**: PyO3-based FFI crate with 185+ passing tests, including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd across every layer type and all 9 optimizers
+- **Python Bindings**: PyO3-based FFI crate (functional/alpha, `publish = false`) with 337 Rust tests + 55 Python (pytest) + 13 Python (integration_test.py) passing, including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd across every layer type and all 9 optimizers
 - **ONNX Support**: Import and export models for cross-framework compatibility
 - **Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
 - **150+ Research Domains**: From transformers and diffusion models to quantum ML and protein structure prediction
@@ -69,7 +71,7 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 
 ## Project Status
 
-**Current Version: 0.2.0** (Released 2026-07-11)
+**Current Version: 0.2.0** (Released 2026-07-12)
 
 ### v0.2.0 Quality Metrics
 
@@ -84,14 +86,14 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 
 | Crate | Tests | Status | Description |
 |-------|-------|--------|-------------|
-| tenflowers-core | 1,171 | Stable | Core tensor operations and GPU support |
-| tenflowers-autograd | 521+ | Stable | Automatic differentiation engine |
-| tenflowers-neural | 11,596 | Stable | Neural network layers, models, and 150+ research domains |
-| tenflowers-dataset | 660 | Stable | Data loading and preprocessing |
-| tenflowers-ffi | 185+ | Stable | Python bindings via PyO3 |
-| tenflowers | 156 | Stable | Unified API and prelude |
+| tenflowers-core | 1,174 (26 skipped) | Stable | Core tensor operations and GPU support |
+| tenflowers-autograd | 575 (5 skipped) | Stable | Automatic differentiation engine |
+| tenflowers-neural | 11,596 (8 skipped) | Stable | Neural network layers, models, and 150+ research domains |
+| tenflowers-dataset | 698 | Stable | Data loading and preprocessing |
+| tenflowers-ffi | 337 Rust + 55 Python (pytest) + 13 Python (integration_test.py) | Alpha/functional | Python bindings via PyO3 (`publish = false`, Python dev env required) |
+| tenflowers | 156 | Stable | Umbrella crate re-exporting core/autograd/neural/dataset (not `tenflowers-ffi`, which is a separate sibling) |
 
-Per-crate figures are from the last full per-crate breakdown; `tenflowers-autograd` and `tenflowers-ffi` grew further this release (new tests added for the autograd bug fixes and the implicit-autograd rewrite) and are marked `+`. The workspace total (14,536+) is freshly verified for 0.2.0.
+All Rust counts are `--all-features`, freshly verified per-crate for 0.2.0 (from each crate's own README this pass). Workspace Rust-test total: 156 + 1,174 + 575 + 698 + 11,596 + 337 = 14,536 passing, 39 skipped (26 + 5 + 8). The FFI crate's 55 pytest + 13 integration_test.py Python tests are additional coverage not counted in that Rust total.
 
 ### What Is Included
 
@@ -102,7 +104,7 @@ Per-crate figures are from the last full per-crate breakdown; `tenflowers-autogr
 - Data loading pipeline with multi-format support
 - GPU acceleration via WGPU (cross-platform)
 - SciRS2/NumRS2 ecosystem integration
-- Python bindings with PyO3 (185+ tests passing), including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd wired through every layer type and all 9 optimizers (see the v0.2.0 roadmap entry below for the two narrow configuration gaps)
+- Python bindings with PyO3 (337 Rust tests + 55 Python pytest + 13 Python integration tests; functional/alpha, `publish = false`), including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd wired through every layer type and all 9 optimizers (see the v0.2.0 roadmap entry below for the two narrow configuration gaps)
 - Security hardening (2 known transitive advisories — upstream fixes pending)
 - Comprehensive documentation
 
@@ -200,6 +202,14 @@ let mut optimizer: Adam<f32> = Adam::new(0.001);
 // Training goes through Trainer::fit(), which takes the model, optimizer,
 // an Iterator<Item = (Tensor<f32>, Tensor<f32>)> + Clone of training data, an
 // optional validation iterator, the epoch count, and a loss function pointer.
+// Honest caveat: today Trainer::fit's native-Rust loop drives the forward
+// pass plus loss/metrics/callback tracking, but does not itself call a
+// backward pass or optimizer.step() (see
+// crates/tenflowers-neural/src/trainer/mod.rs's train_epoch), so weights are
+// not yet updated by this convenience API. For real gradient-based training
+// today in Rust, compose your own loop with tenflowers_autograd::GradientTape
+// (see "Basic Tensor Operations" above); the Python FFI training loop below
+// is the path 0.2.0 rewired to perform genuine tape-backed updates.
 let mut trainer = Trainer::<f32>::new();
 let train_data = std::iter::once((Tensor::<f32>::ones(&[4, 128]), Tensor::<f32>::ones(&[4, 10])));
 trainer.fit(&mut model, &mut optimizer, train_data, None, 10, categorical_cross_entropy)?;
@@ -383,12 +393,12 @@ Key areas where we need help:
 
 ## Roadmap
 
-### v0.2.0 (Released 2026-07-11)
+### v0.2.0 (Released 2026-07-12)
 - FFI: complete rewire of the implicit, PyTorch-style autograd system. Every layer type now has real backward support wired into the tape -- Dense, Conv1D/2D/3D and pooling, Embedding/EmbeddingBag, BatchNorm1d/LayerNorm/GroupNorm/InstanceNorm1d, MultiheadAttention, TransformerEncoderLayer/DecoderLayer, and LSTM/GRU/RNN and their cells -- versus only a minimal Dense/Sequential/MSE path previously
 - FFI: all 9 optimizers (SGD, Adam, RMSprop, AdamW, AdaBelief, RAdam, Nadam, AdaGrad, AdaDelta) now perform real gradient-based parameter updates, reading `.grad()` and writing back to parameters; every loss function is genuinely backward-connected to the tape
 - Two narrow, documented gaps remain: Conv1D/2D/3D and MaxPool2D/AvgPool2D tape recording only fires for unit dilation, `groups==1`, and no explicit padding (other configurations still compute a correct forward value but skip gradient recording); `EmbeddingBag`'s `mode="max"` is not tape-wired (`sum`/`mean` are)
 - New `tests/test_training_convergence.py`: three end-to-end tests (`test_dense_layer_training_converges`, `test_sequential_mlp_training_converges`, `test_conv2d_training_converges`) that assert loss actually decreases across real training loops, not just that `.backward()` runs without raising
-- Autograd correctness fixes: Softmax/LogSoftmax backward were computing wrong gradients; BatchNorm eval-mode `grad_gamma`/`grad_beta` were hardcoded to zero; LayerNorm/GroupNorm backward had a gamma-before-reduction bug (up to 760% relative error for non-uniform gamma in GroupNorm); a row-major-vs-Fortran-order stride bug in `slice_with_stride` was silently producing wrong elements for non-square/non-1D sliced arrays
+- Autograd correctness fixes: Softmax/LogSoftmax backward were computing wrong gradients; BatchNorm eval-mode `grad_gamma`/`grad_beta` were hardcoded to zero; LayerNorm/GroupNorm backward had a gamma-before-reduction bug (up to 760% relative error for non-uniform gamma in GroupNorm); Slice/Gather backward were stubs and now produce real gradients; a row-major-vs-Fortran-order stride bug in `slice_with_stride` was silently producing wrong elements for non-square/non-1D sliced arrays; and two tape-registry lifecycle bugs (a dropped `PyParameter` reusing an allocation address, and `mark_leaf_param` breaking on a second `forward()` without an intervening `backward()`) that could silently drop a parameter's gradient
 - Security: resolved RUSTSEC-2026-0204 (`crossbeam-epoch`, via the lockfile picking up >= 0.9.20); 2 known transitive advisories remain tracked (`instant`, `paste` — see Security section of CHANGELOG.md)
 - 14,536+ tests, 39 skipped, 0 clippy warnings, 0 rustdoc warnings, 2 known transitive advisories (upstream-blocked, none directly exploitable)
 

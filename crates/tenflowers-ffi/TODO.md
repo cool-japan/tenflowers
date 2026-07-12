@@ -2,9 +2,9 @@
 
 Initial release capabilities and forward development plan.
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
-## v0.2.0 — Implicit Autograd Wired Through Every Layer & Optimizer (2026-07-11)
+## v0.2.0 — Implicit Autograd Wired Through Every Layer & Optimizer (2026-07-12)
 
 - [x] **Implicit-autograd rewrite spans the full layer/optimizer/loss
   surface**: previously `.backward()`/`.grad()`/`optimizer.step()` only
@@ -22,20 +22,35 @@ Last updated: 2026-07-11
     `padding=(0,0)`; other configurations forward correctly but are not
     confirmed tape-linked), `Embedding`/`EmbeddingBag` (`neural/embedding.rs`),
     `BatchNorm1d`/`LayerNorm`/`GroupNorm`/`InstanceNorm1d`
-    (`neural/normalization.rs`), `MultiheadAttention`
+    (`neural/normalization/mod.rs`), `MultiheadAttention`
     (`neural/attention/mod.rs`), `TransformerEncoderLayer`/
     `TransformerDecoderLayer`/`PositionalEncoding` (`neural/transformer/mod.rs`),
     `LSTM`/`GRU`/`RNN` + single-step `LSTMCell`/`GRUCell`
     (`neural/recurrent/{lstm,gru,rnn}.rs`).
   - All 9 optimizers confirmed to perform genuine gradient-based parameter
     updates via `step(&mut self, model)`, not no-ops: `SGD`, `Adam`,
-    `RMSprop`, `AdamW` (`neural/optimizers.rs`); `AdaBelief`, `RAdam`,
+    `RMSprop`, `AdamW` (`neural/optimizers/mod.rs`); `AdaBelief`, `RAdam`,
     `Nadam`, `AdaGrad`, `AdaDelta` (`neural/extended_optimizers/mod.rs`).
+  - `PyTensor::transpose`/`reshape` (`tensor_ops.rs`) previously did not
+    record themselves onto the implicit-autograd tape at all — no
+    `UnaryOpKind::Transpose`/`Reshape` variant existed, so `.backward()`
+    silently failed to propagate gradients through either op on a tracked
+    tensor. Both now call `record_and_link_unary`, the same hook used by
+    every other tracked `PyTensor` op; `PyTensor::slice` likewise now
+    records onto the tape (regression-tested by
+    `slice_links_onto_tape_and_grad_is_correct`).
 - [x] **File-layout split for the 2000-line-per-file policy** (no functional
   change): `implicit_autograd.rs` and `neural/{attention,conv_layers,
   recurrent,transformer,extended_optimizers}.rs` were each split from a
   single file into `mod.rs` + `tests.rs`; `neural/recurrent/` was further
-  split into `lstm.rs`/`gru.rs`/`rnn.rs`/`mod.rs`/`tests.rs`.
+  split into `lstm.rs`/`gru.rs`/`rnn.rs`/`mod.rs`/`tests.rs`. `neural/
+  normalization.rs` and `neural/optimizers.rs` were split the same way
+  (`normalization/{mod.rs,tests.rs}`, `optimizers/{mod.rs,tests.rs}`) in a
+  final 2026-07-12 policy-compliance pass, completing 2000-line compliance
+  for every file in this crate (largest remaining file:
+  `neural/conv_layers/mod.rs` at 1944 lines) — `cargo check -p
+  tenflowers-ffi --all-features` and the 337/337 lib test count both
+  reverified unchanged after the split.
 - [x] **New end-to-end convergence proof**: `tests/test_training_convergence.py`
   adds three tests, each asserting concrete before/after loss ratios (not
   just "doesn't crash"): `test_dense_layer_training_converges` (single
@@ -159,7 +174,7 @@ Last updated: 2026-07-11
 ### API Coverage & Completeness
 - **Limited Dtype Support**: Restricted to f32, missing f16/bf16/i32 support
 - **Device Coverage**: Limited device abstraction and multi-device support
-- **Neural Network APIs**: as of the 2026-07-11 rewrite, implicit autograd is
+- **Neural Network APIs**: as of the 2026-07-12 rewrite, implicit autograd is
   genuinely wired through every layer type and all 9 optimizers (see
   "1. Current Capabilities" above); remaining known gaps are the two items
   below (`PyGradientTape`, `StateSpaceModel`/`Mamba`), not general coverage
@@ -186,7 +201,7 @@ surface through these bindings but rely on unfinished backends fail loudly
 - **TensorFlow / ONNX protobuf import-export**: no protobuf parser wired →
   honest error.
 
-### Known-incomplete autograd/layer surfaces (not fixed by the 2026-07-11 rewrite)
+### Known-incomplete autograd/layer surfaces (not fixed by the 2026-07-12 rewrite)
 - **`PyGradientTape` (explicit, TensorFlow-style tape) does not work
   end-to-end**: `PyGradientTape.watch()` (`neural/gradient_tape.rs:71`) only
   clones a tensor's current value onto the tape at call time; the free
@@ -258,8 +273,8 @@ surface through these bindings but rely on unfinished backends fail loudly
 - [x] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building (COMPLETED 2026-06-10 — .github/workflows/build-wheels.yml enabled; Linux x86_64/aarch64 + macOS Intel/ARM/universal2 + Windows x86_64 + sdist + PyPI publish)
 - [x] **Error Mapping Spec**: Design Rust -> Python exception mapping system (done 2026-04-19: see docs/FFI_ERROR_MAPPING.md and error_mapping.rs)
 - [x] **Gradient Parity Harness**: Python vs Rust gradient validation framework (COMPLETED 2026-06-10 — gradient_parity.rs: GradientParityChecker, check_scalar_function, numeric_jacobian, gradients_are_close, 12 tests passing)
-- [x] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure (COMPLETED 2026-06-10 — neural/extended_optimizers.rs: PyAdamW, PySGD, PyRMSprop, PyAdagrad, PyLion)
-- [x] **Layer Export List**: Normalization + SSM Python API implementation (COMPLETED 2026-06-10 — neural/normalization.rs + neural/ssm.rs exposed in Python module)
+- [x] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure (COMPLETED 2026-06-10 — neural/extended_optimizers/mod.rs: PyAdamW, PySGD, PyRMSprop, PyAdagrad, PyLion)
+- [x] **Layer Export List**: Normalization + SSM Python API implementation (COMPLETED 2026-06-10 — neural/normalization/mod.rs + neural/ssm.rs exposed in Python module)
 
 ### Packaging & Distribution
 - [x] **Dtype/Device Abstraction**: PyDevice class with Device.cpu()/gpu(id)/rocm(id) and PyDeviceKind (done 2026-04-20: device.rs)

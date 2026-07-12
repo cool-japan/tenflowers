@@ -1,13 +1,13 @@
-# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-11)
+# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-12)
 
-## v0.2.0 — Implicit Autograd Rewrite (2026-07-11)
+## v0.2.0 — Implicit Autograd Rewrite (2026-07-12)
 
 A complete rewrite of the Python-facing, PyTorch-style implicit autograd
 system in `tenflowers-ffi`. Previously `.backward()`/`.grad()`/
 `optimizer.step()` only worked end-to-end for a minimal Dense/Sequential/MSE
 path; every other layer, loss, and optimizer either raised or silently
 produced wrong gradients. Full detail lives in CHANGELOG.md's
-`[0.2.0] - 2026-07-11` entry, summarized here.
+`[0.2.0] - 2026-07-12` entry, summarized here.
 
 ### Every layer type now has real, tape-backed backward support
 `Dense`, `Conv1D`/`Conv2D`/`Conv3D` (+ pooling), `Embedding`/`EmbeddingBag`,
@@ -103,7 +103,7 @@ open, both transitive and unchanged from last release: RUSTSEC-2024-0384
 (`instant`, unmaintained, via `hdf5`) and RUSTSEC-2024-0436 (`paste`,
 unmaintained, via `rav1e`/`parquet`/`metal`).
 
-### Verified metrics (2026-07-11 full-workspace run)
+### Verified metrics (2026-07-12 full-workspace run)
 - **Tests**: 14,536 passing, 39 skipped, 0 failures (`cargo nextest run
   --workspace --all-features`); 14,093 passing, 14 skipped, 0 failures with
   default features. Skipped count is unchanged from the prior 2026-07-07 run
@@ -253,7 +253,7 @@ RUSTSEC-2024-0436 (`paste`, transitive via `rav1e`/`parquet`/`metal`).
 ## Current Capabilities
 
 ### Project Status
-- **Tests**: 14,536 passing, 39 skipped across all crates (verified 2026-07-11
+- **Tests**: 14,536 passing, 39 skipped across all crates (verified 2026-07-12
   full-workspace `cargo nextest run --workspace --all-features` run); 14,093
   passing, 14 skipped with default features
 - **Code Size**: 685,753 SLoC Rust code (823,712 total Rust lines, 1,635 total
@@ -309,7 +309,7 @@ RUSTSEC-2024-0436 (`paste`, transitive via `rav1e`/`parquet`/`metal`).
 - C API scaffolding (types, tensor creation)
 - Hook system (forward/backward), benchmarking, visualization
 
-## Known Limitations (v0.2.0, updated 2026-07-11)
+## Known Limitations (v0.2.0, updated 2026-07-12)
 
 ### Resolved since the 2026-06-22 sweep (see "Completed" section below for detail)
 The following were listed as honest-error deferrals as of 2026-06-23 and are
@@ -409,9 +409,9 @@ recording is skipped:
 
 **Note on the old "v0.2.0 — Attention & Training Polish" roadmap entry**: this
 project previously roadmapped v0.2.0 under that title with the item list
-below. v0.2.0 shipped 2026-07-11 with substantially different actual content
+below. v0.2.0 shipped 2026-07-12 with substantially different actual content
 (the FFI implicit-autograd rewrite — see the section near the top of this
-file). Verified by direct source check (2026-07-11) that most of the
+file). Verified by direct source check (2026-07-12) that most of the
 originally-roadmapped items were, in fact, *already implemented* prior to
 this release (they did not ship as part of v0.2.0's work, they simply
 predate it and this roadmap was stale about their status):
@@ -454,7 +454,7 @@ below rather than kept under a stale "v0.2.0" heading.
 - ONNX export/import for the core operator subset landed in v0.1.2 (see "Completed" below,
   item and Continued Hardening section); remaining v0.3.0 work is wider operator coverage
 - Unified dispatch registry (CPU/GPU) with backend feature gating (carried over from the
-  stale "v0.2.0" roadmap entry, still pending as of 2026-07-11)
+  stale "v0.2.0" roadmap entry, still pending as of 2026-07-12)
 - Consolidated shape inference + standardized error taxonomy (carried over, still pending)
 - GPU memory diagnostics: allocation tracing, pool diagnostics, usage reporting (carried over,
   still pending — note the four diagnostic *modules* already exist on disk in tenflowers-core

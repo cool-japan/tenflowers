@@ -5,7 +5,7 @@ All notable changes to TenfloweRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-07-11
+## [0.2.0] - 2026-07-12
 
 This release is a complete rewrite of the Python-facing, PyTorch-style implicit
 autograd system in `tenflowers-ffi`. Previously `.backward()` / `.grad()` /
@@ -74,6 +74,12 @@ verified against finite-difference/closed-form references.
   compounded by `gamma` varying per-channel *within* a group; measured up
   to 760% relative error for non-uniform gamma prior to this fix
 - **Slice / Gather backward** were stubs; now produce real gradients
+- `PyTensor::transpose` / `PyTensor::reshape` (`tenflowers-ffi`): neither
+  method recorded itself onto the implicit autograd tape — no
+  `UnaryOpKind::Transpose`/`Reshape` variant existed — so `.backward()`
+  silently failed to propagate gradients through either operation on a
+  tracked tensor; both now call `record_and_link_unary`, the same hook
+  used by every other tracked `PyTensor` op
 - A row-major-vs-Fortran-order stride bug in `slice_with_stride`
   (`tenflowers-core::ops::manipulation::indexing`): the linear-index
   computation for mapping a slice back into its parent array used a
@@ -92,6 +98,12 @@ verified against finite-difference/closed-form references.
   a sequential fallback with identical chunking/reduction order) so the
   crate builds with `--no-default-features --features std` (e.g. the Miri
   workflow)
+- `fallback::{get_fallback_config, set_fallback_config}` (`tenflowers-core`):
+  the global `FallbackConfig` lived in an `unsafe static mut`, synchronized
+  only for its first write via `std::sync::Once`; any later
+  `set_fallback_config` call raced unsynchronized against concurrent
+  `get_fallback_config` reads — replaced with a safe
+  `OnceLock<RwLock<FallbackConfig>>`
 - WASM: improved `SharedArrayBuffer` detection and SIMD-capability detection
   in `wasm_optimization::tensor`
 - GPU random-tensor test coverage expanded (`ops::random`)

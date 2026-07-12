@@ -2,7 +2,7 @@
 
 High-level neural network APIs for TenfloweRS, providing layers, models, optimizers, training utilities, and domain-specific architectures for deep learning in Rust.
 
-> Stable (v0.2.0 -- 2026-07-11) | 11,596 tests passing (8 skipped, `--all-features`) | 0 clippy warnings
+> Stable (v0.2.0 -- 2026-07-12) | 11,596 tests passing (8 skipped, `--all-features`) | 0 clippy warnings
 
 ## Overview
 

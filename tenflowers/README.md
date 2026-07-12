@@ -9,7 +9,7 @@ A pure Rust implementation of TensorFlow, providing a comprehensive deep learnin
 
 ## Overview
 
-TenfloweRS is the main convenience crate that re-exports all TenfloweRS subcrates, providing a unified API for deep learning in Rust. Built on the robust [SciRS2](https://github.com/cool-japan/scirs) ecosystem, it offers:
+TenfloweRS is the main convenience crate that re-exports TenfloweRS's Rust-native subcrates (core, autograd, neural, dataset), providing a unified API for deep learning in Rust. Built on the robust [SciRS2](https://github.com/cool-japan/scirs) ecosystem, it offers:
 
 - **Production-Ready**: Full-featured neural networks, training, and deployment
 - **High Performance**: GPU acceleration, SIMD optimization, mixed precision
@@ -31,7 +31,7 @@ tenflowers = "0.2.0"
 ```rust
 use tenflowers::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Create tensors
     let a = Tensor::<f32>::zeros(&[2, 3]);
     let b = Tensor::<f32>::ones(&[2, 3]);
@@ -48,21 +48,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+> Note: `tenflowers::prelude` re-exports its own single-generic-argument
+> `Result<T>` alias (`type Result<T> = std::result::Result<T, FrameworkError>`),
+> so a `main` returning a boxed `dyn Error` must spell out `std::result::Result`
+> as above rather than the bare `Result<(), Box<dyn Error>>`.
+
 ### Build a Neural Network
 
 ```rust
 use tenflowers::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create a simple feedforward network
-    let mut model = Sequential::new();
-    model.add(Dense::new(784, 128)?);
-    model.add_activation(ActivationFunction::ReLU);
-    model.add(Dense::new(128, 10)?);
-    model.add_activation(ActivationFunction::Softmax);
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // Create a simple feedforward network. `Sequential::new` takes the
+    // initial layer vec, and `.add` consumes/returns `Self` (builder style).
+    let model = Sequential::<f32>::new(vec![])
+        .add(Box::new(Dense::new(784, 128, true).with_activation("relu".to_string())))
+        .add(Box::new(Dense::new(128, 10, true)));
 
     // Forward pass
-    let input = Tensor::zeros(&[32, 784]);
+    let input = Tensor::<f32>::zeros(&[32, 784]);
     let output = model.forward(&input)?;
 
     Ok(())
@@ -74,28 +78,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 use tenflowers::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut model = Sequential::new();
-    model.add(Dense::new(10, 64)?);
-    model.add(Dense::new(64, 3)?);
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let mut model = Sequential::<f32>::new(vec![])
+        .add(Box::new(Dense::new(10, 64, true).with_activation("relu".to_string())))
+        .add(Box::new(Dense::new(64, 3, true)));
 
-    let x_train = Tensor::zeros(&[100, 10]);
-    let y_train = Tensor::zeros(&[100, 3]);
+    let x_train = Tensor::<f32>::zeros(&[100, 10]);
+    let y_train = Tensor::<f32>::zeros(&[100, 3]);
+    // `Trainer::fit` takes a `(inputs, targets)` batch iterator (e.g. from a
+    // `DataLoader`); a single-batch `Vec` iterator works for small examples.
+    let train_data = vec![(x_train, y_train)].into_iter();
 
-    // Quick training
-    let results = quick_train(
-        model,
-        &x_train,
-        &y_train,
-        Box::new(SGD::new(0.01)),
+    let mut optimizer = SGD::<f32>::new(0.01);
+    let mut trainer = Trainer::new();
+    let _state = trainer.fit(
+        &mut model,
+        &mut optimizer,
+        train_data,
+        None, // no validation set
+        10,   // epochs
         categorical_cross_entropy,
-        10,  // epochs
-        32,  // batch_size
     )?;
 
     Ok(())
 }
 ```
+
+> For common cases, `tenflowers::neural::quick_train` (also reachable via the
+> prelude) wraps this pattern with MSE loss:
+> `quick_train::train_with_sgd(&mut model, train_data, val_data, epochs, learning_rate)`
+> and `quick_train::train_with_adam(...)`.
 
 ## Features
 
@@ -135,7 +147,9 @@ TenfloweRS provides several optional features:
 - `benchmark`: Benchmarking utilities
 
 ### Language Bindings
-- `python`: Python bindings via PyO3 (requires Python environment)
+- Python bindings are provided by the separate `tenflowers-ffi` crate (PyO3-based,
+  185+ tests) — not by a Cargo feature on this meta crate. See
+  [tenflowers-ffi](../crates/tenflowers-ffi).
 
 ### Presets
 - `minimal`: Only `std` (smallest possible build)
@@ -164,12 +178,16 @@ tenflowers = { version = "0.2.0", features = ["full"] }
 TenfloweRS is organized into focused subcrates:
 
 - **[tenflowers-core](../crates/tenflowers-core)**: Core tensor operations and device management (1,171 tests)
-- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine (521 tests)
+- **[tenflowers-autograd](../crates/tenflowers-autograd)**: Automatic differentiation engine (521+ tests)
 - **[tenflowers-neural](../crates/tenflowers-neural)**: Neural network layers, models, and 150+ ML domains (11,596 tests)
 - **[tenflowers-dataset](../crates/tenflowers-dataset)**: Data loading and preprocessing (660 tests)
-- **[tenflowers-ffi](../crates/tenflowers-ffi)**: Python and C bindings (185 tests)
+- **[tenflowers-ffi](../crates/tenflowers-ffi)**: Python and C bindings (185+ tests)
 
-This meta crate re-exports all public APIs for convenience, including the `tensor!` macro and `prelude` module.
+This meta crate (156 tests) re-exports the public APIs of the four Rust-native subcrates
+above for convenience, including the `tensor!` macro and `prelude` module. `tenflowers-ffi`
+is a sibling crate in the same workspace providing separate Python/C bindings; it requires a
+Python environment and is **not** re-exported by (or a dependency of) this meta crate —
+depend on it directly for Python interop.
 
 ## SciRS2 Integration
 
@@ -226,9 +244,11 @@ Representative throughput figures on an AMD Ryzen 9 7950X (AVX2, 16 cores) and N
 ## Documentation
 
 - [API Documentation](https://docs.rs/tenflowers)
-- [Architecture Guide](../ARCHITECTURE.md)
-- [Performance Tuning](../PERFORMANCE_TUNING.md)
-- [Capabilities Overview](../CAPABILITIES.md)
+- [Migration Guide (TensorFlow to TenfloweRS)](docs/MIGRATION_FROM_TENSORFLOW.md)
+- [Quick Reference](docs/QUICK_REFERENCE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Prelude Stability Policy](docs/PRELUDE_STABILITY.md)
+- [Workspace Release Checklist](../docs/RELEASE_CHECKLIST.md)
 
 ## License
 
@@ -236,7 +256,7 @@ Licensed under the Apache License, Version 2.0 ([LICENSE](../LICENSE) or http://
 
 ## Status
 
-TenfloweRS v0.2.0 (2026-07-07). All 14,289 tests passing across the workspace (39 skipped), 0 clippy warnings, 0 TODO markers. The project comprises ~677K SLoC of Rust across 1,495 files in 6 published crates.
+TenfloweRS v0.2.0 (2026-07-12). 14,536+ tests passing across the workspace (39 skipped), 0 clippy warnings, 0 TODO markers. The project comprises ~686K SLoC of Rust across 1,533 files in 6 published crates.
 
 ## Links
 
