@@ -1,4 +1,4 @@
-# TenfloweRS FFI TODO & Roadmap (v0.2.0)
+# TenfloweRS FFI TODO & Roadmap (v0.2.1)
 
 Initial release capabilities and forward development plan.
 
@@ -270,7 +270,7 @@ surface through these bindings but rely on unfinished backends fail loudly
 ## 5. Active TODO Items
 
 ### Immediate Development Tasks
-- [x] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building (COMPLETED 2026-06-10 — .github/workflows/build-wheels.yml enabled; Linux x86_64/aarch64 + macOS Intel/ARM/universal2 + Windows x86_64 + sdist + PyPI publish)
+- [ ] **CI Wheel Workflow**: GitHub Actions for multi-platform wheel building (workflow drafted 2026-06-10 — .github/workflows/build-wheels.yml.disabled covers Linux x86_64/aarch64 + macOS Intel/ARM/universal2 + Windows x86_64 + sdist + PyPI publish — but it is intentionally kept disabled per COOLJAPAN CI policy, which permits only pypi-publish.yml/npm-publish.yml as active workflows; wheels are therefore not currently built or published via CI, consistent with "Current Gaps & Limitations" above)
 - [x] **Error Mapping Spec**: Design Rust -> Python exception mapping system (done 2026-04-19: see docs/FFI_ERROR_MAPPING.md and error_mapping.rs)
 - [x] **Gradient Parity Harness**: Python vs Rust gradient validation framework (COMPLETED 2026-06-10 — gradient_parity.rs: GradientParityChecker, check_scalar_function, numeric_jacobian, gradients_are_close, 12 tests passing)
 - [x] **Extended Optimizer Bindings**: Complete optimizer suite Python exposure (COMPLETED 2026-06-10 — neural/extended_optimizers/mod.rs: PyAdamW, PySGD, PyRMSprop, PyAdagrad, PyLion)

@@ -18,7 +18,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 authors = ["COOLJAPAN OU (Team KitaSan)"]
 edition = "2021"
 rust-version = "1.70"
@@ -57,10 +57,10 @@ unused_doc_comments = "allow"
 
 [workspace.dependencies]
 # Internal crates
-tenflowers-core = { path = "crates/tenflowers-core", version = "0.2.0" }
-tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.2.0" }
-tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.2.0" }
-tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.2.0" }
+tenflowers-core = { path = "crates/tenflowers-core", version = "0.2.1" }
+tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.2.1" }
+tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.2.1" }
+tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.2.1" }
 
 # Core dependencies (using SciRS2 ecosystem)
 rayon = "1.12"

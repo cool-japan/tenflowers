@@ -2,7 +2,7 @@
 //!
 //! # Honest limitation
 //!
-//! [`WasmBundleOptimizer`] stores optimization *preferences*
+//! `WasmBundleOptimizer` stores optimization *preferences*
 //! (`WasmOptimizationConfig`, `CodeSplittingConfig`, `TreeShakingConfig`,
 //! `CompressionConfig`) that a caller can use to describe how they *want* a
 //! WASM build to be optimized. It does not, and currently cannot, measure any
@@ -14,10 +14,10 @@
 //! numbers were returned regardless of what code, if any, was being compiled.
 //! That has been removed rather than relabeled, because renaming fields does
 //! not turn constant, input-independent numbers into genuine estimates.
-//! [`WasmBundleOptimizer::optimize_for_edge`] and
-//! [`WasmBundleOptimizer::optimize_for_minimal_size`] now return an honest
+//! `WasmBundleOptimizer::optimize_for_edge` and
+//! `WasmBundleOptimizer::optimize_for_minimal_size` now return an honest
 //! `Err` explaining this instead of a fabricated report. See the doc comments
-//! on those functions, and on [`WasmBundleOptimizer::detect_simd_support`],
+//! on those functions, and on `WasmBundleOptimizer::detect_simd_support`,
 //! for what real support would require.
 
 #[cfg(feature = "wasm")]

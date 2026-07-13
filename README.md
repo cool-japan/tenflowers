@@ -2,7 +2,7 @@
 
 A pure Rust implementation of TensorFlow, providing a full-featured machine learning framework with Rust's safety and performance.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/cool-japan/tenflowers)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue)](https://github.com/cool-japan/tenflowers)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
 [![Tests](https://img.shields.io/badge/tests-14536%2B%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
@@ -130,20 +130,20 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers-core = "0.2.0"
-tenflowers-neural = "0.2.0"
+tenflowers-core = "0.2.1"
+tenflowers-neural = "0.2.1"
 ```
 
 For GPU support:
 ```toml
 [dependencies]
-tenflowers-core = { version = "0.2.0", features = ["gpu"] }
+tenflowers-core = { version = "0.2.1", features = ["gpu"] }
 ```
 
 For the unified API:
 ```toml
 [dependencies]
-tenflowers = "0.2.0"
+tenflowers = "0.2.1"
 ```
 
 ## Quick Start

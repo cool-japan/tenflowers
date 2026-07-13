@@ -1,6 +1,6 @@
-# TenfloweRS Core TODO & Roadmap (v0.2.0)
+# TenfloweRS Core TODO & Roadmap (v0.2.1)
 
-**Version:** 0.2.0  
+**Version:** 0.2.1  
 **Date:** 2026-07-13
 
 Core tensor engine capabilities and forward development plan.

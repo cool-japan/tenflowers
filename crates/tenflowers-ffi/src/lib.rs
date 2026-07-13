@@ -399,7 +399,7 @@
 //!
 //! ver = tf.stable_api_version()
 //! print(f"API {ver.version_string()} ({ver.stability})")
-//! # "API 0.2.0 (Beta)"
+//! # "API 0.2.1 (Beta)"
 //!
 //! surface = tf.stable_api_surface()
 //! print(f"{surface.count()} entries")

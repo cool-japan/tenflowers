@@ -1,4 +1,4 @@
-# TenfloweRS Dataset TODO & Roadmap (v0.2.0)
+# TenfloweRS Dataset TODO & Roadmap (v0.2.1)
 
 v0.1.1 focus: data loading and preprocessing capabilities and forward development plan.
 

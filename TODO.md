@@ -1,4 +1,4 @@
-# TenfloweRS TODO & Roadmap (v0.2.0 · 2026-07-13)
+# TenfloweRS TODO & Roadmap (v0.2.1 · 2026-07-13)
 
 ## v0.2.0 — Implicit Autograd Rewrite (2026-07-13)
 

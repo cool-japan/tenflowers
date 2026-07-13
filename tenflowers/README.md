@@ -23,7 +23,7 @@ Add TenfloweRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tenflowers = "0.2.0"
+tenflowers = "0.2.1"
 ```
 
 ### Basic Example
@@ -163,14 +163,14 @@ TenfloweRS provides several optional features:
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.2.0", features = ["gpu"] }
+tenflowers = { version = "0.2.1", features = ["gpu"] }
 ```
 
 ### Enable All Features
 
 ```toml
 [dependencies]
-tenflowers = { version = "0.2.0", features = ["full"] }
+tenflowers = { version = "0.2.1", features = ["full"] }
 ```
 
 ## Architecture
