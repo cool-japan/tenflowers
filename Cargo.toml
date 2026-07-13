@@ -131,13 +131,13 @@ petgraph = "0.8"
 reqwest = { version = "0.13", features = ["blocking", "stream"] }
 
 # Compression and archives
-oxiarc-archive = "0.3.5"
+oxiarc-archive = "0.3.6"
 # Direct deps needed for blosc's inner codecs, which use raw block/stream
 # formats that the oxiarc-archive umbrella crate does not expose directly
 # (it only exposes the framed/container forms of lz4 and snappy).
-oxiarc-lz4 = "0.3.5"
-oxiarc-deflate = "0.3.5"
-oxiarc-snappy = "0.3.5"
+oxiarc-lz4 = "0.3.6"
+oxiarc-deflate = "0.3.6"
+oxiarc-snappy = "0.3.6"
 crc32fast = "1.5"
 
 # Cryptographic hashing for download integrity verification (pure Rust)
