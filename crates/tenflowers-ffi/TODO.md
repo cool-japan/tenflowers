@@ -2,9 +2,9 @@
 
 Initial release capabilities and forward development plan.
 
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
-## v0.2.0 — Implicit Autograd Wired Through Every Layer & Optimizer (2026-07-12)
+## v0.2.0 — Implicit Autograd Wired Through Every Layer & Optimizer (2026-07-13)
 
 - [x] **Implicit-autograd rewrite spans the full layer/optimizer/loss
   surface**: previously `.backward()`/`.grad()`/`optimizer.step()` only
@@ -46,7 +46,7 @@ Last updated: 2026-07-12
   split into `lstm.rs`/`gru.rs`/`rnn.rs`/`mod.rs`/`tests.rs`. `neural/
   normalization.rs` and `neural/optimizers.rs` were split the same way
   (`normalization/{mod.rs,tests.rs}`, `optimizers/{mod.rs,tests.rs}`) in a
-  final 2026-07-12 policy-compliance pass, completing 2000-line compliance
+  final 2026-07-13 policy-compliance pass, completing 2000-line compliance
   for every file in this crate (largest remaining file:
   `neural/conv_layers/mod.rs` at 1944 lines) — `cargo check -p
   tenflowers-ffi --all-features` and the 337/337 lib test count both
@@ -174,7 +174,7 @@ Last updated: 2026-07-12
 ### API Coverage & Completeness
 - **Limited Dtype Support**: Restricted to f32, missing f16/bf16/i32 support
 - **Device Coverage**: Limited device abstraction and multi-device support
-- **Neural Network APIs**: as of the 2026-07-12 rewrite, implicit autograd is
+- **Neural Network APIs**: as of the 2026-07-13 rewrite, implicit autograd is
   genuinely wired through every layer type and all 9 optimizers (see
   "1. Current Capabilities" above); remaining known gaps are the two items
   below (`PyGradientTape`, `StateSpaceModel`/`Mamba`), not general coverage
@@ -201,7 +201,7 @@ surface through these bindings but rely on unfinished backends fail loudly
 - **TensorFlow / ONNX protobuf import-export**: no protobuf parser wired →
   honest error.
 
-### Known-incomplete autograd/layer surfaces (not fixed by the 2026-07-12 rewrite)
+### Known-incomplete autograd/layer surfaces (not fixed by the 2026-07-13 rewrite)
 - **`PyGradientTape` (explicit, TensorFlow-style tape) does not work
   end-to-end**: `PyGradientTape.watch()` (`neural/gradient_tape.rs:71`) only
   clones a tensor's current value onto the tape at call time; the free

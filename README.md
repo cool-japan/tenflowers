@@ -8,7 +8,7 @@ A pure Rust implementation of TensorFlow, providing a full-featured machine lear
 [![Tests](https://img.shields.io/badge/tests-14536%2B%20passing-brightgreen)](https://github.com/cool-japan/tenflowers)
 [![Security](https://img.shields.io/badge/advisories-2-yellow)](https://github.com/cool-japan/tenflowers)
 
-> **v0.2.0 (2026-07-12)**
+> **v0.2.0 (2026-07-13)**
 >
 > TenfloweRS v0.2.0 is a complete rewire of the Python-facing, PyTorch-style implicit autograd
 > system in the FFI crate. Previously `.backward()`/`.grad()`/`optimizer.step()` only worked
@@ -71,7 +71,7 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 
 ## Project Status
 
-**Current Version: 0.2.0** (Released 2026-07-12)
+**Current Version: 0.2.0** (Released 2026-07-13)
 
 ### v0.2.0 Quality Metrics
 
@@ -393,7 +393,7 @@ Key areas where we need help:
 
 ## Roadmap
 
-### v0.2.0 (Released 2026-07-12)
+### v0.2.0 (Released 2026-07-13)
 - FFI: complete rewire of the implicit, PyTorch-style autograd system. Every layer type now has real backward support wired into the tape -- Dense, Conv1D/2D/3D and pooling, Embedding/EmbeddingBag, BatchNorm1d/LayerNorm/GroupNorm/InstanceNorm1d, MultiheadAttention, TransformerEncoderLayer/DecoderLayer, and LSTM/GRU/RNN and their cells -- versus only a minimal Dense/Sequential/MSE path previously
 - FFI: all 9 optimizers (SGD, Adam, RMSprop, AdamW, AdaBelief, RAdam, Nadam, AdaGrad, AdaDelta) now perform real gradient-based parameter updates, reading `.grad()` and writing back to parameters; every loss function is genuinely backward-connected to the tape
 - Two narrow, documented gaps remain: Conv1D/2D/3D and MaxPool2D/AvgPool2D tape recording only fires for unit dilation, `groups==1`, and no explicit padding (other configurations still compute a correct forward value but skip gradient recording); `EmbeddingBag`'s `mode="max"` is not tape-wired (`sum`/`mean` are)

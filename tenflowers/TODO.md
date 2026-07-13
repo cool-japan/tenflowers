@@ -11,10 +11,10 @@ This file tracks tasks specific to the meta crate (`tenflowers`), which serves a
 - ✅ Documentation with examples
 - ✅ README and TODO files
 
-### v0.2.0 Release Status (2026-07-12)
+### v0.2.0 Release Status (2026-07-13)
 
 All items below remain complete as of the v0.2.0 release. Per `CHANGELOG.md`'s
-`[0.2.0] - 2026-07-12` entry, v0.2.0 is a complete rewrite of the Python-facing,
+`[0.2.0] - 2026-07-13` entry, v0.2.0 is a complete rewrite of the Python-facing,
 PyTorch-style implicit autograd system in `tenflowers-ffi` (real tape-backed
 `.backward()`/`.grad()` support for every layer type, all 9 optimizers wired to
 genuine gradient-based updates, loss-function rewrites, and several autograd
@@ -31,7 +31,7 @@ regression: **14,536+ tests passing, 39 skipped, 0 failures, 0 warnings**
 `README.md`, freshly verified for 0.2.0). This crate's own suite: **156 tests**
 (workspace-root `README.md` published-crates table).
 
-**Found and fixed during the 2026-07-12 `/readme` pass** (discovered by
+**Found and fixed during the 2026-07-13 `/readme` pass** (discovered by
 compiling corrected versions of the Quick Start snippets; not tracked
 elsewhere before now): `README.md`'s "Build a Neural Network" and "Train a
 Model" Quick Start examples used a `Sequential`/`Dense`/`quick_train` call
@@ -69,7 +69,7 @@ to the doc.
 ### Testing
 - [x] Add integration tests using prelude (done 2026-04-19: tenflowers/tests/integration_test.rs, prelude_surface.rs, tensor_macro.rs, type_aliases.rs, feature_flags_test.rs)
 - [x] Test feature flag combinations (done 2026-06-10: feature_flags_comprehensive.rs extended with 15 new combination/matrix/preset tests: std-only, std+parallel, std+simd, std+serialize, std+parallel+simd, std+parallel+gpu, std+experimental, minimal preset, standard preset, full preset, plus 5 Cargo.toml matrix coherence tests)
-- [x] Add CI tests for meta crate (done 2026-06-10: .github/workflows/meta-crate-ci.yml — check-default, check-minimal, test, version-check, feature-combinations, clippy, cross-platform jobs; file content unchanged but since the "Availability of 0.1.2" release it has been renamed to `meta-crate-ci.yml.disabled`, along with every other non-publish workflow in `.github/workflows/`, per the repo-wide policy that only `pypi-publish.yml`/`npm-publish.yml` may be active — verified present-but-disabled 2026-07-12)
+- [x] Add CI tests for meta crate (done 2026-06-10: .github/workflows/meta-crate-ci.yml — check-default, check-minimal, test, version-check, feature-combinations, clippy, cross-platform jobs; file content unchanged but since the "Availability of 0.1.2" release it has been renamed to `meta-crate-ci.yml.disabled`, along with every other non-publish workflow in `.github/workflows/`, per the repo-wide policy that only `pypi-publish.yml`/`npm-publish.yml` may be active — verified present-but-disabled 2026-07-13)
 - [x] Test compile-time with minimal features (done 2026-06-10: meta-crate-ci.yml feature-combinations matrix includes "", "std", "std,parallel,simd", "full" + --no-default-features check)
 - [x] Verify all examples compile with meta crate (done 2026-04-19: cargo check + doctests pass)
 
@@ -90,12 +90,12 @@ to the doc.
 - [x] Add troubleshooting section (done 2026-04-20: docs/TROUBLESHOOTING.md)
 - [ ] `src/lib.rs`'s top-of-file module doc comment (the `//!` block, separate
       from the `prelude` module's own doc comment) has the same class of
-      staleness just fixed in `README.md` on 2026-07-12: its "Language
+      staleness just fixed in `README.md` on 2026-07-13: its "Language
       Bindings" section still advertises a `python` feature that isn't defined
       in `Cargo.toml`, and its "Convenience" section's `full` feature list
       still says `blas-openblas` (and includes `python`) instead of matching
       the real `full = ["gpu", "blas-oxiblas", "simd", "serialize",
-      "compression", "onnx", "autograd"]`. Found during the 2026-07-12
+      "compression", "onnx", "autograd"]`. Found during the 2026-07-13
       `/readme` pass; left unfixed here since editing `src/lib.rs` was outside
       that pass's file scope (README.md/TODO.md only) — needs a follow-up
       source-doc edit.
@@ -125,7 +125,7 @@ to the doc.
       a zero-copy variant would need `Arc`-based sharing or lifetime entanglement. This has
       been referenced as "tracked as a follow-up (see `TODO.md`)" in `src/interop/mod.rs`'s
       module doc comment since 2026-04-19, but was never actually captured here until this
-      2026-07-12 pass closed the gap.
+      2026-07-13 pass closed the gap.
 - [x] Add serialization format helpers (done 2026-04-19: tenflowers/src/io.rs with save_tensor/load_tensor wrappers, serialize feature gated, stub for no-feature builds)
 - [x] Consider ONNX import/export helpers (done 2026-04-19: #[cfg(feature="onnx")] pub mod onnx re-exports tenflowers_neural::onnx surface in tenflowers/src/lib.rs)
 

@@ -2,7 +2,7 @@
 
 Data loading and preprocessing utilities for TenfloweRS, providing efficient dataset management, transformations, and data pipelines for machine learning workflows.
 
-> Stable (v0.2.0 -- 2026-07-12) | 698 tests passing (`--all-features`) | 0 clippy warnings
+> Stable (v0.2.0 -- 2026-07-13) | 698 tests passing (`--all-features`) | 0 clippy warnings
 
 ## Overview
 
@@ -163,7 +163,7 @@ for batch in loader.iter() {
 
 - **In-Memory**: Tensor datasets, array datasets
 - **Files**: Images (PNG, JPEG), CSV, JSON, Parquet
-- **Binary**: TFRecord (including `SequenceExample`), MessagePack
+- **Binary**: TFRecord (including `SequenceExample`)
 - **Scientific Arrays**: Zarr, with a pure-Rust Blosc chunk decoder (BloscLZ, LZ4, Snappy, Zlib, Zstd); HDF5 behind the optional `hdf5` feature (native C library)
 - **Streaming Archives**: WebDataset (TAR-shard) for large-scale distributed training
 - **Text**: Plain text, tokenized sequences
@@ -188,7 +188,7 @@ for batch in loader.iter() {
 - `csv_format`: CSV file format support
 - `regex`: Regex-based field parsing for text and structured formats
 - `tfrecord`: TFRecord file format support
-- `msgpack`: MessagePack serialization (implies `serialize`)
+- `msgpack` [Planned]: MessagePack serialization (implies `serialize`) — the feature flag is default-on and pulls in the `rmp-serde` dependency, but no serializer/deserializer is implemented anywhere in the crate; enabling it currently has no functional effect
 - `hdf5`: HDF5 format support (requires the native HDF5 C library; not enabled by default — Zarr/Parquet are the pure-Rust alternatives)
 - `audio`: Audio file loading and processing
 - `download`: Dataset download utilities

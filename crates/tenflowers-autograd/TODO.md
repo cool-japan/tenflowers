@@ -56,7 +56,7 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 - Verified 2026-07-07: `cargo nextest run -p tenflowers-autograd
   --all-features` → **521 tests run: 521 passed, 5 skipped**.
 
-## v0.2.0 — Backward-Pass Correctness Sweep (2026-07-12)
+## v0.2.0 — Backward-Pass Correctness Sweep (2026-07-13)
 
 Real, previously-unknown gradient-computation bugs were found and fixed this
 cycle (as opposed to the honesty-hardening waves above, which mostly
@@ -243,4 +243,4 @@ correctness fixes to gradients that were previously silently wrong):
 
 **v0.1.2 Status** (2026-07-07): Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization; 521 tests passing, 5 skipped (`--all-features`), 0 clippy warnings. This cycle's focus was honesty hardening — replacing fabricated/placeholder results (cross-datacenter replication, fused Mish/norm ops, conv2d/conv3d backward gradients, training accuracy, numerical gradient property tests) with either real implementations or honest `NotImplemented` errors.
 
-**v0.2.0 Status** (2026-07-12): 575 tests passing, 5 skipped (`--all-features`), 0 clippy warnings (verified 2026-07-11, one day before release). This cycle's focus shifted from honesty hardening to backward-pass *correctness* — Softmax/BatchNorm/LayerNorm backward now delegate to already-correct kernels instead of a separately-maintained (and drifted) inline formula in the tape dispatcher; GroupNorm backward fixed a non-uniform-gamma bug (up to ~760% relative error); Slice and Gather backward went from stubs to real gradients; Conv1D gained a dedicated backward implementation. All verified by new finite-difference gradient-check test suites. Forward development still focuses on gradient coverage audit, real distributed-gradient transport, and advanced features.
+**v0.2.0 Status** (2026-07-13): 575 tests passing, 5 skipped (`--all-features`), 0 clippy warnings (verified 2026-07-11, one day before release). This cycle's focus shifted from honesty hardening to backward-pass *correctness* — Softmax/BatchNorm/LayerNorm backward now delegate to already-correct kernels instead of a separately-maintained (and drifted) inline formula in the tape dispatcher; GroupNorm backward fixed a non-uniform-gamma bug (up to ~760% relative error); Slice and Gather backward went from stubs to real gradients; Conv1D gained a dedicated backward implementation. All verified by new finite-difference gradient-check test suites. Forward development still focuses on gradient coverage audit, real distributed-gradient transport, and advanced features.

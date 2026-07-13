@@ -960,13 +960,24 @@ mod tests {
     #[test]
     fn snle_estimator_runs_without_error() {
         let sim = make_sim(2);
+        // Smoke test only: checks that the end-to-end SNLE pipeline runs and
+        // produces a finite log-prob, not that MCMC has converged. Config is
+        // kept deliberately small to stay well under the 30s test-runtime
+        // policy. The dominant cost is the finite-difference NLL training in
+        // `NeuralDensityEstimator::train_nll`, invoked `n_rounds *
+        // n_training_steps` times, each costing O(params * batch) forward
+        // passes where `batch = n_simulations_per_round`. Note `n_mcmc_steps`
+        // does NOT affect this test's runtime: `SnleEstimator::run` never
+        // reads it, and `post.log_prob` below evaluates the likelihood
+        // directly without calling `mcmc_sample`; it is lowered here only to
+        // avoid leaving a misleadingly large, unused value.
         let cfg = SnleConfig {
-            n_rounds: 2,
-            n_simulations_per_round: 10,
+            n_rounds: 1,
+            n_simulations_per_round: 5,
             hidden_dim: 16,
             lr: 1e-3,
-            n_training_steps: 5,
-            n_mcmc_steps: 50,
+            n_training_steps: 2,
+            n_mcmc_steps: 10,
         };
         let mut rng = make_rng();
         let mut est = SnleEstimator::new(&sim, cfg, &mut rng);

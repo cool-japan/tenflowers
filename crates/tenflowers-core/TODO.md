@@ -1,7 +1,7 @@
 # TenfloweRS Core TODO & Roadmap (v0.2.0)
 
 **Version:** 0.2.0  
-**Date:** 2026-07-12
+**Date:** 2026-07-13
 
 Core tensor engine capabilities and forward development plan.
 
@@ -81,7 +81,7 @@ public API. TODO: wire `allocation_timeline`/`memory_pressure`/
 `per_op_tracker`/`pool_diagnostics` into `lib.rs`, resolving naming/overlap
 with the existing `memory::pool_diagnostics` submodule before exposing it.
 
-## v0.2.0 — Correctness fixes (2026-07-12)
+## v0.2.0 — Correctness fixes (2026-07-13)
 
 - **`slice_with_stride` row-major stride bug fixed**: the linear-index
   accumulation in `ops::manipulation::indexing` used a forward-order

@@ -37,7 +37,7 @@ v0.1.1 focus: data loading and preprocessing capabilities and forward developmen
 - Benchmark/CPU metrics were hardcoded or random → real `/proc` measurements
   or honest sentinels.
 
-## v0.2.0 — Test Coverage Hardening (2026-07-12)
+## v0.2.0 — Test Coverage Hardening (2026-07-13)
 
 No production-code behavior changed this cycle. Test coverage was expanded
 for previously-uncovered paths:
@@ -122,6 +122,9 @@ for previously-uncovered paths:
   `formats::blosc` pure-Rust decoder (BloscLZ own port, LZ4/Snappy/Zlib/Zstd
   via oxiarc, byte/bit-shuffle filters) wired into the zarr dispatch;
   lz4/zstd/gzip continue to decompress for real via oxiarc.
+- [ ] **MessagePack serialization**: `msgpack` feature flag is default-on
+  and pulls in `rmp-serde`, but no serializer/deserializer is implemented
+  anywhere in the crate — the dependency is currently unused.
 
 ### Pre-existing build issue (RESOLVED 2026-07-07)
 - [x] Building with `--no-default-features` previously failed due to a
@@ -258,4 +261,4 @@ for previously-uncovered paths:
 
 **v0.1.2 Status** (2026-07-07): Production-ready data loading capabilities with comprehensive format support (including a new pure-Rust Zarr Blosc decoder and TFRecord `SequenceExample` support), GPU-accelerated transforms (affine/perspective/elastic/histogram-equalize), SIMD preprocessing, a Miri-verified memory pool, and SciRS2 integration — 660 tests passing with `--all-features`.
 
-**v0.2.0 Status** (2026-07-12): No production-code changes this cycle; test coverage expanded for previously-uncovered `mmap`/SIMD-transform paths — 698 tests passing with `--all-features`. Forward development focuses on distributed loading and advanced format integration.
+**v0.2.0 Status** (2026-07-13): No production-code changes this cycle; test coverage expanded for previously-uncovered `mmap`/SIMD-transform paths — 698 tests passing with `--all-features`. Forward development focuses on distributed loading and advanced format integration.
