@@ -2,7 +2,7 @@
 
 Automatic differentiation engine for TenfloweRS, providing both tape-based (eager) and graph-based (static) automatic differentiation capabilities.
 
-> Stable (v0.1.2 -- 2026-07-08) | 521 tests passing (5 skipped) | 0 clippy warnings
+> Stable (v0.2.0 -- 2026-07-13) | 575 tests passing (5 skipped, `--all-features`) | 0 clippy warnings
 
 ## Overview
 
@@ -28,6 +28,7 @@ Automatic differentiation engine for TenfloweRS, providing both tape-based (eage
 - **Custom Gradients**: Define custom backward passes for operations
 - **Forward Gradients**: Efficient forward-mode for low-input-dimension functions
 - **Gradient Utils**: Clipping, scaling, and diagnostic utilities
+- **Verified Backward-Pass Correctness**: Softmax, BatchNorm, and LayerNorm backward now delegate to the real, already-correct `grad_ops`/`ops::normalization_ops` kernels instead of a separately-maintained formula inline in the tape dispatcher; GroupNorm backward now folds per-channel `gamma` into `dxhat` before reducing (previously applied `gamma` as a single post-hoc `gamma / std` factor, correct only when `gamma` is uniform across every channel in a group — wrong for non-uniform gamma); Slice and Gather backward, previously stubs, now produce real scattered/accumulated gradients; Conv1D has a dedicated backward implementation (`ops::convolution_ops::conv1d::conv1d_backward`) rather than no backward path at all. All of the above are covered by new finite-difference gradient-check test suites: `activation_gaps_gradient_test`, `conv1d_gradient_test`, `conv3d_gradient_test`, `group_instance_norm_gradient_check`, `normalization_gradient_check`, `slice_concat_stack_split_gather_gradient_test`.
 
 ## Usage
 
@@ -181,8 +182,9 @@ Differentiable operations:
 - Arithmetic: `add`, `sub`, `mul`, `div`, `pow`, `neg`
 - Matrix: `matmul`, `transpose`, `reshape`
 - Reductions: `sum`, `mean`, `max` (with indices)
+- Manipulation: `slice`, `gather`, `concat`, `stack`, `split`
 - Activations: `relu`, `sigmoid`, `tanh`, `softmax`, `gelu`, `mish`
-- Neural: `conv2d`, `max_pool2d`, `batch_norm`
+- Neural: `conv1d`, `conv2d`, `conv3d`, `max_pool2d`, `batch_norm`
 - Advanced: `layer_norm`, `group_norm`, `instance_norm`, `einsum`
 
 ## Feature Flags

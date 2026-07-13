@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "tenflowers"
-version = "0.1.2"
+version = "0.2.0"
 description = "A pure Rust machine learning framework with Python bindings - TensorFlow-compatible API"
 authors = [
     { name = "COOLJAPAN OU (Team KitaSan)", email = "contact@cooljapan.tech" }
@@ -93,7 +93,7 @@ manylinux = "2_17"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
+python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [

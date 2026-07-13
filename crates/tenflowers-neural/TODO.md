@@ -1,4 +1,4 @@
-# TenfloweRS Neural TODO & Roadmap (v0.1.2)
+# TenfloweRS Neural TODO & Roadmap (v0.2.0)
 
 v0.1.1 focus: neural network capabilities and forward development plan.
 
@@ -53,7 +53,7 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 
 ## Completion Status
 
-**Test Status**: ✅ 11,596/11,596 tests passing, 8 skipped (2026-07-07, `cargo nextest run -p tenflowers-neural --all-features`)
+**Test Status**: ✅ 11,596/11,596 tests passing, 8 skipped (re-verified 2026-07-11, `cargo nextest run -p tenflowers-neural --all-features`; count unchanged from 2026-07-07 — no functional source changes landed in this crate this cycle)
 **Code Quality**: ✅ No `todo!()` or `unimplemented!()` macros remaining
 **Priority 1 Tasks**: ✅ 5/5 Complete (100% - Attention, Schedulers, Gradient Clipping, Mixed Precision, Export/Import)
 **Priority 2 Tasks**: ✅ 5/5 Complete (100% - Long Sequence Tests, ONNX Integration complete)
@@ -244,7 +244,9 @@ v0.1.1 focus: neural network capabilities and forward development plan.
 
 **v0.1.1 Status** (historical snapshot): Production-ready neural network library with comprehensive layer implementations, training infrastructure, and model management. 1,012/1,012 tests passing with 100% pass rate.
 
-**v0.1.2 Status** (current, 2026-07-07): 11,596/11,596 tests passing, 8 skipped (`cargo nextest run -p tenflowers-neural --all-features`). See the "Honesty Hardening" section above for this cycle's fixes — several previously-fabricated code paths (distributed collective ops, several pruning strategies, weight-loader binary formats) now honestly report `NotImplemented` rather than faking success, which is a net increase in correctness even though it narrows what's marked "done" below.
+**v0.1.2 Status** (2026-07-07): 11,596/11,596 tests passing, 8 skipped (`cargo nextest run -p tenflowers-neural --all-features`). See the "Honesty Hardening" section above for this cycle's fixes — several previously-fabricated code paths (distributed collective ops, several pruning strategies, weight-loader binary formats) now honestly report `NotImplemented` rather than faking success, which is a net increase in correctness even though it narrows what's marked "done" below.
+
+**v0.2.0 Status** (current, 2026-07-13): No functional source changes landed in this crate for the 0.2.0 release (the 0.2.0 release's substantive work was in `tenflowers-autograd` — Softmax/BatchNorm/LayerNorm/GroupNorm backward-pass correctness fixes, real Slice/Gather backward, and a dedicated Conv1D backward — and in `tenflowers-core` — a strided-slice indexing fix and a `--no-default-features` build-gating fix; see those crates' TODO.md for details). Test count carried forward unchanged: 11,596/11,596 passing, 8 skipped, `--all-features`, 0 `todo!()`/`unimplemented!()` remaining (last verified 2026-07-11; not re-run for this docs-only refresh pass).
 
 **Key Achievements**:
 - ✅ Multi-head attention with Flash Attention support

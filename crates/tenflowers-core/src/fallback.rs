@@ -40,29 +40,26 @@ impl Default for FallbackConfig {
 }
 
 /// Global fallback configuration
-#[allow(static_mut_refs)]
-static mut GLOBAL_FALLBACK_CONFIG: Option<FallbackConfig> = None;
-static FALLBACK_CONFIG_INIT: std::sync::Once = std::sync::Once::new();
+static GLOBAL_FALLBACK_CONFIG: std::sync::OnceLock<std::sync::RwLock<FallbackConfig>> =
+    std::sync::OnceLock::new();
 
 /// Get the global fallback configuration
-#[allow(static_mut_refs)]
 pub fn get_fallback_config() -> FallbackConfig {
-    unsafe {
-        FALLBACK_CONFIG_INIT.call_once(|| {
-            GLOBAL_FALLBACK_CONFIG = Some(FallbackConfig::default());
-        });
-        GLOBAL_FALLBACK_CONFIG
-            .as_ref()
-            .expect("Fallback config should be initialized")
-            .clone()
+    let lock =
+        GLOBAL_FALLBACK_CONFIG.get_or_init(|| std::sync::RwLock::new(FallbackConfig::default()));
+    match lock.read() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
     }
 }
 
 /// Set the global fallback configuration
-#[allow(static_mut_refs)]
 pub fn set_fallback_config(config: FallbackConfig) {
-    unsafe {
-        GLOBAL_FALLBACK_CONFIG = Some(config);
+    let lock =
+        GLOBAL_FALLBACK_CONFIG.get_or_init(|| std::sync::RwLock::new(FallbackConfig::default()));
+    match lock.write() {
+        Ok(mut guard) => *guard = config,
+        Err(poisoned) => *poisoned.into_inner() = config,
     }
 }
 

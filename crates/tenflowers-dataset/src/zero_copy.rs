@@ -781,4 +781,135 @@ mod tests {
         assert_eq!(feat1.shape().dims(), &[2]);
         assert_eq!(label1.shape().dims(), &[] as &[usize]);
     }
+
+    /// Regression test for `MemoryMappedFileDataset::from_file`, which is
+    /// the actual owner of this file's one real `unsafe` block (the
+    /// `memmap2::Mmap::map()` call at the top of `from_file`). Despite its
+    /// similarly-named sibling `test_memory_mapped_dataset` above,
+    /// `MemoryMappedDataset` (no "File" suffix) is a distinct, purely
+    /// in-memory `Arc<[f32]>`-backed type that never touches `mmap()` --
+    /// so prior to this test, `MemoryMappedFileDataset` (and therefore the
+    /// real mmap syscall path) had zero test coverage anywhere in the
+    /// crate. Uses `std::env::temp_dir()` per project convention rather
+    /// than a hardcoded path.
+    ///
+    /// Ignored under Miri: confirmed via direct run that Miri's interpreter
+    /// does not model file-backed memory mappings at all (not an isolation
+    /// setting -- fails identically with `-Zmiri-disable-isolation`):
+    /// `error: unsupported operation: Miri does not support file-backed
+    /// memory mappings` (originating in `memmap2::os::MmapInner::new` ->
+    /// the real `mmap()` libc call). This is a positively-confirmed
+    /// interpreter limitation, analogous to Miri's inability to execute
+    /// real FFI/syscalls elsewhere in this workspace, not a bug in this
+    /// test or in `MemoryMappedFileDataset`.
+    #[cfg(feature = "mmap")]
+    #[cfg_attr(miri, ignore)]
+    #[test]
+    fn test_memory_mapped_file_dataset_from_real_file() {
+        use std::io::Write;
+
+        // Layout per sample: [feat0, feat1, label] as f32 (3 * 4 = 12 bytes/sample).
+        let samples: [[f32; 3]; 2] = [[1.0, 2.0, 0.0], [3.0, 4.0, 1.0]];
+        let mut file_bytes = Vec::new();
+        for sample in &samples {
+            for &value in sample {
+                file_bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+
+        let file_path = std::env::temp_dir().join(format!(
+            "tenflowers_dataset_mmap_test_{}_{}.bin",
+            std::process::id(),
+            "test_memory_mapped_file_dataset_from_real_file"
+        ));
+        {
+            let mut file =
+                std::fs::File::create(&file_path).expect("test: temp file creation should succeed");
+            file.write_all(&file_bytes)
+                .expect("test: temp file write should succeed");
+            file.sync_all()
+                .expect("test: temp file flush should succeed");
+        }
+
+        let dataset_result = MemoryMappedFileDataset::<f32>::from_file(
+            &file_path,
+            2,       // 2 samples
+            vec![2], // 2 features per sample
+            vec![],  // scalar label per sample
+        );
+
+        // Clean up the temp file regardless of test outcome below.
+        let cleanup = std::fs::remove_file(&file_path);
+
+        let dataset = dataset_result.expect("test: mmap-backed dataset creation should succeed");
+        assert_eq!(dataset.len(), 2);
+
+        let stats = dataset.file_stats();
+        assert_eq!(stats.num_samples, 2);
+        assert_eq!(stats.sample_size_bytes, 3 * std::mem::size_of::<f32>());
+
+        let (feat0, label0) = dataset.get(0).expect("index 0 should be in bounds");
+        assert_eq!(feat0.shape().dims(), &[2]);
+        let feat0_data = feat0
+            .as_slice()
+            .expect("test: feature tensor should expose a CPU slice");
+        assert_eq!(feat0_data, &[1.0, 2.0]);
+        let label0_data = label0
+            .as_slice()
+            .expect("test: label tensor should expose a CPU slice");
+        assert_eq!(label0_data, &[0.0]);
+
+        let (feat1, label1) = dataset.get(1).expect("index 1 should be in bounds");
+        let feat1_data = feat1
+            .as_slice()
+            .expect("test: feature tensor should expose a CPU slice");
+        assert_eq!(feat1_data, &[3.0, 4.0]);
+        let label1_data = label1
+            .as_slice()
+            .expect("test: label tensor should expose a CPU slice");
+        assert_eq!(label1_data, &[1.0]);
+
+        // Out-of-bounds access must be a clean error, not a panic/OOB read
+        // through the memory-mapped region.
+        assert!(dataset.get(2).is_err());
+
+        cleanup.expect("test: temp file cleanup should succeed");
+    }
+
+    /// `MemoryMappedFileDataset::from_file` must reject a file that is
+    /// smaller than the declared sample layout implies, rather than
+    /// mapping it and later reading out of bounds of the real file size.
+    ///
+    /// Ignored under Miri for the same reason as
+    /// `test_memory_mapped_file_dataset_from_real_file` above: `from_file`
+    /// calls `memmap2::Mmap::map()`, which Miri's interpreter does not
+    /// support regardless of isolation settings.
+    #[cfg(feature = "mmap")]
+    #[cfg_attr(miri, ignore)]
+    #[test]
+    fn test_memory_mapped_file_dataset_rejects_undersized_file() {
+        use std::io::Write;
+
+        let file_path = std::env::temp_dir().join(format!(
+            "tenflowers_dataset_mmap_test_{}_{}.bin",
+            std::process::id(),
+            "test_memory_mapped_file_dataset_rejects_undersized_file"
+        ));
+        {
+            let mut file =
+                std::fs::File::create(&file_path).expect("test: temp file creation should succeed");
+            // Only 4 bytes: far too small for 2 samples of [2 features + 1
+            // label] f32 each (24 bytes expected).
+            file.write_all(&1.0f32.to_le_bytes())
+                .expect("test: temp file write should succeed");
+            file.sync_all()
+                .expect("test: temp file flush should succeed");
+        }
+
+        let result = MemoryMappedFileDataset::<f32>::from_file(&file_path, 2, vec![2], vec![]);
+
+        let cleanup = std::fs::remove_file(&file_path);
+        assert!(result.is_err(), "undersized file should be rejected");
+        cleanup.expect("test: temp file cleanup should succeed");
+    }
 }

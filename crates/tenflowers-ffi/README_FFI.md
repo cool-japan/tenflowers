@@ -276,17 +276,17 @@ tenflowers-ffi/
 │       ├── mod.rs
 │       ├── layers.rs          # Core layers
 │       ├── optimizers.rs      # Basic optimizers
-│       ├── extended_optimizers.rs  # Advanced optimizers
+│       ├── extended_optimizers/  # Advanced optimizers
 │       ├── activations.rs     # Activation functions
 │       ├── losses.rs          # Loss functions
-│       ├── attention.rs       # Attention mechanisms
+│       ├── attention/         # Attention mechanisms
 │       ├── ssm.rs            # Mamba/SSM layers
-│       ├── conv_layers.rs    # Convolutional layers
-│       ├── recurrent.rs      # RNN/LSTM/GRU
+│       ├── conv_layers/      # Convolutional layers
+│       ├── recurrent/        # RNN/LSTM/GRU
 │       ├── normalization.rs  # Normalization layers
 │       ├── regularization.rs # Dropout, etc.
 │       ├── schedulers.rs     # LR schedulers
-│       ├── transformer.rs    # Transformer components
+│       ├── transformer/       # Transformer components
 │       └── gradient_tape.rs  # Autograd
 ├── examples/                  # Python examples
 ├── tests/                     # Test suite

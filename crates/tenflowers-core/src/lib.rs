@@ -177,7 +177,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! tenflowers-core = { version = "0.1.2", features = ["gpu"] }
+//! tenflowers-core = { version = "0.2.0", features = ["gpu"] }
 //! ```
 //!
 //! ## Safety and Correctness

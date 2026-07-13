@@ -141,6 +141,7 @@ impl GradientTape {
             + PartialOrd
             + scirs2_core::num_traits::Float
             + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -299,6 +300,7 @@ impl GradientTape {
             + PartialOrd
             + scirs2_core::num_traits::Float
             + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {
@@ -349,6 +351,7 @@ impl GradientTape {
             + PartialOrd
             + scirs2_core::num_traits::Float
             + scirs2_core::num_traits::FromPrimitive
+            + scirs2_core::num_traits::Signed
             + bytemuck::Pod
             + bytemuck::Zeroable,
     {

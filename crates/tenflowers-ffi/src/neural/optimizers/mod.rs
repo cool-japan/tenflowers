@@ -1,9 +1,103 @@
 //! Optimizer implementations for neural network training
 //!
 //! This module provides Python bindings for various optimizers including Adam, SGD, RMSprop, etc.
+//!
+//! # Update rules
+//!
+//! Every optimizer below mirrors PyTorch's semantics as closely as this crate's
+//! primitives allow:
+//!
+//! * [`PySGD::step`] — `w <- w - lr * (grad + weight_decay * w)`, with optional
+//!   classic heavy-ball momentum: `v <- momentum * v + (grad + weight_decay * w);
+//!   w <- w - lr * v`.
+//! * [`PyAdam::step`] — bias-corrected first/second moment estimates (Kingma &
+//!   Ba, 2014): `m <- beta1*m + (1-beta1)*g; v <- beta2*v + (1-beta2)*g^2;
+//!   m_hat <- m/(1-beta1^t); v_hat <- v/(1-beta2^t);
+//!   w <- w - lr * m_hat / (sqrt(v_hat) + epsilon)`, with `weight_decay` folded
+//!   into the gradient *before* the moment update (classic Adam+L2, not
+//!   decoupled — see [`PyAdamW::step`] for the decoupled variant).
+//! * [`PyRMSprop::step`] — `cache <- alpha*cache + (1-alpha)*g^2;
+//!   w <- w - lr * g / (sqrt(cache) + epsilon)`.
+//! * [`PyAdamW::step`] — identical moment estimates to [`PyAdam::step`], but
+//!   with **decoupled** weight decay applied as a separate multiplicative
+//!   shrink of the weight itself (`w <- w - lr * weight_decay * w`), never
+//!   folded into the gradient — this decoupling (Loshchilov & Hutter, 2019) is
+//!   the entire point of AdamW over plain Adam + L2 regularization.
+//!
+//! # Per-parameter optimizer state
+//!
+//! Adam/AdamW/RMSprop need per-parameter buffers (moment estimates / squared-
+//! gradient caches) that must persist across `.step()` calls. Each such
+//! optimizer stores a `state: HashMap<usize, ParamState>` keyed by
+//! [`super::layers::PyParameter::id`] (stable across `set_data` updates — see
+//! that method's doc), lazily initialized to zero-tensors matching the
+//! parameter's shape the first time that `id` is seen, and never reset except
+//! by dropping/replacing the optimizer itself. SGD's momentum buffer follows
+//! the same pattern when `momentum` is configured.
+//!
+//! # Parameters with no gradient are silently skipped, not an error
+//!
+//! [`crate::neural::collect_parameters`] can return a parameter whose
+//! `.grad()` has never been populated — e.g. `requires_grad=False`, or the
+//! parameter simply did not participate in the particular loss this
+//! `.step()` follows (common in multi-head / multi-loss models where not
+//! every parameter feeds every loss). Mirroring PyTorch's own
+//! `Optimizer.step()` (which skips any `p` with `p.grad is None` rather than
+//! raising), every `step()` below treats a `.grad()` error as "nothing to do
+//! for this parameter this round" and moves on, rather than aborting the
+//! whole step. This is the least-surprising choice: a caller building a model
+//! with, say, an auxiliary head that is only sometimes in the loss should not
+//! have every other parameter's update blocked by that head's occasionally-
+//! absent gradient.
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
+use tenflowers_core::Tensor;
+
+use super::layers::PyParameter;
+
+/// Read `param`'s current value and gradient as raw `Tensor<f32>`s.
+///
+/// Returns `Ok(None)` (not `Err`) when `param` has no gradient yet — see the
+/// module-level "Parameters with no gradient are silently skipped" doc for
+/// why this is deliberately not an error a `step()` propagates. Returns `Err`
+/// only for a genuine failure unrelated to "no gradient" (e.g.
+/// [`PyParameter::to_tensor`]'s lock-poisoned case), which a `step()` should
+/// still propagate rather than silently swallow.
+fn read_value_and_grad(param: &PyParameter) -> PyResult<Option<(Tensor<f32>, Tensor<f32>)>> {
+    let grad = match param.grad() {
+        Ok(grad) => grad,
+        Err(_) => return Ok(None),
+    };
+    let value = param.to_tensor()?;
+    Ok(Some(((*value.tensor).clone(), (*grad.tensor).clone())))
+}
+
+/// Per-parameter state for [`PySGD`]: the momentum buffer, present only when
+/// the optimizer was constructed with `momentum` configured.
+#[derive(Debug, Clone)]
+struct SgdParamState {
+    /// Velocity buffer `v` in `v <- momentum * v + grad_with_decay`.
+    velocity: Tensor<f32>,
+}
+
+/// Per-parameter state for [`PyAdam`] / [`PyAdamW`]: first and second raw
+/// moment estimates.
+#[derive(Debug, Clone)]
+struct AdamParamState {
+    /// First moment estimate `m`.
+    m: Tensor<f32>,
+    /// Second (raw, uncentered) moment estimate `v`.
+    v: Tensor<f32>,
+}
+
+/// Per-parameter state for [`PyRMSprop`]: the squared-gradient running
+/// average.
+#[derive(Debug, Clone)]
+struct RmspropParamState {
+    /// Squared-gradient exponential moving average.
+    cache: Tensor<f32>,
+}
 
 /// Python wrapper for the Adam optimizer
 ///
@@ -28,6 +122,10 @@ pub struct PyAdam {
     pub epsilon: f64,
     pub weight_decay: f64,
     pub timestep: usize,
+    /// Per-parameter first/second moment estimates, keyed by
+    /// [`PyParameter::id`]. See the module-level "Per-parameter optimizer
+    /// state" doc.
+    state: HashMap<usize, AdamParamState>,
 }
 
 #[pymethods]
@@ -49,6 +147,7 @@ impl PyAdam {
             epsilon: 1e-8,
             weight_decay: 0.0,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -71,6 +170,7 @@ impl PyAdam {
             epsilon: 1e-8,
             weight_decay: 0.0,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -92,6 +192,7 @@ impl PyAdam {
             epsilon,
             weight_decay: 0.0,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -113,6 +214,7 @@ impl PyAdam {
             epsilon: 1e-8,
             weight_decay,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -137,18 +239,82 @@ impl PyAdam {
     /// Args:
     ///     model: Model containing parameters to optimize
     ///
-    /// This method computes gradients and updates model parameters using the Adam algorithm.
-    /// The model should implement the Model trait and have computed gradients.
+    /// Applies the bias-corrected Adam update rule (see the module-level
+    /// doc) to every parameter [`crate::neural::collect_parameters`] finds on
+    /// `model` that currently has a gradient; parameters with no gradient are
+    /// silently skipped (see the module-level "Parameters with no gradient"
+    /// doc).
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`] (e.g.
+    /// `model` has no `.parameters()` method) or from
+    /// [`PyParameter::set_data`] (e.g. a poisoned lock).
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // Increment timestep for Adam algorithm
         self.timestep += 1;
+        let t = self.timestep as f32;
+        let beta1 = self.beta1 as f32;
+        let beta2 = self.beta2 as f32;
+        let epsilon = self.epsilon as f32;
+        let lr = self.learning_rate as f32;
+        let weight_decay = self.weight_decay as f32;
 
-        // For now, we'll implement a simplified version that works with PyDense layers
-        // In a full implementation, this would integrate with the Model trait
-        // NOTE(v0.2): Implement proper model interface integration
+        let py = model.py();
+        let params = crate::neural::collect_parameters(&model)?;
 
-        // This is a placeholder implementation - in practice, you'd extract parameters
-        // from the model and apply the Adam update rule
+        for param in &params {
+            let param_ref = param.borrow(py);
+            let Some((w, mut g)) = read_value_and_grad(&param_ref)? else {
+                continue;
+            };
+
+            // Classic (non-decoupled) Adam weight decay: fold into the
+            // gradient before the moment update.
+            if weight_decay != 0.0 {
+                let decay_term = w.scalar_mul(weight_decay).map_err(to_py_err)?;
+                g = g.add(&decay_term).map_err(to_py_err)?;
+            }
+
+            let id = param_ref.id();
+            let entry = self.state.entry(id).or_insert_with(|| AdamParamState {
+                m: Tensor::<f32>::zeros(w.shape().dims()),
+                v: Tensor::<f32>::zeros(w.shape().dims()),
+            });
+
+            // m <- beta1*m + (1-beta1)*g
+            let m_scaled = entry.m.scalar_mul(beta1).map_err(to_py_err)?;
+            let g_scaled = g.scalar_mul(1.0 - beta1).map_err(to_py_err)?;
+            entry.m = m_scaled.add(&g_scaled).map_err(to_py_err)?;
+
+            // v <- beta2*v + (1-beta2)*g^2
+            let g_sq = g.mul(&g).map_err(to_py_err)?;
+            let v_scaled = entry.v.scalar_mul(beta2).map_err(to_py_err)?;
+            let g_sq_scaled = g_sq.scalar_mul(1.0 - beta2).map_err(to_py_err)?;
+            entry.v = v_scaled.add(&g_sq_scaled).map_err(to_py_err)?;
+
+            // Bias correction.
+            let bias_correction1 = 1.0 - beta1.powf(t);
+            let bias_correction2 = 1.0 - beta2.powf(t);
+            let m_hat = entry
+                .m
+                .scalar_mul(1.0 / bias_correction1)
+                .map_err(to_py_err)?;
+            let v_hat = entry
+                .v
+                .scalar_mul(1.0 / bias_correction2)
+                .map_err(to_py_err)?;
+
+            // w <- w - lr * m_hat / (sqrt(v_hat) + epsilon)
+            let v_hat_sqrt = v_hat.sqrt().map_err(to_py_err)?;
+            let epsilon_tensor = Tensor::<f32>::full(v_hat_sqrt.shape().dims(), epsilon);
+            let denom = v_hat_sqrt.add(&epsilon_tensor).map_err(to_py_err)?;
+            let step_dir = m_hat.div(&denom).map_err(to_py_err)?;
+            let update = step_dir.scalar_mul(lr).map_err(to_py_err)?;
+            let new_w = w.sub(&update).map_err(to_py_err)?;
+
+            param_ref.set_data(new_w)?;
+        }
+
         Ok(())
     }
 
@@ -158,10 +324,12 @@ impl PyAdam {
     ///     model: Model containing parameters to zero gradients for
     ///
     /// This should be called before backward pass to clear accumulated gradients.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`].
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement gradient zeroing for model parameters
-        // This would typically iterate through model parameters and set gradients to zero
-        Ok(())
+        zero_grad_all(model)
     }
 
     /// Get optimizer state information
@@ -236,6 +404,10 @@ pub struct PySGD {
     pub learning_rate: f64,
     pub momentum: Option<f64>,
     pub weight_decay: f64,
+    /// Per-parameter momentum buffers, keyed by [`PyParameter::id`]. Only
+    /// populated (and only consulted) when `momentum` is `Some`. See the
+    /// module-level "Per-parameter optimizer state" doc.
+    state: HashMap<usize, SgdParamState>,
 }
 
 #[pymethods]
@@ -254,6 +426,7 @@ impl PySGD {
             learning_rate: learning_rate.unwrap_or(0.01),
             momentum: None,
             weight_decay: 0.0,
+            state: HashMap::new(),
         }
     }
 
@@ -272,6 +445,7 @@ impl PySGD {
             learning_rate,
             momentum: Some(momentum),
             weight_decay: 0.0,
+            state: HashMap::new(),
         }
     }
 
@@ -290,6 +464,7 @@ impl PySGD {
             learning_rate,
             momentum: None,
             weight_decay,
+            state: HashMap::new(),
         }
     }
 
@@ -304,15 +479,67 @@ impl PySGD {
     }
 
     /// Perform a single optimization step
+    ///
+    /// Applies `w <- w - lr * (grad + weight_decay * w)`, or — when
+    /// `momentum` is configured — classic heavy-ball momentum:
+    /// `v <- momentum * v + (grad + weight_decay * w); w <- w - lr * v`. See
+    /// the module-level doc for the full rule and the "Parameters with no
+    /// gradient" skip semantics.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`] or
+    /// [`PyParameter::set_data`].
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement proper model interface integration
+        let lr = self.learning_rate as f32;
+        let weight_decay = self.weight_decay as f32;
+        let momentum = self.momentum.map(|m| m as f32);
+
+        let py = model.py();
+        let params = crate::neural::collect_parameters(&model)?;
+
+        for param in &params {
+            let param_ref = param.borrow(py);
+            let Some((w, g)) = read_value_and_grad(&param_ref)? else {
+                continue;
+            };
+
+            let mut grad_with_decay = g;
+            if weight_decay != 0.0 {
+                let decay_term = w.scalar_mul(weight_decay).map_err(to_py_err)?;
+                grad_with_decay = grad_with_decay.add(&decay_term).map_err(to_py_err)?;
+            }
+
+            let new_w = if let Some(momentum) = momentum {
+                let id = param_ref.id();
+                let entry = self.state.entry(id).or_insert_with(|| SgdParamState {
+                    velocity: Tensor::<f32>::zeros(w.shape().dims()),
+                });
+
+                // v <- momentum * v + grad_with_decay
+                let v_scaled = entry.velocity.scalar_mul(momentum).map_err(to_py_err)?;
+                entry.velocity = v_scaled.add(&grad_with_decay).map_err(to_py_err)?;
+
+                let update = entry.velocity.scalar_mul(lr).map_err(to_py_err)?;
+                w.sub(&update).map_err(to_py_err)?
+            } else {
+                let update = grad_with_decay.scalar_mul(lr).map_err(to_py_err)?;
+                w.sub(&update).map_err(to_py_err)?
+            };
+
+            param_ref.set_data(new_w)?;
+        }
+
         Ok(())
     }
 
     /// Zero out gradients for all parameters
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`].
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement gradient zeroing
-        Ok(())
+        zero_grad_all(model)
     }
 
     /// Get optimizer state information
@@ -373,6 +600,9 @@ pub struct PyRMSprop {
     pub alpha: f64,
     pub epsilon: f64,
     pub weight_decay: f64,
+    /// Per-parameter squared-gradient caches, keyed by [`PyParameter::id`].
+    /// See the module-level "Per-parameter optimizer state" doc.
+    state: HashMap<usize, RmspropParamState>,
 }
 
 #[pymethods]
@@ -392,6 +622,7 @@ impl PyRMSprop {
             alpha: 0.99,
             epsilon: 1e-8,
             weight_decay: 0.0,
+            state: HashMap::new(),
         }
     }
 
@@ -411,6 +642,7 @@ impl PyRMSprop {
             alpha,
             epsilon: 1e-8,
             weight_decay: 0.0,
+            state: HashMap::new(),
         }
     }
 
@@ -425,15 +657,68 @@ impl PyRMSprop {
     }
 
     /// Perform a single optimization step
+    ///
+    /// Applies `cache <- alpha*cache + (1-alpha)*grad^2;
+    /// w <- w - lr * grad / (sqrt(cache) + epsilon)`. See the module-level
+    /// doc for the full rule and the "Parameters with no gradient" skip
+    /// semantics.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`] or
+    /// [`PyParameter::set_data`].
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement proper model interface integration
+        let lr = self.learning_rate as f32;
+        let alpha = self.alpha as f32;
+        let epsilon = self.epsilon as f32;
+        let weight_decay = self.weight_decay as f32;
+
+        let py = model.py();
+        let params = crate::neural::collect_parameters(&model)?;
+
+        for param in &params {
+            let param_ref = param.borrow(py);
+            let Some((w, mut g)) = read_value_and_grad(&param_ref)? else {
+                continue;
+            };
+
+            if weight_decay != 0.0 {
+                let decay_term = w.scalar_mul(weight_decay).map_err(to_py_err)?;
+                g = g.add(&decay_term).map_err(to_py_err)?;
+            }
+
+            let id = param_ref.id();
+            let entry = self.state.entry(id).or_insert_with(|| RmspropParamState {
+                cache: Tensor::<f32>::zeros(w.shape().dims()),
+            });
+
+            // cache <- alpha*cache + (1-alpha)*g^2
+            let g_sq = g.mul(&g).map_err(to_py_err)?;
+            let cache_scaled = entry.cache.scalar_mul(alpha).map_err(to_py_err)?;
+            let g_sq_scaled = g_sq.scalar_mul(1.0 - alpha).map_err(to_py_err)?;
+            entry.cache = cache_scaled.add(&g_sq_scaled).map_err(to_py_err)?;
+
+            // w <- w - lr * g / (sqrt(cache) + epsilon)
+            let cache_sqrt = entry.cache.sqrt().map_err(to_py_err)?;
+            let epsilon_tensor = Tensor::<f32>::full(cache_sqrt.shape().dims(), epsilon);
+            let denom = cache_sqrt.add(&epsilon_tensor).map_err(to_py_err)?;
+            let step_dir = g.div(&denom).map_err(to_py_err)?;
+            let update = step_dir.scalar_mul(lr).map_err(to_py_err)?;
+            let new_w = w.sub(&update).map_err(to_py_err)?;
+
+            param_ref.set_data(new_w)?;
+        }
+
         Ok(())
     }
 
     /// Zero out gradients for all parameters
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`].
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement gradient zeroing
-        Ok(())
+        zero_grad_all(model)
     }
 
     /// Get optimizer state information
@@ -499,6 +784,10 @@ pub struct PyAdamW {
     pub epsilon: f64,
     pub weight_decay: f64,
     pub timestep: usize,
+    /// Per-parameter first/second moment estimates, keyed by
+    /// [`PyParameter::id`]. See the module-level "Per-parameter optimizer
+    /// state" doc.
+    state: HashMap<usize, AdamParamState>,
 }
 
 #[pymethods]
@@ -520,6 +809,7 @@ impl PyAdamW {
             epsilon: 1e-8,
             weight_decay: 0.01, // Default weight decay for AdamW
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -542,6 +832,7 @@ impl PyAdamW {
             epsilon: 1e-8,
             weight_decay: 0.01,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -563,6 +854,7 @@ impl PyAdamW {
             epsilon: 1e-8,
             weight_decay,
             timestep: 0,
+            state: HashMap::new(),
         }
     }
 
@@ -582,16 +874,108 @@ impl PyAdamW {
     }
 
     /// Perform a single optimization step
+    ///
+    /// Identical moment-estimate bookkeeping to [`PyAdam::step`], but weight
+    /// decay is applied as a **decoupled** shrink of the weight itself
+    /// (`w <- w - lr * weight_decay * w`, applied separately from the
+    /// gradient-based update) rather than folded into the gradient before
+    /// the moment update — see the module-level doc for why this distinction
+    /// is the entire point of AdamW. See also the "Parameters with no
+    /// gradient" skip semantics documented at module level.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`] or
+    /// [`PyParameter::set_data`].
     pub fn step(&mut self, model: Bound<'_, PyAny>) -> PyResult<()> {
         self.timestep += 1;
-        // NOTE(v0.2): Implement proper model interface integration
+        let t = self.timestep as f32;
+        let beta1 = self.beta1 as f32;
+        let beta2 = self.beta2 as f32;
+        let epsilon = self.epsilon as f32;
+        let lr = self.learning_rate as f32;
+        let weight_decay = self.weight_decay as f32;
+
+        let py = model.py();
+        let params = crate::neural::collect_parameters(&model)?;
+
+        for param in &params {
+            let param_ref = param.borrow(py);
+            let Some((w, g)) = read_value_and_grad(&param_ref)? else {
+                continue;
+            };
+
+            // Decoupled weight decay: shrink the weight directly, NOT folded
+            // into the gradient. This must happen on the *original* weight
+            // value before the gradient-based update below, matching the
+            // reference AdamW algorithm (Loshchilov & Hutter, 2019, Algorithm
+            // 2): both terms are subtracted from the same `w_{t-1}` in the
+            // same step, not composed sequentially.
+            let decoupled_decay = if weight_decay != 0.0 {
+                w.scalar_mul(lr * weight_decay).map_err(to_py_err)?
+            } else {
+                Tensor::<f32>::zeros(w.shape().dims())
+            };
+
+            let id = param_ref.id();
+            let entry = self.state.entry(id).or_insert_with(|| AdamParamState {
+                m: Tensor::<f32>::zeros(w.shape().dims()),
+                v: Tensor::<f32>::zeros(w.shape().dims()),
+            });
+
+            // m <- beta1*m + (1-beta1)*g   (note: g here is the RAW
+            // gradient, unlike PyAdam::step — AdamW never folds weight_decay
+            // into the gradient at all).
+            let m_scaled = entry.m.scalar_mul(beta1).map_err(to_py_err)?;
+            let g_scaled = g.scalar_mul(1.0 - beta1).map_err(to_py_err)?;
+            entry.m = m_scaled.add(&g_scaled).map_err(to_py_err)?;
+
+            // v <- beta2*v + (1-beta2)*g^2
+            let g_sq = g.mul(&g).map_err(to_py_err)?;
+            let v_scaled = entry.v.scalar_mul(beta2).map_err(to_py_err)?;
+            let g_sq_scaled = g_sq.scalar_mul(1.0 - beta2).map_err(to_py_err)?;
+            entry.v = v_scaled.add(&g_sq_scaled).map_err(to_py_err)?;
+
+            // Bias correction.
+            let bias_correction1 = 1.0 - beta1.powf(t);
+            let bias_correction2 = 1.0 - beta2.powf(t);
+            let m_hat = entry
+                .m
+                .scalar_mul(1.0 / bias_correction1)
+                .map_err(to_py_err)?;
+            let v_hat = entry
+                .v
+                .scalar_mul(1.0 / bias_correction2)
+                .map_err(to_py_err)?;
+
+            // gradient-based update = lr * m_hat / (sqrt(v_hat) + epsilon)
+            let v_hat_sqrt = v_hat.sqrt().map_err(to_py_err)?;
+            let epsilon_tensor = Tensor::<f32>::full(v_hat_sqrt.shape().dims(), epsilon);
+            let denom = v_hat_sqrt.add(&epsilon_tensor).map_err(to_py_err)?;
+            let step_dir = m_hat.div(&denom).map_err(to_py_err)?;
+            let grad_update = step_dir.scalar_mul(lr).map_err(to_py_err)?;
+
+            // w <- w - grad_update - decoupled_decay  (both subtracted from
+            // the same original w, per Algorithm 2 — see comment above).
+            let new_w = w
+                .sub(&grad_update)
+                .map_err(to_py_err)?
+                .sub(&decoupled_decay)
+                .map_err(to_py_err)?;
+
+            param_ref.set_data(new_w)?;
+        }
+
         Ok(())
     }
 
     /// Zero out gradients for all parameters
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from [`crate::neural::collect_parameters`].
     pub fn zero_grad(&self, model: Bound<'_, PyAny>) -> PyResult<()> {
-        // NOTE(v0.2): Implement gradient zeroing
-        Ok(())
+        zero_grad_all(model)
     }
 
     /// Get optimizer state information
@@ -642,3 +1026,34 @@ impl PyAdamW {
                self.learning_rate, self.beta1, self.beta2, self.epsilon, self.weight_decay, self.timestep)
     }
 }
+
+/// Shared `zero_grad` body for every optimizer in this module:
+/// [`crate::neural::collect_parameters`] then [`PyParameter::zero_grad`] on
+/// each.
+///
+/// # Errors
+///
+/// Propagates any error from [`crate::neural::collect_parameters`]. Clearing
+/// an individual parameter's gradient
+/// ([`crate::implicit_autograd::clear_grad_by_id`], via
+/// [`PyParameter::zero_grad`]) is currently infallible, but that method
+/// returns `PyResult` for forward-compatibility (see its own doc), so its
+/// `Result` is still propagated with `?` here rather than discarded.
+fn zero_grad_all(model: Bound<'_, PyAny>) -> PyResult<()> {
+    let py = model.py();
+    let params = crate::neural::collect_parameters(&model)?;
+    for param in &params {
+        param.borrow(py).zero_grad()?;
+    }
+    Ok(())
+}
+
+/// Convert a [`tenflowers_core::TensorError`] (this crate's own arithmetic
+/// `Result` error type) into a `PyErr`, for use with `.map_err` after any
+/// `Tensor<f32>` arithmetic call in this module.
+fn to_py_err(err: tenflowers_core::TensorError) -> PyErr {
+    pyo3::exceptions::PyRuntimeError::new_err(format!("optimizer update failed: {}", err))
+}
+
+#[cfg(test)]
+mod tests;

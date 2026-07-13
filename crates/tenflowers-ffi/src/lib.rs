@@ -399,7 +399,7 @@
 //!
 //! ver = tf.stable_api_version()
 //! print(f"API {ver.version_string()} ({ver.stability})")
-//! # "API 0.1.2 (Beta)"
+//! # "API 0.2.0 (Beta)"
 //!
 //! surface = tf.stable_api_surface()
 //! print(f"{surface.count()} entries")
@@ -1049,6 +1049,7 @@ fn tenflowers(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tensor_ops::matmul, py)?)?;
     m.add_function(wrap_pyfunction!(tensor_ops::transpose, py)?)?;
     m.add_function(wrap_pyfunction!(tensor_ops::reshape, py)?)?;
+    m.add_function(wrap_pyfunction!(tensor_ops::slice, py)?)?;
 
     // Neural network functions are now registered via neural::register_neural_functions() above
 

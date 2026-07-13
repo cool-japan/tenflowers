@@ -4,6 +4,7 @@
 //! can track and compute gradients for, organized by category.
 
 use super::TensorId;
+use tenflowers_core::Tensor;
 
 /// Operation types that can be recorded in the tape
 #[derive(Debug, Clone)]
@@ -66,6 +67,34 @@ pub enum Operation {
         alpha: TensorId,
     },
     Softmax {
+        input: TensorId,
+        axis: Option<i32>,
+    },
+    Log {
+        input: TensorId,
+    },
+    Abs {
+        input: TensorId,
+    },
+    /// `min`/`max` are stored as `Option<f32>` because `Operation` has no
+    /// generic type parameter to reference a `T` bound (see the
+    /// `LeakyRelu`/`Elu` `alpha: f32` fields above for the established
+    /// precedent this follows). `None` on either side means "unconstrained"
+    /// on that side. Converted to the tensor's element type `T` at both the
+    /// forward call site (`TrackedTensor::clamp`) and the backward arm via
+    /// `T::from_f32`.
+    Clamp {
+        input: TensorId,
+        min: Option<f32>,
+        max: Option<f32>,
+    },
+    Relu6 {
+        input: TensorId,
+    },
+    HardSwish {
+        input: TensorId,
+    },
+    LogSoftmax {
         input: TensorId,
         axis: Option<i32>,
     },
@@ -160,6 +189,13 @@ pub enum Operation {
     },
 
     // Convolution operations
+    Conv1D {
+        input: TensorId,
+        weight: TensorId,
+        bias: Option<TensorId>,
+        stride: usize,
+        padding: String,
+    },
     Conv2D {
         input: TensorId,
         weight: TensorId,
@@ -271,6 +307,20 @@ pub enum Operation {
     IntegerArrayIndexing {
         input: TensorId,
         indices: TensorId,
+        axis: usize,
+    },
+    /// TensorFlow-style `tf.gather`: gathers slices from `input` along `axis`
+    /// according to `indices`. `indices` carries no gradient (it is integer
+    /// index data, not a differentiable tensor) and is therefore stored as a
+    /// raw `Tensor<i32>` value on the operation itself rather than as a
+    /// `TensorId` — this deliberately keeps it OFF the tape's parent-tracking
+    /// so it is never treated as a node requiring a gradient. `axis` is
+    /// normalized to a non-negative value once at record time (see
+    /// `TrackedTensor::gather`), so backward dispatch never has to
+    /// re-interpret a signed axis.
+    Gather {
+        input: TensorId,
+        indices: Tensor<i32>,
         axis: usize,
     },
 

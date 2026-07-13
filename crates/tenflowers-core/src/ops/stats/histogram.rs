@@ -126,6 +126,7 @@ where
 }
 
 /// Parallel min/max finding for large arrays
+#[cfg(feature = "parallel")]
 fn ultra_fast_min_max_parallel<T>(data: &[T]) -> (T, T)
 where
     T: Float + Default + Send + Sync + 'static + PartialOrd,
@@ -137,6 +138,41 @@ where
 
     let results: Vec<(T, T)> = data
         .par_chunks(chunk_size)
+        .map(|chunk| {
+            let min = chunk.iter().fold(T::infinity(), |acc, &x| acc.min(x));
+            let max = chunk.iter().fold(T::neg_infinity(), |acc, &x| acc.max(x));
+            (min, max)
+        })
+        .collect();
+
+    let global_min = results
+        .iter()
+        .map(|(min, _)| *min)
+        .fold(T::infinity(), |acc, x| acc.min(x));
+    let global_max = results
+        .iter()
+        .map(|(_, max)| *max)
+        .fold(T::neg_infinity(), |acc, x| acc.max(x));
+
+    (global_min, global_max)
+}
+
+/// Sequential fallback for min/max finding when the `parallel` feature is
+/// disabled (e.g. `--no-default-features --features std`, as used by the
+/// Miri workflow). Mirrors the chunked reduction structure of the
+/// rayon-based implementation above (same chunk size, same fold order per
+/// chunk, same cross-chunk reduction) so results are identical to the
+/// parallel path, just computed on a single thread.
+#[cfg(not(feature = "parallel"))]
+fn ultra_fast_min_max_parallel<T>(data: &[T]) -> (T, T)
+where
+    T: Float + Default + Send + Sync + 'static + PartialOrd,
+{
+    let chunk_size = data.len().max(1);
+    let chunk_size = chunk_size.max(1000); // Minimum chunk size for efficiency
+
+    let results: Vec<(T, T)> = data
+        .chunks(chunk_size)
         .map(|chunk| {
             let min = chunk.iter().fold(T::infinity(), |acc, &x| acc.min(x));
             let max = chunk.iter().fold(T::neg_infinity(), |acc, &x| acc.max(x));
@@ -202,6 +238,7 @@ where
 }
 
 /// Parallel histogram computation for large datasets
+#[cfg(feature = "parallel")]
 fn ultra_fast_histogram_parallel<T>(
     data: &[T],
     _bin_edges: &[T],
@@ -221,6 +258,55 @@ where
     // Parallel histogram computation with reduction
     let partial_histograms: Vec<Vec<usize>> = data
         .par_chunks(chunk_size)
+        .map(|chunk| {
+            let mut local_counts = vec![0usize; bins];
+            for &value in chunk {
+                if value >= min_val && value <= max_val {
+                    let bin_index = ((value - min_val) / bin_width).to_usize().unwrap_or(0);
+                    let bin_index = bin_index.min(bins - 1);
+                    local_counts[bin_index] += 1;
+                }
+            }
+            local_counts
+        })
+        .collect();
+
+    // Reduce partial histograms
+    let mut final_counts = vec![0usize; bins];
+    for partial in partial_histograms {
+        for (i, count) in partial.into_iter().enumerate() {
+            final_counts[i] += count;
+        }
+    }
+
+    final_counts
+}
+
+/// Sequential fallback for histogram computation when the `parallel`
+/// feature is disabled (e.g. `--no-default-features --features std`, as
+/// used by the Miri workflow). Mirrors the chunked map/reduce structure of
+/// the rayon-based implementation above (same chunk size, same per-chunk
+/// bin-counting order, same cross-chunk reduction order) so results are
+/// identical to the parallel path, just computed on a single thread.
+#[cfg(not(feature = "parallel"))]
+fn ultra_fast_histogram_parallel<T>(
+    data: &[T],
+    _bin_edges: &[T],
+    min_val: T,
+    max_val: T,
+    bins: usize,
+) -> Vec<usize>
+where
+    T: Float + Default + Send + Sync + 'static + ToPrimitive,
+{
+    let bin_width = (max_val - min_val) / float_const!(bins, T);
+    let chunk_size = data.len().max(1);
+    let chunk_size = chunk_size.max(1000);
+
+    // Sequential histogram computation with the same map/reduce shape as
+    // the parallel path above.
+    let partial_histograms: Vec<Vec<usize>> = data
+        .chunks(chunk_size)
         .map(|chunk| {
             let mut local_counts = vec![0usize; bins];
             for &value in chunk {

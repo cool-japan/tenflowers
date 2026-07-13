@@ -78,19 +78,22 @@ mod tests {
                 5,                        // output_dim
                 Some(true),               // use_bias
                 Some("relu".to_string()), // activation
-            );
+            )?;
 
-            // Test that dense layer was created successfully and test weight and bias access through parameters
+            // Test that dense layer was created successfully and test weight and bias access through parameters.
+            // parameters() now returns Vec<Py<PyParameter>> (not Vec<PyTensor>), so each element must be
+            // `.borrow(py)`-ed into a `PyRef<PyParameter>` before calling inherent PyParameter methods like
+            // `.shape()` on it.
             let params = dense.parameters();
             assert!(params.len() >= 1); // Should have at least weight parameter
 
             // First parameter should be weights
-            let weight = &params[0];
+            let weight = params[0].borrow(py);
             assert_eq!(weight.shape(), vec![10, 5]);
 
             // If bias exists, it should be the second parameter
             if params.len() > 1 {
-                let bias = &params[1];
+                let bias = params[1].borrow(py);
                 assert_eq!(bias.shape(), vec![5]); // Bias shape should match output dimension
             }
 

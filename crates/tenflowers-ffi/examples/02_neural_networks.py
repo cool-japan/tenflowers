@@ -241,8 +241,13 @@ def example_gradient_tape():
     tape = tf.create_gradient_tape()
     print("Created gradient tape")
 
-    # Note: Actual gradient computation requires full integration
-    # This demonstrates the API structure
+    # Note: this only demonstrates constructing a PyGradientTape (the
+    # explicit, TensorFlow-style tape API in neural/gradient_tape.rs).
+    # Real gradient computation is genuinely wired end-to-end via the
+    # separate implicit-autograd API -- see `examples/gradient_example.rs`
+    # or `x.set_requires_grad(True); y = ...; y.backward(); x.grad()` in
+    # `tests/test_gradient_parity.py` / `tests/test_training_convergence.py`
+    # for real, working `.backward()` / `.grad()` usage.
     print("Gradient tape API ready for use")
 
 

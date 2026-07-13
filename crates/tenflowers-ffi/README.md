@@ -2,14 +2,19 @@
 
 Foreign Function Interface for TenfloweRS, providing Python bindings and C API for seamless integration with other languages and frameworks.
 
-> v0.1.2 (2026-07-08) | 185 tests passing | 0 clippy warnings
+> v0.2.0 (2026-07-13) | 337 Rust tests + 55 Python (pytest) + 13 Python (integration_test.py) passing | 0 clippy warnings
 > Python bindings are functional. Build from source via maturin.
 
 ## Overview
 
 `tenflowers-ffi` implements:
 - **Python Bindings**: PyO3-based Python API for tensor operations, neural network layers, and optimizers
-- **Eager Autograd (PyTorch-style)**: `PyTensor.set_requires_grad()` / `.backward()` / `.grad()` — a thread-local, auto-activating implicit gradient tape (`implicit_autograd`) layered on the existing explicit `GradientTape` engine, so `x.backward(); x.grad()` works without ever constructing a tape object by hand
+- **Eager Autograd (PyTorch-style)**: `PyTensor.set_requires_grad()` / `.backward()` / `.grad()` — a thread-local, auto-activating implicit gradient tape (`implicit_autograd`) layered on the existing explicit `GradientTape` engine, so `x.backward(); x.grad()` works without ever constructing a tape object by hand. As of the 2026-07-13 rewrite the implicit tape is genuinely wired through the entire layer/optimizer/loss surface, not just a minimal Dense/Sequential/MSE path:
+  - **Layers** (all `#[pyclass]`, real `forward()` participating in the tape): `Dense` and `PyParameter` (the autograd leaf-node type returned by `layer.parameters()`), `Conv1D`/`Conv2D`/`Conv3D` + `MaxPool2D`/`AvgPool2D`, `Embedding`/`EmbeddingBag`, `BatchNorm1d`/`LayerNorm`/`GroupNorm`/`InstanceNorm1d`, `MultiheadAttention`, `TransformerEncoderLayer`/`TransformerDecoderLayer`/`PositionalEncoding`, `LSTM`/`GRU`/`RNN` + single-step `LSTMCell`/`GRUCell`. Caveat: `Conv2D`'s backward/autograd wiring is confirmed only for unit dilation, `groups == 1`, and no explicit integer padding (default `padding=(0,0)`); other configurations still forward correctly but are not confirmed tape-linked (documented on the struct itself in `neural/conv_layers/mod.rs`).
+  - **Optimizers** (9 total, all real `#[pyclass]` with `step(&mut self, model)` performing genuine gradient-based updates, not no-ops): `SGD`, `Adam`, `RMSprop`, `AdamW` (`neural/optimizers/mod.rs`); `AdaBelief`, `RAdam`, `Nadam`, `AdaGrad`, `AdaDelta` (`neural/extended_optimizers/mod.rs`)
+  - **Losses** (free `#[pyfunction]`s, not classes — call as `tf.mse_loss(y_pred, y_true)`): `mse_loss`, `binary_cross_entropy`, `cross_entropy`, `l1_loss`, `smooth_l1_loss`, `kl_div_loss`, `hinge_embedding_loss`, `cosine_embedding_loss` (`neural/losses.rs`)
+  - `PyTensor::transpose`/`reshape`/`slice` now correctly record themselves onto the implicit tape (`tensor_ops.rs`); previously `transpose`/`reshape` silently dropped out of `.backward()` on a tracked tensor since no `UnaryOpKind::Transpose`/`Reshape` variant existed.
+  - Real multi-step training-loop convergence (not just "runs without crashing") is proven in `tests/test_training_convergence.py` for a lone `Dense` layer + `SGD`, a 3-layer `Sequential` MLP + `Adam`, and `Conv2D` + `Adam`.
 - **C API**: C FFI bindings for cross-language compatibility
 - **NumPy Integration**: Tensor conversion with NumPy arrays
 - **Visualization**: Gradient flow analysis and visualization utilities
@@ -27,7 +32,7 @@ Foreign Function Interface for TenfloweRS, providing Python bindings and C API f
 
 - **Zero-Copy Interop**: Efficient data exchange with Python/NumPy where possible
 - **Pythonic API**: Familiar interface for Python users
-- **PyTorch-Familiar Autograd**: eager `.backward()` / `.grad()` on `PyTensor`, in addition to the explicit `GradientTape` API — no need to learn a TensorFlow-style tape-first workflow just to get a gradient
+- **PyTorch-Familiar Autograd**: eager `.backward()` / `.grad()` on `PyTensor`, in addition to the explicit `GradientTape` API — no need to learn a TensorFlow-style tape-first workflow just to get a gradient. Genuinely wired through every layer type (Dense, Conv1D/2D/3D, Embedding, all 4 normalization layers, MultiheadAttention, Transformer encoder/decoder, LSTM/GRU/RNN) and all 9 optimizers (SGD, Adam, RMSprop, AdamW, AdaBelief, RAdam, Nadam, AdaGrad, AdaDelta), with real multi-step convergence proven in `tests/test_training_convergence.py`
 - **Type Safety**: Automatic type conversions with safety checks
 - **Error Handling**: Exhaustive Rust→Python exception mapping (all 23 `TensorError` variants)
 - **GPU Support**: Tensor operations on GPU from Python via `PyDevice`
@@ -129,9 +134,55 @@ print(x.grad())  # dz/dx = 2x -> [2.0, 2.0]
 print(y.grad())  # dz/dy = 2y -> [2.0, 2.0]
 ```
 
-The explicit `GradientTape` API (`tenflowers.nn.GradientTape` /
-`neural::gradient_tape`) is still available for TensorFlow-style workflows and
-is what the implicit tape is layered on top of internally.
+The 2026-07-13 rewrite wires this same implicit tape through real layers and
+optimizers, so a genuine training loop converges end to end — the pattern
+below mirrors `tests/test_training_convergence.py::test_dense_layer_training_converges`,
+which asserts the loss drops by at least two orders of magnitude over 50 steps
+on a linear-regression target:
+
+```python
+import tenflowers as tf
+
+layer = tf.PyDense(4, 1, activation=None)
+for param in layer.parameters():
+    param.set_requires_grad(True)
+
+optimizer = tf.SGD(learning_rate=0.1)
+
+x_tensor = tf.tensor_from_numpy(X)  # X: np.ndarray, shape (batch, 4)
+y_tensor = tf.tensor_from_numpy(y)  # y: np.ndarray, shape (batch, 1)
+
+for step in range(50):
+    y_pred = layer.forward(x_tensor)
+    loss = tf.mse_loss(y_pred, y_tensor)
+
+    loss.backward()
+    optimizer.step(layer)
+    optimizer.zero_grad(layer)
+```
+
+This same `.backward()` / `optimizer.step()` pattern works for every layer
+and optimizer listed under Overview above (`Sequential` MLPs, `Conv2D`,
+`LSTM`/`GRU`/`RNN`, `MultiheadAttention`, Transformer encoder/decoder layers,
+and all 9 optimizers) — not just `Dense` + `SGD`.
+
+#### Implicit tape vs. explicit `GradientTape`
+
+The eager API above (`x.set_requires_grad()` / `.backward()` / `.grad()`) is
+distinct from the explicit, TensorFlow-style `PyGradientTape` API
+(`tenflowers.PyGradientTape` / `.watch()` / `.gradient()`,
+`neural::gradient_tape`). Both are backed by the same underlying Rust
+`GradientTape` engine, but **the explicit `PyGradientTape` API does not work
+end-to-end**: `PyGradientTape.watch()` only clones a tensor's current value
+onto the tape at call time, and the free functions used to build computations
+(`tf.add`, `tf.mul`, etc.) are not tape-aware for this explicit-tape style —
+they never record operation-graph edges onto it, so `tape.gradient()` cannot
+trace a real computation chain. This is unrelated to, and does not affect,
+the implicit `.backward()`/`.grad()` API documented above, which is what got
+fixed this release and is confirmed fully working through the entire
+layer/optimizer surface. Real tape-based autograd through plain tensor ops
+via the explicit-tape style remains a separate, not-yet-implemented future
+project.
 
 ## C API Usage
 

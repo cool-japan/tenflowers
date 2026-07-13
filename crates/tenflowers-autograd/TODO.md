@@ -1,4 +1,4 @@
-# TenfloweRS Autograd TODO & Roadmap (v0.1.2)
+# TenfloweRS Autograd TODO & Roadmap (v0.2.0)
 
 v0.1.1 focus: automatic differentiation capabilities and forward development plan.
 
@@ -56,6 +56,54 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 - Verified 2026-07-07: `cargo nextest run -p tenflowers-autograd
   --all-features` → **521 tests run: 521 passed, 5 skipped**.
 
+## v0.2.0 — Backward-Pass Correctness Sweep (2026-07-13)
+
+Real, previously-unknown gradient-computation bugs were found and fixed this
+cycle (as opposed to the honesty-hardening waves above, which mostly
+replaced fabricated results with honest errors — these are genuine
+correctness fixes to gradients that were previously silently wrong):
+
+- **Softmax backward** (`tape::gradient_computation::activation_ops::
+  process_softmax_backward`) now delegates to `grad_ops::softmax_backward`
+  (the formula `grad_x = y * (grad_y - sum_axis(y * grad_y))`) instead of
+  computing the gradient inline in the tape dispatcher, closing a drift
+  risk between the two implementations.
+- **BatchNorm backward** and **LayerNorm backward**
+  (`tape::gradient_computation::neural_ops::{process_batchnorm_backward,
+  process_layernorm_backward}`) now delegate to the real
+  `ops::normalization_ops::{batch_norm_backward, layer_norm_backward}`
+  kernels rather than reimplementing the backward formula in the dispatcher.
+- **GroupNorm backward** (`ops::normalization_ops::group_norm_backward`)
+  fixed a bug where `gamma` was applied as a single post-hoc `gamma / std`
+  factor to the final gradient — correct only when `gamma` is uniform
+  across every channel in a group, since in general `gamma *
+  sum(grad_out) != sum(gamma * grad_out)`. Real-world measurement against a
+  non-uniform-gamma test case showed relative error up to ~760% before the
+  fix. Fixed to fold per-channel `gamma` into `dxhat` (`dxhat = grad_output
+  * gamma`) before the reduction sums are taken, matching the same
+  correction already applied to instance-norm-style backward math
+  elsewhere in this module.
+- **Slice backward** and **Gather backward** (`grad_ops::tensor_ops::
+  {slice_backward, gather_backward}`) were stubs; now produce real
+  gradients — `slice_backward` walks every coordinate of `grad_output`
+  (row-major), maps it dimension-by-dimension back through
+  `start_d + out_coord[d] * step_d`, and accumulates (not overwrites) into
+  `grad_input`; `gather_backward` maps output coordinates back through the
+  gather indices and accumulates into the input buffer (with bounds
+  checking), correctly handling repeated indices.
+- **Conv1D** gained a dedicated backward implementation
+  (`ops::convolution_ops::conv1d::conv1d_backward`, with
+  `compute_conv1d_input_gradient`/`compute_conv1d_weight_gradient` helpers
+  in `conv1d_utils.rs`) instead of having no backward path at all.
+- New finite-difference gradient-check test suites added under `tests/`
+  (47 test functions total): `activation_gaps_gradient_test.rs` (16),
+  `conv1d_gradient_test.rs` (4), `conv3d_gradient_test.rs` (4),
+  `group_instance_norm_gradient_check.rs` (5),
+  `normalization_gradient_check.rs` (7),
+  `slice_concat_stack_split_gather_gradient_test.rs` (11).
+- Verified 2026-07-11: `cargo nextest run -p tenflowers-autograd
+  --all-features` → **575 tests run: 575 passed, 5 skipped**.
+
 ## 1. Current Capabilities
 
 ### Gradient Engine Foundation
@@ -78,7 +126,7 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 - **Ecosystem**: Seamless integration with broader SciRS2/NumRS2 scientific stack
 
 ### Testing & Quality
-- **Test Coverage**: 521 tests passing, 5 skipped (`cargo nextest run -p tenflowers-autograd --all-features`, verified 2026-07-07)
+- **Test Coverage**: 575 tests passing, 5 skipped (`cargo nextest run -p tenflowers-autograd --all-features`, verified 2026-07-11)
 - **Code Quality**: Zero compilation warnings, full clippy compliance maintained
 - **Memory Safety**: Comprehensive memory profiling with leak detection capabilities
 
@@ -193,4 +241,6 @@ v0.1.1 focus: automatic differentiation capabilities and forward development pla
 
 ---
 
-**v0.1.2 Status** (2026-07-07): Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization; 521 tests passing, 5 skipped (`--all-features`), 0 clippy warnings. This cycle's focus was honesty hardening — replacing fabricated/placeholder results (cross-datacenter replication, fused Mish/norm ops, conv2d/conv3d backward gradients, training accuracy, numerical gradient property tests) with either real implementations or honest `NotImplemented` errors. Forward development still focuses on gradient coverage audit, real distributed-gradient transport, and advanced features.
+**v0.1.2 Status** (2026-07-07): Production-ready automatic differentiation system with comprehensive gradient tape, memory profiling, and performance optimization; 521 tests passing, 5 skipped (`--all-features`), 0 clippy warnings. This cycle's focus was honesty hardening — replacing fabricated/placeholder results (cross-datacenter replication, fused Mish/norm ops, conv2d/conv3d backward gradients, training accuracy, numerical gradient property tests) with either real implementations or honest `NotImplemented` errors.
+
+**v0.2.0 Status** (2026-07-13): 575 tests passing, 5 skipped (`--all-features`), 0 clippy warnings (verified 2026-07-11, one day before release). This cycle's focus shifted from honesty hardening to backward-pass *correctness* — Softmax/BatchNorm/LayerNorm backward now delegate to already-correct kernels instead of a separately-maintained (and drifted) inline formula in the tape dispatcher; GroupNorm backward fixed a non-uniform-gamma bug (up to ~760% relative error); Slice and Gather backward went from stubs to real gradients; Conv1D gained a dedicated backward implementation. All verified by new finite-difference gradient-check test suites. Forward development still focuses on gradient coverage audit, real distributed-gradient transport, and advanced features.

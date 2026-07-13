@@ -18,7 +18,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 authors = ["COOLJAPAN OU (Team KitaSan)"]
 edition = "2021"
 rust-version = "1.70"
@@ -57,10 +57,10 @@ unused_doc_comments = "allow"
 
 [workspace.dependencies]
 # Internal crates
-tenflowers-core = { path = "crates/tenflowers-core", version = "0.1.2" }
-tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.1.2" }
-tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.1.2" }
-tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.1.2" }
+tenflowers-core = { path = "crates/tenflowers-core", version = "0.2.0" }
+tenflowers-autograd = { path = "crates/tenflowers-autograd", version = "0.2.0" }
+tenflowers-neural = { path = "crates/tenflowers-neural", version = "0.2.0" }
+tenflowers-dataset = { path = "crates/tenflowers-dataset", version = "0.2.0" }
 
 # Core dependencies (using SciRS2 ecosystem)
 rayon = "1.12"
@@ -171,7 +171,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 libc = "0.2"
 toml = "1.1"
 serde_yaml = "0.9"
-libloading = "0.9"
 
 # Build tooling (optional, gated behind features)
 cbindgen = { version = "0.29", default-features = false }

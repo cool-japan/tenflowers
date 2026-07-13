@@ -481,49 +481,133 @@ mod tests {
         }
     }
 
+    // The GPU random-normal kernel (`gpu::random_ops::execute_random_normal`,
+    // dispatching the `random_normal` WGSL entry point) is a real, fully
+    // implemented Box-Muller generator, not a stub. This test exercises the
+    // actual GPU dispatch end-to-end: shape/element-count, seed determinism
+    // (two independent GPU dispatches with the same seed must match bit-for-bit,
+    // matching the CPU contract exercised by `test_random_normal`), and a
+    // statistical sanity check on the sampled mean/std against the requested
+    // distribution parameters.
+    //
+    // A GPU adapter is not guaranteed to be present in every environment that
+    // builds with `--features gpu` (e.g. a headless CI runner), so the test
+    // skips its assertions - without failing the suite - if the device-aware
+    // call itself reports no adapter is available. This mirrors the skip idiom
+    // used by `test_gpu_multinomial_matches_cpu_reference` above.
     #[test]
     fn test_gpu_random_normal_f32() {
         #[cfg(feature = "gpu")]
         {
             use crate::Device;
 
-            // Test GPU random normal generation
-            let result = random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(42), &Device::Gpu(0));
+            let tensor =
+                match random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(42), &Device::Gpu(0)) {
+                    Ok(t) => t,
+                    Err(_) => return, // No GPU adapter available in this environment; skip.
+                };
 
-            // Should either work or return an error indicating GPU is not available
-            match result {
-                Ok(tensor) => {
-                    assert_eq!(tensor.shape().dims(), &[10, 10]);
-                    assert_eq!(tensor.numel(), 100);
-                }
-                Err(_) => {
-                    // GPU might not be available in test environment
-                    // This is acceptable for the test
-                }
-            }
+            assert_eq!(tensor.shape().dims(), &[10, 10]);
+            assert_eq!(tensor.numel(), 100);
+            assert_eq!(tensor.device(), &Device::Gpu(0));
+
+            // Same seed, independent dispatch -> identical samples.
+            let tensor2 = random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(42), &Device::Gpu(0))
+                .expect("test: second GPU random_normal dispatch should succeed");
+            let data = tensor
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            let data2 = tensor2
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            assert_eq!(
+                data, data2,
+                "GPU random_normal is not deterministic for a fixed seed"
+            );
+
+            // Different seed -> the two draws should not be identical (would
+            // indicate the seed is silently ignored by the shader).
+            let tensor3 = random_normal_f32_device(&[10, 10], 0.0, 1.0, Some(43), &Device::Gpu(0))
+                .expect("test: third GPU random_normal dispatch should succeed");
+            let data3 = tensor3
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            assert_ne!(data, data3, "GPU random_normal ignores the seed parameter");
+
+            // Statistical sanity: sample mean/std should be close to (0, 1)
+            // for 100 standard-normal draws (Box-Muller output).
+            let n = data.len() as f64;
+            let mean: f64 = data.iter().map(|&x| x as f64).sum::<f64>() / n;
+            let var: f64 = data.iter().map(|&x| (x as f64 - mean).powi(2)).sum::<f64>() / n;
+            assert!(mean.abs() < 0.5, "sample mean {mean} too far from 0");
+            assert!(
+                (var.sqrt() - 1.0).abs() < 0.5,
+                "sample std {} too far from 1",
+                var.sqrt()
+            );
         }
     }
 
+    // Companion to `test_gpu_random_normal_f32` for the uniform-distribution
+    // GPU kernel (`gpu::random_ops::execute_random_uniform`, the `random_uniform`
+    // WGSL entry point). Verifies shape, seed determinism, and that every
+    // sampled value falls inside the requested `[min, max)` range.
     #[test]
     fn test_gpu_random_uniform_f32() {
         #[cfg(feature = "gpu")]
         {
             use crate::Device;
 
-            // Test GPU random uniform generation
-            let result = random_uniform_f32_device(&[5, 5], 0.0, 1.0, Some(42), &Device::Gpu(0));
+            let tensor =
+                match random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(42), &Device::Gpu(0)) {
+                    Ok(t) => t,
+                    Err(_) => return, // No GPU adapter available in this environment; skip.
+                };
 
-            // Should either work or return an error indicating GPU is not available
-            match result {
-                Ok(tensor) => {
-                    assert_eq!(tensor.shape().dims(), &[5, 5]);
-                    assert_eq!(tensor.numel(), 25);
-                }
-                Err(_) => {
-                    // GPU might not be available in test environment
-                    // This is acceptable for the test
-                }
+            assert_eq!(tensor.shape().dims(), &[5, 5]);
+            assert_eq!(tensor.numel(), 25);
+            assert_eq!(tensor.device(), &Device::Gpu(0));
+
+            let data = tensor
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            for &val in &data {
+                assert!(
+                    (-2.0..3.0).contains(&val),
+                    "GPU random_uniform sample {val} outside requested [-2, 3) range"
+                );
             }
+
+            // Same seed, independent dispatch -> identical samples.
+            let tensor2 = random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(42), &Device::Gpu(0))
+                .expect("test: second GPU random_uniform dispatch should succeed");
+            let data2 = tensor2
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            assert_eq!(
+                data, data2,
+                "GPU random_uniform is not deterministic for a fixed seed"
+            );
+
+            // Different seed -> draws should differ (seed must not be ignored).
+            let tensor3 = random_uniform_f32_device(&[5, 5], -2.0, 3.0, Some(43), &Device::Gpu(0))
+                .expect("test: third GPU random_uniform dispatch should succeed");
+            let data3 = tensor3
+                .to_cpu()
+                .expect("test: to_cpu should succeed")
+                .to_vec()
+                .expect("test: to_vec should succeed");
+            assert_ne!(data, data3, "GPU random_uniform ignores the seed parameter");
         }
     }
 

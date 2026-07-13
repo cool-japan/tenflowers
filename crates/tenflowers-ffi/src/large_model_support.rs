@@ -420,7 +420,7 @@ impl PyLargeModelManager {
                 layers[i + 1],
                 Some(true), // use_bias
                 Some("relu".to_string()),
-            );
+            )?;
             // Add the layer to the sequential model
             model.add(dense);
             // Apply optimizations like gradient checkpointing, parameter sharding, etc.

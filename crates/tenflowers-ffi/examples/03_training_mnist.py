@@ -128,11 +128,18 @@ def train_epoch(model, optimizer, train_data, train_labels, batch_size=32):
         total_loss += loss
         total_accuracy += accuracy
 
-        # In a full implementation, we would:
-        # 1. Compute gradients with gradient tape
-        # 2. Apply optimizer step
-        # 3. Zero gradients
-        # For now, we demonstrate the structure
+        # NOTE: this example still does not call loss.backward() /
+        # optimizer.step() / optimizer.zero_grad() below, so `optimizer` is
+        # currently unused and no weight update happens here -- this was
+        # historically because gradient computation was not wired up at all;
+        # that is no longer true (`.backward()` / `.grad()` genuinely work
+        # end-to-end today, see `tests/test_training_convergence.py` for a
+        # real multi-step training loop that converges through PyDense/
+        # PySequential/Conv2D). This example was simply never updated to
+        # exercise it. A real training step here would be:
+        #   loss.backward()
+        #   optimizer.step(model.layer1)  # ...and layer2, layer3, etc.
+        #   optimizer.zero_grad(model.layer1)
 
     avg_loss = total_loss / num_batches
     avg_accuracy = total_accuracy / num_batches
@@ -293,8 +300,7 @@ def main():
 
     except Exception as e:
         print(f"\nError during training: {e}")
-        print("Note: This is a demonstration of the API structure.")
-        print("Full training requires gradient tape integration.")
+        raise
 
 
 if __name__ == "__main__":
