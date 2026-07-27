@@ -69,10 +69,10 @@ thiserror = "2.0"
 anyhow = "1.0"
 
 # NumRS2 and SciRS2 ecosystem (using latest versions)
-scirs2-core = "0.6.2"
-scirs2-autograd = "0.6.2"
-scirs2-linalg = "0.6.2"
-scirs2-numpy = "0.6.2"
+scirs2-core = "0.6.3"
+scirs2-autograd = "0.6.3"
+scirs2-linalg = "0.6.3"
+scirs2-numpy = "0.6.3"
 
 # GPU support
 wgpu = { version = "30.0", features = ["wgsl"] }
