@@ -159,7 +159,7 @@ tempfile = "3.27"
 oxiblas-ndarray = "0.2.1"
 lazy_static = "1.5"
 sys-info = "0.9"
-oxifft = "0.4.0"
+oxifft = "0.4.1"
 num-complex = "0.4"
 once_cell = "1.21"
 tokio-stream = { version = "0.1", features = ["sync"] }
