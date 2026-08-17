@@ -1,0 +1,83 @@
+# cargo-deny configuration — COOLJAPAN dependency-policy enforcement for TenfloweRS.
+#
+#   cargo deny check bans        # the gate this file is primarily written for
+#   cargo deny check licenses
+#   cargo deny check advisories
+#
+# Policy (see CLAUDE.md): the crates in [bans].deny below must never be DIRECT
+# dependencies. Pure-Rust replacements: oxiblas (openblas), oxicode (bincode),
+# oxifft (rustfft), oxisql-sqlite-compat (rusqlite), oxiarc-* (zip/flate2/zstd/
+# bzip2/lz4/tar/snap/brotli/miniz_oxide).
+
+[graph]
+# Match a default `cargo build` (optional codec/back-end deps such as parquet's
+# zstd/brotli/snap stack stay out of this graph, as they are off by default).
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+# Permissive licenses only (Apache-2.0 / MIT / BSD family), per policy.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[bans]
+# The gate only requires `check bans` to be green; duplicate-version hygiene is a
+# separate concern, so it is not gated here.
+multiple-versions = "allow"
+wildcards = "allow"
+allow-wildcard-paths = true
+
+# COOLJAPAN banned crates. Wrappers are added only where a banned crate appears
+# transitively through a known pure-Rust path:
+#   - flate2 via parquet/png/tiff uses the pure-Rust zlib-rs / miniz_oxide
+#     backends (the C path needs the `zlib`/`zlib-ng` features, unset here)
+#   - snap / brotli via parquet are pure-Rust implementations
+#   - rustfft via realfft (rubato) and symphonia-core (audio stack) is pure
+#     Rust; direct use must go through oxifft instead
+# zstd/zstd-sys have NO wrappers on purpose: parquet's zstd codec (C libzstd)
+# is disabled in the workspace parquet dependency — this is the guard.
+deny = [
+    { crate = "flate2", wrappers = ["parquet", "png", "tiff"] },
+    { crate = "miniz_oxide", wrappers = ["exr", "flate2", "png"] },
+    { crate = "snap", wrappers = ["parquet"] },
+    { crate = "brotli", wrappers = ["parquet"] },
+    { crate = "rustfft", wrappers = ["realfft", "symphonia-core"] },
+    { crate = "openblas-src" },
+    { crate = "openblas" },
+    { crate = "bincode" },
+    { crate = "rusqlite" },
+    { crate = "libsqlite3-sys" },
+    { crate = "zip" },
+    { crate = "zstd" },
+    { crate = "zstd-sys" },
+    { crate = "bzip2" },
+    { crate = "bzip2-sys" },
+    { crate = "lz4" },
+    { crate = "lz4-sys" },
+    { crate = "tar" },
+    { crate = "lzma-rs" },
+    { crate = "cust" },
+    { crate = "cuda-sys" },
+]
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

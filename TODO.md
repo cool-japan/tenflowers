@@ -1,5 +1,34 @@
 # TenfloweRS TODO & Roadmap (v0.2.1 · 2026-07-13)
 
+## Post-0.2.1 Follow-ups (added 2026-08-17)
+
+### Public commitments (cool-japan/cool-japan discussion #11)
+Stated publicly in the maintainer answer to discussion #11 (2026-08-17) —
+keep these true:
+- TenfloweRS is mid-refactor; external users were told to **re-evaluate at
+  the next release or the one after**, once the refactor lands. ToRSh is the
+  primary active-development focus in the meantime.
+- External contributors were asked to **open an issue first to coordinate**
+  before sending large PRs here while the refactor is in flight.
+- The two known-limitations below were named publicly as post-refactor
+  contributor entry points (they are also already on the v0.3.0 list):
+  - Generalize Conv1D/2D/3D + MaxPool2D/AvgPool2D tape-recording beyond
+    unit dilation / `groups == 1` / no explicit padding.
+  - Tape-wire `EmbeddingBag(mode="max")` (needs a tape-aware max reduction).
+
+### Repo hygiene
+- **CI**: all three workflows sit disabled (`*.yml.disabled`); org policy
+  allows only `pypi-publish.yml` / `npm-publish.yml` under
+  `.github/workflows/`. Decide: add `pypi-publish.yml` when `tenflowers-ffi`
+  ships to PyPI; until then the local gate is
+  `cargo nextest run --workspace` + `cargo deny check bans`.
+- **deny.toml** added 2026-08-17 — keep `cargo deny check bans` green.
+- **Docs corrected 2026-08-17**: NumRS2/OptiRS were described as
+  dependencies in README/lib.rs but are not (numrs2 was dropped after
+  0.1.0; optirs was never a dependency) — wording now says SciRS2 only.
+  The historical "numrs2 0.4.0" lines in the 0.1.2/0.2.0 dependency notes
+  were also wrong (already gone by 0.1.2) and were removed.
+
 ## v0.2.0 — Implicit Autograd Rewrite (2026-07-13)
 
 A complete rewrite of the Python-facing, PyTorch-style implicit autograd
@@ -227,7 +256,7 @@ decoding are now all real, tested code.
   placeholder) — parameters now genuinely learn.
 
 ### Dependency updates
-numrs2 0.4.0; scirs2 (core/autograd/neural/linalg/numpy) 0.4.2 -> 0.6.0;
+scirs2 (core/autograd/neural/linalg/numpy) 0.4.2 -> 0.6.0;
 oxicode 0.2.4; oxiarc-archive 0.3.4 (+ new oxiarc-lz4/oxiarc-deflate/
 oxiarc-snappy for Blosc's inner codecs); oxifft 0.3.2; wgpu 30.0; pyo3 0.29;
 arrow/parquet 59.0; prost 0.14.4; symphonia 0.6; rubato 3.0.

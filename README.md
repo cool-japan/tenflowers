@@ -62,7 +62,7 @@ TenfloweRS adapts TensorFlow's proven architecture to Rust's strengths:
 - **Dual Execution Modes**: Both eager execution (PyTorch-style) and static computation graphs (TensorFlow-style)
 - **Pure Rust Implementation**: No C/C++ dependencies in the core, ensuring memory safety
 - **GPU Support**: Cross-platform GPU acceleration via WGPU (Metal, Vulkan, DirectX)
-- **Rust Scientific Stack**: Built on NumRS2 and SciRS2 for numerical computing
+- **Rust Scientific Stack**: Built on SciRS2 (scirs2-core / scirs2-autograd / scirs2-linalg / scirs2-numpy) for numerical computing
 - **Python Bindings**: PyO3-based FFI crate (functional/alpha, `publish = false`) with 337 Rust tests + 55 Python (pytest) + 13 Python (integration_test.py) passing, including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd across every layer type and all 9 optimizers
 - **ONNX Support**: Import and export models for cross-framework compatibility
 - **Performance**: SIMD vectorization, optional BLAS integration, and parallel execution
@@ -103,7 +103,7 @@ All Rust counts are `--all-features`, freshly verified per-crate for 0.2.0 (from
 - Training utilities (optimizers including SGD, Adam, AdamW, LAMB, Lion, Muon; loss functions; training loops; LR schedulers)
 - Data loading pipeline with multi-format support
 - GPU acceleration via WGPU (cross-platform)
-- SciRS2/NumRS2 ecosystem integration
+- SciRS2 ecosystem integration
 - Python bindings with PyO3 (337 Rust tests + 55 Python pytest + 13 Python integration tests; functional/alpha, `publish = false`), including implicit PyTorch-style `.backward()`/`.grad()`/`optimizer.step()` autograd wired through every layer type and all 9 optimizers (see the v0.2.0 roadmap entry below for the two narrow configuration gaps)
 - Security hardening (2 known transitive advisories — upstream fixes pending)
 - Comprehensive documentation
@@ -408,7 +408,7 @@ Key areas where we need help:
 - Dataset: `hdf5_advanced` and `parquet_advanced` modules with chunked/filtered readers; from-scratch pure-Rust `formats::blosc` Blosc decoder (all 5 inner codecs + byte/bit-shuffle) wired into Zarr; real Symphonia-backed `formats::audio` decoding (WAV/MP3/FLAC); `formats::tfrecord_advanced` `SequenceExample` reader with real masked-CRC32 verification; new GPU image transforms (affine/perspective/elastic/histogram-equalize)
 - Core: real ONNX protobuf import/export (`onnx_interop`) for the core graph representation, covering `Add/Sub/Mul/Div/Relu/Sigmoid/Tanh/MatMul/Reshape/Transpose/Identity/Concat/Softmax/Flatten/Gemm`; `session::SessionConfig::enable_graph_optimization` (default on) wires constant-folding/CSE/algebraic-simplification/strength-reduction/DCE/scheduling into real `Session` execution; N-D (`[N,d1,d2,...]`) segment reductions for all of `segment_max/min/prod/any/all`; GPU-einsum batched-matmul/transpose/diagonal/outer/trace now correctly delegate to CPU instead of honest-erroring; real `device::GpuAdapterCapabilities` from the live `wgpu::Adapter` (no more fabricated vendor/capability guessing); real LAPACK-backed `ops::lapack_f64` (inverse/determinant/SVD/solve)
 - CUDA/ROCm/OpenCL feature flags documented with inline explanations
-- Dependencies: numrs2 0.4.0, scirs2 0.6.0, oxicode 0.2.4, oxiarc-archive 0.3.4, oxifft 0.3.2, wgpu 30.0, pyo3 0.29, arrow/parquet 59.0; new oxiarc-lz4/oxiarc-deflate/oxiarc-snappy (Blosc inner codecs)
+- Dependencies: scirs2 0.6.0, oxicode 0.2.4, oxiarc-archive 0.3.4, oxifft 0.3.2, wgpu 30.0, pyo3 0.29, arrow/parquet 59.0; new oxiarc-lz4/oxiarc-deflate/oxiarc-snappy (Blosc inner codecs)
 - Lock-poisoning `.expect()` calls replaced with `Result` propagation across `CheckpointManager`, `CrossDatacenterReplicator`, and `DeterministicContext`
 - NCCL/Gloo/MPI/thread collective backends return honest `NotImplemented` errors (previously fabricated/simulated data); `DataParallelTrainer::train_step` now computes real gradients via finite differences instead of simulating the backward pass
 - Two real GPU-path crash bugs fixed (`Tensor::from_storage` panic on GPU storage; hardcoded `Device::Gpu(0)` regardless of actual buffer device); a Miri-confirmed alignment UB fixed in `tenflowers-dataset`'s `MemoryPool`
@@ -471,8 +471,7 @@ This project is licensed under the Apache License, Version 2.0 ([LICENSE](LICENS
 ## Acknowledgments
 
 TenfloweRS builds upon the excellent Rust scientific computing ecosystem:
-- [NumRS2](https://github.com/cool-japan/numrs2) for n-dimensional arrays
-- [SciRS2](https://github.com/cool-japan/scirs2) for scientific algorithms
+- [SciRS2](https://github.com/cool-japan/scirs2) for scientific algorithms and n-dimensional arrays
 - [OxiBLAS](https://github.com/cool-japan/oxiblas) for pure Rust BLAS
 - [OxiFFT](https://github.com/cool-japan/oxifft) for pure Rust FFT
 - [WGPU](https://github.com/gfx-rs/wgpu) for GPU compute

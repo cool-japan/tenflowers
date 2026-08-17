@@ -15,7 +15,7 @@ TenfloweRS is the main convenience crate that re-exports TenfloweRS's Rust-nativ
 - **High Performance**: GPU acceleration, SIMD optimization, mixed precision
 - **Type Safety**: Rust's type system prevents common ML bugs at compile time
 - **Cross-Platform**: CPU, GPU (CUDA, Metal, Vulkan), and WebGPU support
-- **Ecosystem Integration**: Seamless integration with SciRS2, NumRS2, and OptiRS
+- **Ecosystem Integration**: Seamless integration with the SciRS2 scientific-computing stack
 
 ## Quick Start
 

@@ -68,7 +68,7 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 anyhow = "1.0"
 
-# NumRS2 and SciRS2 ecosystem (using latest versions)
+# SciRS2 ecosystem (using latest versions)
 scirs2-core = "0.6.5"
 scirs2-autograd = "0.6.5"
 scirs2-linalg = "0.6.5"
@@ -109,7 +109,18 @@ image = "0.25"
 
 # Data processing
 arrow = "59.0"
-parquet = "59.0"
+# Default features minus `zstd`: parquet's zstd codec links the C libzstd via
+# zstd-sys, which violates the pure-Rust default-build policy (deny.toml gate).
+# The flate2 backend stays on the pure-Rust `zlib-rs` implementation.
+parquet = { version = "59.0", default-features = false, features = [
+    "arrow",
+    "snap",
+    "brotli",
+    "flate2-zlib-rs",
+    "lz4",
+    "base64",
+    "simdutf8",
+] }
 memmap2 = "0.9"
 regex = "1.12"
 csv = "1.4"
