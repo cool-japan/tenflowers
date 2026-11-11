@@ -167,7 +167,7 @@ async-trait = "0.1"
 tempfile = "3.27"
 
 # Consolidated from subcrates
-oxiblas-ndarray = "0.2.2"
+oxiblas-ndarray = "0.2.3"
 lazy_static = "1.5"
 sys-info = "0.9"
 oxifft = "0.4.2"
